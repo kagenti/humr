@@ -11,7 +11,7 @@ const WORKING_DIR = join(dirname(fileURLToPath(import.meta.url)), "../working-di
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -81,12 +81,56 @@ const server = http.createServer((req, res) => {
         });
         send({ type: "done", stopReason: result.stopReason });
       } catch (err: any) {
-        send({ type: "error", message: err.message });
+        if (err.code === -32000) {
+          send({ type: "auth_required" });
+        } else {
+          send({ type: "error", message: err.message });
+        }
       } finally {
         res.end();
         agent.kill();
       }
     });
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/auth/status") {
+    const proc = spawn("claude", ["auth", "status"], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    proc.stdout.on("data", (d) => (out += d));
+    proc.stderr.on("data", (d) => (out += d));
+    proc.on("close", () => {
+      try {
+        const status = JSON.parse(out);
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(
+          JSON.stringify({ authenticated: status.loggedIn === true, ...status }),
+        );
+      } catch {
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(
+          JSON.stringify({ authenticated: false }),
+        );
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/auth/login") {
+    res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+    const send = (obj: object) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    const proc = spawn("claude", ["auth", "login"], { stdio: ["ignore", "pipe", "pipe"] });
+    const handleOutput = (chunk: Buffer) => {
+      const text = chunk.toString();
+      send({ type: "login_output", text });
+      const urlMatch = text.match(/https?:\/\/\S+/);
+      if (urlMatch) send({ type: "login_url", url: urlMatch[0] });
+    };
+    proc.stdout.on("data", handleOutput);
+    proc.stderr.on("data", handleOutput);
+    proc.on("close", (code) => {
+      send(code === 0 ? { type: "login_done" } : { type: "login_error" });
+      res.end();
+    });
+    req.on("close", () => proc.kill());
     return;
   }
 

@@ -35,9 +35,20 @@ export default function App() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
+  const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then((r) => r.json())
+      .then((s) => { if (!s.authenticated) setAuthRequired(true); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -121,6 +132,12 @@ export default function App() {
             );
           } else if (event.type === "session") {
             setSessionId(event.sessionId);
+          } else if (event.type === "auth_required") {
+            setAuthRequired(true);
+            pendingPromptRef.current = text;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+            );
           } else if (event.type === "done" || event.type === "error") {
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
@@ -138,6 +155,44 @@ export default function App() {
       textareaRef.current?.focus();
     }
   }, [input, busy, addLog]);
+
+  const startLogin = useCallback(async () => {
+    setLoggingIn(true);
+    setLoginUrl(null);
+    try {
+      const res = await fetch("/api/auth/login", { method: "POST" });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop()!;
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+          if (event.type === "login_url") {
+            setLoginUrl(event.url);
+            window.open(event.url, "_blank");
+          } else if (event.type === "login_done") {
+            setAuthRequired(false);
+            setLoggingIn(false);
+            setLoginUrl(null);
+            if (pendingPromptRef.current) {
+              setInput(pendingPromptRef.current);
+              pendingPromptRef.current = null;
+            }
+          } else if (event.type === "login_error") {
+            setLoggingIn(false);
+          }
+        }
+      }
+    } catch {
+      setLoggingIn(false);
+    }
+  }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -159,7 +214,21 @@ export default function App() {
       <div className="body">
         <section className="chat-panel">
           <div className="messages">
-            {messages.length === 0 && (
+            {authRequired && (
+              <div className="auth-banner">
+                <span className="auth-title">authentication required</span>
+                <p className="auth-desc">Claude is not logged in. Sign in to start a session.</p>
+                {loginUrl && (
+                  <a className="auth-link" href={loginUrl} target="_blank" rel="noreferrer">
+                    open login page
+                  </a>
+                )}
+                <button className="auth-btn" onClick={startLogin} disabled={loggingIn}>
+                  {loggingIn ? "waiting for login..." : "log in"}
+                </button>
+              </div>
+            )}
+            {!authRequired && messages.length === 0 && (
               <div className="empty">send a message to start a session</div>
             )}
             {messages.map((m) => (
@@ -197,9 +266,9 @@ export default function App() {
               onKeyDown={onKeyDown}
               placeholder="message agent  ↵ send  shift+↵ newline"
               rows={1}
-              disabled={busy}
+              disabled={busy || authRequired}
             />
-            <button className="send-btn" onClick={send} disabled={busy || !input.trim()}>
+            <button className="send-btn" onClick={send} disabled={busy || authRequired || !input.trim()}>
               {busy ? "…" : "send"}
             </button>
           </div>
