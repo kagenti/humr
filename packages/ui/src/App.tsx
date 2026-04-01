@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from "react";
+import { ClientSideConnection, PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 
 type Role = "user" | "assistant";
 
@@ -32,13 +35,57 @@ interface LogEntry {
 interface SessionInfo {
   sessionId: string;
   cwd: string;
-  title?: string;
-  updatedAt?: string;
+  title?: string | null;
+  updatedAt?: string | null;
 }
 
 interface TreeEntry {
   path: string;
   type: "file" | "dir";
+}
+
+function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    ws.onopen = () => {
+      const readable = new ReadableStream<AnyMessage>({
+        start(controller) {
+          ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));
+          ws.onclose = () => { try { controller.close(); } catch {} };
+          ws.onerror = (err) => { try { controller.error(err); } catch {} };
+        },
+      });
+      const writable = new WritableStream<AnyMessage>({
+        write(chunk) { ws.send(JSON.stringify(chunk)); },
+        close() { ws.close(); },
+      });
+      resolve({ stream: { readable, writable }, ws });
+    };
+    ws.onerror = reject;
+  });
+}
+
+function wsUrl(): string {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/api/acp`;
+}
+
+type UpdateHandler = (update: any) => void;
+
+async function openConnection(onUpdate: UpdateHandler): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+  const { stream, ws } = await wsStream(wsUrl());
+  const connection = new ClientSideConnection(
+    () => ({
+      async requestPermission(params: any) {
+        return { outcome: { outcome: "selected" as const, optionId: params.options[0].optionId } };
+      },
+      async sessionUpdate(params: any) { onUpdate(params.update); },
+      async writeTextFile() { return {}; },
+      async readTextFile() { return { content: "" }; },
+    }),
+    stream,
+  );
+  return { connection, ws };
 }
 
 export default function App() {
@@ -63,6 +110,17 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cwdRef = useRef<string>("");
+  const connectionRef = useRef<{ connection: ClientSideConnection; ws: WebSocket } | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const currentAssistantIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((c) => { cwdRef.current = c.cwd; })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/status")
@@ -113,15 +171,16 @@ export default function App() {
   const fetchSessions = useCallback(async () => {
     setLoadingSessions(true);
     try {
-      const r = await fetch("/api/sessions");
-      const data = await r.json();
-      setSessions(data.sessions ?? []);
+      const { connection, ws } = await openConnection(() => {});
+      await connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      });
+      const result = await connection.listSessions({ cwd: cwdRef.current });
+      setSessions(result.sessions ?? []);
+      ws.close();
     } catch {}
     setLoadingSessions(false);
-  }, []);
-
-  useEffect(() => {
-    fetchSessions();
   }, []);
 
   const resumeSession = useCallback(async (sid: string) => {
@@ -130,50 +189,46 @@ export default function App() {
     setSessionId(sid);
     setRightTab("files");
 
+    connectionRef.current?.ws.close();
+    connectionRef.current = null;
+    activeSessionIdRef.current = null;
+
     const msgMap = new Map<string, Message>();
     const msgOrder: string[] = [];
 
     try {
-      const res = await fetch(`/api/sessions/${sid}`);
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop()!;
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6));
-
-          if (event.type === "user_text" || event.type === "agent_text") {
-            const role: Role = event.type === "user_text" ? "user" : "assistant";
-            const mid = event.messageId ?? crypto.randomUUID();
-            const existing = msgMap.get(mid);
-            if (existing) {
-              const last = existing.parts[existing.parts.length - 1];
-              if (last?.kind === "text") {
-                last.text += event.text;
-              } else {
-                existing.parts.push({ kind: "text", text: event.text });
-              }
+      const { connection, ws } = await openConnection((u) => {
+        if (u.sessionUpdate === "user_message_chunk" || u.sessionUpdate === "agent_message_chunk") {
+          if (u.content.type !== "text") return;
+          const role: Role = u.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
+          const mid = u.messageId ?? crypto.randomUUID();
+          const existing = msgMap.get(mid);
+          if (existing) {
+            const last = existing.parts[existing.parts.length - 1];
+            if (last?.kind === "text") {
+              last.text += u.content.text;
             } else {
-              const msg: Message = { id: mid, role, parts: [{ kind: "text", text: event.text }], streaming: false };
-              msgMap.set(mid, msg);
-              msgOrder.push(mid);
+              existing.parts.push({ kind: "text", text: u.content.text });
             }
-          } else if (event.type === "tool") {
-            const mid = event.messageId ?? msgOrder[msgOrder.length - 1];
-            const existing = mid ? msgMap.get(mid) : null;
-            if (existing) {
-              existing.parts.push({ kind: "tool", title: event.title, status: event.status });
-            }
+          } else {
+            const msg: Message = { id: mid, role, parts: [{ kind: "text", text: u.content.text }], streaming: false };
+            msgMap.set(mid, msg);
+            msgOrder.push(mid);
+          }
+        } else if (u.sessionUpdate === "tool_call") {
+          const mid = u.messageId ?? msgOrder[msgOrder.length - 1];
+          const existing = mid ? msgMap.get(mid) : null;
+          if (existing) {
+            existing.parts.push({ kind: "tool", title: u.title, status: u.status });
           }
         }
-      }
+      });
+      await connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      });
+      await connection.loadSession({ sessionId: sid, cwd: cwdRef.current, mcpServers: [] });
+      ws.close();
     } catch {}
 
     setMessages(msgOrder.map((id) => msgMap.get(id)!));
@@ -213,82 +268,95 @@ export default function App() {
       parts: [],
       streaming: true,
     };
+    currentAssistantIdRef.current = assistantId;
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     addLog("prompt", { text });
 
     try {
-      const res = await fetch("/api/prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, sessionId }),
-      });
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop()!;
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6));
-          addLog(event.type, event);
-
-          if (event.type === "text") {
+      if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
+        const { connection, ws } = await openConnection((u) => {
+          const aid = currentAssistantIdRef.current;
+          if (!aid) return;
+          if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
             setMessages((prev) =>
               prev.map((m) => {
-                if (m.id !== assistantId) return m;
+                if (m.id !== aid) return m;
                 const parts = [...m.parts];
                 const last = parts[parts.length - 1];
                 if (last?.kind === "text") {
-                  parts[parts.length - 1] = { kind: "text", text: last.text + event.text };
+                  parts[parts.length - 1] = { kind: "text", text: last.text + u.content.text };
                 } else {
-                  parts.push({ kind: "text", text: event.text });
+                  parts.push({ kind: "text", text: u.content.text });
                 }
                 return { ...m, parts };
               }),
             );
-          } else if (event.type === "tool") {
+            addLog("text", { text: u.content.text });
+          } else if (u.sessionUpdate === "tool_call") {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, parts: [...m.parts, { kind: "tool", title: event.title, status: event.status } as ToolChip] }
+                m.id === aid
+                  ? { ...m, parts: [...m.parts, { kind: "tool", title: u.title, status: u.status } as ToolChip] }
                   : m,
               ),
             );
-          } else if (event.type === "session") {
-            setSessionId(event.sessionId);
-          } else if (event.type === "auth_required") {
-            setAuthRequired(true);
-            pendingPromptRef.current = text;
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
-            );
-          } else if (event.type === "done" || event.type === "error") {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
-            );
+            addLog("tool", { title: u.title, status: u.status });
           }
+        });
+
+        await connection.initialize({
+          protocolVersion: PROTOCOL_VERSION,
+          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+        });
+
+        ws.onclose = () => {
+          connectionRef.current = null;
+        };
+
+        connectionRef.current = { connection, ws };
+      }
+
+      const conn = connectionRef.current!.connection;
+
+      if (!activeSessionIdRef.current) {
+        if (sessionId) {
+          await conn.unstable_resumeSession({ sessionId, cwd: cwdRef.current, mcpServers: [] });
+          activeSessionIdRef.current = sessionId;
+        } else {
+          const session = await conn.newSession({ cwd: cwdRef.current, mcpServers: [] });
+          setSessionId(session.sessionId);
+          activeSessionIdRef.current = session.sessionId;
+          addLog("session", { sessionId: session.sessionId });
         }
       }
-    } catch (err: any) {
-      if (err.message === "Failed to fetch" || err.name === "TypeError") {
-        setServerDown(true);
-      }
-      addLog("error", { message: err.message });
+
+      const result = await conn.prompt({
+        sessionId: activeSessionIdRef.current!,
+        prompt: [{ type: "text", text }],
+      });
+
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
       );
+      addLog("done", { stopReason: result.stopReason });
+    } catch (err: any) {
+      if (err?.code === -32000) {
+        setAuthRequired(true);
+        pendingPromptRef.current = text;
+      }
+      addLog("error", { message: err?.message });
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+      );
+      connectionRef.current?.ws.close();
+      connectionRef.current = null;
+      activeSessionIdRef.current = null;
     } finally {
       setBusy(false);
       textareaRef.current?.focus();
     }
-  }, [input, busy, addLog]);
+  }, [input, busy, sessionId, addLog]);
 
   const startLogin = useCallback(async () => {
     setLoggingIn(true);
@@ -334,7 +402,13 @@ export default function App() {
         <span className="header-logo">◈ ACP</span>
         <span className="header-sub">agent client protocol</span>
         {sessionId && (
-          <button className="new-session-btn" onClick={() => { setSessionId(null); setMessages([]); }}>
+          <button className="new-session-btn" onClick={() => {
+            connectionRef.current?.ws.close();
+            connectionRef.current = null;
+            activeSessionIdRef.current = null;
+            setSessionId(null);
+            setMessages([]);
+          }}>
             + new session
           </button>
         )}

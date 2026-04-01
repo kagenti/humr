@@ -1,13 +1,12 @@
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { Writable, Readable, PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
 import { writeFileSync, readFileSync, mkdirSync, chmodSync, existsSync, watch, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import * as acp from "@agentclientprotocol/sdk/dist/acp.js";
+import { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const agentScript = join(dirname(fileURLToPath(import.meta.url)), "agent.ts");
@@ -47,30 +46,6 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-
-function connectToAgent(cwd: string, onUpdate: (u: any) => void) {
-  const agent = spawn("npx", ["tsx", agentScript], { stdio: ["pipe", "pipe", "inherit"], cwd });
-  const toAgent = new PassThrough();
-  const fromAgent = new PassThrough();
-  agent.stdout.pipe(fromAgent);
-  toAgent.pipe(agent.stdin);
-  const stream = acp.ndJsonStream(
-    Writable.toWeb(toAgent),
-    Readable.toWeb(fromAgent) as ReadableStream<Uint8Array>,
-  );
-  const connection = new acp.ClientSideConnection(
-    (_) => ({
-      async requestPermission(params: any) {
-        return { outcome: { outcome: "selected" as const, optionId: params.options[0].optionId } };
-      },
-      async sessionUpdate(params: any) { onUpdate(params.update); },
-      async writeTextFile() { return {}; },
-      async readTextFile() { return { content: "" }; },
-    }),
-    stream,
-  );
-  return { agent, connection };
-}
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
@@ -112,52 +87,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/api/prompt") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", async () => {
-      const { prompt, sessionId } = JSON.parse(body);
-      res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-
-      const send = (obj: object) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
-      const { agent, connection } = connectToAgent(WORKING_DIR, (u) => {
-        if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
-          send({ type: "text", text: u.content.text });
-        } else if (u.sessionUpdate === "tool_call") {
-          send({ type: "tool", title: u.title, status: u.status });
-        }
-      });
-
-      try {
-        await connection.initialize({
-          protocolVersion: acp.PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-        });
-        let activeSessionId: string;
-        if (sessionId) {
-          await connection.unstable_resumeSession({ sessionId, cwd: WORKING_DIR, mcpServers: [] });
-          activeSessionId = sessionId;
-        } else {
-          const session = await connection.newSession({ cwd: WORKING_DIR, mcpServers: [] });
-          activeSessionId = session.sessionId;
-          send({ type: "session", sessionId: activeSessionId });
-        }
-        const result = await connection.prompt({
-          sessionId: activeSessionId,
-          prompt: [{ type: "text", text: prompt }],
-        });
-        send({ type: "done", stopReason: result.stopReason });
-      } catch (err: any) {
-        if (err.code === -32000) {
-          send({ type: "auth_required" });
-        } else {
-          send({ type: "error", message: err.message });
-        }
-      } finally {
-        res.end();
-        agent.kill();
-      }
-    });
+  if (req.method === "GET" && req.url === "/api/config") {
+    res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ cwd: WORKING_DIR }));
     return;
   }
 
@@ -284,57 +215,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/api/sessions") {
-    (async () => {
-      const { agent, connection } = connectToAgent(WORKING_DIR, () => {});
-      try {
-        await connection.initialize({
-          protocolVersion: acp.PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-        });
-        const result = await connection.listSessions({ cwd: WORKING_DIR });
-        res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify(result));
-      } catch (err: any) {
-        res.writeHead(500, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ error: err.message }));
-      } finally {
-        agent.kill();
-      }
-    })();
-    return;
-  }
-
-  if (req.method === "GET" && req.url?.startsWith("/api/sessions/")) {
-    const sid = req.url.slice("/api/sessions/".length);
-    if (!sid) { res.writeHead(400, CORS).end(); return; }
-    res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-    const send = (obj: object) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
-    (async () => {
-      const { agent, connection } = connectToAgent(WORKING_DIR, (u) => {
-        if (u.sessionUpdate === "user_message_chunk" && u.content.type === "text") {
-          send({ type: "user_text", text: u.content.text, messageId: u.messageId });
-        } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
-          send({ type: "agent_text", text: u.content.text, messageId: u.messageId });
-        } else if (u.sessionUpdate === "tool_call") {
-          send({ type: "tool", title: u.title, status: u.status, messageId: u.messageId });
-        }
-      });
-      try {
-        await connection.initialize({
-          protocolVersion: acp.PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-        });
-        await connection.loadSession({ sessionId: sid, cwd: WORKING_DIR, mcpServers: [] });
-        send({ type: "done" });
-      } catch (err: any) {
-        send({ type: "error", message: err.message });
-      } finally {
-        res.end();
-        agent.kill();
-      }
-    })();
-    return;
-  }
-
   if (req.method === "GET" && req.url === "/api/files/version") {
     res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ version: fileVersion }));
     return;
@@ -367,16 +247,39 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "POST") {
-    const agent = spawn("npx", ["tsx", agentScript], { stdio: ["pipe", "pipe", "inherit"] });
-    res.writeHead(200, { "Content-Type": "application/x-ndjson", "Transfer-Encoding": "chunked" });
-    req.pipe(agent.stdin);
-    agent.stdout.pipe(res);
-    req.on("close", () => agent.kill());
-    return;
-  }
-
   res.writeHead(405).end();
+});
+
+const wss = new WebSocketServer({ server, path: "/api/acp" });
+
+wss.on("connection", (ws) => {
+  const agent = spawn("npx", ["tsx", agentScript], {
+    stdio: ["pipe", "pipe", "inherit"],
+    cwd: WORKING_DIR,
+  });
+
+  let buf = "";
+  agent.stdout!.on("data", (chunk: Buffer) => {
+    buf += chunk.toString();
+    const lines = buf.split("\n");
+    buf = lines.pop()!;
+    for (const line of lines) {
+      if (line.trim() && ws.readyState === ws.OPEN) {
+        ws.send(line);
+      }
+    }
+  });
+
+  ws.on("message", (data: Buffer) => {
+    if (agent.stdin!.writable) {
+      agent.stdin!.write(data.toString() + "\n");
+    }
+  });
+
+  ws.on("close", () => agent.kill());
+  agent.on("exit", () => {
+    if (ws.readyState === ws.OPEN) ws.close();
+  });
 });
 
 server.listen(PORT, () => process.stderr.write(`ACP over HTTP on http://localhost:${PORT}\n`));
