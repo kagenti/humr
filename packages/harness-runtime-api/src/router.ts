@@ -21,12 +21,7 @@ const authRouter = t.router({
 });
 
 const filesRouter = t.router({
-  version: t.procedure.query(({ ctx }) => ({
-    version: ctx.files.fileVersion(),
-  })),
-
   tree: t.procedure.query(({ ctx }) => ({
-    version: ctx.files.fileVersion(),
     entries: ctx.files.buildTree(),
   })),
 

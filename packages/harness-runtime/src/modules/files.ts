@@ -4,7 +4,6 @@ import {
   readFileSync,
   readdirSync,
   statSync,
-  watch,
 } from "node:fs";
 import type { FilesContext } from "harness-runtime-api";
 
@@ -38,15 +37,7 @@ function safePath(workingDir: string, rel: string): string | null {
 }
 
 export function createFilesContext(workingDir: string): FilesContext {
-  let fileVersion = 0;
-  try {
-    watch(workingDir, { recursive: true }, () => {
-      fileVersion++;
-    });
-  } catch {}
-
   return {
-    fileVersion: () => fileVersion,
     buildTree: () => buildTree(workingDir),
     readFileSafe: (rel) => {
       if (!rel) return null;
@@ -56,10 +47,10 @@ export function createFilesContext(workingDir: string): FilesContext {
         const stat = statSync(abs);
         if (!stat.isFile()) return null;
         if (stat.size > 1024 * 1024) {
-          return { path: rel, binary: true, version: fileVersion };
+          return { path: rel, binary: true };
         }
         const content = readFileSync(abs, "utf8");
-        return { path: rel, content, version: fileVersion };
+        return { path: rel, content };
       } catch {
         return null;
       }

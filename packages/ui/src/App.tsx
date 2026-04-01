@@ -105,7 +105,6 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [fileTree, setFileTree] = useState<TreeEntry[]>([]);
-  const [fileVersion, setFileVersion] = useState(-1);
   const [openFile, setOpenFile] = useState<{ path: string; content: string } | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -142,9 +141,6 @@ export default function App() {
   useEffect(() => {
     const poll = setInterval(async () => {
       try {
-        const { version } = await trpc.files.version.query();
-        if (version === fileVersion) return;
-        setFileVersion(version);
         const { entries } = await trpc.files.tree.query();
         setFileTree(entries);
         if (openFile) {
@@ -159,11 +155,11 @@ export default function App() {
       } catch {}
     }, 2000);
     return () => clearInterval(poll);
-  }, [fileVersion, openFile]);
+  }, [openFile]);
 
   useEffect(() => {
     trpc.files.tree.query()
-      .then(({ version, entries }) => { setFileVersion(version); setFileTree(entries); })
+      .then(({ entries }) => { setFileTree(entries); })
       .catch(() => {});
   }, []);
 

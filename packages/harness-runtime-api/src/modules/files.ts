@@ -1,5 +1,4 @@
 export interface FilesContext {
-  fileVersion: () => number;
   buildTree: () => { path: string; type: "file" | "dir" }[];
   readFileSafe: (
     rel: string,
@@ -7,6 +6,5 @@ export interface FilesContext {
     path: string;
     content?: string;
     binary?: boolean;
-    version: number;
   } | null;
 }
