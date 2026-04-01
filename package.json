@@ -1,0 +1,26 @@
+{
+  "name": "prototype",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "ui": "cd ui && npm run dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.24.2",
+    "@agentclientprotocol/sdk": "^0.17.1",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.89"
+  }
+}
