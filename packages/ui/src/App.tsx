@@ -129,11 +129,10 @@ export default function App() {
   const [authCode, setAuthCode] = useState("");
   const [pasteReady, setPasteReady] = useState(false);
   const [serverDown, setServerDown] = useState(false);
-  const [rightTab, setRightTab] = useState<"sessions" | "files" | "log">(
-    "sessions",
-  );
+  const [rightTab, setRightTab] = useState<"files" | "log">("files");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(false);
   const [fileTree, setFileTree] = useState<TreeEntry[]>([]);
   const [openFile, setOpenFile] = useState<{
     path: string;
@@ -222,11 +221,15 @@ export default function App() {
     setLoadingSessions(false);
   }, []);
 
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
   const resumeSession = useCallback(async (sid: string) => {
     setBusy(true);
+    setLoadingSession(true);
     setMessages([]);
     setSessionId(sid);
-    setRightTab("files");
 
     connectionRef.current?.ws.close();
     connectionRef.current = null;
@@ -242,6 +245,8 @@ export default function App() {
           u.sessionUpdate === "agent_message_chunk"
         ) {
           if (u.content.type !== "text") return;
+          const txt = u.content.text as string;
+          if (/<[a-z-]+>/.test(txt) && /<\/[a-z-]+>/.test(txt)) return;
           const role: Role =
             u.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
           const mid = u.messageId ?? crypto.randomUUID();
@@ -288,6 +293,7 @@ export default function App() {
     } catch {}
 
     setMessages(msgOrder.map((id) => msgMap.get(id)!));
+    setLoadingSession(false);
     setBusy(false);
   }, []);
 
@@ -498,6 +504,37 @@ export default function App() {
       </header>
 
       <div className="body">
+        <aside className="left-sidebar">
+          <div className="left-sidebar-header">
+            <span className="left-sidebar-title">sessions</span>
+            <button className="left-sidebar-refresh" onClick={fetchSessions}>↻</button>
+          </div>
+          <div className="sessions-panel">
+            {loadingSessions && (
+              <div className="sessions-empty">loading sessions...</div>
+            )}
+            {!loadingSessions && sessions.length === 0 && (
+              <div className="sessions-empty">no sessions</div>
+            )}
+            {sessions.map((s) => (
+              <div
+                key={s.sessionId}
+                className={`session-entry ${s.sessionId === sessionId ? "active" : ""}`}
+                onClick={() => resumeSession(s.sessionId)}
+              >
+                <span className="session-title">
+                  {s.title || s.sessionId.slice(0, 12)}
+                </span>
+                {s.updatedAt && (
+                  <span className="session-time">
+                    {new Date(s.updatedAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </aside>
+
         <section className="chat-panel">
           <div className="messages">
             {serverDown && (
@@ -591,7 +628,13 @@ export default function App() {
                 )}
               </div>
             )}
-            {!authRequired && messages.length === 0 && (
+            {!authRequired && loadingSession && (
+              <div className="loading-session">
+                <span className="spinner" />
+                loading session…
+              </div>
+            )}
+            {!authRequired && !loadingSession && messages.length === 0 && (
               <div className="empty">send a message to start a new session</div>
             )}
             {messages.map((m) => (
@@ -648,15 +691,6 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-tabs">
             <button
-              className={`sidebar-tab ${rightTab === "sessions" ? "active" : ""}`}
-              onClick={() => {
-                setRightTab("sessions");
-                fetchSessions();
-              }}
-            >
-              sessions
-            </button>
-            <button
               className={`sidebar-tab ${rightTab === "files" ? "active" : ""}`}
               onClick={() => setRightTab("files")}
             >
@@ -670,32 +704,6 @@ export default function App() {
             </button>
           </div>
           <div className="sidebar-content">
-            {rightTab === "sessions" && (
-              <div className="sessions-panel">
-                {loadingSessions && (
-                  <div className="sessions-empty">loading sessions...</div>
-                )}
-                {!loadingSessions && sessions.length === 0 && (
-                  <div className="sessions-empty">no sessions</div>
-                )}
-                {sessions.map((s) => (
-                  <div
-                    key={s.sessionId}
-                    className={`session-entry ${s.sessionId === sessionId ? "active" : ""}`}
-                    onClick={() => resumeSession(s.sessionId)}
-                  >
-                    <span className="session-title">
-                      {s.title || s.sessionId.slice(0, 12)}
-                    </span>
-                    {s.updatedAt && (
-                      <span className="session-time">
-                        {new Date(s.updatedAt).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
             {rightTab === "files" && !openFile && (
               <div className="file-tree">
                 {fileTree.length === 0 && (
