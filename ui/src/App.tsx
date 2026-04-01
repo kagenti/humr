@@ -30,6 +30,7 @@ interface LogEntry {
 }
 
 export default function App() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [input, setInput] = useState("");
@@ -78,7 +79,7 @@ export default function App() {
       const res = await fetch("/api/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text }),
+        body: JSON.stringify({ prompt: text, sessionId }),
       });
 
       const reader = res.body!.getReader();
@@ -118,6 +119,8 @@ export default function App() {
                   : m,
               ),
             );
+          } else if (event.type === "session") {
+            setSessionId(event.sessionId);
           } else if (event.type === "done" || event.type === "error") {
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
