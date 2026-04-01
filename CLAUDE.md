@@ -1,56 +1,41 @@
 ## Project Overview
 
-ACP-over-HTTP adapter that wraps a local Claude Code agent and exposes it via HTTP to a React UI.
+ACP adapter that wraps a local Claude Code agent and exposes it via WebSocket + tRPC to a React UI.
 
 ### Monorepo Structure
 
-pnpm workspaces with two packages:
-- `packages/harness-runtime/` — HTTP server + ACP agent process
+pnpm workspaces with three packages:
+- `packages/harness-runtime/` — HTTP/WebSocket server + ACP agent process
+- `packages/harness-runtime-api/` — shared tRPC router and type definitions
 - `packages/ui/` — React chat interface (Vite, port 5173)
 
 ### Architecture
 
 Three layers:
-1. **HTTP Server** (`packages/harness-runtime/src/index.ts`, port 3000) — bridges HTTP to ACP protocol
-2. **Agent Process** (`packages/harness-runtime/src/agent.ts`) — spawned as child process per request, runs `@agentclientprotocol/claude-agent-acp`
-3. **React UI** (`packages/ui/`) — chat interface consuming SSE stream, proxied via Vite (port 5173)
+1. **HTTP/WS Server** (port 3000) — tRPC endpoints over HTTP, WebSocket bridge for ACP protocol
+2. **Agent Process** — spawned as child process per WebSocket connection, runs `@agentclientprotocol/claude-agent-acp`, communicates via NDJSON over stdio
+3. **React UI** — chat interface + file browser, Vite dev server proxies `/api` to port 3000
 
 Agent operates in sandboxed `packages/harness-runtime/working-dir/` to avoid modifying prototype code.
 
-### Request Flow
+### Communication
 
-```
-UI POST /api/prompt → HTTP server spawns agent.ts child process
-  → establishes ACP ClientSideConnection over stdio
-  → initialize() → newSession() or resumeSession() → prompt()
-  → filters ACP events to SSE: agent_message_chunk → text, tool_call → tool chip
-  → kills agent process on done/error
-  → on ACP error -32000: sends auth_required event instead
-```
+- **ACP protocol** flows over WebSocket (`/api/acp`): UI opens WS connection, server spawns agent child process, bridges JSON-RPC messages between WS and agent's stdio
+- **tRPC** over HTTP (`/api/trpc/*`) for everything else: auth, config, file operations
+- Agent process killed when WebSocket closes
 
 ### Session Persistence
 
-- First prompt creates a new ACP session, server returns `{ type: "session", sessionId }` via SSE
-- Subsequent prompts include `sessionId` to resume the existing session
-- UI stores `sessionId` in React state
+- First prompt creates a new ACP session via `newSession()`
+- Subsequent prompts resume via `unstable_resumeSession({ sessionId })`
+- UI stores `sessionId` in React state, can list past sessions
 
 ### Authentication
 
-- On mount, UI checks `GET /api/auth/status` (spawns `claude auth status` CLI)
-- If unauthenticated, UI shows login banner
-- `POST /api/auth/login` streams OAuth flow via SSE, extracts login URL
-- After successful login, pending prompt is auto-retried
-
-### Key Endpoints
-
-- `POST /api/prompt` — accepts `{ prompt, sessionId? }`, returns SSE stream
-- `GET /api/auth/status` — returns `{ authenticated, loggedIn }`
-- `POST /api/auth/login` — SSE stream of OAuth login flow
-
-### SSE Event Types
-
-Prompt stream: `text`, `tool`, `done`, `error`, `session`, `auth_required`
-Login stream: `login_output`, `login_url`, `login_done`, `login_error`
+- UI checks auth status on mount via tRPC (`auth.status`, spawns `claude auth status` CLI)
+- Login uses PKCE OAuth: server generates authorize URL, UI opens it, user pastes code back, server exchanges for tokens
+- Credentials saved to `~/.claude/.credentials.json`
+- On ACP error `-32000`: UI shows login banner
 
 ### Protocol
 
