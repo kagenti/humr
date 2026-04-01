@@ -11,7 +11,9 @@
     "@agentclientprotocol/claude-agent-acp": "^0.24.2",
     "@agentclientprotocol/sdk": "^0.17.1",
     "@anthropic-ai/claude-agent-sdk": "^0.2.89",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "@trpc/server": "^11.16.0",
+    "harness-runtime-api": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

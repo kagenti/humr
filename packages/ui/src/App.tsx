@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, KeyboardEvent } from "react";
 import { ClientSideConnection, PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
+import { trpc } from "./trpc.js";
 
 type Role = "user" | "assistant";
 
@@ -116,15 +117,13 @@ export default function App() {
   const currentAssistantIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/config")
-      .then((r) => r.json())
+    trpc.config.get.query()
       .then((c) => { cwdRef.current = c.cwd; })
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    fetch("/api/auth/status")
-      .then((r) => r.json())
+    trpc.auth.status.query()
       .then((s) => {
         setServerDown(false);
         if (!s.authenticated) setAuthRequired(true);
@@ -143,18 +142,19 @@ export default function App() {
   useEffect(() => {
     const poll = setInterval(async () => {
       try {
-        const r = await fetch("/api/files/version");
-        const { version } = await r.json();
+        const { version } = await trpc.files.version.query();
         if (version === fileVersion) return;
         setFileVersion(version);
-        const treeRes = await fetch("/api/files/tree");
-        const { entries } = await treeRes.json();
+        const { entries } = await trpc.files.tree.query();
         setFileTree(entries);
         if (openFile) {
-          const fileRes = await fetch(`/api/files/read?path=${encodeURIComponent(openFile.path)}`);
-          const data = await fileRes.json();
-          if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
-          else setOpenFile(null);
+          try {
+            const data = await trpc.files.read.query({ path: openFile.path });
+            if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
+            else setOpenFile(null);
+          } catch {
+            setOpenFile(null);
+          }
         }
       } catch {}
     }, 2000);
@@ -162,8 +162,7 @@ export default function App() {
   }, [fileVersion, openFile]);
 
   useEffect(() => {
-    fetch("/api/files/tree")
-      .then((r) => r.json())
+    trpc.files.tree.query()
       .then(({ version, entries }) => { setFileVersion(version); setFileTree(entries); })
       .catch(() => {});
   }, []);
@@ -238,8 +237,7 @@ export default function App() {
   const openFileHandler = useCallback(async (path: string) => {
     if (openFile?.path === path) { setOpenFile(null); return; }
     try {
-      const r = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
-      const data = await r.json();
+      const data = await trpc.files.read.query({ path });
       if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
     } catch {}
   }, [openFile]);
@@ -363,27 +361,10 @@ export default function App() {
     setLoginUrl(null);
     setPasteReady(false);
     try {
-      const res = await fetch("/api/auth/login", { method: "POST" });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop()!;
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6));
-          if (event.type === "login_url") {
-            setLoginUrl(event.url);
-            window.open(event.url, "_blank");
-          } else if (event.type === "paste_ready") {
-            setPasteReady(true);
-          }
-        }
-      }
+      const { url } = await trpc.auth.login.mutate();
+      setLoginUrl(url);
+      window.open(url, "_blank");
+      setPasteReady(true);
     } catch {
       setLoggingIn(false);
     }
@@ -427,8 +408,7 @@ export default function App() {
                 <button
                   className="auth-btn"
                   onClick={() => {
-                    fetch("/api/auth/status")
-                      .then((r) => r.json())
+                    trpc.auth.status.query()
                       .then((s) => {
                         setServerDown(false);
                         if (!s.authenticated) setAuthRequired(true);
@@ -474,12 +454,7 @@ export default function App() {
                         className="auth-btn"
                         disabled={!authCode.trim()}
                         onClick={async () => {
-                          const r = await fetch("/api/auth/code", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ code: authCode.trim() }),
-                          });
-                          const result = await r.json();
+                          const result = await trpc.auth.code.mutate({ code: authCode.trim() });
                           if (result.ok) {
                             setAuthRequired(false);
                             setLoggingIn(false);

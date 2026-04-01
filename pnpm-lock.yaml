@@ -19,6 +19,12 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.89
         version: 0.2.89(zod@4.3.6)
+      '@trpc/server':
+        specifier: ^11.16.0
+        version: 11.16.0(typescript@6.0.2)
+      harness-runtime-api:
+        specifier: workspace:*
+        version: link:../harness-runtime-api
       ws:
         specifier: ^8.20.0
         version: 8.20.0
@@ -36,11 +42,30 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
+  packages/harness-runtime-api:
+    dependencies:
+      '@trpc/server':
+        specifier: ^11.16.0
+        version: 11.16.0(typescript@6.0.2)
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
   packages/ui:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: ^0.17.1
         version: 0.17.1(zod@4.3.6)
+      '@trpc/client':
+        specifier: ^11.16.0
+        version: 11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)
+      harness-runtime-api:
+        specifier: workspace:*
+        version: link:../harness-runtime-api
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -751,6 +776,19 @@ packages:
     resolution: {integrity: sha512-lWMnixq/QzxyhTV6NjQJ4SFo1J6PvOX8vUx5Wb4bBPsEb+8xZ89Bz6kOXpfXj9ak9AHTQVQzlgzBEc1SyM27xQ==}
     cpu: [x64]
     os: [win32]
+
+  '@trpc/client@11.16.0':
+    resolution: {integrity: sha512-TxIzm7OoK3baKZ0XCbuMUbI3GhgjcbKHIc4nWVKaRpCRnbSh0T31BT6fTPYwtnA/Nur8pBCGqC2B4J5hEPiPFQ==}
+    hasBin: true
+    peerDependencies:
+      '@trpc/server': 11.16.0
+      typescript: '>=5.7.2'
+
+  '@trpc/server@11.16.0':
+    resolution: {integrity: sha512-XgGuUMddrUTd04+za/WE5GFuZ1/YU9XQG0t3VL5WOIu2JspkOlq6k4RYEiqS6HSJt+S0RXaPdIoE2anIP/BBRQ==}
+    hasBin: true
+    peerDependencies:
+      typescript: '>=5.7.2'
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -1866,6 +1904,19 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.60.1':
     optional: true
+
+  '@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)':
+    dependencies:
+      '@trpc/server': 11.16.0(typescript@5.9.3)
+      typescript: 5.9.3
+
+  '@trpc/server@11.16.0(typescript@5.9.3)':
+    dependencies:
+      typescript: 5.9.3
+
+  '@trpc/server@11.16.0(typescript@6.0.2)':
+    dependencies:
+      typescript: 6.0.2
 
   '@types/babel__core@7.20.5':
     dependencies:
