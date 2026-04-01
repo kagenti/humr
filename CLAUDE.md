@@ -2,14 +2,20 @@
 
 ACP-over-HTTP adapter that wraps a local Claude Code agent and exposes it via HTTP to a React UI.
 
+### Monorepo Structure
+
+pnpm workspaces with two packages:
+- `packages/harness-runtime/` — HTTP server + ACP agent process
+- `packages/ui/` — React chat interface (Vite, port 5173)
+
 ### Architecture
 
 Three layers:
-1. **HTTP Server** (`src/index.ts`, port 3000) — bridges HTTP to ACP protocol
-2. **Agent Process** (`src/agent.ts`) — spawned as child process per request, runs `@agentclientprotocol/claude-agent-acp`
-3. **React UI** (`ui/`) — chat interface consuming SSE stream, proxied via Vite (port 5173)
+1. **HTTP Server** (`packages/harness-runtime/src/index.ts`, port 3000) — bridges HTTP to ACP protocol
+2. **Agent Process** (`packages/harness-runtime/src/agent.ts`) — spawned as child process per request, runs `@agentclientprotocol/claude-agent-acp`
+3. **React UI** (`packages/ui/`) — chat interface consuming SSE stream, proxied via Vite (port 5173)
 
-Agent operates in sandboxed `working-dir/` to avoid modifying prototype code.
+Agent operates in sandboxed `packages/harness-runtime/working-dir/` to avoid modifying prototype code.
 
 ### Request Flow
 
@@ -54,4 +60,4 @@ Login stream: `login_output`, `login_url`, `login_done`, `login_error`
 
 ## Testing
 
-Always use `npm run start` to test.
+Always use `pnpm start` to test (runs harness-runtime). UI: `pnpm ui`.
