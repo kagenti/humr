@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end();
 });
 
-const wss = new WebSocketServer({ server, path: "/api/acp" });
+const wss = new WebSocketServer({ server, path: "/api/humr" });
 
 wss.on("connection", (ws) => {
   const agent = spawn("npx", ["tsx", agentScript], {
@@ -81,5 +81,5 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(PORT, () =>
-  process.stderr.write(`ACP over HTTP on http://localhost:${PORT}\n`),
+  process.stderr.write(`Humr on http://localhost:${PORT}\n`),
 );

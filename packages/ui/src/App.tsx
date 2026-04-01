@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from "react";
-import { ClientSideConnection, PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
+import {
+  ClientSideConnection,
+  PROTOCOL_VERSION,
+} from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import { trpc } from "./trpc.js";
@@ -52,13 +55,25 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
           ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));
-          ws.onclose = () => { try { controller.close(); } catch {} };
-          ws.onerror = (err) => { try { controller.error(err); } catch {} };
+          ws.onclose = () => {
+            try {
+              controller.close();
+            } catch {}
+          };
+          ws.onerror = (err) => {
+            try {
+              controller.error(err);
+            } catch {}
+          };
         },
       });
       const writable = new WritableStream<AnyMessage>({
-        write(chunk) { ws.send(JSON.stringify(chunk)); },
-        close() { ws.close(); },
+        write(chunk) {
+          ws.send(JSON.stringify(chunk));
+        },
+        close() {
+          ws.close();
+        },
       });
       resolve({ stream: { readable, writable }, ws });
     };
@@ -68,21 +83,34 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
 
 function wsUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/api/acp`;
+  return `${proto}//${location.host}/api/humr`;
 }
 
 type UpdateHandler = (update: any) => void;
 
-async function openConnection(onUpdate: UpdateHandler): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+async function openConnection(
+  onUpdate: UpdateHandler,
+): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
   const { stream, ws } = await wsStream(wsUrl());
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
-        return { outcome: { outcome: "selected" as const, optionId: params.options[0].optionId } };
+        return {
+          outcome: {
+            outcome: "selected" as const,
+            optionId: params.options[0].optionId,
+          },
+        };
       },
-      async sessionUpdate(params: any) { onUpdate(params.update); },
-      async writeTextFile() { return {}; },
-      async readTextFile() { return { content: "" }; },
+      async sessionUpdate(params: any) {
+        onUpdate(params.update);
+      },
+      async writeTextFile() {
+        return {};
+      },
+      async readTextFile() {
+        return { content: "" };
+      },
     }),
     stream,
   );
@@ -101,28 +129,40 @@ export default function App() {
   const [authCode, setAuthCode] = useState("");
   const [pasteReady, setPasteReady] = useState(false);
   const [serverDown, setServerDown] = useState(false);
-  const [rightTab, setRightTab] = useState<"sessions" | "files" | "log">("sessions");
+  const [rightTab, setRightTab] = useState<"sessions" | "files" | "log">(
+    "sessions",
+  );
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [fileTree, setFileTree] = useState<TreeEntry[]>([]);
-  const [openFile, setOpenFile] = useState<{ path: string; content: string } | null>(null);
+  const [openFile, setOpenFile] = useState<{
+    path: string;
+    content: string;
+  } | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cwdRef = useRef<string>("");
-  const connectionRef = useRef<{ connection: ClientSideConnection; ws: WebSocket } | null>(null);
+  const connectionRef = useRef<{
+    connection: ClientSideConnection;
+    ws: WebSocket;
+  } | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const currentAssistantIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    trpc.config.get.query()
-      .then((c) => { cwdRef.current = c.cwd; })
+    trpc.config.get
+      .query()
+      .then((c) => {
+        cwdRef.current = c.cwd;
+      })
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    trpc.auth.status.query()
+    trpc.auth.status
+      .query()
       .then((s) => {
         setServerDown(false);
         if (!s.authenticated) setAuthRequired(true);
@@ -146,7 +186,8 @@ export default function App() {
         if (openFile) {
           try {
             const data = await trpc.files.read.query({ path: openFile.path });
-            if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
+            if (data.content !== undefined)
+              setOpenFile({ path: data.path, content: data.content });
             else setOpenFile(null);
           } catch {
             setOpenFile(null);
@@ -158,8 +199,11 @@ export default function App() {
   }, [openFile]);
 
   useEffect(() => {
-    trpc.files.tree.query()
-      .then(({ entries }) => { setFileTree(entries); })
+    trpc.files.tree
+      .query()
+      .then(({ entries }) => {
+        setFileTree(entries);
+      })
       .catch(() => {});
   }, []);
 
@@ -193,9 +237,13 @@ export default function App() {
 
     try {
       const { connection, ws } = await openConnection((u) => {
-        if (u.sessionUpdate === "user_message_chunk" || u.sessionUpdate === "agent_message_chunk") {
+        if (
+          u.sessionUpdate === "user_message_chunk" ||
+          u.sessionUpdate === "agent_message_chunk"
+        ) {
           if (u.content.type !== "text") return;
-          const role: Role = u.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
+          const role: Role =
+            u.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
           const mid = u.messageId ?? crypto.randomUUID();
           const existing = msgMap.get(mid);
           if (existing) {
@@ -206,7 +254,12 @@ export default function App() {
               existing.parts.push({ kind: "text", text: u.content.text });
             }
           } else {
-            const msg: Message = { id: mid, role, parts: [{ kind: "text", text: u.content.text }], streaming: false };
+            const msg: Message = {
+              id: mid,
+              role,
+              parts: [{ kind: "text", text: u.content.text }],
+              streaming: false,
+            };
             msgMap.set(mid, msg);
             msgOrder.push(mid);
           }
@@ -214,7 +267,11 @@ export default function App() {
           const mid = u.messageId ?? msgOrder[msgOrder.length - 1];
           const existing = mid ? msgMap.get(mid) : null;
           if (existing) {
-            existing.parts.push({ kind: "tool", title: u.title, status: u.status });
+            existing.parts.push({
+              kind: "tool",
+              title: u.title,
+              status: u.status,
+            });
           }
         }
       });
@@ -222,7 +279,11 @@ export default function App() {
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
-      await connection.loadSession({ sessionId: sid, cwd: cwdRef.current, mcpServers: [] });
+      await connection.loadSession({
+        sessionId: sid,
+        cwd: cwdRef.current,
+        mcpServers: [],
+      });
       ws.close();
     } catch {}
 
@@ -230,13 +291,20 @@ export default function App() {
     setBusy(false);
   }, []);
 
-  const openFileHandler = useCallback(async (path: string) => {
-    if (openFile?.path === path) { setOpenFile(null); return; }
-    try {
-      const data = await trpc.files.read.query({ path });
-      if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
-    } catch {}
-  }, [openFile]);
+  const openFileHandler = useCallback(
+    async (path: string) => {
+      if (openFile?.path === path) {
+        setOpenFile(null);
+        return;
+      }
+      try {
+        const data = await trpc.files.read.query({ path });
+        if (data.content !== undefined)
+          setOpenFile({ path: data.path, content: data.content });
+      } catch {}
+    },
+    [openFile],
+  );
 
   const addLog = useCallback((type: string, payload: object) => {
     const ts = new Date().toISOString().slice(11, 23);
@@ -268,18 +336,27 @@ export default function App() {
     addLog("prompt", { text });
 
     try {
-      if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
+      if (
+        !connectionRef.current ||
+        connectionRef.current.ws.readyState !== WebSocket.OPEN
+      ) {
         const { connection, ws } = await openConnection((u) => {
           const aid = currentAssistantIdRef.current;
           if (!aid) return;
-          if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
+          if (
+            u.sessionUpdate === "agent_message_chunk" &&
+            u.content.type === "text"
+          ) {
             setMessages((prev) =>
               prev.map((m) => {
                 if (m.id !== aid) return m;
                 const parts = [...m.parts];
                 const last = parts[parts.length - 1];
                 if (last?.kind === "text") {
-                  parts[parts.length - 1] = { kind: "text", text: last.text + u.content.text };
+                  parts[parts.length - 1] = {
+                    kind: "text",
+                    text: last.text + u.content.text,
+                  };
                 } else {
                   parts.push({ kind: "text", text: u.content.text });
                 }
@@ -291,7 +368,17 @@ export default function App() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === aid
-                  ? { ...m, parts: [...m.parts, { kind: "tool", title: u.title, status: u.status } as ToolChip] }
+                  ? {
+                      ...m,
+                      parts: [
+                        ...m.parts,
+                        {
+                          kind: "tool",
+                          title: u.title,
+                          status: u.status,
+                        } as ToolChip,
+                      ],
+                    }
                   : m,
               ),
             );
@@ -301,7 +388,9 @@ export default function App() {
 
         await connection.initialize({
           protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: true },
+          },
         });
 
         ws.onclose = () => {
@@ -315,10 +404,17 @@ export default function App() {
 
       if (!activeSessionIdRef.current) {
         if (sessionId) {
-          await conn.unstable_resumeSession({ sessionId, cwd: cwdRef.current, mcpServers: [] });
+          await conn.unstable_resumeSession({
+            sessionId,
+            cwd: cwdRef.current,
+            mcpServers: [],
+          });
           activeSessionIdRef.current = sessionId;
         } else {
-          const session = await conn.newSession({ cwd: cwdRef.current, mcpServers: [] });
+          const session = await conn.newSession({
+            cwd: cwdRef.current,
+            mcpServers: [],
+          });
           setSessionId(session.sessionId);
           activeSessionIdRef.current = session.sessionId;
           addLog("session", { sessionId: session.sessionId });
@@ -331,7 +427,9 @@ export default function App() {
       });
 
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, streaming: false } : m,
+        ),
       );
       addLog("done", { stopReason: result.stopReason });
     } catch (err: any) {
@@ -341,7 +439,9 @@ export default function App() {
       }
       addLog("error", { message: err?.message });
       setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, streaming: false } : m,
+        ),
       );
       connectionRef.current?.ws.close();
       connectionRef.current = null;
@@ -376,16 +476,19 @@ export default function App() {
   return (
     <div className="shell">
       <header className="header">
-        <span className="header-logo">◈ ACP</span>
-        <span className="header-sub">agent client protocol</span>
+        <span className="header-logo">◈ Humr</span>
+        <span className="header-sub">PROTOTYPE</span>
         {sessionId && (
-          <button className="new-session-btn" onClick={() => {
-            connectionRef.current?.ws.close();
-            connectionRef.current = null;
-            activeSessionIdRef.current = null;
-            setSessionId(null);
-            setMessages([]);
-          }}>
+          <button
+            className="new-session-btn"
+            onClick={() => {
+              connectionRef.current?.ws.close();
+              connectionRef.current = null;
+              activeSessionIdRef.current = null;
+              setSessionId(null);
+              setMessages([]);
+            }}
+          >
             + new session
           </button>
         )}
@@ -400,11 +503,15 @@ export default function App() {
             {serverDown && (
               <div className="auth-banner">
                 <span className="auth-title">server unavailable</span>
-                <p className="auth-desc">Could not connect to the harness runtime. Make sure the server is running.</p>
+                <p className="auth-desc">
+                  Could not connect to the harness runtime. Make sure the server
+                  is running.
+                </p>
                 <button
                   className="auth-btn"
                   onClick={() => {
-                    trpc.auth.status.query()
+                    trpc.auth.status
+                      .query()
                       .then((s) => {
                         setServerDown(false);
                         if (!s.authenticated) setAuthRequired(true);
@@ -419,7 +526,9 @@ export default function App() {
             {!serverDown && authRequired && (
               <div className="auth-banner">
                 <span className="auth-title">authentication required</span>
-                <p className="auth-desc">Claude is not logged in. Sign in to start a session.</p>
+                <p className="auth-desc">
+                  Claude is not logged in. Sign in to start a session.
+                </p>
                 {!loggingIn && (
                   <button className="auth-btn" onClick={startLogin}>
                     log in
@@ -427,7 +536,12 @@ export default function App() {
                 )}
                 {loginUrl && (
                   <>
-                    <a className="auth-link" href={loginUrl} target="_blank" rel="noreferrer">
+                    <a
+                      className="auth-link"
+                      href={loginUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       open login page
                     </a>
                     {!pasteReady && (
@@ -437,7 +551,9 @@ export default function App() {
                 )}
                 {pasteReady && (
                   <>
-                    <p className="auth-desc">Paste the authentication code below:</p>
+                    <p className="auth-desc">
+                      Paste the authentication code below:
+                    </p>
                     <div className="auth-code-row">
                       <input
                         className="auth-code-input"
@@ -450,7 +566,9 @@ export default function App() {
                         className="auth-btn"
                         disabled={!authCode.trim()}
                         onClick={async () => {
-                          const result = await trpc.auth.code.mutate({ code: authCode.trim() });
+                          const result = await trpc.auth.code.mutate({
+                            code: authCode.trim(),
+                          });
                           if (result.ok) {
                             setAuthRequired(false);
                             setLoggingIn(false);
@@ -478,15 +596,17 @@ export default function App() {
             )}
             {messages.map((m) => (
               <div key={m.id} className={`message ${m.role}`}>
-                <span className="role-tag">{m.role === "user" ? "you" : "agent"}</span>
+                <span className="role-tag">
+                  {m.role === "user" ? "you" : "agent"}
+                </span>
                 <div className="content">
                   {m.parts.map((p, i) =>
                     p.kind === "text" ? (
                       <span key={i} className="text-part">
                         {p.text}
-                        {m.streaming && i === m.parts.length - 1 && p.kind === "text" && (
-                          <span className="cursor" />
-                        )}
+                        {m.streaming &&
+                          i === m.parts.length - 1 &&
+                          p.kind === "text" && <span className="cursor" />}
                       </span>
                     ) : (
                       <span key={i} className={`tool-chip status-${p.status}`}>
@@ -495,7 +615,9 @@ export default function App() {
                       </span>
                     ),
                   )}
-                  {m.streaming && m.parts.length === 0 && <span className="cursor" />}
+                  {m.streaming && m.parts.length === 0 && (
+                    <span className="cursor" />
+                  )}
                 </div>
               </div>
             ))}
@@ -513,7 +635,11 @@ export default function App() {
               rows={1}
               disabled={busy || authRequired || serverDown}
             />
-            <button className="send-btn" onClick={send} disabled={busy || authRequired || serverDown || !input.trim()}>
+            <button
+              className="send-btn"
+              onClick={send}
+              disabled={busy || authRequired || serverDown || !input.trim()}
+            >
               {busy ? "…" : "send"}
             </button>
           </div>
@@ -521,38 +647,76 @@ export default function App() {
 
         <aside className="sidebar">
           <div className="sidebar-tabs">
-            <button className={`sidebar-tab ${rightTab === "sessions" ? "active" : ""}`} onClick={() => { setRightTab("sessions"); fetchSessions(); }}>sessions</button>
-            <button className={`sidebar-tab ${rightTab === "files" ? "active" : ""}`} onClick={() => setRightTab("files")}>files</button>
-            <button className={`sidebar-tab ${rightTab === "log" ? "active" : ""}`} onClick={() => setRightTab("log")}>log</button>
+            <button
+              className={`sidebar-tab ${rightTab === "sessions" ? "active" : ""}`}
+              onClick={() => {
+                setRightTab("sessions");
+                fetchSessions();
+              }}
+            >
+              sessions
+            </button>
+            <button
+              className={`sidebar-tab ${rightTab === "files" ? "active" : ""}`}
+              onClick={() => setRightTab("files")}
+            >
+              files
+            </button>
+            <button
+              className={`sidebar-tab ${rightTab === "log" ? "active" : ""}`}
+              onClick={() => setRightTab("log")}
+            >
+              log
+            </button>
           </div>
           <div className="sidebar-content">
             {rightTab === "sessions" && (
               <div className="sessions-panel">
-                {loadingSessions && <div className="sessions-empty">loading sessions...</div>}
-                {!loadingSessions && sessions.length === 0 && <div className="sessions-empty">no sessions</div>}
+                {loadingSessions && (
+                  <div className="sessions-empty">loading sessions...</div>
+                )}
+                {!loadingSessions && sessions.length === 0 && (
+                  <div className="sessions-empty">no sessions</div>
+                )}
                 {sessions.map((s) => (
                   <div
                     key={s.sessionId}
                     className={`session-entry ${s.sessionId === sessionId ? "active" : ""}`}
                     onClick={() => resumeSession(s.sessionId)}
                   >
-                    <span className="session-title">{s.title || s.sessionId.slice(0, 12)}</span>
-                    {s.updatedAt && <span className="session-time">{new Date(s.updatedAt).toLocaleString()}</span>}
+                    <span className="session-title">
+                      {s.title || s.sessionId.slice(0, 12)}
+                    </span>
+                    {s.updatedAt && (
+                      <span className="session-time">
+                        {new Date(s.updatedAt).toLocaleString()}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
             )}
             {rightTab === "files" && !openFile && (
               <div className="file-tree">
-                {fileTree.length === 0 && <div className="file-tree-empty">no files yet</div>}
+                {fileTree.length === 0 && (
+                  <div className="file-tree-empty">no files yet</div>
+                )}
                 {fileTree.map((e) => (
                   <div
                     key={e.path}
                     className={`tree-entry ${e.type}`}
-                    style={{ paddingLeft: `${16 + (e.path.split("/").length - 1) * 14}px` }}
-                    onClick={e.type === "file" ? () => openFileHandler(e.path) : undefined}
+                    style={{
+                      paddingLeft: `${16 + (e.path.split("/").length - 1) * 14}px`,
+                    }}
+                    onClick={
+                      e.type === "file"
+                        ? () => openFileHandler(e.path)
+                        : undefined
+                    }
                   >
-                    <span className="tree-icon">{e.type === "dir" ? "▸" : "·"}</span>
+                    <span className="tree-icon">
+                      {e.type === "dir" ? "▸" : "·"}
+                    </span>
                     <span className="tree-name">{e.path.split("/").pop()}</span>
                   </div>
                 ))}
@@ -561,7 +725,12 @@ export default function App() {
             {rightTab === "files" && openFile && (
               <div className="file-viewer">
                 <div className="file-viewer-header">
-                  <button className="file-viewer-back" onClick={() => setOpenFile(null)}>←</button>
+                  <button
+                    className="file-viewer-back"
+                    onClick={() => setOpenFile(null)}
+                  >
+                    ←
+                  </button>
                   <span className="file-viewer-name">{openFile.path}</span>
                 </div>
                 <div className="file-viewer-content">
@@ -572,12 +741,16 @@ export default function App() {
             {rightTab === "log" && (
               <div className="log-panel">
                 <div className="log-entries">
-                  {log.length === 0 && <div className="log-empty">no events yet</div>}
+                  {log.length === 0 && (
+                    <div className="log-empty">no events yet</div>
+                  )}
                   {log.map((e) => (
                     <div key={e.id} className={`log-entry type-${e.type}`}>
                       <span className="log-ts">{e.ts}</span>
                       <span className="log-type">{e.type}</span>
-                      <pre className="log-payload">{JSON.stringify(e.payload, null, 2)}</pre>
+                      <pre className="log-payload">
+                        {JSON.stringify(e.payload, null, 2)}
+                      </pre>
                     </div>
                   ))}
                   <div ref={logBottomRef} />
