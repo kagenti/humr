@@ -241,6 +241,24 @@ html, body, #root { height: 100%; background: var(--bg); color: var(--fg); font-
 .auth-btn:hover:not(:disabled) { background: var(--accent2); }
 .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.auth-code-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 480px;
+}
+.auth-code-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
 /* ── input bar ── */
 .input-bar {
   display: flex;

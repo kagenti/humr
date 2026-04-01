@@ -38,6 +38,9 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
+  const [authCode, setAuthCode] = useState("");
+  const [pasteReady, setPasteReady] = useState(false);
+  const [serverDown, setServerDown] = useState(false);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
@@ -46,8 +49,11 @@ export default function App() {
   useEffect(() => {
     fetch("/api/auth/status")
       .then((r) => r.json())
-      .then((s) => { if (!s.authenticated) setAuthRequired(true); })
-      .catch(() => {});
+      .then((s) => {
+        setServerDown(false);
+        if (!s.authenticated) setAuthRequired(true);
+      })
+      .catch(() => setServerDown(true));
   }, []);
 
   useEffect(() => {
@@ -146,6 +152,9 @@ export default function App() {
         }
       }
     } catch (err: any) {
+      if (err.message === "Failed to fetch" || err.name === "TypeError") {
+        setServerDown(true);
+      }
       addLog("error", { message: err.message });
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
@@ -159,6 +168,7 @@ export default function App() {
   const startLogin = useCallback(async () => {
     setLoggingIn(true);
     setLoginUrl(null);
+    setPasteReady(false);
     try {
       const res = await fetch("/api/auth/login", { method: "POST" });
       const reader = res.body!.getReader();
@@ -176,16 +186,8 @@ export default function App() {
           if (event.type === "login_url") {
             setLoginUrl(event.url);
             window.open(event.url, "_blank");
-          } else if (event.type === "login_done") {
-            setAuthRequired(false);
-            setLoggingIn(false);
-            setLoginUrl(null);
-            if (pendingPromptRef.current) {
-              setInput(pendingPromptRef.current);
-              pendingPromptRef.current = null;
-            }
-          } else if (event.type === "login_error") {
-            setLoggingIn(false);
+          } else if (event.type === "paste_ready") {
+            setPasteReady(true);
           }
         }
       }
@@ -214,18 +216,86 @@ export default function App() {
       <div className="body">
         <section className="chat-panel">
           <div className="messages">
-            {authRequired && (
+            {serverDown && (
+              <div className="auth-banner">
+                <span className="auth-title">server unavailable</span>
+                <p className="auth-desc">Could not connect to the harness runtime. Make sure the server is running.</p>
+                <button
+                  className="auth-btn"
+                  onClick={() => {
+                    fetch("/api/auth/status")
+                      .then((r) => r.json())
+                      .then((s) => {
+                        setServerDown(false);
+                        if (!s.authenticated) setAuthRequired(true);
+                      })
+                      .catch(() => setServerDown(true));
+                  }}
+                >
+                  retry
+                </button>
+              </div>
+            )}
+            {!serverDown && authRequired && (
               <div className="auth-banner">
                 <span className="auth-title">authentication required</span>
                 <p className="auth-desc">Claude is not logged in. Sign in to start a session.</p>
-                {loginUrl && (
-                  <a className="auth-link" href={loginUrl} target="_blank" rel="noreferrer">
-                    open login page
-                  </a>
+                {!loggingIn && (
+                  <button className="auth-btn" onClick={startLogin}>
+                    log in
+                  </button>
                 )}
-                <button className="auth-btn" onClick={startLogin} disabled={loggingIn}>
-                  {loggingIn ? "waiting for login..." : "log in"}
-                </button>
+                {loginUrl && (
+                  <>
+                    <a className="auth-link" href={loginUrl} target="_blank" rel="noreferrer">
+                      open login page
+                    </a>
+                    {!pasteReady && (
+                      <p className="auth-desc">Waiting for login prompt...</p>
+                    )}
+                  </>
+                )}
+                {pasteReady && (
+                  <>
+                    <p className="auth-desc">Paste the authentication code below:</p>
+                    <div className="auth-code-row">
+                      <input
+                        className="auth-code-input"
+                        type="text"
+                        value={authCode}
+                        onChange={(e) => setAuthCode(e.target.value)}
+                        placeholder="paste authentication code"
+                      />
+                      <button
+                        className="auth-btn"
+                        disabled={!authCode.trim()}
+                        onClick={async () => {
+                          const r = await fetch("/api/auth/code", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ code: authCode.trim() }),
+                          });
+                          const result = await r.json();
+                          if (result.ok) {
+                            setAuthRequired(false);
+                            setLoggingIn(false);
+                            setLoginUrl(null);
+                            setPasteReady(false);
+                            setAuthCode("");
+                            if (pendingPromptRef.current) {
+                              setInput(pendingPromptRef.current);
+                              pendingPromptRef.current = null;
+                            }
+                          } else {
+                            setAuthCode("");
+                          }
+                        }}
+                      >
+                        submit
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             {!authRequired && messages.length === 0 && (
@@ -266,9 +336,9 @@ export default function App() {
               onKeyDown={onKeyDown}
               placeholder="message agent  ↵ send  shift+↵ newline"
               rows={1}
-              disabled={busy || authRequired}
+              disabled={busy || authRequired || serverDown}
             />
-            <button className="send-btn" onClick={send} disabled={busy || authRequired || !input.trim()}>
+            <button className="send-btn" onClick={send} disabled={busy || authRequired || serverDown || !input.trim()}>
               {busy ? "…" : "send"}
             </button>
           </div>

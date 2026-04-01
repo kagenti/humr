@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter harness-runtime dev",
     "start": "pnpm --filter harness-runtime start",
-    "ui": "pnpm --filter acp-ui dev"
+    "ui": "pnpm --filter acp-ui dev",
+    "docker:runtime:build": "docker build -f packages/harness-runtime/Dockerfile -t harness-runtime .",
+    "docker:runtime:start": "docker run -p 3000:3000 harness-runtime"
   }
 }
