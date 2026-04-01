@@ -5,12 +5,42 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
-import { writeFileSync, readFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync, chmodSync, existsSync, watch, readdirSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import * as acp from "@agentclientprotocol/sdk/dist/acp.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const agentScript = join(dirname(fileURLToPath(import.meta.url)), "agent.ts");
 const WORKING_DIR = join(dirname(fileURLToPath(import.meta.url)), "../working-dir");
+
+let fileVersion = 0;
+try { watch(WORKING_DIR, { recursive: true }, () => { fileVersion++; }); } catch {}
+
+const EXCLUDE = new Set([".git", ".claude", "node_modules", ".DS_Store"]);
+
+function buildTree(dir: string, base = ""): { path: string; type: "file" | "dir" }[] {
+  const entries: { path: string; type: "file" | "dir" }[] = [];
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    if (EXCLUDE.has(ent.name) || ent.name.startsWith(".")) continue;
+    const rel = base ? `${base}/${ent.name}` : ent.name;
+    if (ent.isDirectory()) {
+      entries.push({ path: rel, type: "dir" });
+      entries.push(...buildTree(join(dir, ent.name), rel));
+    } else {
+      entries.push({ path: rel, type: "file" });
+    }
+  }
+  return entries.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+    return a.path.localeCompare(b.path);
+  });
+}
+
+function safePath(rel: string): string | null {
+  const resolved = resolve(WORKING_DIR, rel);
+  if (!resolved.startsWith(resolve(WORKING_DIR))) return null;
+  return resolved;
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -251,6 +281,89 @@ const server = http.createServer((req, res) => {
         );
       }
     });
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/sessions") {
+    (async () => {
+      const { agent, connection } = connectToAgent(WORKING_DIR, () => {});
+      try {
+        await connection.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+        });
+        const result = await connection.listSessions({ cwd: WORKING_DIR });
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify(result));
+      } catch (err: any) {
+        res.writeHead(500, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ error: err.message }));
+      } finally {
+        agent.kill();
+      }
+    })();
+    return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/sessions/")) {
+    const sid = req.url.slice("/api/sessions/".length);
+    if (!sid) { res.writeHead(400, CORS).end(); return; }
+    res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+    const send = (obj: object) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    (async () => {
+      const { agent, connection } = connectToAgent(WORKING_DIR, (u) => {
+        if (u.sessionUpdate === "user_message_chunk" && u.content.type === "text") {
+          send({ type: "user_text", text: u.content.text, messageId: u.messageId });
+        } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
+          send({ type: "agent_text", text: u.content.text, messageId: u.messageId });
+        } else if (u.sessionUpdate === "tool_call") {
+          send({ type: "tool", title: u.title, status: u.status, messageId: u.messageId });
+        }
+      });
+      try {
+        await connection.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+        });
+        await connection.loadSession({ sessionId: sid, cwd: WORKING_DIR, mcpServers: [] });
+        send({ type: "done" });
+      } catch (err: any) {
+        send({ type: "error", message: err.message });
+      } finally {
+        res.end();
+        agent.kill();
+      }
+    })();
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/files/version") {
+    res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ version: fileVersion }));
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/files/tree") {
+    const entries = buildTree(WORKING_DIR);
+    res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ version: fileVersion, entries }));
+    return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/files/read?")) {
+    const params = new URL(req.url, "http://localhost").searchParams;
+    const filePath = params.get("path");
+    if (!filePath) { res.writeHead(400, CORS).end(); return; }
+    const abs = safePath(filePath);
+    if (!abs) { res.writeHead(403, CORS).end(); return; }
+    try {
+      const stat = statSync(abs);
+      if (!stat.isFile()) { res.writeHead(400, CORS).end(); return; }
+      if (stat.size > 1024 * 1024) {
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ path: filePath, binary: true, version: fileVersion }));
+        return;
+      }
+      const content = readFileSync(abs, "utf8");
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify({ path: filePath, content, version: fileVersion }));
+    } catch {
+      res.writeHead(404, CORS).end();
+    }
     return;
   }
 

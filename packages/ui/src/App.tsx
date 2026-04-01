@@ -29,6 +29,18 @@ interface LogEntry {
   payload: object;
 }
 
+interface SessionInfo {
+  sessionId: string;
+  cwd: string;
+  title?: string;
+  updatedAt?: string;
+}
+
+interface TreeEntry {
+  path: string;
+  type: "file" | "dir";
+}
+
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -41,6 +53,12 @@ export default function App() {
   const [authCode, setAuthCode] = useState("");
   const [pasteReady, setPasteReady] = useState(false);
   const [serverDown, setServerDown] = useState(false);
+  const [rightTab, setRightTab] = useState<"sessions" | "files" | "log">("sessions");
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [fileTree, setFileTree] = useState<TreeEntry[]>([]);
+  const [fileVersion, setFileVersion] = useState(-1);
+  const [openFile, setOpenFile] = useState<{ path: string; content: string } | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
@@ -63,6 +81,113 @@ export default function App() {
   useEffect(() => {
     logBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
+
+  useEffect(() => {
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch("/api/files/version");
+        const { version } = await r.json();
+        if (version === fileVersion) return;
+        setFileVersion(version);
+        const treeRes = await fetch("/api/files/tree");
+        const { entries } = await treeRes.json();
+        setFileTree(entries);
+        if (openFile) {
+          const fileRes = await fetch(`/api/files/read?path=${encodeURIComponent(openFile.path)}`);
+          const data = await fileRes.json();
+          if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
+          else setOpenFile(null);
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(poll);
+  }, [fileVersion, openFile]);
+
+  useEffect(() => {
+    fetch("/api/files/tree")
+      .then((r) => r.json())
+      .then(({ version, entries }) => { setFileVersion(version); setFileTree(entries); })
+      .catch(() => {});
+  }, []);
+
+  const fetchSessions = useCallback(async () => {
+    setLoadingSessions(true);
+    try {
+      const r = await fetch("/api/sessions");
+      const data = await r.json();
+      setSessions(data.sessions ?? []);
+    } catch {}
+    setLoadingSessions(false);
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
+  const resumeSession = useCallback(async (sid: string) => {
+    setBusy(true);
+    setMessages([]);
+    setSessionId(sid);
+    setRightTab("files");
+
+    const msgMap = new Map<string, Message>();
+    const msgOrder: string[] = [];
+
+    try {
+      const res = await fetch(`/api/sessions/${sid}`);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop()!;
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+
+          if (event.type === "user_text" || event.type === "agent_text") {
+            const role: Role = event.type === "user_text" ? "user" : "assistant";
+            const mid = event.messageId ?? crypto.randomUUID();
+            const existing = msgMap.get(mid);
+            if (existing) {
+              const last = existing.parts[existing.parts.length - 1];
+              if (last?.kind === "text") {
+                last.text += event.text;
+              } else {
+                existing.parts.push({ kind: "text", text: event.text });
+              }
+            } else {
+              const msg: Message = { id: mid, role, parts: [{ kind: "text", text: event.text }], streaming: false };
+              msgMap.set(mid, msg);
+              msgOrder.push(mid);
+            }
+          } else if (event.type === "tool") {
+            const mid = event.messageId ?? msgOrder[msgOrder.length - 1];
+            const existing = mid ? msgMap.get(mid) : null;
+            if (existing) {
+              existing.parts.push({ kind: "tool", title: event.title, status: event.status });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    setMessages(msgOrder.map((id) => msgMap.get(id)!));
+    setBusy(false);
+  }, []);
+
+  const openFileHandler = useCallback(async (path: string) => {
+    if (openFile?.path === path) { setOpenFile(null); return; }
+    try {
+      const r = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
+      const data = await r.json();
+      if (data.content !== undefined) setOpenFile({ path: data.path, content: data.content });
+    } catch {}
+  }, [openFile]);
 
   const addLog = useCallback((type: string, payload: object) => {
     const ts = new Date().toISOString().slice(11, 23);
@@ -208,6 +333,11 @@ export default function App() {
       <header className="header">
         <span className="header-logo">◈ ACP</span>
         <span className="header-sub">agent client protocol</span>
+        {sessionId && (
+          <button className="new-session-btn" onClick={() => { setSessionId(null); setMessages([]); }}>
+            + new session
+          </button>
+        )}
         <span className={`header-status ${busy ? "busy" : "idle"}`}>
           {busy ? "▶ running" : "● ready"}
         </span>
@@ -299,7 +429,7 @@ export default function App() {
               </div>
             )}
             {!authRequired && messages.length === 0 && (
-              <div className="empty">send a message to start a session</div>
+              <div className="empty">send a message to start a new session</div>
             )}
             {messages.map((m) => (
               <div key={m.id} className={`message ${m.role}`}>
@@ -344,18 +474,71 @@ export default function App() {
           </div>
         </section>
 
-        <aside className="log-panel">
-          <div className="log-header">event log</div>
-          <div className="log-entries">
-            {log.length === 0 && <div className="log-empty">no events yet</div>}
-            {log.map((e) => (
-              <div key={e.id} className={`log-entry type-${e.type}`}>
-                <span className="log-ts">{e.ts}</span>
-                <span className="log-type">{e.type}</span>
-                <pre className="log-payload">{JSON.stringify(e.payload, null, 2)}</pre>
+        <aside className="sidebar">
+          <div className="sidebar-tabs">
+            <button className={`sidebar-tab ${rightTab === "sessions" ? "active" : ""}`} onClick={() => { setRightTab("sessions"); fetchSessions(); }}>sessions</button>
+            <button className={`sidebar-tab ${rightTab === "files" ? "active" : ""}`} onClick={() => setRightTab("files")}>files</button>
+            <button className={`sidebar-tab ${rightTab === "log" ? "active" : ""}`} onClick={() => setRightTab("log")}>log</button>
+          </div>
+          <div className="sidebar-content">
+            {rightTab === "sessions" && (
+              <div className="sessions-panel">
+                {loadingSessions && <div className="sessions-empty">loading sessions...</div>}
+                {!loadingSessions && sessions.length === 0 && <div className="sessions-empty">no sessions</div>}
+                {sessions.map((s) => (
+                  <div
+                    key={s.sessionId}
+                    className={`session-entry ${s.sessionId === sessionId ? "active" : ""}`}
+                    onClick={() => resumeSession(s.sessionId)}
+                  >
+                    <span className="session-title">{s.title || s.sessionId.slice(0, 12)}</span>
+                    {s.updatedAt && <span className="session-time">{new Date(s.updatedAt).toLocaleString()}</span>}
+                  </div>
+                ))}
               </div>
-            ))}
-            <div ref={logBottomRef} />
+            )}
+            {rightTab === "files" && !openFile && (
+              <div className="file-tree">
+                {fileTree.length === 0 && <div className="file-tree-empty">no files yet</div>}
+                {fileTree.map((e) => (
+                  <div
+                    key={e.path}
+                    className={`tree-entry ${e.type}`}
+                    style={{ paddingLeft: `${16 + (e.path.split("/").length - 1) * 14}px` }}
+                    onClick={e.type === "file" ? () => openFileHandler(e.path) : undefined}
+                  >
+                    <span className="tree-icon">{e.type === "dir" ? "▸" : "·"}</span>
+                    <span className="tree-name">{e.path.split("/").pop()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {rightTab === "files" && openFile && (
+              <div className="file-viewer">
+                <div className="file-viewer-header">
+                  <button className="file-viewer-back" onClick={() => setOpenFile(null)}>←</button>
+                  <span className="file-viewer-name">{openFile.path}</span>
+                </div>
+                <div className="file-viewer-content">
+                  <pre>{openFile.content}</pre>
+                </div>
+              </div>
+            )}
+            {rightTab === "log" && (
+              <div className="log-panel">
+                <div className="log-entries">
+                  {log.length === 0 && <div className="log-empty">no events yet</div>}
+                  {log.map((e) => (
+                    <div key={e.id} className={`log-entry type-${e.type}`}>
+                      <span className="log-ts">{e.ts}</span>
+                      <span className="log-type">{e.type}</span>
+                      <pre className="log-payload">{JSON.stringify(e.payload, null, 2)}</pre>
+                    </div>
+                  ))}
+                  <div ref={logBottomRef} />
+                </div>
+              </div>
+            )}
           </div>
         </aside>
       </div>
