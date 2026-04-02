@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect, useCallback, KeyboardEvent } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
 import {
   ClientSideConnection,
   PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import { trpc } from "./trpc.js";
 import { platform } from "./platform.js";
+import { createInstanceTrpc } from "./instance-trpc.js";
 
 type Role = "user" | "assistant";
 
@@ -48,6 +48,14 @@ interface TreeEntry {
   type: "file" | "dir";
 }
 
+interface InstanceView {
+  name: string;
+  templateName: string;
+  description?: string;
+  desiredState: "running" | "hibernated";
+  status: { currentState: string; error?: string; podReady: boolean } | null;
+}
+
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -81,17 +89,18 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   });
 }
 
-function wsUrl(): string {
+function wsUrl(instanceId: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/api/acp`;
+  return `${proto}//${location.host}/api/instances/${instanceId}/acp`;
 }
 
 type UpdateHandler = (update: any) => void;
 
 async function openConnection(
+  instanceId: string,
   onUpdate: UpdateHandler,
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(wsUrl());
+  const { stream, ws } = await wsStream(wsUrl(instanceId));
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
@@ -118,6 +127,9 @@ async function openConnection(
 }
 
 export default function App() {
+  const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
+  const [instances, setInstances] = useState<InstanceView[]>([]);
+  const [loadingInstances, setLoadingInstances] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -128,7 +140,6 @@ export default function App() {
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
   const [authCode, setAuthCode] = useState("");
   const [pasteReady, setPasteReady] = useState(false);
-  const [serverDown, setServerDown] = useState(false);
   const [rightTab, setRightTab] = useState<"files" | "log">("files");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -153,15 +164,25 @@ export default function App() {
   const activeSessionIdRef = useRef<string | null>(null);
   const currentAssistantIdRef = useRef<string | null>(null);
 
+  const instanceTrpc = useMemo(
+    () => (selectedInstance ? createInstanceTrpc(selectedInstance) : null),
+    [selectedInstance],
+  );
+
+  const checkAuth = useCallback(async () => {
+    if (!instanceTrpc) return;
+    try {
+      const s = await instanceTrpc.auth.status.query();
+      if (!s.authenticated) setAuthRequired(true);
+      else setAuthRequired(false);
+    } catch {
+      setAuthRequired(false);
+    }
+  }, [instanceTrpc]);
+
   useEffect(() => {
-    trpc.auth.status
-      .query()
-      .then((s) => {
-        setServerDown(false);
-        if (!s.authenticated) setAuthRequired(true);
-      })
-      .catch(() => setServerDown(true));
-  }, []);
+    checkAuth();
+  }, [checkAuth]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -172,13 +193,14 @@ export default function App() {
   }, [log]);
 
   useEffect(() => {
+    if (!instanceTrpc) return;
     const poll = setInterval(async () => {
       try {
-        const { entries } = await trpc.files.tree.query();
+        const { entries } = await instanceTrpc.files.tree.query();
         setFileTree(entries);
         if (openFile) {
           try {
-            const data = await trpc.files.read.query({ path: openFile.path });
+            const data = await instanceTrpc.files.read.query({ path: openFile.path });
             if (data.content !== undefined)
               setOpenFile({ path: data.path, content: data.content });
             else setOpenFile(null);
@@ -189,16 +211,15 @@ export default function App() {
       } catch {}
     }, 2000);
     return () => clearInterval(poll);
-  }, [openFile]);
+  }, [instanceTrpc, openFile]);
 
   useEffect(() => {
-    trpc.files.tree
+    if (!instanceTrpc) return;
+    instanceTrpc.files.tree
       .query()
-      .then(({ entries }) => {
-        setFileTree(entries);
-      })
+      .then(({ entries }) => setFileTree(entries))
       .catch(() => {});
-  }, []);
+  }, [instanceTrpc]);
 
   const fetchTemplates = useCallback(async () => {
     setLoadingTemplates(true);
@@ -213,10 +234,38 @@ export default function App() {
     fetchTemplates();
   }, [fetchTemplates]);
 
+  const fetchInstances = useCallback(async () => {
+    setLoadingInstances(true);
+    try {
+      const list = await platform.instances.list.query();
+      setInstances(list);
+    } catch {}
+    setLoadingInstances(false);
+  }, []);
+
+  useEffect(() => {
+    fetchInstances();
+  }, [fetchInstances]);
+
+  const selectInstance = useCallback((name: string) => {
+    connectionRef.current?.ws.close();
+    connectionRef.current = null;
+    activeSessionIdRef.current = null;
+    setSelectedInstance(name);
+    setSessionId(null);
+    setMessages([]);
+    setSessions([]);
+    setFileTree([]);
+    setOpenFile(null);
+    setAuthRequired(false);
+    setLog([]);
+  }, []);
+
   const fetchSessions = useCallback(async () => {
+    if (!selectedInstance) return;
     setLoadingSessions(true);
     try {
-      const { connection, ws } = await openConnection(() => {});
+      const { connection, ws } = await openConnection(selectedInstance, () => {});
       await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
@@ -226,13 +275,14 @@ export default function App() {
       ws.close();
     } catch {}
     setLoadingSessions(false);
-  }, []);
+  }, [selectedInstance]);
 
   useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
+    if (selectedInstance) fetchSessions();
+  }, [selectedInstance, fetchSessions]);
 
   const resumeSession = useCallback(async (sid: string) => {
+    if (!selectedInstance) return;
     setBusy(true);
     setLoadingSession(true);
     setMessages([]);
@@ -246,7 +296,7 @@ export default function App() {
     const msgOrder: string[] = [];
 
     try {
-      const { connection, ws } = await openConnection((u) => {
+      const { connection, ws } = await openConnection(selectedInstance, (u) => {
         if (
           u.sessionUpdate === "user_message_chunk" ||
           u.sessionUpdate === "agent_message_chunk"
@@ -302,21 +352,22 @@ export default function App() {
     setMessages(msgOrder.map((id) => msgMap.get(id)!));
     setLoadingSession(false);
     setBusy(false);
-  }, []);
+  }, [selectedInstance]);
 
   const openFileHandler = useCallback(
     async (path: string) => {
+      if (!instanceTrpc) return;
       if (openFile?.path === path) {
         setOpenFile(null);
         return;
       }
       try {
-        const data = await trpc.files.read.query({ path });
+        const data = await instanceTrpc.files.read.query({ path });
         if (data.content !== undefined)
           setOpenFile({ path: data.path, content: data.content });
       } catch {}
     },
-    [openFile],
+    [instanceTrpc, openFile],
   );
 
   const addLog = useCallback((type: string, payload: object) => {
@@ -326,7 +377,7 @@ export default function App() {
 
   const send = useCallback(async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || !selectedInstance) return;
     setInput("");
     setBusy(true);
 
@@ -353,7 +404,7 @@ export default function App() {
         !connectionRef.current ||
         connectionRef.current.ws.readyState !== WebSocket.OPEN
       ) {
-        const { connection, ws } = await openConnection((u) => {
+        const { connection, ws } = await openConnection(selectedInstance, (u) => {
           const aid = currentAssistantIdRef.current;
           if (!aid) return;
           if (
@@ -463,21 +514,22 @@ export default function App() {
       setBusy(false);
       textareaRef.current?.focus();
     }
-  }, [input, busy, sessionId, addLog]);
+  }, [input, busy, selectedInstance, sessionId, addLog]);
 
   const startLogin = useCallback(async () => {
+    if (!instanceTrpc) return;
     setLoggingIn(true);
     setLoginUrl(null);
     setPasteReady(false);
     try {
-      const { url } = await trpc.auth.login.mutate();
+      const { url } = await instanceTrpc.auth.login.mutate();
       setLoginUrl(url);
       window.open(url, "_blank");
       setPasteReady(true);
     } catch {
       setLoggingIn(false);
     }
-  }, []);
+  }, [instanceTrpc]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -486,12 +538,19 @@ export default function App() {
     }
   };
 
+  function instanceDotClass(inst: InstanceView): string {
+    if (inst.status?.podReady) return "ready";
+    if (inst.status?.currentState === "error") return "error";
+    if (inst.desiredState === "hibernated" || inst.status?.currentState === "hibernated") return "hibernated";
+    return "running";
+  }
+
   return (
     <div className="shell">
       <header className="header">
         <span className="header-logo">◈ Humr</span>
         <span className="header-sub">PROTOTYPE</span>
-        {sessionId && (
+        {sessionId && selectedInstance && (
           <button
             className="new-session-btn"
             onClick={() => {
@@ -536,6 +595,36 @@ export default function App() {
           </div>
 
           <div className="left-sidebar-header">
+            <span className="left-sidebar-title">instances</span>
+            <button className="left-sidebar-refresh" onClick={fetchInstances}>↻</button>
+          </div>
+          <div className="instances-panel">
+            {loadingInstances && (
+              <div className="sessions-empty">loading instances...</div>
+            )}
+            {!loadingInstances && instances.length === 0 && (
+              <div className="sessions-empty">no instances</div>
+            )}
+            {instances.map((inst) => (
+              <div
+                key={inst.name}
+                className={`instance-entry clickable ${inst.name === selectedInstance ? "selected" : ""}`}
+                onClick={() => selectInstance(inst.name)}
+              >
+                <div className="instance-header">
+                  <span className={`instance-dot ${instanceDotClass(inst)}`} />
+                  <span className="instance-name">{inst.name}</span>
+                </div>
+                <span className="instance-meta">
+                  {inst.templateName}
+                  {inst.status ? ` · ${inst.status.currentState}` : ""}
+                  {inst.status?.podReady ? " · pod ready" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="left-sidebar-header">
             <span className="left-sidebar-title">sessions</span>
             <button className="left-sidebar-refresh" onClick={fetchSessions}>↻</button>
           </div>
@@ -544,7 +633,7 @@ export default function App() {
               <div className="sessions-empty">loading sessions...</div>
             )}
             {!loadingSessions && sessions.length === 0 && (
-              <div className="sessions-empty">no sessions</div>
+              <div className="sessions-empty">{selectedInstance ? "no sessions" : "select an instance"}</div>
             )}
             {sessions.map((s) => (
               <div
@@ -567,30 +656,10 @@ export default function App() {
 
         <section className="chat-panel">
           <div className="messages">
-            {serverDown && (
-              <div className="auth-banner">
-                <span className="auth-title">server unavailable</span>
-                <p className="auth-desc">
-                  Could not connect to the harness runtime. Make sure the server
-                  is running.
-                </p>
-                <button
-                  className="auth-btn"
-                  onClick={() => {
-                    trpc.auth.status
-                      .query()
-                      .then((s) => {
-                        setServerDown(false);
-                        if (!s.authenticated) setAuthRequired(true);
-                      })
-                      .catch(() => setServerDown(true));
-                  }}
-                >
-                  retry
-                </button>
-              </div>
+            {!selectedInstance && (
+              <div className="empty">select an instance to start chatting</div>
             )}
-            {!serverDown && authRequired && (
+            {selectedInstance && authRequired && (
               <div className="auth-banner">
                 <span className="auth-title">authentication required</span>
                 <p className="auth-desc">
@@ -633,7 +702,8 @@ export default function App() {
                         className="auth-btn"
                         disabled={!authCode.trim()}
                         onClick={async () => {
-                          const result = await trpc.auth.code.mutate({
+                          if (!instanceTrpc) return;
+                          const result = await instanceTrpc.auth.code.mutate({
                             code: authCode.trim(),
                           });
                           if (result.ok) {
@@ -658,13 +728,13 @@ export default function App() {
                 )}
               </div>
             )}
-            {!authRequired && loadingSession && (
+            {selectedInstance && !authRequired && loadingSession && (
               <div className="loading-session">
                 <span className="spinner" />
                 loading session…
               </div>
             )}
-            {!authRequired && !loadingSession && messages.length === 0 && (
+            {selectedInstance && !authRequired && !loadingSession && messages.length === 0 && (
               <div className="empty">send a message to start a new session</div>
             )}
             {messages.map((m) => (
@@ -706,12 +776,12 @@ export default function App() {
               onKeyDown={onKeyDown}
               placeholder="message agent  ↵ send  shift+↵ newline"
               rows={1}
-              disabled={busy || authRequired || serverDown}
+              disabled={busy || !selectedInstance || authRequired}
             />
             <button
               className="send-btn"
               onClick={send}
-              disabled={busy || authRequired || serverDown || !input.trim()}
+              disabled={busy || !selectedInstance || authRequired || !input.trim()}
             >
               {busy ? "…" : "send"}
             </button>
@@ -737,7 +807,9 @@ export default function App() {
             {rightTab === "files" && !openFile && (
               <div className="file-tree">
                 {fileTree.length === 0 && (
-                  <div className="file-tree-empty">no files yet</div>
+                  <div className="file-tree-empty">
+                    {selectedInstance ? "no files yet" : "select an instance"}
+                  </div>
                 )}
                 {fileTree.map((e) => (
                   <div
