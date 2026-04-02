@@ -1,0 +1,65 @@
+# -- Target namespace for agent workloads (instances, templates, schedules)
+agentNamespace: humr-agents
+
+# -- OneCLI (credential proxy — gateway + web run in a single container)
+onecli:
+  # Single Docker image containing both Rust gateway and Node.js web app
+  image: ghcr.io/onecli/onecli:latest
+  replicas: 1
+
+  # -- PostgreSQL configuration (OneCLI dependency)
+  postgres:
+    image: postgres:18-alpine
+    user: onecli
+    # password is auto-generated if not set
+    password: ""
+    database: onecli
+    storage: 5Gi
+    storageClass: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # -- Gateway settings (Rust binary, runs inside the OneCLI container)
+  gateway:
+    port: 10255
+    # secretEncryptionKey: base64-encoded 32-byte key, auto-generated if not set
+    secretEncryptionKey: ""
+
+  # -- Web app settings (Node.js, runs inside the OneCLI container)
+  # Runs in local mode (no OAuth). Set NEXTAUTH_SECRET + GOOGLE_CLIENT_ID +
+  # GOOGLE_CLIENT_SECRET in env to enable OAuth.
+  web:
+    port: 10254
+
+  # -- Self-signed CA for MITM TLS
+  ca:
+    commonName: "Humr OneCLI CA"
+    validity: 3650
+
+  # -- Combined container resources
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# -- Ingress (uses k3s built-in Traefik, accessed via port-forward on port 4444)
+# Subdomains: onecli.localtest.me:4444 (future: humr.localtest.me:4444 for API Server)
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+
+# -- Default agent template
+defaultTemplate:
+  enabled: true
+  name: code-guardian
+  image: "ghcr.io/myorg/code-guardian:latest"
+  description: "Persistent agent for repo monitoring"

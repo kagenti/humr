@@ -1,0 +1,109 @@
+{{- $appName := printf "%s-onecli" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $caSecretName := include "humr.onecli.ca.fullname" . }}
+---
+# OneCLI Service (gateway + web on same pod)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.onecli.gateway.port }}
+      targetPort: gateway
+      protocol: TCP
+      name: gateway
+    - port: {{ .Values.onecli.web.port }}
+      targetPort: web
+      protocol: TCP
+      name: web
+  selector:
+    app.kubernetes.io/component: onecli
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Single Deployment: entrypoint.sh runs migrations, starts gateway (Rust) + web (Node.js)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  replicas: {{ .Values.onecli.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: onecli
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "humr.labels" . | nindent 8 }}
+        app.kubernetes.io/component: onecli
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.onecli.postgres.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h {{ include "humr.onecli.postgres.fullname" . }} -U {{ .Values.onecli.postgres.user }}; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+      containers:
+        - name: onecli
+          image: {{ .Values.onecli.image }}
+          ports:
+            - containerPort: {{ .Values.onecli.gateway.port }}
+              name: gateway
+            - containerPort: {{ .Values.onecli.web.port }}
+              name: web
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: {{ include "humr.onecli.postgres.dsn" . | quote }}
+            - name: SECRET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  key: SECRET_ENCRYPTION_KEY
+            - name: GATEWAY_PORT
+              value: {{ .Values.onecli.gateway.port | quote }}
+            - name: PORT
+              value: {{ .Values.onecli.web.port | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: gateway
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: gateway
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.onecli.resources | nindent 12 }}
+          volumeMounts:
+            # cert-manager Secret mounted as files where gateway expects them
+            - name: ca
+              mountPath: /app/data/gateway/ca.key
+              subPath: tls.key
+              readOnly: true
+            - name: ca
+              mountPath: /app/data/gateway/ca.pem
+              subPath: tls.crt
+              readOnly: true
+      volumes:
+        - name: ca
+          secret:
+            secretName: {{ $caSecretName }}

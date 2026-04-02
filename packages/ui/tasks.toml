@@ -1,0 +1,21 @@
+["ui:setup"]
+dir = "{{config_root}}"
+depends = ["common:setup:pnpm"]
+
+["ui:check"]
+depends = ["ui:check:*"]
+
+["ui:check:tsc"]
+dir = "{{config_root}}/packages/ui"
+depends = ["ui:setup"]
+run = "pnpm exec tsc --noEmit"
+
+["ui:fix"]
+run = "echo 'No fix tasks for ui yet'"
+
+["ui:test"]
+run = "echo 'No tests for ui yet'"
+
+["ui:run"]
+dir = "{{config_root}}"
+run = "pnpm ui"
