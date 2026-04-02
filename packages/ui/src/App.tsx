@@ -82,7 +82,7 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
 
 function wsUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/api/humr`;
+  return `${proto}//${location.host}/api/acp`;
 }
 
 type UpdateHandler = (update: any) => void;
