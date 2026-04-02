@@ -2,10 +2,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "adk.postgres.fullname" . }}
+  name: {{ include "humr.onecli.postgres.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
   type: ClusterIP
@@ -21,13 +21,13 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "adk.postgres.fullname" . }}
+  name: {{ include "humr.onecli.postgres.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
-  serviceName: {{ include "adk.postgres.fullname" . }}
+  serviceName: {{ include "humr.onecli.postgres.fullname" . }}
   replicas: 1
   selector:
     matchLabels:
@@ -51,7 +51,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "adk.secrets.fullname" . }}
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               value: {{ .Values.onecli.postgres.database | quote }}

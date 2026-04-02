@@ -1,5 +1,5 @@
 apiVersion: v2
-name: adk
+name: humr
 description: ADK — Secure Agent Execution Platform
 type: application
 version: 0.1.0

@@ -13,7 +13,7 @@ pnpm workspaces + standalone Go module:
 - `packages/example-agent/` — example agent configuration
 - `packages/controller/` — Go K8s reconciler + scheduler
 - `packages/ui/` — React chat interface (Vite)
-- `deploy/helm/adk/` — Helm chart for all components + OneCLI + PostgreSQL
+- `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
 
 Together, `harness-runtime` + `harness-runtime-api` form the agent runtime — the ACP WebSocket server that runs inside each agent pod.
 

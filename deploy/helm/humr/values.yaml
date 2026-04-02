@@ -1,5 +1,5 @@
 # -- Target namespace for agent workloads (instances, templates, schedules)
-agentNamespace: adk-agents
+agentNamespace: humr-agents
 
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:

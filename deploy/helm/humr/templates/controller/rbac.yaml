@@ -4,18 +4,18 @@ Controller RBAC — ServiceAccount, ClusterRole, ClusterRoleBinding
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "adk.controller.serviceAccountName" . }}
+  name: {{ include "humr.controller.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "adk.controller.serviceAccountName" . }}
+  name: {{ include "humr.controller.serviceAccountName" . }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 rules:
   - apiGroups: [""]
@@ -46,15 +46,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "adk.controller.serviceAccountName" . }}
+  name: {{ include "humr.controller.serviceAccountName" . }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "adk.controller.serviceAccountName" . }}
+  name: {{ include "humr.controller.serviceAccountName" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "adk.controller.serviceAccountName" . }}
+    name: {{ include "humr.controller.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}

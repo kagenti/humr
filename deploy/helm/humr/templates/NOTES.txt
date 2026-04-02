@@ -1,0 +1,24 @@
+Humr has been deployed!
+
+Components:
+  - PostgreSQL: {{ include "humr.onecli.postgres.fullname" . }}.{{ .Release.Namespace }}.svc:5432
+  - OneCLI:     {{ printf "%s-onecli" (include "humr.fullname" .) }}.{{ .Release.Namespace }}.svc
+    - Gateway:  port {{ .Values.onecli.gateway.port }}
+    - Web:      port {{ .Values.onecli.web.port }}
+
+Agent namespace: {{ .Values.agentNamespace }}
+
+CA Secret:    {{ include "humr.onecli.ca.fullname" . }} (namespace: {{ .Release.Namespace }})
+CA ConfigMap: {{ include "humr.onecli.ca-cert.fullname" . }} (namespace: {{ .Values.agentNamespace }})
+
+RBAC:
+  Controller SA: {{ include "humr.controller.serviceAccountName" . }}
+  API Server SA: {{ include "humr.apiserver.serviceAccountName" . }}
+
+To verify:
+  kubectl get pods -n {{ .Release.Namespace }}
+  kubectl get cm -n {{ .Values.agentNamespace }} -l humr.ai/type=agent-template
+  kubectl get secret {{ include "humr.onecli.ca.fullname" . }} -n {{ .Release.Namespace }}
+
+To access OneCLI Web:
+  kubectl port-forward svc/{{ printf "%s-onecli" (include "humr.fullname" .) }} {{ .Values.onecli.web.port }}:{{ .Values.onecli.web.port }} -n {{ .Release.Namespace }}

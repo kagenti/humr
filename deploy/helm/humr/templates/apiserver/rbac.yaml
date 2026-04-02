@@ -4,20 +4,20 @@ API Server RBAC — ServiceAccount, Roles, RoleBindings (release ns + agent ns)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 ---
 # Read-only Role in release namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
   - apiGroups: [""]
@@ -27,28 +27,28 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "adk.apiserver.serviceAccountName" . }}
+    name: {{ include "humr.apiserver.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 ---
 # Read/write Role in agent namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
   namespace: {{ .Values.agentNamespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
   - apiGroups: [""]
@@ -61,16 +61,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
   namespace: {{ .Values.agentNamespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "adk.apiserver.serviceAccountName" . }}
+  name: {{ include "humr.apiserver.serviceAccountName" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "adk.apiserver.serviceAccountName" . }}
+    name: {{ include "humr.apiserver.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}

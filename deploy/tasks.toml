@@ -67,11 +67,11 @@ else
 fi
 
 # 3. Install ADK chart
-if helm --kubeconfig="$KUBECONFIG" status adk >/dev/null 2>&1; then
-  echo "ADK already installed, use 'mise run cluster:upgrade' to update"
+if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
+  echo "Humr already installed, use 'mise run cluster:upgrade' to update"
 else
-  echo "Installing ADK chart..."
-  helm --kubeconfig="$KUBECONFIG" install adk deploy/helm/adk
+  echo "Installing Humr chart..."
+  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr
 fi
 
 echo ""
@@ -82,25 +82,25 @@ kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
 ["cluster:upgrade"]
-description = "Upgrade ADK chart on running cluster"
+description = "Upgrade Humr chart on running cluster"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
-helm --kubeconfig="$KUBECONFIG" upgrade adk deploy/helm/adk
+helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr
 echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
 ["cluster:uninstall"]
-description = "Uninstall ADK chart (keeps cluster and PVCs)"
+description = "Uninstall Humr chart (keeps cluster and PVCs)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
-helm --kubeconfig="$KUBECONFIG" uninstall adk || true
+helm --kubeconfig="$KUBECONFIG" uninstall humr || true
 echo "ADK uninstalled. PVCs preserved. Use 'mise run cluster:delete' to remove the entire cluster."
 '''
 
@@ -134,8 +134,8 @@ echo ""
 echo "=== Pods (default) ==="
 kubectl --kubeconfig="$KUBECONFIG" get pods 2>/dev/null || true
 echo ""
-echo "=== Pods (adk-agents) ==="
-kubectl --kubeconfig="$KUBECONFIG" get pods -n adk-agents 2>/dev/null || true
+echo "=== Pods (humr-agents) ==="
+kubectl --kubeconfig="$KUBECONFIG" get pods -n humr-agents 2>/dev/null || true
 '''
 
 ["cluster:logs"]

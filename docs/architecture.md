@@ -242,17 +242,17 @@ mise run cluster:delete     # destroy the k3s VM entirely
 Or manually:
 
 ```sh
-helm install adk deploy/helm/adk
+helm install humr deploy/helm/humr
 ```
 
-This deploys: OneCLI (gateway + web + PostgreSQL in one container), cert-manager CA, `adk-agents` namespace, RBAC, and a default agent template.
+This deploys: OneCLI (gateway + web + PostgreSQL in one container), cert-manager CA, `humr-agents` namespace, RBAC, and a default agent template.
 
 **Prerequisites:** cert-manager must be installed in the cluster before the ADK chart. `mise run cluster:install` handles this automatically.
 
 ### Helm template layout
 
 ```
-deploy/helm/adk/templates/
+deploy/helm/humr/templates/
   onecli/
     app.yaml              — OneCLI Deployment (gateway + web) + two Services
     postgres.yaml         — PostgreSQL StatefulSet + PVC + Service
@@ -262,7 +262,7 @@ deploy/helm/adk/templates/
     rbac.yaml             — ServiceAccount, ClusterRole, ClusterRoleBinding
   apiserver/
     rbac.yaml             — ServiceAccount, Roles, RoleBindings
-  namespace.yaml          — adk-agents namespace
+  namespace.yaml          — humr-agents namespace
   default-template.yaml   — default Claude Code agent template ConfigMap
   NOTES.txt               — post-install instructions
   _helpers.tpl            — shared template helpers

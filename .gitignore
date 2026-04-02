@@ -28,7 +28,7 @@ packages/ui/.vite/
 Thumbs.db
 
 # Helm
-deploy/helm/adk/charts/
+deploy/helm/humr/charts/
 
 # Reference (vendored, not tracked)
 context/

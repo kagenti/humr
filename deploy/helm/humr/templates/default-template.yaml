@@ -5,7 +5,7 @@ metadata:
   name: {{ .Values.defaultTemplate.name }}
   namespace: {{ .Values.agentNamespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     humr.ai/type: agent-template
 data:
   spec.yaml: |

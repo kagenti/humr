@@ -2,12 +2,12 @@
 depends = ["helm:check:*"]
 
 ["helm:check:lint"]
-dir = "{{config_root}}/deploy/helm/adk"
+dir = "{{config_root}}/deploy/helm/humr"
 run = "helm lint ."
 
 ["helm:check:render"]
-dir = "{{config_root}}/deploy/helm/adk"
-run = "helm template adk . | kubeconform -strict -summary -skip Certificate,Issuer"
+dir = "{{config_root}}/deploy/helm/humr"
+run = "helm template humr . | kubeconform -strict -summary -skip Certificate,Issuer"
 
 ["helm:setup"]
 alias = "helm:build"

@@ -1,16 +1,14 @@
-{{- $appName := printf "%s-onecli" (include "adk.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- $gwName := include "adk.gateway.fullname" . }}
-{{- $webName := include "adk.web.fullname" . }}
-{{- $caSecretName := include "adk.ca.fullname" . }}
+{{- $appName := printf "%s-onecli" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $caSecretName := include "humr.onecli.ca.fullname" . }}
 ---
-# Gateway Service
+# OneCLI Service (gateway + web on same pod)
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $gwName }}
+  name: {{ $appName }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: onecli
 spec:
   type: ClusterIP
@@ -19,22 +17,6 @@ spec:
       targetPort: gateway
       protocol: TCP
       name: gateway
-  selector:
-    app.kubernetes.io/component: onecli
-    app.kubernetes.io/instance: {{ .Release.Name }}
----
-# Web Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $webName }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "adk.labels" . | nindent 4 }}
-    app.kubernetes.io/component: onecli
-spec:
-  type: ClusterIP
-  ports:
     - port: {{ .Values.onecli.web.port }}
       targetPort: web
       protocol: TCP
@@ -50,7 +32,7 @@ metadata:
   name: {{ $appName }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "adk.labels" . | nindent 4 }}
+    {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: onecli
 spec:
   replicas: {{ .Values.onecli.replicas }}
@@ -61,7 +43,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "adk.labels" . | nindent 8 }}
+        {{- include "humr.labels" . | nindent 8 }}
         app.kubernetes.io/component: onecli
     spec:
       initContainers:
@@ -70,7 +52,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              until pg_isready -h {{ include "adk.postgres.fullname" . }} -U {{ .Values.onecli.postgres.user }}; do
+              until pg_isready -h {{ include "humr.onecli.postgres.fullname" . }} -U {{ .Values.onecli.postgres.user }}; do
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
@@ -86,14 +68,14 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "adk.secrets.fullname" . }}
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
                   key: POSTGRES_PASSWORD
             - name: DATABASE_URL
-              value: {{ include "adk.postgres.dsn" . | quote }}
+              value: {{ include "humr.onecli.postgres.dsn" . | quote }}
             - name: SECRET_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "adk.secrets.fullname" . }}
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
                   key: SECRET_ENCRYPTION_KEY
             - name: GATEWAY_PORT
               value: {{ .Values.onecli.gateway.port | quote }}
@@ -102,7 +84,7 @@ spec:
             - name: NEXTAUTH_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "adk.secrets.fullname" . }}
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
                   key: NEXTAUTH_SECRET
             - name: NEXTAUTH_URL
               value: {{ .Values.onecli.web.nextauthUrl | quote }}
