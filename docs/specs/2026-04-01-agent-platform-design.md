@@ -17,6 +17,7 @@ A platform for running AI code harnesses (Claude Code, Codex, Gemini CLI) in iso
 5. **Prototype on k3s, design for OpenShift.** Single-node first, multi-tenant later.
 6. **K8s is the database.** No external database. ConfigMaps, Secrets, and PVCs are the persistence layer. The controller is stateless. (Exception: OneCLI maintains its own PostgreSQL for internal state — see OneCLI Integration.)
 7. **Separation of concerns.** The Controller reconciles cluster state. The API Server handles user-facing concerns. They communicate through K8s resources, not direct calls.
+8. **Helm-first deployment.** The Helm chart is a first-class deliverable, not an afterthought. All components (Controller, API Server, OneCLI, PostgreSQL) are deployed via a single `helm install`.
 
 ## Core Concepts
 
@@ -98,7 +99,7 @@ A stateless reconciler and scheduler. Has no user-facing API. Restartable at any
 
 - **Reconciliation loop:** Watches ConfigMaps with `humr.ai/type` labels via the K8s API. For each agent instance, ensures a StatefulSet + PVC(s) + headless Service + NetworkPolicy exist and match the desired state. On ConfigMap delete, cleans up all reconciled resources (except PVCs, which require explicit instance deletion).
 - **Instance lifecycle:** Triggered by ConfigMap changes (written by the API Server). Reads `spec.yaml` from instance ConfigMap for desired state. Writes observed state back to `status.yaml` in the same ConfigMap (separate keys, no write contention — see Resource Model). Reconciles: replicas 0 (hibernated) or 1 (running). Hibernation preserves PVCs. Waking re-mounts PVCs and the agent resumes with full state.
-- **In-process scheduler:** Watches schedule ConfigMaps (`humr.ai/type: agent-schedule`). Reads `spec.yaml` for cron expressions, writes `status.yaml` with `lastRun`/`nextRun`. On restart, recomputes timers from `status.yaml`. The Controller's only scheduling job is **ensuring the pod is running when a schedule fires** — it patches `desiredState: running` on the instance ConfigMap if the instance is hibernated. The harness inside the pod handles the actual work: schedule config is mounted as a file, the harness reads it, creates a new ACP session, and sends the prompt. This means scheduled execution uses the exact same session mechanism as interactive use.
+- **In-process scheduler:** Watches schedule ConfigMaps (`humr.ai/type: agent-schedule`). Reads `spec.yaml` for cron expressions, writes `status.yaml` with `lastRun`/`nextRun`. On restart, recomputes timers from `status.yaml`. On cron fire: (1) ensures the pod is running — patches `desiredState: running` if hibernated, waits for readiness, (2) execs into the pod and writes a trigger file to `/workspace/.triggers/{timestamp}.json` with the prompt payload. The harness watches the triggers directory and creates a new ACP session for each file — same code path as interactive use.
 - **OneCLI provisioning:** On instance creation, creates a per-instance OneCLI agent token via OneCLI REST API, with scoped credentials and policy rules. Stores the token in the instance's Secret.
 
 Written in Go for first-class K8s API support (`client-go`), single-binary deployment, and a clean upgrade path to a K8s operator if the prototype succeeds.
@@ -143,8 +144,8 @@ What OneCLI needs for this project (contribute upstream or extend):
 A long-running pod (StatefulSet with replicas: 0 or 1) per instance. StatefulSet provides stable pod name (`{instance}-0`), stable DNS via headless Service, and built-in PVC lifecycle management via `volumeClaimTemplates`. Contains:
 
 - **Harness container:** Claude Code (first target), or any other harness. Runs unmodified. Configured via environment variables and mounted files (CLAUDE.md, system prompt, rules).
-- **ACP server:** Listens on a WebSocket port (default 8080). The API Server connects to this port when a user opens a chat. The bridge translates between the WebSocket connection and the harness's ACP interface (stdio). This is a direct evolution of the current `harness-runtime` — same Node.js codebase, same "listen on a port" pattern, no code changes needed for the connection direction.
-- **Schedule watcher:** The harness monitors a mounted schedule ConfigMap (or a file written from it). When a cron fires, the harness creates a new ACP session internally and sends the configured prompt as the first message — the same code path as a user starting a new session. This keeps scheduled execution identical to interactive use and avoids any external component needing to speak ACP.
+- **ACP server:** Listens on a WebSocket port (default 8080). The API Server connects to this port when a user opens a chat. The bridge translates between the WebSocket connection and the harness's ACP interface (stdio). This is a direct evolution of the current `harness-runtime` — same Node.js codebase, same "listen on a port" pattern.
+- **Trigger watcher:** Monitors `/workspace/.triggers/` directory for new JSON files (written by Controller via `kubectl exec` on schedule fire). When a new file appears, the harness creates a new ACP session with the prompt from the trigger file, then deletes it. Same code path as a user starting a new session. No cron library inside the harness.
 - **Readiness probe:** HTTP GET on the ACP port (e.g. `/healthz`). The pod is ready only when the ACP server is listening and the harness process is alive. This ensures the API Server (and scheduled triggers) don't attempt to connect before the agent is ready.
 - **Liveness probe:** Same endpoint. If the harness process dies, the probe fails, kubelet restarts the container, PVCs remain mounted.
 - **Persistent Volumes:** Managed by StatefulSet `volumeClaimTemplates`. Workspace PVC at `/workspace`, home PVC at `/home/agent`. Contain git repo clones, agent memory, sessions, venvs, and any state the harness writes. Survive pod restarts and hibernation. PVCs are not deleted when the StatefulSet scales to 0.
@@ -175,7 +176,10 @@ Responsibilities:
 - **Session management:** List sessions within an instance, create new sessions, resume existing ones. All via ACP passthrough to the agent.
 - **File browser:** Browse and edit the agent's workspace via ACP `ReadTextFile`/`WriteTextFile` passthrough.
 - **Approval inline in chat:** When the agent hits a permission boundary, the approval request appears as a message in the conversation. The user approves or denies without leaving the chat.
-- **Audit trail:** View all external requests the agent made, which were approved/denied, credential usage (from OneCLI logs via API Server).
+
+Not in PoC scope:
+- **Audit trail UI:** OneCLI dashboard already provides credential usage and request logs. No need to duplicate.
+- **Template editor UI:** Templates are managed via Helm values or kubectl for PoC.
 
 ---
 
@@ -262,7 +266,7 @@ data:
   # API Server writes activity state as annotations (not in data):
   # metadata.annotations:
   #   humr.ai/last-activity: "2026-04-01T14:30:00Z"
-  #   humr.ai/active-session: "true"    # set on ACP session start, cleared on end
+  #   humr.ai/active-session: "true"    # set on ACP session start, cleared on end (informational, not used for concurrency gating)
 ```
 
 ```yaml
@@ -297,7 +301,6 @@ data:
     type: heartbeat
     cron: "*/30 * * * *"
     task: ""
-    concurrency: forbid       # forbid: skip if previous run still active
     enabled: true
 
   # Written by Controller (scheduler state)
@@ -339,6 +342,8 @@ ConfigMap (instance spec.yaml) + ConfigMap (template spec.yaml) + Secret
   → NetworkPolicy: {instance}-egress
       egress: deny-all except OneCLI gateway, DNS
       ingress: allow ACP port from API Server pods only
+
+Note: Controller RBAC requires `pods/exec` for trigger delivery via exec.
 ```
 
 ---
@@ -408,25 +413,24 @@ For v1 (before OneCLI has approval action):
 ```
 Controller scheduler:
   1. Cron fires for instance cg-team-alpha
-  2. Concurrency check: if concurrency: forbid and humr.ai/active-session
-     annotation is "true", skip this trigger
-  3. Instance hibernated? Patch instance spec.yaml: desiredState: running
-  4. Reconcile: patch StatefulSet replicas: 1
+  2. Instance hibernated? Patch instance spec.yaml: desiredState: running
+  3. Reconcile: patch StatefulSet replicas: 1, wait for pod readiness
+  4. Exec into pod: write /workspace/.triggers/{timestamp}.json with prompt payload
   5. Update schedule status.yaml: lastRun, nextRun
 Harness inside agent pod:
-  6. Pod starts (or was already running), schedule config mounted as file
-  7. Harness cron fires, creates a new ACP session (same as user starting a chat)
-  8. Sends configured prompt as first message (or reads heartbeat.md)
+  6. Pod starts (or was already running)
+  7. Harness detects new file in /workspace/.triggers/
+  8. Creates a new ACP session, sends prompt from trigger (or reads heartbeat.md)
   9. Agent does its work, session completes
-  10. Harness updates humr.ai/last-activity annotation on instance ConfigMap
-      (or API Server does this if a user is watching the session)
+  10. API Server updates humr.ai/last-activity annotation on instance ConfigMap
+      (on ACP message relay; harness may also update on scheduled session completion)
 Controller:
   11. Reads humr.ai/last-activity, detects inactivity beyond TTL
   12. Patches spec.yaml: desiredState: hibernated
   13. Reconciles: StatefulSet replicas: 0, PVCs persist
 ```
 
-Note: the harness runs the schedule internally — no external component needs to speak ACP. The Controller's only scheduling responsibility is ensuring the pod is running when the cron fires. If the pod is already running (user is chatting), the harness still creates a new session for the scheduled work — sessions are independent within an instance.
+The Controller owns the cron and prompt delivery. The harness reacts to trigger files — same code path as a user starting a session. If the pod is already running (user is chatting), the trigger still creates a new session — concurrent sessions are always allowed.
 
 ### 5. Resume a session
 
@@ -457,7 +461,7 @@ Controller:
   3. Pod terminates gracefully
   4. PVCs persist (StatefulSet preserves volumeClaimTemplates PVCs on scale-down)
   5. Schedules with enabled: true still fire — Controller will wake
-     the instance (scale to 1), harness picks up the schedule internally,
+     the instance (scale to 1), exec trigger file into pod, harness picks it up,
      and Controller re-hibernates after inactivity TTL
 ```
 
@@ -549,23 +553,45 @@ ACP is the wire protocol for all agent interaction, whether interactive (user vi
 
 ## Scheduling
 
-Scheduling is split between two components:
+Scheduling is owned by the **Controller**. The Controller watches schedule ConfigMaps, runs cron timers, ensures the pod is running, and delivers the prompt via a trigger mechanism. The harness does not run its own cron.
 
-**Controller** handles wake-up. It watches schedule ConfigMaps, runs cron timers, and ensures the instance pod is running when a schedule fires. If the instance is hibernated, the Controller patches `desiredState: running`. That's all — the Controller never speaks ACP or delivers prompts.
+**Controller** handles the full lifecycle:
+1. Watches schedule ConfigMaps (`humr.ai/type: agent-schedule`), runs in-process cron timers
+2. On cron fire: ensures pod is running (patches `desiredState: running` if hibernated), waits for readiness
+3. Execs into the pod: writes a trigger file to `/workspace/.triggers/{timestamp}.json` with the prompt payload
+4. Updates schedule `status.yaml` with `lastRun`/`nextRun`
 
-**Harness** handles execution. The schedule ConfigMap is mounted into the pod as a file. The harness reads it, runs its own cron internally, and creates a new ACP session with the configured prompt when the schedule fires. This is the exact same code path as a user starting a new session in the UI.
+**Harness** handles execution reactively. Watches `/workspace/.triggers/` for new files. When a file appears, creates a new ACP session with the prompt from the trigger, then deletes the file. Same code path as a user starting a session.
 
 Two scheduling modes:
 
-**Cron:** Fixed schedule, deterministic. "Run at 9 AM every weekday." The harness creates a new session and sends the configured prompt.
+**Cron:** Fixed schedule, deterministic. "Run at 9 AM every weekday." The trigger contains the configured prompt.
 
-**Heartbeat:** Periodic wake-up with open-ended prompt. "Wake up every 6 hours, review your history, decide what to do." The harness creates a new session; the agent reads `heartbeat.md` and makes a judgment call.
+**Heartbeat:** Periodic wake-up with open-ended prompt. "Wake up every 6 hours, review your history, decide what to do." The trigger tells the agent to read `heartbeat.md` and make a judgment call.
 
-**Concurrency policy:** `forbid` (default) — the harness skips the trigger if it's already running a session. `allow` creates a new session regardless. This is handled entirely within the harness since it has full visibility into its own active sessions.
+**Concurrency:** Always allowed. Multiple sessions can run concurrently within an instance. The harness creates a new session for each trigger regardless of existing active sessions.
 
-Schedule state is split across ConfigMap keys: `spec.yaml` (user configuration, written by API Server) and `status.yaml` (scheduler state — `lastRun`/`nextRun`/`lastResult`, written by Controller for wake-up tracking). On Controller restart, it reads all schedule ConfigMaps and recomputes timers from `status.yaml`.
+Schedule state is split across ConfigMap keys: `spec.yaml` (user configuration, written by API Server) and `status.yaml` (scheduler state — `lastRun`/`nextRun`/`lastResult`, written by Controller). On Controller restart, it reads all schedule ConfigMaps and recomputes timers from `status.yaml`.
 
 ---
+
+## Repository Structure
+
+```
+packages/
+  controller/          # Go — K8s reconciler + scheduler (standalone Go module)
+  api-server/          # TypeScript — REST + ACP WebSocket relay + static UI serving
+  agent-runtime/       # TypeScript — ACP WebSocket server inside agent pod (evolution of harness-runtime)
+  ui/                  # React + Vite — instance management, chat, file browser
+deploy/
+  helm/adk/            # Helm chart — all components + OneCLI + PostgreSQL
+docs/
+  specs/               # Design documents
+context/
+  onecli/              # OneCLI reference source (read-only)
+```
+
+The Go controller is a standalone Go module (`packages/controller/go.mod`). The TypeScript packages share a pnpm workspace. The Helm chart in `deploy/helm/adk/` deploys everything.
 
 ## Technology Choices
 
@@ -580,6 +606,7 @@ Schedule state is split across ConfigMap keys: `spec.yaml` (user configuration, 
 | Storage | Filesystem PVCs | Pay-per-use on all cloud providers |
 | Database | **None** | K8s ConfigMaps + Secrets. Controller + API Server are stateless. |
 | Scheduling | In-process (Go, Controller) | Schedule state in ConfigMaps, no external dependency |
+| Deployment | Helm chart | Single `helm install` for all components, k3s target |
 
 ---
 
@@ -589,16 +616,18 @@ Schedule state is split across ConfigMap keys: `spec.yaml` (user configuration, 
 
 OneCLI ships as Docker images only (no Helm chart). We deploy it as two K8s Deployments + Services: gateway (port 10255) and web app (port 10254).
 
-**Note:** OneCLI itself uses PostgreSQL for its own state (agents, secrets, policy rules). This is OneCLI's internal dependency, not ours. The Controller interacts with OneCLI via its REST API. Neither the Controller nor the API Server share or depend on OneCLI's database.
+**Note:** OneCLI requires PostgreSQL for its own state (agents, secrets, policy rules). This is a hard dependency — OneCLI does not support SQLite. PostgreSQL is deployed as a simple StatefulSet + PVC within the Helm chart. The Controller interacts with OneCLI via its REST API. Neither the Controller nor the API Server share or depend on OneCLI's database.
 
 **MITM TLS is required.** The agent makes HTTPS calls to external services (`https://api.github.com`). For OneCLI to inject credentials into those requests, it must terminate TLS, modify headers, and re-encrypt toward the upstream.
 
 **CA certificate flow:**
-1. OneCLI gateway supports CA injection via `GATEWAY_CA_KEY` + `GATEWAY_CA_CERT` env vars.
-2. Store CA key + cert in a K8s Secret. Gateway reads from env vars on startup.
-3. The CA cert (public half) goes into a ConfigMap that agent pods mount read-only.
+1. The Helm chart generates a self-signed CA key + cert at install time (via Helm's `genCA` function) and stores both in a K8s Secret.
+2. OneCLI gateway reads the CA via `GATEWAY_CA_KEY` + `GATEWAY_CA_CERT` env vars (from the Secret).
+3. The CA cert (public half only) is projected into agent pods as a read-only volume mount.
 4. Agent pods set `SSL_CERT_FILE` and `NODE_EXTRA_CA_CERTS` pointing at the mounted cert.
-5. Agent pods set `HTTPS_PROXY` / `HTTP_PROXY` to the gateway service address.
+5. Agent pods set `HTTPS_PROXY` / `HTTP_PROXY` to the gateway Service address.
+
+No chicken-and-egg problem — Helm templating resolves the dependency at install time.
 
 ### API Integration
 
@@ -612,14 +641,16 @@ The Controller interacts with OneCLI programmatically:
 ## Prototype Scope (v1)
 
 **In scope:**
+- Helm chart deploying all components to k3s via single `helm install`
 - Controller (Go) with ConfigMap watchers + reconciliation + leader election + in-process scheduler
 - API Server (TypeScript) with REST API + WebSocket ACP relay + static UI serving
 - Instance lifecycle: create, hibernate, wake, delete
 - StatefulSet + headless Service + NetworkPolicy per instance (PVCs via volumeClaimTemplates)
-- OneCLI integration (credential injection for GitHub)
+- OneCLI integration (credential injection for GitHub, deployed as-is from Docker images)
+- OneCLI PostgreSQL (simple StatefulSet in Helm chart)
 - ACP relay (UI → API Server → agent pod ACP port, bidirectional WebSocket)
-- Scheduled execution (Controller wakes pods, harness runs cron internally)
-- Web UI (React): instance list, chat, file browser, session management
+- Scheduled execution (Controller owns cron + trigger delivery, harness reacts to trigger files)
+- Web UI (React): instance list, chat, file browser, session management, schedule CRUD
 - Claude Code as first harness
 - Agent template / instance ConfigMap format with spec/status key split
 - Agent pod: evolution of existing harness-runtime (listens on ACP port, accepts connections from API Server)
@@ -627,7 +658,8 @@ The Controller interacts with OneCLI programmatically:
 
 **Out of scope for v1:**
 - OneCLI approval action (use block rules + agent soft-ask for v1)
-- OneCLI default-deny posture (use NetworkPolicy as hard boundary, contribute upstream)
+- OneCLI default-deny posture (use NetworkPolicy as hard boundary; no upstream contributions)
+- OneCLI upstream contributions of any kind (use what ships today)
 - Channel integrations (Slack, Teams, Telegram)
 - Multi-cluster / multi-node production deployment
 - Operator CRDs (requires cluster-admin; keep ConfigMaps for namespace-level deployability)
@@ -635,6 +667,8 @@ The Controller interacts with OneCLI programmatically:
 - gVisor / kernel-level sandbox
 - Multi-user / RBAC
 - fuse-overlayfs for full filesystem persistence
+- Audit trail UI in the platform (use OneCLI dashboard)
+- Template editor UI (use kubectl or Helm values)
 
 ## Open Questions
 
@@ -644,7 +678,7 @@ The Controller interacts with OneCLI programmatically:
 4. ~~**ACP transport:** Direct WebSocket from UI to pod Service, or always proxy through API Server?~~ **Resolved:** Always proxy through API Server. API Server connects to agent pods via stable DNS (headless Service). UI connects to API Server. Agent pods just listen on a port — same pattern as the current prototype.
 5. ~~**Controller language:** Go is proposed for `client-go`. Python is the team's primary expertise. Tradeoff?~~ **Resolved:** Go for Controller (reconciliation, `client-go`), TypeScript for API Server (WebSocket, ACP SDK, UI ecosystem).
 6. ~~**Wake-on-connect:** Can the API Server intercept ACP connections to a hibernated instance and auto-wake?~~ **Resolved:** Yes. API Server detects hibernated state from instance `status.yaml`, patches `spec.yaml` with `desiredState: running`, Controller reconciles, API Server watches Pod until Ready condition is true, then connects to agent pod.
-7. **OneCLI's own PostgreSQL:** OneCLI needs PostgreSQL for its internal state. This is the only database in the system. Can we minimize it (SQLite mode? embedded?) or is it acceptable as OneCLI's problem?
+7. ~~**OneCLI's own PostgreSQL:** OneCLI needs PostgreSQL for its internal state. This is the only database in the system. Can we minimize it (SQLite mode? embedded?) or is it acceptable as OneCLI's problem?~~ **Resolved:** PostgreSQL is a hard requirement (OneCLI has no SQLite support). Deployed as a simple StatefulSet in the Helm chart. Acceptable — it's OneCLI's dependency, not ours.
 8. **PVC storage class:** Default size limits per template? Storage class requirements? StatefulSet `volumeClaimTemplates` need a storage class — should templates specify this or use a cluster default?
 9. **Namespace strategy:** Single namespace (`adk-agents`) or namespace-per-team?
-10. ~~**Activity tracking for auto-hibernate:** API Server tracks last ACP activity per instance. How to communicate this to Controller?~~ **Resolved:** API Server patches two annotations on the instance ConfigMap: `humr.ai/last-activity` (timestamp) and `humr.ai/active-session` ("true"/"false"). Annotations don't touch `data`, so zero conflict with Controller writing `status.yaml`. Controller reads `last-activity` for TTL-based hibernation and `active-session` for concurrency checks.
+10. ~~**Activity tracking for auto-hibernate:** API Server tracks last ACP activity per instance. How to communicate this to Controller?~~ **Resolved:** API Server patches two annotations on the instance ConfigMap: `humr.ai/last-activity` (timestamp) and `humr.ai/active-session` ("true"/"false"). Annotations don't touch `data`, so zero conflict with Controller writing `status.yaml`. Controller reads `last-activity` for TTL-based hibernation. Concurrency gating is not enforced — concurrent sessions are always allowed.
