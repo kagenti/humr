@@ -7,6 +7,7 @@ import type {
   CreateTemplateInput,
   Instance,
   InstanceSpec,
+  InstanceStatus,
   InstancesContext,
   CreateInstanceInput,
   UpdateInstanceInput,
@@ -19,6 +20,7 @@ const LABEL_INSTANCE = "agent-instance";
 const LABEL_TEMPLATE_REF = "humr.ai/template";
 const LABEL_INSTANCE_REF = "humr.ai/instance";
 const SPEC_KEY = "spec.yaml";
+const STATUS_KEY = "status.yaml";
 
 const DEFAULT_TEMPLATE_SPEC = {
   mounts: [
@@ -51,7 +53,30 @@ function parseTemplate(cm: k8s.V1ConfigMap): Template {
 
 function parseInstance(cm: k8s.V1ConfigMap): Instance {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-  return { name: cm.metadata!.name!, spec };
+  const statusYaml = cm.data?.[STATUS_KEY];
+  let status: InstanceStatus | undefined;
+  if (statusYaml) {
+    const raw = yaml.load(statusYaml) as { currentState?: string; error?: string };
+    status = {
+      currentState: (raw.currentState as InstanceStatus["currentState"]) ?? spec.desiredState,
+      error: raw.error || undefined,
+      podReady: false,
+    };
+  }
+  return { name: cm.metadata!.name!, spec, status };
+}
+
+function isPodReady(pod: k8s.V1Pod): boolean {
+  const cond = pod.status?.conditions?.find((c) => c.type === "Ready");
+  return cond?.status === "True";
+}
+
+function enrichWithPodStatus(inst: Instance, pod?: k8s.V1Pod): Instance {
+  const podReady = pod ? isPodReady(pod) : false;
+  const status: InstanceStatus = inst.status
+    ? { ...inst.status, podReady }
+    : { currentState: inst.spec.desiredState === "running" ? "running" : "hibernated", podReady };
+  return { ...inst, status };
 }
 
 function createApi(namespace: string) {
@@ -117,17 +142,37 @@ export function createK8sInstancesContext(
 ): InstancesContext {
   return {
     async list() {
-      const res = await api.listNamespacedConfigMap({
-        namespace,
-        labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE}`,
+      const [configMaps, pods] = await Promise.all([
+        api.listNamespacedConfigMap({
+          namespace,
+          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE}`,
+        }),
+        api.listNamespacedPod({
+          namespace,
+          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE}`,
+        }),
+      ]);
+      const podMap = new Map<string, k8s.V1Pod>();
+      for (const pod of pods.items ?? []) {
+        const name = pod.metadata?.labels?.[LABEL_INSTANCE_REF];
+        if (name) podMap.set(name, pod);
+      }
+      return (configMaps.items ?? []).map((cm) => {
+        const inst = parseInstance(cm);
+        const pod = podMap.get(inst.name);
+        return enrichWithPodStatus(inst, pod);
       });
-      return (res.items ?? []).map(parseInstance);
     },
 
     async get(name) {
       try {
         const cm = await api.readNamespacedConfigMap({ name, namespace });
-        return parseInstance(cm);
+        const inst = parseInstance(cm);
+        let pod: k8s.V1Pod | undefined;
+        try {
+          pod = await api.readNamespacedPod({ name: `${name}-0`, namespace });
+        } catch {}
+        return enrichWithPodStatus(inst, pod);
       } catch (err) {
         if (is404(err)) return null;
         throw err;

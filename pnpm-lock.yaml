@@ -137,6 +137,9 @@ importers:
       '@trpc/client':
         specifier: ^11.16.0
         version: 11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)
+      api-server-api:
+        specifier: workspace:*
+        version: link:../api-server-api
       harness-runtime-api:
         specifier: workspace:*
         version: link:../harness-runtime-api

@@ -8,9 +8,16 @@ export interface InstanceSpec {
   description?: string;
 }
 
+export interface InstanceStatus {
+  currentState: "running" | "hibernated" | "error";
+  error?: string;
+  podReady: boolean;
+}
+
 export interface Instance {
   name: string;
   spec: InstanceSpec;
+  status?: InstanceStatus;
 }
 
 export interface CreateInstanceInput {

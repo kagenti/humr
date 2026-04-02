@@ -1,0 +1,66 @@
+{{- $appName := printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.apiServer.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/component: apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "humr.labels" . | nindent 8 }}
+        app.kubernetes.io/component: apiserver
+    spec:
+      serviceAccountName: {{ include "humr.apiserver.serviceAccountName" . }}
+      containers:
+        - name: apiserver
+          image: {{ .Values.apiServer.image }}
+          imagePullPolicy: {{ .Values.apiServer.imagePullPolicy | default "IfNotPresent" }}
+          ports:
+            - containerPort: {{ .Values.apiServer.port }}
+              name: http
+          env:
+            - name: NAMESPACE
+              value: {{ .Values.agentNamespace | quote }}
+            - name: PORT
+              value: {{ .Values.apiServer.port | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.apiServer.resources | nindent 12 }}

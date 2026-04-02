@@ -22,6 +22,7 @@ function toView(inst: Instance) {
     env: inst.spec.env,
     secretRef: inst.spec.secretRef,
     desiredState: inst.spec.desiredState,
+    status: inst.status ?? null,
   };
 }
 
