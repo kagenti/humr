@@ -1,3 +1,34 @@
+# -- Shell environment --
+
+["humr:shell"]
+description = "Print shell activation script. Usage: eval $(mise run humr:shell)"
+raw = true
+dir = "{{cwd}}"
+run = """
+cat <<EOF
+deactivate () {
+  export PS1="\\${__OLD_PS1:-}"
+  [[ -n "\\${__OLD_KUBECONFIG:-}" ]] && export KUBECONFIG="\\$__OLD_KUBECONFIG" || unset KUBECONFIG
+  unset __OLD_PS1
+  unset __OLD_KUBECONFIG
+  unset -f deactivate
+  echo "humr-k3s environment deactivated."
+}
+
+while [[ -n "\\${__OLD_PS1:-}" ]]; do
+  deactivate;
+done
+
+echo "Activating humr-k3s environment..."
+
+export __OLD_PS1="\\${PS1:-}"
+export __OLD_KUBECONFIG="\\${KUBECONFIG:-}"
+
+export KUBECONFIG="\\${HOME}/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+export PS1="(humr-k3s) \\${__OLD_PS1}"
+EOF
+"""
+
 # -- Cluster lifecycle (k3s via lima) --
 
 ["cluster:install"]

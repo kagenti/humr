@@ -40,7 +40,7 @@ mise run cluster:uninstall  # helm uninstall (keeps PVCs)
 mise run cluster:delete     # destroy k3s VM entirely
 ```
 
-KUBECONFIG is at `~/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml`.
+Activate cluster environment: `eval $(mise run humr:shell)` (sets KUBECONFIG, adds prompt prefix, `deactivate` to undo).
 
 ## Architecture
 
@@ -59,9 +59,6 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 ## Key Design Decisions
 
 - OneCLI ships as a single Docker image running both gateway + web via entrypoint.sh — deployed as one pod, two Services
-- cert-manager for CA (not Helm genCA) because OneCLI's gateway (rcgen) requires PKCS8 keys, Helm only generates PKCS1
-- Helm `lookup` function preserves auto-generated secrets across `helm upgrade`
-- Helm `randBytes` already returns base64 — don't double-encode
 - Scheduling: Controller owns cron + delivers triggers via `kubectl exec` writing files to `/workspace/.triggers/`
 - Concurrent sessions always allowed (no concurrency gating)
 
@@ -69,4 +66,3 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 
 - Design spec: `docs/specs/2026-04-01-agent-platform-design.md`
 - Master plan: `docs/plans/2026-04-02-adk-platform-master.md`
-- GitHub epic: #8 with sub-issues #9-#13
