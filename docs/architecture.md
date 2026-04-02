@@ -228,37 +228,55 @@ Wake (manual):
 
 ## 7. Deployment
 
-Single command deploys everything:
+Full cluster lifecycle via mise:
 
+```sh
+mise run cluster:install    # create humr-k3s VM (lima), install cert-manager + ADK chart
+mise run cluster:upgrade    # helm upgrade with latest chart changes
+mise run cluster:status     # show pods and cluster state
+mise run cluster:logs       # show OneCLI pod logs
+mise run cluster:uninstall  # helm uninstall (keeps PVCs)
+mise run cluster:delete     # destroy the k3s VM entirely
 ```
+
+Or manually:
+
+```sh
 helm install adk deploy/helm/adk
 ```
 
-This deploys: OneCLI gateway + web + PostgreSQL, CA cert Secret, `adk-agents` namespace, RBAC for Controller and API Server, and a default agent template ConfigMap.
+This deploys: OneCLI (gateway + web + PostgreSQL in one container), cert-manager CA, `adk-agents` namespace, RBAC, and a default agent template.
+
+**Prerequisites:** cert-manager must be installed in the cluster before the ADK chart. `mise run cluster:install` handles this automatically.
 
 ### Helm template layout
 
 ```
 deploy/helm/adk/templates/
   onecli/
+    app.yaml              — OneCLI Deployment (gateway + web) + two Services
     postgres.yaml         — PostgreSQL StatefulSet + PVC + Service
-    gateway.yaml          — OneCLI gateway Deployment + Service
-    web.yaml              — OneCLI web Deployment + Service
-    ca-secret.yaml        — self-signed CA cert (Helm genCA, stored as Secret)
-    secrets.yaml          — OneCLI credentials
+    ca-secret.yaml        — cert-manager Issuer + Certificate (ECDSA PKCS8 CA)
+    secrets.yaml          — auto-generated passwords and encryption keys
   controller/
     rbac.yaml             — ServiceAccount, ClusterRole, ClusterRoleBinding
   apiserver/
-    rbac.yaml             — ServiceAccount, Role, RoleBinding
+    rbac.yaml             — ServiceAccount, Roles, RoleBindings
   namespace.yaml          — adk-agents namespace
   default-template.yaml   — default Claude Code agent template ConfigMap
   NOTES.txt               — post-install instructions
   _helpers.tpl            — shared template helpers
 ```
 
-Controller and API Server Deployments are added in subsequent plan phases (after the respective components are implemented).
+Controller and API Server Deployments are added in subsequent plan phases.
 
-**CA cert flow:** Helm generates a self-signed CA at install time via `genCA`. OneCLI reads it via env vars. Agent pods receive the public cert as a read-only volume mount, set `SSL_CERT_FILE` and `NODE_EXTRA_CA_CERTS` pointing at it, and set `HTTPS_PROXY` to the gateway Service address.
+### CA cert flow
+
+cert-manager generates a self-signed ECDSA CA (PKCS8 format, required by OneCLI's rcgen). The CA Secret is mounted into the OneCLI pod at `/app/data/gateway/ca.key` and `ca.pem` where the gateway reads it from disk. A ConfigMap with the public cert is created in the agent namespace for agent pods to mount as `SSL_CERT_FILE`.
+
+### OneCLI architecture
+
+OneCLI ships as a single Docker image (`ghcr.io/onecli/onecli:latest`) that runs both the Rust gateway and Node.js web app via `entrypoint.sh`. The chart deploys one Deployment with two Services (gateway:10255, web:10254) pointing at different ports on the same pod. PostgreSQL is a separate StatefulSet.
 
 ---
 
@@ -309,6 +327,19 @@ Installed by `mise run setup`. Implemented as mise tasks:
 
 Each package (`packages/ui/tasks.toml`, `packages/controller/tasks.toml`, `deploy/helm/tasks.toml`) defines `setup`, `check`, `fix`, and `test` tasks namespaced to the package. The root `tasks.toml` aggregates them via `depends = ["*:check"]`.
 
+### Cluster lifecycle
+
+Defined in `deploy/tasks.toml`:
+
+```sh
+mise run cluster:install    # create humr-k3s VM (lima), install cert-manager + ADK chart
+mise run cluster:upgrade    # helm upgrade
+mise run cluster:status     # show pods and cluster state
+mise run cluster:logs       # show OneCLI pod logs
+mise run cluster:uninstall  # helm uninstall (keeps PVCs)
+mise run cluster:delete     # destroy k3s VM
+```
+
 ### Tool versions
 
-Managed by mise: Node.js 22, pnpm 10, Go 1.24, Helm (latest), kubeconform (latest).
+Managed by mise: Node.js 22, pnpm 10, Go 1.24, Helm (latest), kubeconform (latest), lima 2 (k3s VM).
