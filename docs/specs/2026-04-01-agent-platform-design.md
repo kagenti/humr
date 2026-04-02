@@ -79,7 +79,7 @@ Session   = conversation inside an instance (agent-managed, on PVC)
 |  | Harness container  | ACP server (listens on port,   | |
 |  | (Claude Code, etc) | accepts WS from API Server)    | |
 |  +--------+-----------+--------------------------------+ |
-|           | HTTPS_PROXY                                   |
+|           | HTTPS_PROXY                                  |
 +-----------v----------------------------------------------+
             |
 +-----------v----------------------------------------------+
