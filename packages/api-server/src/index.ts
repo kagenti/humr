@@ -4,7 +4,7 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext } from "api-server-api";
 import { createK8sTemplatesContext } from "./k8s.js";
 
-const namespace = process.env.NAMESPACE ?? "adk-agents";
+const namespace = process.env.NAMESPACE ?? "humr-agents";
 const port = Number(process.env.PORT ?? 4000);
 
 const templates = createK8sTemplatesContext(namespace);
