@@ -6,6 +6,7 @@
     "dev": "pnpm --filter harness-runtime dev",
     "start": "pnpm --filter harness-runtime start",
     "ui": "pnpm --filter humr-ui dev",
+    "api-server": "pnpm --filter api-server dev",
     "typecheck": "pnpm -r --parallel run typecheck",
     "docker:humr-base:build": "pnpm --filter harness-runtime build && cp -r packages/harness-runtime/dist packages/humr-base/dist && docker build -t humr-base packages/humr-base",
     "docker:humr-base:start": "docker rm -f humr-base 2>/dev/null; docker run --name humr-base -p 3000:3000 humr-base",
