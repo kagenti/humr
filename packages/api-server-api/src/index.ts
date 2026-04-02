@@ -3,6 +3,7 @@ export type { ApiContext } from "./context.js";
 export type {
   Instance,
   InstanceSpec,
+  InstanceStatus,
   InstancesContext,
   CreateInstanceInput,
   UpdateInstanceInput,

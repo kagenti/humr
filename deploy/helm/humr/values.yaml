@@ -57,6 +57,19 @@ ingress:
   className: ""
   annotations: {}
 
+# -- API Server
+apiServer:
+  image: humr-api-server:latest
+  imagePullPolicy: Never
+  port: 4000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # -- Default agent template
 defaultTemplate:
   enabled: true

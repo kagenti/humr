@@ -6,6 +6,7 @@ import {
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import { trpc } from "./trpc.js";
+import { platform } from "./platform.js";
 
 type Role = "user" | "assistant";
 
@@ -137,6 +138,10 @@ export default function App() {
     path: string;
     content: string;
   } | null>(null);
+  const [templates, setTemplates] = useState<
+    { name: string; image: string; description?: string }[]
+  >([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
@@ -194,6 +199,19 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  const fetchTemplates = useCallback(async () => {
+    setLoadingTemplates(true);
+    try {
+      const list = await platform.templates.list.query();
+      setTemplates(list);
+    } catch {}
+    setLoadingTemplates(false);
+  }, []);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
 
   const fetchSessions = useCallback(async () => {
     setLoadingSessions(true);
@@ -494,6 +512,29 @@ export default function App() {
 
       <div className="body">
         <aside className="left-sidebar">
+          <div className="left-sidebar-header">
+            <span className="left-sidebar-title">templates</span>
+            <button className="left-sidebar-refresh" onClick={fetchTemplates}>↻</button>
+          </div>
+          <div className="instances-panel">
+            {loadingTemplates && (
+              <div className="sessions-empty">loading templates...</div>
+            )}
+            {!loadingTemplates && templates.length === 0 && (
+              <div className="sessions-empty">no templates</div>
+            )}
+            {templates.map((tmpl) => (
+              <div key={tmpl.name} className="instance-entry">
+                <div className="instance-header">
+                  <span className="instance-name">{tmpl.name}</span>
+                </div>
+                <span className="instance-meta">
+                  {tmpl.image}{tmpl.description ? ` · ${tmpl.description}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+
           <div className="left-sidebar-header">
             <span className="left-sidebar-title">sessions</span>
             <button className="left-sidebar-refresh" onClick={fetchSessions}>↻</button>

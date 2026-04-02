@@ -79,7 +79,16 @@ else
   echo "cert-manager already installed"
 fi
 
-# 3. Install ADK chart
+# 3. Build and load api-server image
+echo "Building api-server image..."
+docker build -f packages/api-server/Dockerfile -t humr-api-server:latest .
+IMAGE_TAR="/tmp/humr-api-server.tar"
+docker save humr-api-server:latest -o "$IMAGE_TAR"
+limactl copy "$IMAGE_TAR" "$LIMA_INSTANCE":"$IMAGE_TAR"
+limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$IMAGE_TAR"
+rm -f "$IMAGE_TAR"
+
+# 4. Install ADK chart
 if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
   echo "Humr already installed, use 'mise run cluster:upgrade' to update"
 else
@@ -95,13 +104,31 @@ kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
 ["cluster:upgrade"]
-description = "Upgrade Humr chart on running cluster"
+description = "Build api-server image, load into k3s, upgrade Humr chart"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
+
 KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+IMAGE_TAR="/tmp/humr-api-server.tar"
+
+echo "Building api-server image..."
+docker build -f packages/api-server/Dockerfile -t humr-api-server:latest .
+
+echo "Loading image into k3s..."
+docker save humr-api-server:latest -o "$IMAGE_TAR"
+limactl copy "$IMAGE_TAR" humr-k3s:"$IMAGE_TAR"
+limactl shell humr-k3s sudo k3s ctr images import "$IMAGE_TAR"
+rm -f "$IMAGE_TAR"
+
+echo "Upgrading Humr chart..."
 helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr
+
+echo "Restarting api-server pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-apiserver
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
+
 echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
 '''

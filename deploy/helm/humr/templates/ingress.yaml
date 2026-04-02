@@ -25,4 +25,14 @@ spec:
                 name: {{ include "humr.onecli.fullname" . }}
                 port:
                   name: web
+    - host: humr.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+                port:
+                  name: http
 {{- end }}

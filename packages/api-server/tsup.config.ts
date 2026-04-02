@@ -7,4 +7,5 @@ export default defineConfig({
   platform: "node",
   splitting: false,
   clean: true,
+  noExternal: ["api-server-api"],
 });
