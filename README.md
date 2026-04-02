@@ -14,6 +14,16 @@ Wraps a local Claude Code agent and exposes it via WebSocket + tRPC to a React U
 pnpm install
 ```
 
+## Environment variables
+
+Create a `packages/harness-runtime/.env` file (or set env vars in your shell) with runtime settings.
+
+- `PORT` (number, default `3000`)
+- `HUMR_DEV` (`true`/`false`, default `false`)
+- `CLAUDE_CONFIG_DIR` (path, default `~/.claude`)
+
+Example file is provided as `packages/harness-runtime/.env.example`.
+
 ## Running
 
 Start both the runtime server and the UI in separate terminals:
