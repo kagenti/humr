@@ -1,0 +1,85 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "adk.gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "adk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.onecli.gateway.port }}
+      targetPort: {{ .Values.onecli.gateway.port }}
+      protocol: TCP
+      name: gateway
+  selector:
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adk.gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "adk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.onecli.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: gateway
+          image: {{ .Values.onecli.gateway.image }}
+          command: ["node"]
+          args: ["apps/gateway/dist/main.js"]
+          ports:
+            - containerPort: {{ .Values.onecli.gateway.port }}
+              name: gateway
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.secrets.fullname" . }}
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: {{ include "adk.postgres.dsn" . | quote }}
+            - name: SECRET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.secrets.fullname" . }}
+                  key: SECRET_ENCRYPTION_KEY
+            - name: GATEWAY_CA_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.ca.fullname" . }}
+                  key: ca.crt
+            - name: GATEWAY_CA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.ca.fullname" . }}
+                  key: ca.key
+            - name: PORT
+              value: {{ .Values.onecli.gateway.port | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.onecli.gateway.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.onecli.gateway.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.onecli.gateway.resources | nindent 12 }}
