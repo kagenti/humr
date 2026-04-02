@@ -3,6 +3,8 @@ import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext } from "api-server-api";
 import { createApi, createK8sTemplatesContext, createK8sInstancesContext } from "./k8s.js";
+import { createAcpRelay } from "./acp-relay.js";
+import { createTrpcRelay } from "./trpc-relay.js";
 
 const namespace = process.env.NAMESPACE ?? "humr-agents";
 const port = Number(process.env.PORT ?? 4000);
@@ -13,6 +15,8 @@ const instances = createK8sInstancesContext(namespace, api, templates);
 
 const app = new Hono();
 
+app.all("/api/instances/:id/trpc/*", createTrpcRelay(namespace));
+
 app.all("/api/trpc/*", (c) =>
   fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -22,6 +26,17 @@ app.all("/api/trpc/*", (c) =>
   }),
 );
 
-serve({ fetch: app.fetch, port }, () => {
+const server = serve({ fetch: app.fetch, port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${port}\n`);
+});
+
+const acpRelay = createAcpRelay(namespace, api);
+
+server.on("upgrade", (req, socket, head) => {
+  const match = req.url?.match(/^\/api\/instances\/([^/]+)\/acp$/);
+  if (match) {
+    acpRelay.handleUpgrade(req, socket, head, match[1]);
+  } else {
+    socket.destroy();
+  }
 });

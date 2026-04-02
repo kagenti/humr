@@ -277,4 +277,35 @@ export function createK8sInstancesContext(
   };
 }
 
+export function podBaseUrl(instanceId: string, namespace: string): string {
+  return `${instanceId}-0.${instanceId}.${namespace}.svc:3000`;
+}
+
+export async function patchPodAnnotation(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  instanceId: string,
+  key: string,
+  value: string,
+): Promise<void> {
+  await api.patchNamespacedPod({
+    name: `${instanceId}-0`,
+    namespace,
+    body: { metadata: { annotations: { [key]: value } } },
+  });
+}
+
+export async function removePodAnnotation(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  instanceId: string,
+  key: string,
+): Promise<void> {
+  await api.patchNamespacedPod({
+    name: `${instanceId}-0`,
+    namespace,
+    body: { metadata: { annotations: { [key]: null } } },
+  });
+}
+
 export { createApi };

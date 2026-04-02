@@ -6,8 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": { target: "http://localhost:3000", ws: true },
-      "/platform": { target: "http://localhost:4000", rewrite: (path) => path.replace(/^\/platform/, "/api") },
+      "/api": { target: "http://humr.localtest.me:4444", ws: true, changeOrigin: true },
     },
   },
 });

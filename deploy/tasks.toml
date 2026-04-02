@@ -1,9 +1,9 @@
 # -- Shell environment --
 
 ["humr:shell"]
-description = "Print shell activation script. Usage: eval $(mise run humr:shell)"
-raw = true
+description = "Print shell activation script. Usage: eval "$(mise run humr:shell)""
 dir = "{{cwd}}"
+quiet = true
 run = """
 cat <<EOF
 deactivate () {
@@ -104,23 +104,32 @@ kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
 ["cluster:upgrade"]
-description = "Build api-server image, load into k3s, upgrade Humr chart"
+description = "Build api-server + example-agent images, load into k3s, upgrade Humr chart"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
 KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
-IMAGE_TAR="/tmp/humr-api-server.tar"
 
 echo "Building api-server image..."
 docker build -f packages/api-server/Dockerfile -t humr-api-server:latest .
 
-echo "Loading image into k3s..."
-docker save humr-api-server:latest -o "$IMAGE_TAR"
-limactl copy "$IMAGE_TAR" humr-k3s:"$IMAGE_TAR"
-limactl shell humr-k3s sudo k3s ctr images import "$IMAGE_TAR"
-rm -f "$IMAGE_TAR"
+echo "Building example-agent image..."
+pnpm --filter harness-runtime build
+rm -rf packages/humr-base/dist
+cp -r packages/harness-runtime/dist packages/humr-base/dist
+docker build -t humr-base packages/humr-base
+docker build -t humr-example-agent:latest packages/example-agent
+
+echo "Loading images into k3s..."
+for img in humr-api-server:latest humr-example-agent:latest; do
+  tar="/tmp/${img%%:*}.tar"
+  docker save "$img" -o "$tar"
+  limactl copy "$tar" humr-k3s:"$tar"
+  limactl shell humr-k3s sudo k3s ctr images import "$tar"
+  rm -f "$tar"
+done
 
 echo "Upgrading Humr chart..."
 helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr
