@@ -1,8 +1,7 @@
-import type { EnvVar, TemplateSpec } from "./templates.js";
+import type { EnvVar } from "./templates.js";
 
 export interface InstanceSpec {
   templateName: string;
-  templateSnapshot: TemplateSpec;
   desiredState: "running" | "hibernated";
   env?: EnvVar[];
   secretRef?: string;

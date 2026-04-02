@@ -12,6 +12,7 @@ import type {
   UpdateInstanceInput,
 } from "api-server-api";
 
+
 const LABEL_TYPE = "humr.ai/type";
 const LABEL_TEMPLATE = "agent-template";
 const LABEL_INSTANCE = "agent-instance";
@@ -141,7 +142,6 @@ export function createK8sInstancesContext(
 
       const spec: InstanceSpec = {
         templateName: input.templateName,
-        templateSnapshot: tmpl.spec,
         desiredState: "running",
         env: input.env,
         secretRef: input.secretRef,
