@@ -1,9 +1,8 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { appRouter } from "./router.js";
+import { appRouter, type ApiContext } from "api-server-api";
 import { createK8sTemplatesContext } from "./k8s.js";
-import type { ApiContext } from "./context.js";
 
 const namespace = process.env.NAMESPACE ?? "adk-agents";
 const port = Number(process.env.PORT ?? 4000);

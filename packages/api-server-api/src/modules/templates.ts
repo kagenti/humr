@@ -35,7 +35,8 @@ export interface Template {
 
 export interface CreateTemplateInput {
   name: string;
-  spec: TemplateSpec;
+  image: string;
+  description?: string;
 }
 
 export interface TemplatesContext {

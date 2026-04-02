@@ -5,11 +5,27 @@ import type {
   TemplateSpec,
   TemplatesContext,
   CreateTemplateInput,
-} from "./modules/templates.js";
+} from "api-server-api";
 
 const LABEL_TYPE = "humr.ai/type";
 const LABEL_TEMPLATE = "agent-template";
 const SPEC_KEY = "spec.yaml";
+
+const DEFAULT_SPEC = {
+  mounts: [
+    { path: "/workspace", persist: true },
+    { path: "/home/agent", persist: true },
+    { path: "/tmp", persist: false },
+  ],
+  resources: {
+    requests: { cpu: "250m", memory: "512Mi" },
+    limits: { cpu: "1", memory: "2Gi" },
+  },
+  securityContext: {
+    runAsNonRoot: true,
+    readOnlyRootFilesystem: false,
+  },
+};
 
 function parseTemplate(cm: k8s.V1ConfigMap): Template {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as TemplateSpec;
@@ -45,13 +61,18 @@ export function createK8sTemplatesContext(
     },
 
     async create(input: CreateTemplateInput) {
+      const spec: TemplateSpec = {
+        image: input.image,
+        description: input.description,
+        ...DEFAULT_SPEC,
+      };
       const cm: k8s.V1ConfigMap = {
         metadata: {
           name: input.name,
           namespace,
           labels: { [LABEL_TYPE]: LABEL_TEMPLATE },
         },
-        data: { [SPEC_KEY]: yaml.dump(input.spec) },
+        data: { [SPEC_KEY]: yaml.dump(spec) },
       };
       const created = await api.createNamespacedConfigMap({
         namespace,
