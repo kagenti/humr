@@ -190,6 +190,25 @@ export function createK8sInstancesContext(
       return parseInstance(updated);
     },
 
+    async wake(name) {
+      let cm: k8s.V1ConfigMap;
+      try {
+        cm = await api.readNamespacedConfigMap({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
+      spec.desiredState = "running";
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      const updated = await api.replaceNamespacedConfigMap({
+        name,
+        namespace,
+        body: cm,
+      });
+      return parseInstance(updated);
+    },
+
     async delete(name) {
       await api.deleteNamespacedConfigMap({ name, namespace });
 
