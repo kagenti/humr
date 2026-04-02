@@ -13,12 +13,12 @@
 |---------|------|
 | My Agents (card grid) | Agent name, harness badge (Claude Code / custom), status indicator (running/hibernated/error), last activity timestamp |
 | Platform Health (stats row) | Running agents count, failed schedules (last 24h), pending permission requests |
-| Quick Actions | Create Agent, Import Agent |
+| Quick Actions | Create Agent |
 | Recent Activity (compact list) | Last 5 events across all agents (schedule runs, errors, permission requests) |
 
 ## Agent Catalog Layout
 
-Search bar at top. Filter chips below (harness type, status, tags). Grid of agent cards, switchable to list view.
+Search bar at top. Filter chips below (harness type, status). Grid of agent cards, switchable to list view.
 
 ### Agent Card
 
@@ -29,18 +29,14 @@ Search bar at top. Filter chips below (harness type, status, tags). Grid of agen
 | Harness badge | "Claude Code", "Custom", etc. |
 | Status indicator | Running (green dot), hibernated (gray), error (red) |
 | Last active | Relative timestamp |
-| Tags | User-assigned labels |
-| Owner | Creator name |
 
 ## Interactions
 
 - Click agent card -> Agent Detail
-- Click "Create Agent" -> Creation flow (deferred, placeholder)
+- Click "Create Agent" -> Simple creation form (name, template, description)
 - Click activity item (Home) -> navigates to agent's Logs tab
-- **Create Agent** / **Import Agent** buttons (Catalog top right) -> respective flows
-- Bulk actions: wake/hibernate selected agents
-- Filter chips toggle to narrow catalog results
 - Grid/list view toggle
+- Filter chips toggle to narrow catalog results
 
 ## States
 
@@ -60,8 +56,8 @@ Search bar at top. Filter chips below (harness type, status, tags). Grid of agen
 - [ ] Recent Activity shows last 5 events across all agents
 - [ ] Clicking an agent card navigates to Agent Detail
 - [ ] Agent Catalog displays all platform agents with search and filter
-- [ ] Filter chips work for harness type, status, and tags
+- [ ] Filter chips work for harness type and status
 - [ ] Grid/list view toggle works
-- [ ] Bulk wake/hibernate actions work on selected agents
+- [ ] "Create Agent" opens a simple creation form (name, template, description)
 - [ ] Empty states display appropriate messaging and CTAs
 - [ ] Error state shows staleness indicator on agent cards

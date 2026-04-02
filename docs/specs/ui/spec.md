@@ -21,12 +21,14 @@ Sessions are conversations managed by the agent. The platform relays messages. M
 Agent Instance: Code Guardian
 +-- Workspace (persistent)
 |   +-- .config/soul.md, rules.md, heartbeat.md
-|   +-- memory/2026-04-01.md (daily logs from automated runs)
+|   +-- .triggers/ (controller-managed)
+|   +-- memory/ (daily logs from automated runs)
+|   +-- repos/ (git clones)
+|   +-- artifacts/ (generated reports)
 |
 +-- Sessions (agent-managed)
 |   +-- Session 1: "Security review - Apr 1" (active)
 |   +-- Session 2: "Weekly summary - Mar 31" (inactive)
-|   +-- Session 3: "Initial setup - Mar 28" (inactive)
 |
 +-- Automated Runs (heartbeat, cron)
     +-- Execute in workspace context, write results to workspace
@@ -34,12 +36,13 @@ Agent Instance: Code Guardian
 
 **Key principles:**
 
-- **Workspace is the source of truth.** The agent's workspace (`.config/`, `memory/`, `repos/`) is persistent. Automated runs read from and write to this workspace.
+- **Workspace is the source of truth.** The agent's workspace (`.config/`, `memory/`, `repos/`, `artifacts/`) is persistent. Automated runs read from and write to this workspace.
+- **Workspace contract is harness-agnostic.** Platform-defined paths (`.config/soul.md`, `.config/rules.md`, `.config/heartbeat.md`, `.triggers/`, `memory/`, `repos/`, `artifacts/`) are the same for every harness. Harness-specific files (e.g. `CLAUDE.md`, `.claude/`) coexist alongside them.
 - **Multiple concurrent sessions.** Each session is an independent conversation. The workspace is shared across all sessions.
 - **Sessions are resumable, environment is ephemeral.** The instance can be hibernated and woken. Workspace persists across hibernation. Users can resume past sessions — conversation history is preserved. Session-local state (tool installs, config changes) may be lost on restart.
 - **Instance-level hibernation.** The platform hibernates instances after inactivity. Workspace persists. Scheduled tasks can wake the instance automatically.
 - **Workspace is directly editable.** Users can edit workspace files directly in the Workspace tab. The agent can also modify its own workspace files programmatically.
-- **Activity linking.** Automated run outputs appear in the Overview tab's activity feed. An "Ask about this" action opens the Chat tab with pre-filled context.
+- **Heartbeat is native.** Every instance has a heartbeat — a periodic wake-up where the agent reads `.config/heartbeat.md` and acts (or skips if blank). Interval is per-instance configurable; template sets the default.
 
 **Session types:**
 
@@ -51,7 +54,7 @@ Agent Instance: Code Guardian
 
 ## Information Architecture
 
-Left sidebar navigation. Shared header with global search, notifications bell (unread count), and user menu.
+Left sidebar navigation. Shared header with global search and notifications bell (unread count).
 
 ```
 Humr
@@ -75,10 +78,29 @@ The sidebar has two modes depending on the current page.
 
 - **Back nav.** Arrow-left icon + "All Agents" text link. Returns to Agent Catalog.
 - **Agent identity.** Compact agent icon (28x28), agent name (14px semibold), status dot (green=running, red=error, gray=hibernated).
-- **Sessions section.** Scrollable list of sessions. Header: "Sessions" label + "+" button. Each item: session name, date, status dot. Selected: highlighted + left accent border. Right-click: Rename, Archive, Delete.
-- **Workspace section.** Collapsible file tree. Files: `.config/soul.md`, `.config/rules.md`, `.config/heartbeat.md`. Folders: `memory/`. Clicking a file navigates to the Workspace tab.
+- **Sessions section.** Scrollable list of sessions. Each item: session name, date, status dot. Selected: highlighted + left accent border. Clicking switches the Chat tab to that session.
+- **Workspace section.** Collapsible file tree. Platform paths pinned at top: `.config/soul.md`, `.config/rules.md`, `.config/heartbeat.md`. Folders: `memory/`, `repos/`, `artifacts/`. Clicking a file navigates to the Workspace tab.
 - **Quick nav icons.** Home, Catalog as 2 compact icons.
 - **User profile.** User icon + name.
+
+## Instance States (PoC)
+
+Three states, no transitional states for PoC:
+
+| State | Indicator | Description |
+|---|---|---|
+| Running | Green dot | Instance is active, accepting chat, executing schedules |
+| Hibernated | Gray dot | Instance is paused, workspace persists, no execution |
+| Error | Red dot | Instance encountered a fatal error |
+
+## Permission Model (PoC)
+
+Two-layer permission system:
+
+1. **Platform-level policies.** Configured per template (defaults) and per instance (overrides). Auto-approve or auto-deny certain permission types before they reach the user.
+2. **User-level decisions.** Anything not covered by policy surfaces as an inline permission card in chat for manual approve/deny.
+
+The Permissions tab on Agent Overview is where users view and edit instance-level policy overrides and see the audit log of past decisions.
 
 ## Stories
 
@@ -87,21 +109,21 @@ Detailed screen specs, interactions, states, and acceptance criteria:
 | # | Story | Screens | Description |
 |---|-------|---------|-------------|
 | 01 | [Agent Catalog](stories/01-agent-catalog.md) | Home, Catalog | Browse agents, platform health, search and filter |
-| 02 | [Agent Overview](stories/02-agent-overview.md) | Detail header, Overview tab | Health, metrics, activity feed, "Ask about this" |
-| 03 | [Chat](stories/03-chat.md) | Chat tab | Converse with agent, context linking, artifacts |
+| 02 | [Agent Overview](stories/02-agent-overview.md) | Detail header, Overview tab | Health, activity feed, next scheduled runs |
+| 03 | [Chat](stories/03-chat.md) | Chat tab | Converse with agent, inline permissions, clickable file paths |
 | 04 | [Workspace](stories/04-workspace.md) | Workspace tab | Browse and edit agent workspace files |
-| 05 | [Schedules](stories/05-schedules.md) | Schedules tab | Manage cron and heartbeat schedules |
-| 06 | [Logs](stories/06-logs.md) | Logs tab | Chronological log viewer with filters |
-| 07 | [Permissions](stories/07-permissions.md) | Chat tab (inline card) | Allow/Deny tool-level permission requests |
-| 08 | [Session Lifecycle](stories/08-session-lifecycle.md) | Sidebar, Chat tab | Create, resume, rename, archive, delete sessions |
-| 09 | [Debug Mode](stories/09-debug-mode.md) | Chat tab (footer) | Token usage, latency, tool calls, model info |
-| 10 | [Deploy Agent](stories/10-deploy-agent.md) | End-to-end flow | Create agent, configure workspace, set schedules, wake |
+| 05 | [Schedules](stories/05-schedules.md) | Schedules tab | Manage heartbeat interval and cron schedules |
+| 06 | [Logs](stories/06-logs.md) | Logs tab | Agent stdout/stderr and platform event viewer |
+| 07 | [Permissions](stories/07-permissions.md) | Chat tab (inline card), Permissions tab | Two-layer permission policies and inline approval |
+| 08 | [Session Lifecycle](stories/08-session-lifecycle.md) | Sidebar, Chat tab | List and switch between sessions |
+| 09 | [Debug Mode](stories/09-debug-mode.md) | Chat tab (footer) | ACP message log, token usage per message |
+| 10 | [Deploy Agent](stories/10-deploy-agent.md) | End-to-end flow | Create agent via simple form, configure workspace, set schedules, wake |
 
 ## Cross-Cutting Concerns
 
 **Notifications.** Bell icon in header. Types: permission request (urgent), schedule failure (warning), agent error (error). Unread count badge. Clicking opens dropdown with recent notifications; "View All" links to full list (deferred).
 
-**Global search.** Search bar in header. Searches agent names, descriptions, and tags. Full-text search across workspace files is deferred.
+**Global search.** Search bar in header. Searches agent names and descriptions. Full-text search across workspace files is deferred.
 
 **Empty states.** Every screen and section has a designed empty state with clear messaging and a CTA where applicable. No blank screens.
 
@@ -114,6 +136,41 @@ Detailed screen specs, interactions, states, and acceptance criteria:
 ## Post-PoC Features
 
 Features designed but deferred from PoC scope. These are validated ideas ready for implementation once the PoC foundation is stable.
+
+### Instance Metadata
+
+- **Owner** field on instances (creator name, filterable in catalog)
+- **Tags** — user-assigned labels for categorization and filtering
+- **Created date** visible on overview
+
+### Key Metrics
+
+Stat cards on Agent Overview: invocations (24h / 7d / 30d), avg response time, error rate, uptime counter. Click metric to navigate to Logs with relevant filter.
+
+### Semantic Workspace Views
+
+- `memory/` rendered as a timeline view
+- `soul.md` with a dedicated identity editor
+- Harness-aware file highlighting based on template's harness type
+
+### Context Linking
+
+"Ask about this" action on activity feed items. Opens Chat tab with pre-filled context: "Re: [activity summary] from [timestamp]". Agent reads workspace to provide context about the referenced event.
+
+### Full Session Management
+
+- "+" button to create new sessions
+- Auto-naming from first agent response
+- Right-click context menu: Rename, Archive, Delete
+- "Show archived" toggle
+- Resumed session dividers and environment reset banners
+
+### Rich Debug Mode
+
+- Latency metrics (total + time-to-first-token)
+- Tool call breakdown with name, duration, status
+- Model identifier
+- Cost tracking per message and per session
 
 ### Multi-user RBAC
 
@@ -136,7 +193,7 @@ Two-way connection between a session and a Slack or Telegram channel. Messages m
 
 ### Additional Screens
 
-- **Creation Wizard:** Guided agent creation flow.
+- **Creation Wizard:** Guided multi-step agent creation flow.
 - **Import Agent:** Import agent configuration from external source.
 - **Platform Settings:** Global integrations, credential management, platform defaults.
 - **Execution Environment:** Per-agent environment configuration.

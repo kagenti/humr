@@ -16,7 +16,7 @@ Thin bar at the top of the chat area:
 
 | Element | Description |
 |---------|-------------|
-| Context link (left) | When opened via "Ask about this": link icon + "Re: [activity summary] from [timestamp]". Otherwise empty. |
+| Session indicator (left) | Current session name |
 | System messages toggle (right) | Eye icon. Toggles visibility of tool calls and system events. Off by default (clean view). |
 | Debug toggle (right) | Bug icon. Toggles debug info on agent messages (see [09-debug-mode](09-debug-mode.md)). |
 
@@ -25,14 +25,14 @@ Thin bar at the top of the chat area:
 | Type | Rendering |
 |------|-----------|
 | User message | Right-aligned bubble, text + optional file attachments |
-| Agent response | Left-aligned bubble, markdown rendered, code blocks with copy button |
+| Agent response | Left-aligned bubble, markdown rendered, code blocks with copy button. File paths rendered as clickable links that navigate to the Workspace tab. |
 | Agent artifact | Expandable card (report, summary, file) with download action |
 | System event | Centered, muted text. Hidden by default with toggle. |
 | Permission request | Full-width highlighted card (see [07-permissions](07-permissions.md)) |
 
-### Context linking
+### Clickable file paths
 
-When opened via "Ask about this" from the Overview tab, the chat toolbar shows a context link and the agent responds with context from its workspace about the referenced event. The user can then ask follow-up questions naturally.
+When the agent references workspace files in its responses, file paths are rendered as clickable links. Clicking a path navigates to the Workspace tab with that file opened in the editor.
 
 ## Interactions
 
@@ -41,6 +41,7 @@ When opened via "Ask about this" from the Overview tab, the chat toolbar shows a
 - Download artifact from agent response
 - Toggle system message visibility (eye icon)
 - Toggle debug mode (bug icon)
+- Click file path in agent response -> opens in Workspace tab
 
 ## States
 
@@ -48,7 +49,6 @@ When opened via "Ask about this" from the Overview tab, the chat toolbar shows a
 - **Active:** Messages flowing. Current session highlighted in sidebar.
 - **Agent processing:** Typing indicator with elapsed time.
 - **Agent error:** Error message in chat with retry option.
-- **Context-linked:** Opened from "Ask about this". Context link visible in chat toolbar. Agent responds with workspace context.
 - **Instance hibernated:** Chat shows "This agent is hibernated. Wake it to continue." with Wake button.
 
 ## Scenario: Chat with Running Agent
@@ -60,15 +60,6 @@ When opened via "Ask about this" from the Overview tab, the chat toolbar shows a
 5. Agent generates artifact: report card appears in chat with "Download PDF" action.
 6. Click download.
 
-## Scenario: Investigate a Finding via Activity Link
-
-1. From Overview tab, see activity item: "Heartbeat found SQL injection in /api/users"
-2. Click "Ask about this" on the activity item.
-3. Chat tab opens with context link: "Re: SQL injection finding from heartbeat at 15:30"
-4. Agent responds with full context from workspace: severity, exact code location, commit hash, recommended fix.
-5. Ask follow-up: "Is this related to the XSS issue you found last week?"
-6. Agent cross-references daily memory logs and provides context.
-
 ## Acceptance Criteria
 
 - [ ] Chat displays message list with user and agent messages in bubble format
@@ -76,7 +67,8 @@ When opened via "Ask about this" from the Overview tab, the chat toolbar shows a
 - [ ] Agent artifacts render as expandable cards with download action
 - [ ] File upload via paperclip icon attaches files to the message
 - [ ] System events are hidden by default, toggleable via eye icon
-- [ ] Context link appears in toolbar when opened via "Ask about this"
+- [ ] File paths in agent responses are clickable and navigate to Workspace tab
+- [ ] Session indicator in toolbar shows current session name
 - [ ] Typing indicator with elapsed time shows during agent processing
 - [ ] Error messages display with retry option
 - [ ] Hibernated state shows wake prompt
