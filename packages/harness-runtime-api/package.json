@@ -8,6 +8,9 @@
     "@trpc/server": "^11.16.0",
     "zod": "^4.3.6"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "typescript": "^6.0.2"
   }

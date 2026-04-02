@@ -33,3 +33,19 @@ pnpm dev
 ```
 
 Open http://localhost:5173 in your browser.
+
+## Docker
+
+Build and run the base image:
+
+```bash
+pnpm docker:humr-base:build
+pnpm docker:humr-base:start
+```
+
+Build and run the example agent (extends humr-base, copies `workspace/` into the container):
+
+```bash
+pnpm docker:example-agent:build
+pnpm docker:example-agent:start
+```

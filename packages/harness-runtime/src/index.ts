@@ -7,13 +7,11 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter, type HarnessContext } from "harness-runtime-api";
 import { createClaudeCodeAuthContext } from "./modules/claude-code-auth.js";
 import { createFilesContext } from "./modules/files.js";
+import { config } from "./modules/config.js";
 
-const PORT = Number(process.env.PORT ?? 3000);
-const agentScript = join(dirname(fileURLToPath(import.meta.url)), "agent.ts");
-const WORKING_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../working-dir",
-);
+const __dir = dirname(fileURLToPath(import.meta.url));
+const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
+const WORKING_DIR = join(__dir, "../working-dir");
 
 const createContext = (): HarnessContext => ({
   workingDir: WORKING_DIR,
@@ -51,10 +49,15 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/humr" });
 
 wss.on("connection", (ws) => {
-  const agent = spawn("npx", ["tsx", agentScript], {
-    stdio: ["pipe", "pipe", "inherit"],
-    cwd: WORKING_DIR,
-  });
+  const agent = config.HUMR_DEV
+    ? spawn("npx", ["tsx", agentScript], {
+        stdio: ["pipe", "pipe", "inherit"],
+        cwd: WORKING_DIR,
+      })
+    : spawn("node", [agentScript], {
+        stdio: ["pipe", "pipe", "inherit"],
+        cwd: WORKING_DIR,
+      });
 
   let buf = "";
   agent.stdout!.on("data", (chunk: Buffer) => {
@@ -80,6 +83,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(PORT, () =>
-  process.stderr.write(`Humr on http://localhost:${PORT}\n`),
+server.listen(config.PORT, () =>
+  process.stderr.write(`Humr on http://localhost:${config.PORT}\n`),
 );

@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import {
@@ -10,6 +9,7 @@ import {
   existsSync,
 } from "node:fs";
 import type { ClaudeCodeAuthContext } from "harness-runtime-api";
+import { config } from "./config.js";
 
 function base64url(buf: Buffer): string {
   return buf
@@ -78,8 +78,7 @@ function extractOAuthParams(): Promise<{
 }
 
 function getCredentialsPath() {
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+  const configDir = config.CLAUDE_CONFIG_DIR;
   return { configDir, credPath: join(configDir, ".credentials.json") };
 }
 
