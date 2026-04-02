@@ -1,0 +1,66 @@
+# -- Target namespace for agent workloads (instances, templates, schedules)
+agentNamespace: adk-agents
+
+# -- OneCLI dependencies (postgres, gateway, web, CA)
+onecli:
+  # -- PostgreSQL configuration
+  postgres:
+    image: postgres:18-alpine
+    user: onecli
+    # password is auto-generated if not set (see ca-secret.yaml / secrets template)
+    password: ""
+    database: onecli
+    storage: 5Gi
+    storageClass: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # -- OneCLI Gateway configuration
+  gateway:
+    image: ghcr.io/onecli/onecli:latest
+    replicas: 1
+    port: 10255
+    # secretEncryptionKey is auto-generated if not set
+    secretEncryptionKey: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # -- OneCLI Web configuration
+  web:
+    image: ghcr.io/onecli/onecli:latest
+    replicas: 1
+    port: 10254
+    # nextauthSecret is auto-generated if not set
+    nextauthSecret: ""
+    nextauthUrl: "http://localhost:10254"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # -- Self-signed CA for OneCLI MITM TLS
+  ca:
+    # CN for the generated CA certificate
+    commonName: "ADK OneCLI CA"
+    # Validity in days
+    validity: 3650
+
+# -- Default agent template
+defaultTemplate:
+  enabled: true
+  name: code-guardian
+  image: "ghcr.io/myorg/code-guardian:latest"
+  description: "Persistent agent for repo monitoring"
