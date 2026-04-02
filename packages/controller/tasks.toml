@@ -12,7 +12,7 @@ run = "go vet ./..."
 
 ["controller:check:build"]
 dir = "{{config_root}}/packages/controller"
-run = "go build ./..."
+run = "go build -o dist/ ./..."
 
 ["controller:fix"]
 run = "echo 'No fix tasks for controller yet'"
@@ -23,4 +23,4 @@ run = "go test ./..."
 
 ["controller:build"]
 dir = "{{config_root}}/packages/controller"
-run = "CGO_ENABLED=0 go build -o bin/controller ."
+run = "CGO_ENABLED=0 go build -o dist/controller ."
