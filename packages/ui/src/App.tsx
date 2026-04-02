@@ -127,6 +127,7 @@ async function openConnection(
 }
 
 export default function App() {
+  const [view, setView] = useState<"list" | "chat">("list");
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [instances, setInstances] = useState<InstanceView[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(false);
@@ -153,6 +154,7 @@ export default function App() {
     { name: string; image: string; description?: string }[]
   >([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [creatingInstance, setCreatingInstance] = useState<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
@@ -247,6 +249,19 @@ export default function App() {
     fetchInstances();
   }, [fetchInstances]);
 
+  const createInstance = useCallback(async (templateName: string) => {
+    const name = window.prompt("Instance name:");
+    if (!name?.trim()) return;
+    setCreatingInstance(templateName);
+    try {
+      await platform.instances.create.mutate({ name: name.trim(), templateName });
+      await fetchInstances();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to create instance");
+    }
+    setCreatingInstance(null);
+  }, [fetchInstances]);
+
   const selectInstance = useCallback((name: string) => {
     connectionRef.current?.ws.close();
     connectionRef.current = null;
@@ -259,7 +274,24 @@ export default function App() {
     setOpenFile(null);
     setAuthRequired(false);
     setLog([]);
+    setView("chat");
   }, []);
+
+  const goBack = useCallback(() => {
+    connectionRef.current?.ws.close();
+    connectionRef.current = null;
+    activeSessionIdRef.current = null;
+    setSelectedInstance(null);
+    setSessionId(null);
+    setMessages([]);
+    setSessions([]);
+    setFileTree([]);
+    setOpenFile(null);
+    setAuthRequired(false);
+    setLog([]);
+    setView("list");
+    fetchInstances();
+  }, [fetchInstances]);
 
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return;
@@ -545,12 +577,94 @@ export default function App() {
     return "running";
   }
 
+  const instancesByTemplate = useMemo(() => {
+    const map = new Map<string, InstanceView[]>();
+    for (const inst of instances) {
+      const list = map.get(inst.templateName) ?? [];
+      list.push(inst);
+      map.set(inst.templateName, list);
+    }
+    return map;
+  }, [instances]);
+
+  if (view === "list") {
+    return (
+      <div className="shell">
+        <header className="header">
+          <span className="header-logo">◈ Humr</span>
+          <span className="header-sub">PROTOTYPE</span>
+        </header>
+
+        <div className="list-view">
+          <div className="list-toolbar">
+            <span className="list-title">templates</span>
+            <button className="left-sidebar-refresh" onClick={() => { fetchTemplates(); fetchInstances(); }}>↻</button>
+          </div>
+
+          {(loadingTemplates || loadingInstances) && (
+            <div className="sessions-empty">loading...</div>
+          )}
+          {!loadingTemplates && templates.length === 0 && (
+            <div className="sessions-empty">no templates</div>
+          )}
+
+          <div className="template-grid">
+            {templates.map((tmpl) => {
+              const tmplInstances = instancesByTemplate.get(tmpl.name) ?? [];
+              return (
+                <div key={tmpl.name} className="template-card">
+                  <div className="template-card-header">
+                    <div className="template-card-title-row">
+                      <span className="template-card-name">{tmpl.name}</span>
+                      <button
+                        className="create-instance-btn"
+                        disabled={creatingInstance === tmpl.name}
+                        onClick={() => createInstance(tmpl.name)}
+                      >
+                        {creatingInstance === tmpl.name ? "…" : "+ instance"}
+                      </button>
+                    </div>
+                    <span className="template-card-meta">
+                      {tmpl.image}{tmpl.description ? ` · ${tmpl.description}` : ""}
+                    </span>
+                  </div>
+                  <div className="template-card-instances">
+                    {tmplInstances.length === 0 && (
+                      <div className="template-card-empty">no instances</div>
+                    )}
+                    {tmplInstances.map((inst) => (
+                      <div
+                        key={inst.name}
+                        className="instance-entry clickable"
+                        onClick={() => selectInstance(inst.name)}
+                      >
+                        <div className="instance-header">
+                          <span className={`instance-dot ${instanceDotClass(inst)}`} />
+                          <span className="instance-name">{inst.name}</span>
+                        </div>
+                        <span className="instance-meta">
+                          {inst.status ? inst.status.currentState : "unknown"}
+                          {inst.status?.podReady ? " · pod ready" : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="shell">
       <header className="header">
+        <button className="back-btn" onClick={goBack}>← templates</button>
         <span className="header-logo">◈ Humr</span>
-        <span className="header-sub">PROTOTYPE</span>
-        {sessionId && selectedInstance && (
+        <span className="header-sub">{selectedInstance}</span>
+        {sessionId && (
           <button
             className="new-session-btn"
             onClick={() => {
@@ -572,59 +686,6 @@ export default function App() {
       <div className="body">
         <aside className="left-sidebar">
           <div className="left-sidebar-header">
-            <span className="left-sidebar-title">templates</span>
-            <button className="left-sidebar-refresh" onClick={fetchTemplates}>↻</button>
-          </div>
-          <div className="instances-panel">
-            {loadingTemplates && (
-              <div className="sessions-empty">loading templates...</div>
-            )}
-            {!loadingTemplates && templates.length === 0 && (
-              <div className="sessions-empty">no templates</div>
-            )}
-            {templates.map((tmpl) => (
-              <div key={tmpl.name} className="instance-entry">
-                <div className="instance-header">
-                  <span className="instance-name">{tmpl.name}</span>
-                </div>
-                <span className="instance-meta">
-                  {tmpl.image}{tmpl.description ? ` · ${tmpl.description}` : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="left-sidebar-header">
-            <span className="left-sidebar-title">instances</span>
-            <button className="left-sidebar-refresh" onClick={fetchInstances}>↻</button>
-          </div>
-          <div className="instances-panel">
-            {loadingInstances && (
-              <div className="sessions-empty">loading instances...</div>
-            )}
-            {!loadingInstances && instances.length === 0 && (
-              <div className="sessions-empty">no instances</div>
-            )}
-            {instances.map((inst) => (
-              <div
-                key={inst.name}
-                className={`instance-entry clickable ${inst.name === selectedInstance ? "selected" : ""}`}
-                onClick={() => selectInstance(inst.name)}
-              >
-                <div className="instance-header">
-                  <span className={`instance-dot ${instanceDotClass(inst)}`} />
-                  <span className="instance-name">{inst.name}</span>
-                </div>
-                <span className="instance-meta">
-                  {inst.templateName}
-                  {inst.status ? ` · ${inst.status.currentState}` : ""}
-                  {inst.status?.podReady ? " · pod ready" : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="left-sidebar-header">
             <span className="left-sidebar-title">sessions</span>
             <button className="left-sidebar-refresh" onClick={fetchSessions}>↻</button>
           </div>
@@ -633,7 +694,7 @@ export default function App() {
               <div className="sessions-empty">loading sessions...</div>
             )}
             {!loadingSessions && sessions.length === 0 && (
-              <div className="sessions-empty">{selectedInstance ? "no sessions" : "select an instance"}</div>
+              <div className="sessions-empty">no sessions</div>
             )}
             {sessions.map((s) => (
               <div
@@ -656,10 +717,7 @@ export default function App() {
 
         <section className="chat-panel">
           <div className="messages">
-            {!selectedInstance && (
-              <div className="empty">select an instance to start chatting</div>
-            )}
-            {selectedInstance && authRequired && (
+            {authRequired && (
               <div className="auth-banner">
                 <span className="auth-title">authentication required</span>
                 <p className="auth-desc">
@@ -728,13 +786,13 @@ export default function App() {
                 )}
               </div>
             )}
-            {selectedInstance && !authRequired && loadingSession && (
+            {!authRequired && loadingSession && (
               <div className="loading-session">
                 <span className="spinner" />
                 loading session…
               </div>
             )}
-            {selectedInstance && !authRequired && !loadingSession && messages.length === 0 && (
+            {!authRequired && !loadingSession && messages.length === 0 && (
               <div className="empty">send a message to start a new session</div>
             )}
             {messages.map((m) => (
@@ -776,12 +834,12 @@ export default function App() {
               onKeyDown={onKeyDown}
               placeholder="message agent  ↵ send  shift+↵ newline"
               rows={1}
-              disabled={busy || !selectedInstance || authRequired}
+              disabled={busy || authRequired}
             />
             <button
               className="send-btn"
               onClick={send}
-              disabled={busy || !selectedInstance || authRequired || !input.trim()}
+              disabled={busy || authRequired || !input.trim()}
             >
               {busy ? "…" : "send"}
             </button>
@@ -807,9 +865,7 @@ export default function App() {
             {rightTab === "files" && !openFile && (
               <div className="file-tree">
                 {fileTree.length === 0 && (
-                  <div className="file-tree-empty">
-                    {selectedInstance ? "no files yet" : "select an instance"}
-                  </div>
+                  <div className="file-tree-empty">no files yet</div>
                 )}
                 {fileTree.map((e) => (
                   <div

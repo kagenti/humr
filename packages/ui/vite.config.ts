@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": { target: "http://localhost:4000", ws: true },
+      "/api": { target: "http://humr.localtest.me:4444", ws: true, changeOrigin: true },
     },
   },
 });
