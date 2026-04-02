@@ -38,15 +38,15 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
       wss.handleUpgrade(req, socket, head, (client) => {
         patchPodAnnotation(api, namespace, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-        upstream.on("message", (data) => {
+        upstream.on("message", (data, isBinary) => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(data);
+            client.send(data, { binary: isBinary });
           }
         });
 
-        client.on("message", (data) => {
+        client.on("message", (data, isBinary) => {
           if (upstream.readyState === WebSocket.OPEN) {
-            upstream.send(data);
+            upstream.send(data, { binary: isBinary });
 
             try {
               const msg = JSON.parse(data.toString());

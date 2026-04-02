@@ -632,22 +632,30 @@ export default function App() {
                     {tmplInstances.length === 0 && (
                       <div className="template-card-empty">no instances</div>
                     )}
-                    {tmplInstances.map((inst) => (
-                      <div
-                        key={inst.name}
-                        className="instance-entry clickable"
-                        onClick={() => selectInstance(inst.name)}
-                      >
-                        <div className="instance-header">
-                          <span className={`instance-dot ${instanceDotClass(inst)}`} />
-                          <span className="instance-name">{inst.name}</span>
+                    {tmplInstances.map((inst) => {
+                      const ready = inst.status?.podReady === true;
+                      return (
+                        <div
+                          key={inst.name}
+                          className={`instance-entry${ready ? " clickable" : " disabled"}`}
+                          onClick={ready ? () => selectInstance(inst.name) : undefined}
+                        >
+                          <div className="instance-header">
+                            <span className={`instance-dot ${instanceDotClass(inst)}`} />
+                            <span className="instance-name">{inst.name}</span>
+                          </div>
+                          <span className="instance-meta">
+                            {inst.status
+                              ? ready
+                                ? inst.status.currentState
+                                : inst.status.currentState === "running"
+                                  ? "starting"
+                                  : inst.status.currentState
+                              : "unknown"}
+                          </span>
                         </div>
-                        <span className="instance-meta">
-                          {inst.status ? inst.status.currentState : "unknown"}
-                          {inst.status?.podReady ? " · pod ready" : ""}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );

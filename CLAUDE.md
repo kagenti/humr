@@ -40,7 +40,7 @@ mise run cluster:uninstall  # helm uninstall (keeps PVCs)
 mise run cluster:delete     # destroy k3s VM entirely
 ```
 
-Activate cluster environment: `eval $(mise run humr:shell)` (sets KUBECONFIG, adds prompt prefix, `deactivate` to undo).
+Activate cluster environment: `eval "$(mise run humr:shell)"` (sets KUBECONFIG, adds prompt prefix, `deactivate` to undo).
 
 ## Architecture
 

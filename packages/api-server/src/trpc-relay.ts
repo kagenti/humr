@@ -5,7 +5,8 @@ export function createTrpcRelay(namespace: string) {
   return async (c: Context) => {
     const instanceId = c.req.param("id")!;
     const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
-    const upstreamUrl = `http://${podBaseUrl(instanceId, namespace)}/api/trpc${rest}`;
+    const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
+    const upstreamUrl = `http://${podBaseUrl(instanceId, namespace)}/api/trpc${rest}${qs}`;
 
     try {
       const headers = new Headers(c.req.raw.headers);
