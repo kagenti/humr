@@ -29,6 +29,19 @@ export PS1="(humr-k3s) \\${__OLD_PS1}"
 EOF
 """
 
+["cluster:proxy"]
+description = "Port-forward Traefik ingress to localhost:4444 (access via onecli.localtest.me:4444)"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+echo "Forwarding Traefik to localhost:4444..."
+echo "  onecli.localtest.me:4444  →  OneCLI Web Dashboard"
+echo ""
+echo "Press Ctrl+C to stop."
+kubectl --kubeconfig="$KUBECONFIG" port-forward -n kube-system svc/traefik 4444:80
+'''
+
 # -- Cluster lifecycle (k3s via lima) --
 
 ["cluster:install"]
@@ -94,14 +107,16 @@ kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
 ["cluster:uninstall"]
-description = "Uninstall Humr chart (keeps cluster and PVCs)"
+description = "Uninstall Humr chart and clean up all resources"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
 helm --kubeconfig="$KUBECONFIG" uninstall humr || true
-echo "ADK uninstalled. PVCs preserved. Use 'mise run cluster:delete' to remove the entire cluster."
+kubectl --kubeconfig="$KUBECONFIG" delete pvc --all 2>/dev/null || true
+kubectl --kubeconfig="$KUBECONFIG" delete ns humr-agents --ignore-not-found 2>/dev/null || true
+echo "Humr uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
 '''
 
 ["cluster:delete"]

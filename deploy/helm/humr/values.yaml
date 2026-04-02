@@ -39,7 +39,7 @@ onecli:
 
   # -- Self-signed CA for MITM TLS
   ca:
-    commonName: "ADK OneCLI CA"
+    commonName: "Humr OneCLI CA"
     validity: 3650
 
   # -- Combined container resources
@@ -50,6 +50,13 @@ onecli:
     limits:
       cpu: "1"
       memory: 1Gi
+
+# -- Ingress (uses k3s built-in Traefik, accessed via port-forward on port 4444)
+# Subdomains: onecli.localtest.me:4444 (future: humr.localtest.me:4444 for API Server)
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
 
 # -- Default agent template
 defaultTemplate:

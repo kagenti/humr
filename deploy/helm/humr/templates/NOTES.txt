@@ -20,5 +20,6 @@ To verify:
   kubectl get cm -n {{ .Values.agentNamespace }} -l humr.ai/type=agent-template
   kubectl get secret {{ include "humr.onecli.ca.fullname" . }} -n {{ .Release.Namespace }}
 
-To access OneCLI Web:
-  kubectl port-forward svc/{{ printf "%s-onecli" (include "humr.fullname" .) }} {{ .Values.onecli.web.port }}:{{ .Values.onecli.web.port }} -n {{ .Release.Namespace }}
+To access services:
+  mise run cluster:proxy     # forwards Traefik to localhost:4444
+  # then open: http://onecli.localtest.me:4444
