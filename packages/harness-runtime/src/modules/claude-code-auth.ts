@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { randomBytes, createHash } from "node:crypto";
 import {
   writeFileSync,
@@ -9,7 +10,6 @@ import {
   existsSync,
 } from "node:fs";
 import type { ClaudeCodeAuthContext } from "harness-runtime-api";
-import { config } from "./config.js";
 
 function base64url(buf: Buffer): string {
   return buf
@@ -51,9 +51,7 @@ function extractOAuthParams(): Promise<{
       proc.kill();
       const match = out.match(/https?:\/\/\S+/);
       if (!match) {
-        reject(
-          new Error("could not extract OAuth URL from claude auth login"),
-        );
+        reject(new Error("could not extract OAuth URL from claude auth login"));
         return;
       }
       const url = new URL(match[0]);
@@ -78,7 +76,7 @@ function extractOAuthParams(): Promise<{
 }
 
 function getCredentialsPath() {
-  const configDir = config.CLAUDE_CONFIG_DIR;
+  const configDir = join(homedir(), ".claude");
   return { configDir, credPath: join(configDir, ".credentials.json") };
 }
 
@@ -169,12 +167,10 @@ export function createClaudeCodeAuthContext(): ClaudeCodeAuthContext {
         }
 
         const tokens: any = await tokenRes.json();
-        const scopes =
-          tokens.scope?.split(" ").filter(Boolean) ?? [];
+        const scopes = tokens.scope?.split(" ").filter(Boolean) ?? [];
 
         const { configDir, credPath } = getCredentialsPath();
-        if (!existsSync(configDir))
-          mkdirSync(configDir, { recursive: true });
+        if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
 
         let existing: any = {};
         try {
