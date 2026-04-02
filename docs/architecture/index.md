@@ -1,7 +1,5 @@
 # Architecture
 
-Humr — wraps a local Claude Code agent and exposes it via WebSocket + tRPC to a React UI.
-
 ## Monorepo Structure
 
 pnpm workspaces with five packages:
@@ -33,7 +31,6 @@ Agent operates in sandboxed `packages/harness-runtime/working-dir/` to avoid mod
 - Credentials saved to `~/.claude/.credentials.json`
 - On error `-32000`: UI shows login banner
 
-- [Harness HTTP API](./harness-runtime/api.md)
 
 ## Protocol
 
@@ -48,3 +45,8 @@ tsup bundles `harness-runtime` into `dist/index.js` + `dist/agent.js`, inlining 
 ## Docker
 
 `humr-base` is the base Docker image (Node 22 slim + Claude Code CLI + bundled dist). `example-agent` extends it by copying `workspace/` into `/app/working-dir/`.
+
+
+## Complete documentation
+
+- [Harness HTTP API](./harness-runtime/api.md)

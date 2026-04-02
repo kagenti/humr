@@ -2,7 +2,7 @@
 
 Humr — wraps a local Claude Code agent and exposes it via WebSocket + tRPC to a React UI.
 
-See [docs/architecture.md](docs/architecture.md) for full architecture details.
+Always check [docs/architecture.md](docs/architecture/index.md) for full architecture details.
 
 ## Workflow
 

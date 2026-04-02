@@ -45,7 +45,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end();
 });
 
-const wss = new WebSocketServer({ server, path: "/api/humr" });
+const wss = new WebSocketServer({ server, path: "/api/acp" });
 
 wss.on("connection", (ws) => {
   const agent = config.HUMR_DEV
