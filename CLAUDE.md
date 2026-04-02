@@ -66,3 +66,33 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 
 - Design spec: `docs/specs/2026-04-01-agent-platform-design.md`
 - Master plan: `docs/plans/2026-04-02-adk-platform-master.md`
+
+## Commit Conventions
+
+- **Conventional Commits**: `type(scope): short summary` — types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `revert`, `style`, `perf`, `ci`, `build`.
+- **Scope**: Optional but encouraged (e.g., `feat(ui):`, `fix(hook):`, `docs(design):`).
+- **Body**: Optional concise bullet points for non-trivial changes.
+- **Trailer**: Configured via `.claude/settings.json` `attribution` — do not add manually.
+- **Branch naming**: `type/short-description` (e.g., `feat/session-history`, `fix/stale-timer`). Same type prefixes as commits.
+
+## Separation of Concerns & DRY Principle
+
+This system is a modular component system following the DRY (Don't Repeat Yourself) principle. Each piece has a single responsibility. You should be able to swap out any component without rewriting others.
+
+## Worktrees
+
+Use `.worktrees/` for git worktrees. Branch naming follows commit conventions (e.g., `feat/session-history`).
+
+### Setup
+
+After creating a worktree, run project setup:
+
+- **Node.js**: `pnpm install`
+
+### Verification
+
+Run tests to confirm a clean baseline before starting work. If tests fail, report failures and ask before proceeding.
+
+### Report
+
+After setup, report: worktree path, test results, and readiness.

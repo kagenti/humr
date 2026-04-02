@@ -1,51 +1,40 @@
 # Humr
 
-Wraps a local Claude Code agent and exposes it via WebSocket + tRPC to a React UI.
+```
+ ╦ ╦╦ ╦╔╦╗╔═╗
+ ╠═╣║ ║║║║╠╦╝
+ ╩ ╩╚═╝╩ ╩╩╚═
 
-## Prerequisites
-
-- Node.js (v20+)
-- pnpm (v9+)
-- Claude Code CLI installed and available on `PATH`
-
-## Setup
-
-```bash
-pnpm install
+ Run AI agents in production.
+ Isolated. Credentialed. Scheduled.
 ```
 
-## Running
+Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
-Start both the runtime server and the UI in separate terminals:
+## Quick Start
 
-```bash
-# Terminal 1 — harness runtime (port 3000)
-pnpm start
-
-# Terminal 2 — React UI (port 5173)
-pnpm ui
+```sh
+mise run setup              # install deps, configure git hooks
+mise run cluster:install    # create local k3s cluster + deploy Humr
+mise run cluster:status     # check pods
+eval $(mise run humr:shell) # activate cluster env
 ```
 
-For development with auto-reload on the runtime:
+## Development
 
-```bash
-pnpm dev
+```sh
+mise run check              # lint + type-check
+mise run test               # run tests
+mise run ui:run             # start UI dev server
+mise run cluster:upgrade    # redeploy after changes
 ```
 
-Open http://localhost:5173 in your browser.
+## Architecture
 
-## Docker
+See [docs/architecture.md](docs/architecture.md) for full details.
 
-Build and run the base image:
-
-```bash
-pnpm docker:humr-base:build
-pnpm docker:humr-base:start
-```
-
-Build and run the example agent (extends humr-base, copies `workspace/` into the container):
-
-```bash
-pnpm docker:example-agent:build
-pnpm docker:example-agent:start
-```
+- **Controller** (Go) — K8s reconciler + cron scheduler
+- **API Server** (TypeScript) — REST API + ACP WebSocket relay + serves UI
+- **Agent Runtime** (TypeScript) — ACP server inside each agent pod
+- **OneCLI** — credential injection proxy, network policy enforcement
+- **Web UI** (React) — instance management, chat, scheduling

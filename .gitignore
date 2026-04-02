@@ -32,3 +32,6 @@ deploy/helm/humr/charts/
 
 # Reference (vendored, not tracked)
 context/
+
+# Worktrees
+.worktrees/
