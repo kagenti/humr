@@ -1,0 +1,117 @@
+# -- Cluster lifecycle (k3s via lima) --
+
+["cluster:install"]
+description = "Create k3s cluster, install cert-manager + ADK chart"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+LIMA_INSTANCE="k3s"
+KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+
+# 1. Create and start k3s VM if not running
+if ! limactl list --json | grep -q "\"name\":\"$LIMA_INSTANCE\""; then
+  echo "Creating k3s VM..."
+  limactl create --name=$LIMA_INSTANCE template:k3s --tty=false
+fi
+
+STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
+if [ "$STATUS" != "Running" ]; then
+  echo "Starting k3s VM..."
+  limactl start $LIMA_INSTANCE
+fi
+
+echo "Waiting for k3s to be ready..."
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+
+# 2. Install cert-manager
+if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
+  echo "Installing cert-manager..."
+  kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+  echo "Waiting for cert-manager to be ready..."
+  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager wait --for=condition=Available deployment --all --timeout=120s
+else
+  echo "cert-manager already installed"
+fi
+
+# 3. Install ADK chart
+if helm --kubeconfig="$KUBECONFIG" status adk >/dev/null 2>&1; then
+  echo "ADK already installed, use 'mise run cluster:upgrade' to update"
+else
+  echo "Installing ADK chart..."
+  helm --kubeconfig="$KUBECONFIG" install adk deploy/helm/adk
+fi
+
+echo ""
+echo "=== Cluster ready ==="
+echo "KUBECONFIG=$KUBECONFIG"
+echo ""
+kubectl --kubeconfig="$KUBECONFIG" get pods
+'''
+
+["cluster:upgrade"]
+description = "Upgrade ADK chart on running cluster"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+KUBECONFIG="$HOME/.lima/k3s/copied-from-guest/kubeconfig.yaml"
+helm --kubeconfig="$KUBECONFIG" upgrade adk deploy/helm/adk
+echo ""
+kubectl --kubeconfig="$KUBECONFIG" get pods
+'''
+
+["cluster:uninstall"]
+description = "Uninstall ADK chart (keeps cluster and PVCs)"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+KUBECONFIG="$HOME/.lima/k3s/copied-from-guest/kubeconfig.yaml"
+helm --kubeconfig="$KUBECONFIG" uninstall adk || true
+echo "ADK uninstalled. PVCs preserved. Use 'mise run cluster:delete' to remove the entire cluster."
+'''
+
+["cluster:delete"]
+description = "Delete the entire k3s cluster (destroys all data)"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+echo "This will delete the k3s VM and all cluster data."
+read -p "Continue? [y/N] " -r
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+  echo "Cancelled."
+  exit 0
+fi
+limactl delete --force k3s 2>/dev/null || true
+echo "k3s cluster deleted."
+'''
+
+["cluster:status"]
+description = "Show cluster and pod status"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+KUBECONFIG="$HOME/.lima/k3s/copied-from-guest/kubeconfig.yaml"
+echo "=== Lima VM ==="
+limactl list
+echo ""
+echo "=== Nodes ==="
+kubectl --kubeconfig="$KUBECONFIG" get nodes 2>/dev/null || echo "Cluster not reachable"
+echo ""
+echo "=== Pods (default) ==="
+kubectl --kubeconfig="$KUBECONFIG" get pods 2>/dev/null || true
+echo ""
+echo "=== Pods (adk-agents) ==="
+kubectl --kubeconfig="$KUBECONFIG" get pods -n adk-agents 2>/dev/null || true
+'''
+
+["cluster:logs"]
+description = "Show OneCLI pod logs"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+KUBECONFIG="$HOME/.lima/k3s/copied-from-guest/kubeconfig.yaml"
+kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=onecli --all-containers --tail=50
+'''

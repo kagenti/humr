@@ -1,8 +1,9 @@
 {{- $appName := printf "%s-onecli" (include "adk.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- $gwName := include "adk.gateway.fullname" . }}
 {{- $webName := include "adk.web.fullname" . }}
+{{- $caSecretName := include "adk.ca.fullname" . }}
 ---
-# Gateway Service (port {{ .Values.onecli.gateway.port }})
+# Gateway Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -22,7 +23,7 @@ spec:
     app.kubernetes.io/component: onecli
     app.kubernetes.io/instance: {{ .Release.Name }}
 ---
-# Web Service (port {{ .Values.onecli.web.port }})
+# Web Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -42,7 +43,7 @@ spec:
     app.kubernetes.io/component: onecli
     app.kubernetes.io/instance: {{ .Release.Name }}
 ---
-# Single Deployment running both gateway (Rust) + web (Node.js) via entrypoint.sh
+# Single Deployment: entrypoint.sh runs migrations, starts gateway (Rust) + web (Node.js)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -64,7 +65,6 @@ spec:
         app.kubernetes.io/component: onecli
     spec:
       initContainers:
-        # Wait for PostgreSQL to be ready before running migrations
         - name: wait-for-postgres
           image: {{ .Values.onecli.postgres.image }}
           command: ["sh", "-c"]
@@ -77,8 +77,6 @@ spec:
       containers:
         - name: onecli
           image: {{ .Values.onecli.image }}
-          # Default CMD (./entrypoint.sh) runs migrations, then starts
-          # both the Rust gateway and Node.js web app in one container
           ports:
             - containerPort: {{ .Values.onecli.gateway.port }}
               name: gateway
@@ -97,16 +95,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "adk.secrets.fullname" . }}
                   key: SECRET_ENCRYPTION_KEY
-            - name: GATEWAY_CA_CERT
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "adk.ca.fullname" . }}
-                  key: ca.crt
-            - name: GATEWAY_CA_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "adk.ca.fullname" . }}
-                  key: ca.key
             - name: GATEWAY_PORT
               value: {{ .Values.onecli.gateway.port | quote }}
             - name: PORT
@@ -130,3 +118,17 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.onecli.resources | nindent 12 }}
+          volumeMounts:
+            # cert-manager Secret mounted as files where gateway expects them
+            - name: ca
+              mountPath: /app/data/gateway/ca.key
+              subPath: tls.key
+              readOnly: true
+            - name: ca
+              mountPath: /app/data/gateway/ca.pem
+              subPath: tls.crt
+              readOnly: true
+      volumes:
+        - name: ca
+          secret:
+            secretName: {{ $caSecretName }}

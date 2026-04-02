@@ -7,7 +7,7 @@ run = "helm lint ."
 
 ["helm:check:render"]
 dir = "{{config_root}}/deploy/helm/adk"
-run = "helm template adk . | kubeconform -strict -summary"
+run = "helm template adk . | kubeconform -strict -summary -skip Certificate,Issuer"
 
 ["helm:setup"]
 alias = "helm:build"

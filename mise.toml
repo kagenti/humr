@@ -9,6 +9,7 @@ go = "1.24"
 # Kubernetes
 helm = "latest"
 kubeconform = "latest"
+"lima" = "2"
 
 # misc
 fd = "latest"
@@ -24,4 +25,5 @@ includes = [
     "packages/ui/tasks.toml",
     "packages/controller/tasks.toml",
     "deploy/helm/tasks.toml",
+    "deploy/tasks.toml",
 ]
