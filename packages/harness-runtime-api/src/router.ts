@@ -4,12 +4,6 @@ import type { HarnessContext } from "./context.js";
 
 const t = initTRPC.context<HarnessContext>().create();
 
-const configRouter = t.router({
-  get: t.procedure.query(({ ctx }) => ({
-    cwd: ctx.workingDir,
-  })),
-});
-
 const authRouter = t.router({
   status: t.procedure.query(({ ctx }) => ctx.claudeCodeAuth.getAuthStatus()),
 
@@ -37,7 +31,6 @@ const filesRouter = t.router({
 });
 
 export const appRouter = t.router({
-  config: configRouter,
   auth: authRouter,
   files: filesRouter,
 });
