@@ -1,0 +1,27 @@
+[tools]
+# Node.js
+nodejs = "22"
+pnpm = "10"
+
+# Go
+go = "1.24"
+
+# Kubernetes
+helm = "latest"
+kubeconform = "latest"
+
+# misc
+fd = "latest"
+
+[settings]
+experimental = true
+task.disable_spec_from_run_scripts = true
+raw = true
+
+[task_config]
+includes = [
+    "./tasks.toml",
+    "packages/ui/tasks.toml",
+    "packages/controller/tasks.toml",
+    "deploy/helm/tasks.toml",
+]
