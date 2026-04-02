@@ -7,11 +7,10 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter, type HarnessContext } from "harness-runtime-api";
 import { createClaudeCodeAuthContext } from "./modules/claude-code-auth.js";
 import { createFilesContext } from "./modules/files.js";
+import { config } from "./modules/config.js";
 
-const PORT = Number(process.env.PORT ?? 3000);
 const __dir = dirname(fileURLToPath(import.meta.url));
-const isTs = import.meta.url.endsWith(".ts");
-const agentScript = join(__dir, isTs ? "agent.ts" : "agent.js");
+const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
 const WORKING_DIR = join(__dir, "../working-dir");
 
 const createContext = (): HarnessContext => ({
@@ -50,7 +49,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/humr" });
 
 wss.on("connection", (ws) => {
-  const agent = isTs
+  const agent = config.HUMR_DEV
     ? spawn("npx", ["tsx", agentScript], {
         stdio: ["pipe", "pipe", "inherit"],
         cwd: WORKING_DIR,
@@ -84,6 +83,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(PORT, () =>
-  process.stderr.write(`Humr on http://localhost:${PORT}\n`),
+server.listen(config.PORT, () =>
+  process.stderr.write(`Humr on http://localhost:${config.PORT}\n`),
 );
