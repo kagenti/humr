@@ -1,13 +1,17 @@
 # -- Target namespace for agent workloads (instances, templates, schedules)
 agentNamespace: adk-agents
 
-# -- OneCLI dependencies (postgres, gateway, web, CA)
+# -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
-  # -- PostgreSQL configuration
+  # Single Docker image containing both Rust gateway and Node.js web app
+  image: ghcr.io/onecli/onecli:latest
+  replicas: 1
+
+  # -- PostgreSQL configuration (OneCLI dependency)
   postgres:
     image: postgres:18-alpine
     user: onecli
-    # password is auto-generated if not set (see ca-secret.yaml / secrets template)
+    # password is auto-generated if not set
     password: ""
     database: onecli
     storage: 5Gi
@@ -20,43 +24,32 @@ onecli:
         cpu: 500m
         memory: 512Mi
 
-  # -- OneCLI Gateway configuration
+  # -- Gateway settings (Rust binary, runs inside the OneCLI container)
   gateway:
-    image: ghcr.io/onecli/onecli:latest
-    replicas: 1
     port: 10255
-    # secretEncryptionKey is auto-generated if not set
+    # secretEncryptionKey: base64-encoded 32-byte key, auto-generated if not set
     secretEncryptionKey: ""
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
 
-  # -- OneCLI Web configuration
+  # -- Web app settings (Node.js, runs inside the OneCLI container)
   web:
-    image: ghcr.io/onecli/onecli:latest
-    replicas: 1
     port: 10254
     # nextauthSecret is auto-generated if not set
     nextauthSecret: ""
     nextauthUrl: "http://localhost:10254"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
 
-  # -- Self-signed CA for OneCLI MITM TLS
+  # -- Self-signed CA for MITM TLS
   ca:
-    # CN for the generated CA certificate
     commonName: "ADK OneCLI CA"
-    # Validity in days
     validity: 3650
+
+  # -- Combined container resources
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
 
 # -- Default agent template
 defaultTemplate:

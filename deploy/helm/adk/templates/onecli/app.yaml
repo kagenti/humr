@@ -1,0 +1,132 @@
+{{- $appName := printf "%s-onecli" (include "adk.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $gwName := include "adk.gateway.fullname" . }}
+{{- $webName := include "adk.web.fullname" . }}
+---
+# Gateway Service (port {{ .Values.onecli.gateway.port }})
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $gwName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "adk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.onecli.gateway.port }}
+      targetPort: gateway
+      protocol: TCP
+      name: gateway
+  selector:
+    app.kubernetes.io/component: onecli
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Web Service (port {{ .Values.onecli.web.port }})
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $webName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "adk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.onecli.web.port }}
+      targetPort: web
+      protocol: TCP
+      name: web
+  selector:
+    app.kubernetes.io/component: onecli
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Single Deployment running both gateway (Rust) + web (Node.js) via entrypoint.sh
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "adk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  replicas: {{ .Values.onecli.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: onecli
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "adk.labels" . | nindent 8 }}
+        app.kubernetes.io/component: onecli
+    spec:
+      initContainers:
+        # Wait for PostgreSQL to be ready before running migrations
+        - name: wait-for-postgres
+          image: {{ .Values.onecli.postgres.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h {{ include "adk.postgres.fullname" . }} -U {{ .Values.onecli.postgres.user }}; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+      containers:
+        - name: onecli
+          image: {{ .Values.onecli.image }}
+          # Default CMD (./entrypoint.sh) runs migrations, then starts
+          # both the Rust gateway and Node.js web app in one container
+          ports:
+            - containerPort: {{ .Values.onecli.gateway.port }}
+              name: gateway
+            - containerPort: {{ .Values.onecli.web.port }}
+              name: web
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.secrets.fullname" . }}
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: {{ include "adk.postgres.dsn" . | quote }}
+            - name: SECRET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.secrets.fullname" . }}
+                  key: SECRET_ENCRYPTION_KEY
+            - name: GATEWAY_CA_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.ca.fullname" . }}
+                  key: ca.crt
+            - name: GATEWAY_CA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.ca.fullname" . }}
+                  key: ca.key
+            - name: GATEWAY_PORT
+              value: {{ .Values.onecli.gateway.port | quote }}
+            - name: PORT
+              value: {{ .Values.onecli.web.port | quote }}
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "adk.secrets.fullname" . }}
+                  key: NEXTAUTH_SECRET
+            - name: NEXTAUTH_URL
+              value: {{ .Values.onecli.web.nextauthUrl | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: gateway
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: gateway
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.onecli.resources | nindent 12 }}

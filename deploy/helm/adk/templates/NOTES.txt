@@ -2,8 +2,9 @@ ADK has been deployed!
 
 Components:
   - PostgreSQL:     {{ include "adk.postgres.fullname" . }}.{{ .Release.Namespace }}.svc:5432
-  - OneCLI Gateway: {{ include "adk.gateway.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.onecli.gateway.port }}
-  - OneCLI Web:     {{ include "adk.web.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.onecli.web.port }}
+  - OneCLI (single container with gateway + web):
+    - Gateway: {{ include "adk.gateway.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.onecli.gateway.port }}
+    - Web:     {{ include "adk.web.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.onecli.web.port }}
 
 Agent namespace: {{ .Values.agentNamespace }}
 
