@@ -67,4 +67,12 @@ export const instancesRouter = t.router({
   delete: t.procedure
     .input(z.object({ name: k8sName }))
     .mutation(({ ctx, input }) => ctx.instances.delete(input.name)),
+
+  wake: t.procedure
+    .input(z.object({ name: k8sName }))
+    .mutation(async ({ ctx, input }) => {
+      const inst = await ctx.instances.wake(input.name);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(inst);
+    }),
 });

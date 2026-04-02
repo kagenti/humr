@@ -33,4 +33,5 @@ export interface InstancesContext {
   create: (input: CreateInstanceInput) => Promise<Instance>;
   update: (input: UpdateInstanceInput) => Promise<Instance | null>;
   delete: (name: string) => Promise<void>;
+  wake: (name: string) => Promise<Instance | null>;
 }
