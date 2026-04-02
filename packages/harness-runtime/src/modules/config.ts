@@ -8,7 +8,10 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true"),
-  CLAUDE_CONFIG_DIR: z.string().default(join(homedir(), ".claude")),
+  CLAUDE_CONFIG_DIR: z
+    .string()
+    .default(join(homedir(), ".claude"))
+    .transform((v) => (v.startsWith("~") ? join(homedir(), v.slice(1)) : v)),
 });
 
 export const config = schema.parse(process.env);
