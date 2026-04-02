@@ -9,44 +9,16 @@ pnpm workspaces with five packages:
 - `packages/humr-base/` — Docker base image (Node 22 slim + Claude Code CLI + bundled runtime)
 - `packages/example-agent/` — example agent extending humr-base
 
-## Layers
-
-Three layers:
-1. **HTTP/WS Server** (port 3000) — tRPC endpoints over HTTP, WebSocket bridge for Humr protocol
-2. **Agent Process** — spawned as child process per WebSocket connection, runs `@agentclientprotocol/claude-agent-acp`, communicates via NDJSON over stdio. Dual-mode spawn: `npx tsx` in dev (`.ts`), `node` in prod (`.js`)
-3. **React UI** — chat interface + file browser, Vite dev server proxies `/api` to port 3000
-
-Agent operates in sandboxed `packages/harness-runtime/working-dir/` to avoid modifying prototype code.
-
-## Session Persistence
-
-- First prompt creates a new session via `newSession()`
-- Subsequent prompts resume via `unstable_resumeSession({ sessionId })`
-- UI stores `sessionId` in React state, can list past sessions
-
-## Authentication
-
-- UI checks auth status on mount via tRPC (`auth.status`, spawns `claude auth status` CLI)
-- Login uses PKCE OAuth: server generates authorize URL, UI opens it, user pastes code back, server exchanges for tokens
-- Credentials saved to `~/.claude/.credentials.json`
-- On error `-32000`: UI shows login banner
-
-
-## Protocol
+## Agents are ACP-compliant
 
 - ACP via `@agentclientprotocol/sdk` + `@agentclientprotocol/claude-agent-acp`
 - NDJSON serialization over stdio between server and agent
 - Permissions auto-approved; MCP servers: none; file callbacks: stubbed
 
-## Build
-
-tsup bundles `harness-runtime` into `dist/index.js` + `dist/agent.js`, inlining `harness-runtime-api`. Run: `pnpm --filter harness-runtime build`.
-
-## Docker
-
-`humr-base` is the base Docker image (Node 22 slim + Claude Code CLI + bundled dist). `example-agent` extends it by copying `workspace/` into `/app/working-dir/`.
-
-
 ## Complete documentation
 
+- [Whole System Layers](./layers.md)
+- [ACP Session Persistence](./session-persistence.md)
+- [Claude Code Authentication](./authentication.md)
+- [Docker setup for building agents](./docker.md)
 - [Harness HTTP API](./harness-runtime/api.md)
