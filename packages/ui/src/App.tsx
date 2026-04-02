@@ -38,7 +38,6 @@ interface LogEntry {
 
 interface SessionInfo {
   sessionId: string;
-  cwd: string;
   title?: string | null;
   updatedAt?: string | null;
 }
@@ -142,22 +141,12 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const cwdRef = useRef<string>("");
   const connectionRef = useRef<{
     connection: ClientSideConnection;
     ws: WebSocket;
   } | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const currentAssistantIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    trpc.config.get
-      .query()
-      .then((c) => {
-        cwdRef.current = c.cwd;
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     trpc.auth.status
@@ -214,7 +203,7 @@ export default function App() {
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
-      const result = await connection.listSessions({ cwd: cwdRef.current });
+      const result = await connection.listSessions({ cwd: "." });
       setSessions(result.sessions ?? []);
       ws.close();
     } catch {}
@@ -286,7 +275,7 @@ export default function App() {
       });
       await connection.loadSession({
         sessionId: sid,
-        cwd: cwdRef.current,
+        cwd: ".",
         mcpServers: [],
       });
       ws.close();
@@ -412,13 +401,13 @@ export default function App() {
         if (sessionId) {
           await conn.unstable_resumeSession({
             sessionId,
-            cwd: cwdRef.current,
+            cwd: ".",
             mcpServers: [],
           });
           activeSessionIdRef.current = sessionId;
         } else {
           const session = await conn.newSession({
-            cwd: cwdRef.current,
+            cwd: ".",
             mcpServers: [],
           });
           setSessionId(session.sessionId);

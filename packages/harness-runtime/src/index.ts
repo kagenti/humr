@@ -14,7 +14,6 @@ const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
 const WORKING_DIR = join(__dir, "../working-dir");
 
 const createContext = (): HarnessContext => ({
-  workingDir: WORKING_DIR,
   claudeCodeAuth: createClaudeCodeAuthContext(),
   files: createFilesContext(WORKING_DIR),
 });
@@ -73,7 +72,15 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (data: Buffer) => {
     if (agent.stdin!.writable) {
-      agent.stdin!.write(data.toString() + "\n");
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.params?.cwd !== undefined) {
+          msg.params.cwd = WORKING_DIR;
+        }
+        agent.stdin!.write(JSON.stringify(msg) + "\n");
+      } catch {
+        agent.stdin!.write(data.toString() + "\n");
+      }
     }
   });
 
