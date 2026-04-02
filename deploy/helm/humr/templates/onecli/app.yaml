@@ -81,13 +81,6 @@ spec:
               value: {{ .Values.onecli.gateway.port | quote }}
             - name: PORT
               value: {{ .Values.onecli.web.port | quote }}
-            - name: NEXTAUTH_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "humr.onecli.secrets.fullname" . }}
-                  key: NEXTAUTH_SECRET
-            - name: NEXTAUTH_URL
-              value: {{ .Values.onecli.web.nextauthUrl | quote }}
           readinessProbe:
             tcpSocket:
               port: gateway

@@ -31,11 +31,10 @@ onecli:
     secretEncryptionKey: ""
 
   # -- Web app settings (Node.js, runs inside the OneCLI container)
+  # Runs in local mode (no OAuth). Set NEXTAUTH_SECRET + GOOGLE_CLIENT_ID +
+  # GOOGLE_CLIENT_SECRET in env to enable OAuth.
   web:
     port: 10254
-    # nextauthSecret is auto-generated if not set
-    nextauthSecret: ""
-    nextauthUrl: "http://localhost:10254"
 
   # -- Self-signed CA for MITM TLS
   ca:
