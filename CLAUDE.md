@@ -4,16 +4,18 @@ Humr — wraps a local Claude Code agent and exposes it via WebSocket + tRPC to 
 
 ### Monorepo Structure
 
-pnpm workspaces with three packages:
+pnpm workspaces with five packages:
 - `packages/harness-runtime/` — HTTP/WebSocket server + agent process
 - `packages/harness-runtime-api/` — shared tRPC router and type definitions
 - `packages/ui/` — React chat interface (Vite, port 5173)
+- `packages/humr-base/` — Docker base image (Node 22 slim + Claude Code CLI + bundled runtime)
+- `packages/example-agent/` — example agent extending humr-base
 
 ### Architecture
 
 Three layers:
 1. **HTTP/WS Server** (port 3000) — tRPC endpoints over HTTP, WebSocket bridge for Humr protocol
-2. **Agent Process** — spawned as child process per WebSocket connection, runs `@agentclientprotocol/claude-agent-acp`, communicates via NDJSON over stdio
+2. **Agent Process** — spawned as child process per WebSocket connection, runs `@agentclientprotocol/claude-agent-acp`, communicates via NDJSON over stdio. Dual-mode spawn: `npx tsx` in dev (`.ts`), `node` in prod (`.js`)
 3. **React UI** — chat interface + file browser, Vite dev server proxies `/api` to port 3000
 
 Agent operates in sandboxed `packages/harness-runtime/working-dir/` to avoid modifying prototype code.
@@ -42,6 +44,14 @@ Agent operates in sandboxed `packages/harness-runtime/working-dir/` to avoid mod
 - ACP via `@agentclientprotocol/sdk` + `@agentclientprotocol/claude-agent-acp`
 - NDJSON serialization over stdio between server and agent
 - Permissions auto-approved; MCP servers: none; file callbacks: stubbed
+
+### Build
+
+tsup bundles `harness-runtime` into `dist/index.js` + `dist/agent.js`, inlining `harness-runtime-api`. Run: `pnpm --filter harness-runtime build`.
+
+### Docker
+
+`humr-base` is the base Docker image (Node 22 slim + Claude Code CLI + bundled dist). `example-agent` extends it by copying `workspace/` into `/app/working-dir/`.
 
 ## Testing
 
