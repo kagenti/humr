@@ -13,7 +13,8 @@
       "source": {
         "source": "github",
         "repo": "apocohq/claude-plugins"
-      }
+      },
+      "autoUpdate": true
     }
   }
 }
