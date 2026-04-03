@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed | Accepted | Deprecated | Superseded by [ADR-NNN](NNN-title.md)
+Proposed | Accepted | Deprecated
 
 ## Context
 

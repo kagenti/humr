@@ -28,7 +28,7 @@ When the user invokes `/adr`, determine the action from their arguments:
 
 ### `/adr status <number> <new-status>` — Update ADR status
 
-1. Valid statuses: `Proposed`, `Accepted`, `Deprecated`, `Superseded by ADR-NNN`.
+1. Valid statuses: `Proposed`, `Accepted`, `Deprecated`.
 2. Update the `## Status` line in the ADR file.
 3. Update the status column in `docs/adr/index.md`.
 4. Report the change.
@@ -39,6 +39,7 @@ When the user invokes `/adr`, determine the action from their arguments:
 
 ## Conventions
 
+- **Immutable and append-only** — ADRs are never edited or deleted after acceptance. To reverse or change a decision, create a new ADR that deprecates the previous one.
 - Files are named `NNN-kebab-case-title.md` (e.g., `001-use-configmaps-over-crds.md`).
 - Numbers are zero-padded to 3 digits.
 - The template lives at `docs/adr/000-template.md` and should not be modified.
