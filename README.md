@@ -5,7 +5,7 @@
  ╠═╣║ ║║║║╠╦╝
  ╩ ╩╚═╝╩ ╩╩╚═
 
- Run AI agents in production.
+ Run AI harnesses in production.
  Isolated. Credentialed. Scheduled.
 ```
 
