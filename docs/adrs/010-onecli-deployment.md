@@ -31,6 +31,8 @@ Supporting infrastructure:
 
 **SQLite instead of PostgreSQL.** Would eliminate the database dependency. Rejected: OneCLI has no SQLite support — PostgreSQL is a hard requirement. Accepted as OneCLI's dependency, not the platform's.
 
+**No OneCLI — build credential injection in-house.** Eliminate the OneCLI dependency entirely and implement credential injection directly in the platform. Attractive because OneCLI does not yet support human-in-the-loop flows (though it is on their roadmap). This is problematic when the platform needs targeted human-in-the-loop interactions for specific third parties (e.g., GitHub OAuth device flow) where the credential proxy must pause and prompt the user. Kept as a future option if OneCLI's roadmap doesn't deliver HITL support, but rejected for now: OneCLI already solves the harder MITM proxy and credential-injection plumbing, and rebuilding that from scratch is a significant effort.
+
 ## Consequences
 
 - Single pod simplifies deployment but means gateway and dashboard scale together
