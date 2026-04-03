@@ -58,7 +58,7 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 
 ## Key Design Decisions
 
-Architecture Decision Records live in [`adrs/`](adrs/) — see [`adrs/CLAUDE.md`](adrs/CLAUDE.md) for conventions and template. Always check existing ADRs before proposing architectural changes, and create a new ADR for any significant decision.
+Architecture Decision Records live in [`docs/adrs/`](docs/adrs/) — see [`docs/adrs/index.md`](docs/adrs/index.md) for the full list. Use the `/adr` skill to create and manage ADRs. Always check existing ADRs before proposing architectural changes.
 
 ## Specs and Plans
 
