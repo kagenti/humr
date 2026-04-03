@@ -1,7 +1,7 @@
-# ADR-011: Skills — harness-native, not platform-managed
+# DRAFT: Skills — harness-native, not platform-managed
 
 **Date:** 2026-04-02
-**Status:** Accepted
+**Status:** Proposed
 **Owner:** @pilartomas
 
 ## Context

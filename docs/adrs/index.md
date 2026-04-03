@@ -16,7 +16,6 @@ This directory contains ADRs for the Humr project.
 | [008](008-trigger-files.md) | Controller-owned cron with exec-based trigger delivery | @jezekra1 |
 | [009](009-go-and-typescript.md) | Go for Controller, TypeScript for API Server | @jezekra1 |
 | [010](010-onecli-deployment.md) | OneCLI deployment — single image, two Services | @pilartomas |
-| [011](011-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 
 ## Drafts
 
@@ -24,3 +23,4 @@ This directory contains ADRs for the Humr project.
 |-------|-------|-------|
 | [DRAFT](DRAFT-runtime-lifetime.md) | Runtime lifetime — keep-alive vs. kill after response | @JanPokorny |
 | [DRAFT](DRAFT-ui-tooling.md) | UI wireframes and tooling | @PetrBulanek |
+| [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
