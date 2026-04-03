@@ -16,6 +16,7 @@ This directory contains ADRs for the Humr project.
 | [008](008-trigger-files.md) | Controller-owned cron with exec-based trigger delivery | @jezekra1 |
 | [009](009-go-and-typescript.md) | Go for Controller, TypeScript for API Server | @jezekra1 |
 | [010](010-onecli-deployment.md) | OneCLI deployment — single image, two Services | @pilartomas |
+| [011](011-skills-claude-marketplace.md) | Skills via Claude plugin marketplace | @pilartomas |
 
 ## Drafts
 
