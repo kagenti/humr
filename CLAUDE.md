@@ -58,6 +58,9 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 
 ## Key Design Decisions
 
+Architecture Decision Records live in [`adrs/`](adrs/) — see [`adrs/CLAUDE.md`](adrs/CLAUDE.md) for conventions and template. Always check existing ADRs before proposing architectural changes, and create a new ADR for any significant decision.
+
+Highlights:
 - OneCLI ships as a single Docker image running both gateway + web via entrypoint.sh — deployed as one pod, two Services
 - Scheduling: Controller owns cron + delivers triggers via `kubectl exec` writing files to `/workspace/.triggers/`
 - Concurrent sessions always allowed (no concurrency gating)
