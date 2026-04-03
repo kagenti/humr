@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-02
 **Status:** Accepted
-**Owner:** @tomkis
+**Owner:** @pilartomas
 
 ## Context
 
