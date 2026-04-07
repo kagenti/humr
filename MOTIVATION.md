@@ -1,14 +1,18 @@
 # Why Humr
 
-## What's happening
+## What's an agent
 
-There are three ways people build AI agents today:
+A service that has an LLM, calls external systems, and exercises autonomy. The key word is autonomy: the agent decides *how* to solve a problem, not just execute pre-determined logic. This is what makes agents different from traditional services — and what makes them hard to govern.
 
-1. **Traditional services.** You write agent code using a framework like LangGraph or CrewAI, package it in a container, and deploy it. This is how most enterprise agents work today.
+## Three levels of abstraction
 
-2. **Harnesses.** You take a general-purpose tool like Claude Code, Codex, or Gemini CLI, give it a system prompt, file access, and tools, and it does the work. You configure it more than you program it — though you might still write custom skills or scripts. This is the fastest-growing pattern.
+There are three levels of abstraction for how developers express agent work today. Each gives up some control in exchange for more AI autonomy:
 
-3. **Always-on personal assistants.** An agent that runs continuously, remembers things between conversations, wakes up on a schedule, and proactively does work. Think OpenClaw or NanoClaw. Under the hood, these use a harness to build software, create skills on the fly, and automate workflows — but the user doesn't interact with the harness directly. They interact with the assistant. The harness is the engine; the assistant is the experience.
+1. **Code.** You write explicit control flow — frameworks like LangGraph or CrewAI, packaged as containers. You decide what happens at each step. The agent follows your logic.
+
+2. **Harness.** You take a general-purpose tool like Claude Code, Codex, or Gemini CLI, give it a system prompt, file access, and tools. You configure more than you program — though you might still write custom skills or scripts. The harness decides execution details.
+
+3. **Always-on assistant.** You interact through conversation. The assistant programs itself based on your interactions — building software, creating skills on the fly, automating workflows. Under the hood it uses a harness, but the user doesn't interact with the harness directly. The harness is the engine; the assistant is the experience. Think OpenClaw or NanoClaw.
 
 All three hit the same wall when you try to run them in production: no open-source platform makes them safe, manageable, and independent of a single vendor.
 
