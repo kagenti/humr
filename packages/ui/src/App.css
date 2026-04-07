@@ -1,20 +1,20 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #0c0c0c;
-  --bg1: #111;
-  --bg2: #161616;
-  --bg3: #1c1c1c;
-  --border: #222;
-  --border2: #2a2a2a;
-  --fg: #d4d4d4;
-  --fg2: #888;
-  --fg3: #555;
-  --accent: #e8c56d;
-  --accent2: #c8a84b;
-  --green: #6dbf7e;
-  --blue: #6db3e8;
-  --red: #e86d6d;
+  --bg: #0e0e0e;
+  --bg1: #181818;
+  --bg2: #222222;
+  --bg3: #2c2c2c;
+  --border: #3d3d3d;
+  --border2: #484848;
+  --fg: #ececec;
+  --fg2: #b0b0b0;
+  --fg3: #808080;
+  --accent: #f0cf7a;
+  --accent2: #d4b458;
+  --green: #7dd08e;
+  --blue: #7dc0f0;
+  --red: #f07d7d;
   --mono: "Berkeley Mono", "Fira Code", "JetBrains Mono", monospace;
   --sans: "Geist", "SF Pro Display", system-ui, sans-serif;
 }
