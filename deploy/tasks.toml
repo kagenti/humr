@@ -1,7 +1,7 @@
 # -- Shell environment --
 
 ["humr:shell"]
-description = "Print shell activation script. Usage: eval "$(mise run humr:shell)""
+description = 'Print shell activation script. Usage: eval "$(mise run humr:shell)"'
 dir = "{{cwd}}"
 quiet = true
 run = """
