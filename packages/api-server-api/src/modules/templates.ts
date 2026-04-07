@@ -18,7 +18,10 @@ export interface SecurityContext {
   readOnlyRootFilesystem?: boolean;
 }
 
+export const SPEC_VERSION = "humr.ai/v1";
+
 export interface TemplateSpec {
+  version: string;
   image: string;
   description?: string;
   mounts?: Mount[];

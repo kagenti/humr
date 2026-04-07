@@ -1,6 +1,7 @@
 import type { EnvVar } from "./templates.js";
 
 export interface InstanceSpec {
+  version: string;
   templateName: string;
   desiredState: "running" | "hibernated";
   env?: EnvVar[];

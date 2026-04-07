@@ -1,0 +1,47 @@
+{{/*
+Controller Deployment — Go reconciler + scheduler
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "humr.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.controller.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "humr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "humr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: {{ include "humr.controller.serviceAccountName" . }}
+      containers:
+        - name: controller
+          image: "{{ .Values.controller.image }}"
+          imagePullPolicy: {{ .Values.controller.imagePullPolicy | default "IfNotPresent" }}
+          env:
+            - name: HUMR_RELEASE_NAME
+              value: {{ include "humr.fullname" . }}
+            - name: HUMR_AGENT_NAMESPACE
+              value: {{ .Values.agentNamespace }}
+            - name: ONECLI_URL
+              value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
+            - name: ONECLI_GATEWAY_HOST
+              value: {{ include "humr.onecli.fullname" . }}
+            - name: ONECLI_GATEWAY_PORT
+              value: {{ .Values.onecli.gateway.port | quote }}
+            - name: AGENT_IMAGE_PULL_POLICY
+              value: {{ .Values.controller.agentImagePullPolicy | default "IfNotPresent" }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}

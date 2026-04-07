@@ -70,9 +70,23 @@ apiServer:
       cpu: 500m
       memory: 512Mi
 
+# -- Controller (Go reconciler + scheduler)
+controller:
+  image: humr-controller:latest
+  imagePullPolicy: Never
+  agentImagePullPolicy: Never
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 # -- Default agent template
 defaultTemplate:
   enabled: true
   name: code-guardian
-  image: "ghcr.io/myorg/code-guardian:latest"
+  image: "humr-example-agent:latest"
   description: "Persistent agent for repo monitoring"

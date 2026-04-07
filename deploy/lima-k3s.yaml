@@ -1,0 +1,64 @@
+# Lima VM template for humr k3s cluster
+# Based on template:k3s with custom port forwarding
+
+images:
+  - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img
+    arch: aarch64
+  - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
+    arch: x86_64
+
+cpus: 4
+memory: 4GiB
+disk: 100GiB
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      if [ ! -d /var/lib/rancher/k3s ]; then
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644" sh -
+      fi
+      # Configure Traefik to also listen on port 4444 (auto-forwarded by lima)
+      mkdir -p /var/lib/rancher/k3s/server/manifests
+      cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: traefik
+        namespace: kube-system
+      spec:
+        valuesContent: |
+          ports:
+            humr:
+              port: 4444
+              expose:
+                default: true
+              exposedPort: 4444
+              protocol: TCP
+      EOF
+
+probes:
+  - mode: readiness
+    description: k3s is ready
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! timeout 30s bash -c "until test -f /etc/rancher/k3s/k3s.yaml; do sleep 3; done"; then
+        echo >&2 "k3s is not running yet"
+        exit 1
+      fi
+
+copyToHost:
+  - guest: /etc/rancher/k3s/k3s.yaml
+    host: "{{.Dir}}/copied-from-guest/kubeconfig.yaml"
+    deleteOnStop: true
+
+portForwards:
+  - guestPort: 4444
+    hostPort: 4444
+  - guestPort: 6443
+    hostPort: 6443
+
+message: |
+  k3s is ready. Access services via http://onecli.localtest.me:4444
+  KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml

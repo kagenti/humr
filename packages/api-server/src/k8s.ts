@@ -12,6 +12,7 @@ import type {
   CreateInstanceInput,
   UpdateInstanceInput,
 } from "api-server-api";
+import { SPEC_VERSION } from "api-server-api";
 
 
 const LABEL_TYPE = "humr.ai/type";
@@ -110,6 +111,7 @@ export function createK8sTemplatesContext(
 
     async create(input: CreateTemplateInput) {
       const spec: TemplateSpec = {
+        version: SPEC_VERSION,
         image: input.image,
         description: input.description,
         ...DEFAULT_TEMPLATE_SPEC,
@@ -186,6 +188,7 @@ export function createK8sInstancesContext(
       }
 
       const spec: InstanceSpec = {
+        version: SPEC_VERSION,
         templateName: input.templateName,
         desiredState: "running",
         env: input.env,

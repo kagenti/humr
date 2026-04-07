@@ -32,15 +32,22 @@ mise run ui:run             # start UI dev server
 ### Cluster lifecycle (k3s via lima)
 
 ```sh
-mise run cluster:install    # create k3s VM, install cert-manager + ADK chart
-mise run cluster:upgrade    # helm upgrade with latest chart changes
-mise run cluster:status     # show pods and cluster state
-mise run cluster:logs       # show OneCLI pod logs
-mise run cluster:uninstall  # helm uninstall (keeps PVCs)
-mise run cluster:delete     # destroy k3s VM entirely
+mise run cluster:install      # create k3s VM, build images, install cert-manager + Humr chart
+mise run cluster:build-agent  # rebuild agent image only, restart agent pods
+mise run cluster:status       # show pods and cluster state
+mise run cluster:logs         # show OneCLI pod logs
+mise run cluster:stop         # stop k3s VM (preserves data)
+mise run cluster:uninstall    # helm uninstall + cleanup PVCs
+mise run cluster:delete       # destroy k3s VM entirely
 ```
 
-Activate cluster environment: `eval "$(mise run humr:shell)"` (sets KUBECONFIG, adds prompt prefix, `deactivate` to undo).
+Services are available at `*.localtest.me:4444` automatically (Traefik on port 4444, auto-forwarded by lima).
+
+### Cluster debugging (pre-approved in .claude/settings.json)
+
+Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` instead of raw `kubectl` or `export KUBECONFIG=...`. These are auto-approved.
+
+Activate cluster environment for interactive use: `eval "$(mise run humr:shell)"` (sets KUBECONFIG, adds prompt prefix, `deactivate` to undo).
 
 ## Architecture
 

@@ -3,6 +3,32 @@
     "commit": "Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>",
     "pr": ""
   },
+  "permissions": {
+    "allow": [
+      "Bash(mise run cluster:kubectl *)",
+      "Bash(mise run cluster:shell *)",
+      "Bash(mise run cluster:install*)",
+      "Bash(mise run cluster:build-agent*)",
+      "Bash(mise run cluster:status*)",
+      "Bash(mise run cluster:logs*)",
+      "Bash(mise run cluster:proxy*)",
+      "Bash(mise run cluster:stop*)",
+      "Bash(mise run cluster:uninstall*)",
+      "Bash(mise run check*)",
+      "Bash(mise run controller:test*)",
+      "Bash(mise run helm:check*)",
+      "Bash(helm lint*)",
+      "Bash(helm template *)",
+      "Bash(gh issue list*)",
+      "Bash(gh issue view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr checks*)",
+      "Bash(gh pr diff*)",
+      "Bash(gh run list*)",
+      "Bash(gh run view*)"
+    ]
+  },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,

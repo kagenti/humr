@@ -14,3 +14,4 @@ export type {
   TemplatesContext,
   CreateTemplateInput,
 } from "./modules/templates.js";
+export { SPEC_VERSION } from "./modules/templates.js";
