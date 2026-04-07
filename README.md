@@ -17,7 +17,7 @@ Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini C
 mise run setup              # install deps, configure git hooks
 mise run cluster:install    # create local k3s cluster + deploy Humr
 mise run cluster:status     # check pods
-eval $(mise run humr:shell) # activate cluster env
+eval "$(mise run humr:shell)" # activate cluster env
 ```
 
 ## Development
