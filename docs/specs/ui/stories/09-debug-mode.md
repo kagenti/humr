@@ -1,59 +1,67 @@
 # Debug Mode
 
-**As a** user, **I want to** see token usage, latency, tool calls, and model info on agent responses **so that** I can diagnose performance issues and understand agent behavior.
+**As a** user, **I want to** see ACP traffic and token usage on agent responses **so that** I can diagnose issues and understand agent behavior.
 
 ## Screen(s)
 
-- S-03b: Chat Tab (debug footer)
+- S-03b: Chat Tab (debug footer + ACP panel)
 
 ## Layout
 
-Toggle: bug icon in chat toolbar (top right). When active, each agent response message shows a collapsible debug footer below the message content.
+Toggle: bug icon in chat toolbar (top right). When active, two debug features are enabled:
 
-### Debug footer content
+### Per-message token usage
+
+Each agent response message shows a compact debug line below the message content:
 
 - Token usage (input/output)
-- Latency (total + time-to-first-token)
-- Tool calls (name, duration, status)
-- Model identifier
+
+### ACP message log (expandable panel)
+
+A collapsible panel at the bottom of the chat area showing raw ACP WebSocket traffic:
+
+| Element | Description |
+|---------|-------------|
+| Header | "ACP Messages" label + collapse/expand toggle |
+| Message list | Scrollable, newest at bottom. Each entry: timestamp, direction arrow (-> outbound, <- inbound), message type, truncated payload |
+| Click entry | Expands to show full JSON payload |
 
 ### Styling
 
 - `$bg-secondary` background
 - Monospace font (12px)
 - Muted text color
-- Separated from message content by a thin border
-- Per-message, independently expandable
+- Token line separated from message content by a thin border
 
 ## Interactions
 
 - Click bug icon in chat toolbar to toggle debug mode on/off
-- Click on individual debug footers to expand/collapse
+- When debug is on: token usage appears below each agent message
+- When debug is on: ACP panel is visible at the bottom of the chat area
+- Click ACP message entry to expand/collapse full payload
 
 ## States
 
-- **Debug off (default):** No debug footers visible. Bug icon is inactive.
-- **Debug on:** Every agent response shows a collapsible debug footer. Bug icon is active (highlighted).
-- **Footer expanded:** Shows all debug metrics.
-- **Footer collapsed:** Shows nothing (just the thin border separator).
+- **Debug off (default):** No debug info visible. Bug icon is inactive.
+- **Debug on:** Token usage shown per message, ACP panel visible. Bug icon is active (highlighted).
+- **ACP panel expanded:** Shows scrolling message log.
+- **ACP panel collapsed:** Thin bar with "ACP Messages" label.
 
-## Scenario: Use Debug Mode
+## Scenario: Debug Agent Behavior
 
-1. Testing agent behavior. Click bug icon in chat toolbar to enable debug mode.
+1. Agent responding slowly. Click bug icon in chat toolbar to enable debug mode.
 2. Send a message: "What's the latest security report?"
-3. Agent responds. Below the response, a collapsible debug footer appears.
-4. Expand debug footer: "Tokens: 1,247 in / 523 out | Latency: 2.3s (TTFT: 340ms) | Tools: workspace_read (0.2s), memory_search (1.1s) | Model: claude-sonnet-4-20250514"
-5. Diagnose: memory_search is the bottleneck. Adjust memory structure.
+3. Agent responds. Below the response, token usage: "Tokens: 1,247 in / 523 out"
+4. Check ACP panel at bottom: see the raw WebSocket messages exchanged between UI and agent.
+5. Spot an unexpected large payload in the ACP log. Expand to view full JSON.
 
 ## Acceptance Criteria
 
 - [ ] Bug icon in chat toolbar toggles debug mode
 - [ ] Debug mode is off by default
-- [ ] When enabled, every agent response shows a collapsible debug footer
-- [ ] Debug footer displays token usage (in/out)
-- [ ] Debug footer displays latency (total + TTFT)
-- [ ] Debug footer displays tool calls with name, duration, and status
-- [ ] Debug footer displays model identifier
-- [ ] Each debug footer is independently expandable/collapsible
-- [ ] Debug footer uses monospace font, muted text, secondary background
-- [ ] Toggling debug mode off hides all debug footers
+- [ ] When enabled, every agent response shows token usage (in/out)
+- [ ] ACP message log panel appears at the bottom of chat area
+- [ ] ACP messages show timestamp, direction, type, and truncated payload
+- [ ] Clicking an ACP message expands to show full JSON payload
+- [ ] Token usage uses monospace font, muted text, secondary background
+- [ ] Toggling debug mode off hides all debug info and ACP panel

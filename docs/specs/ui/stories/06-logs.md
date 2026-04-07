@@ -1,10 +1,19 @@
 # Logs
 
-**As a** user, **I want to** view a chronological log of all agent execution events **so that** I can monitor agent behavior, diagnose issues, and understand what the agent has been doing.
+**As a** user, **I want to** view agent output and platform events **so that** I can monitor agent behavior and diagnose issues.
 
 ## Screen(s)
 
 - S-08: Logs Tab
+
+## Log Sources
+
+Two log sources in PoC:
+
+| Source | Description |
+|--------|-------------|
+| Agent stdout/stderr | Raw output from the harness process — what you'd see in a terminal |
+| Platform events | Controller actions: instance started/stopped, trigger delivered, schedule fired, permission decisions |
 
 ## Layout
 
@@ -13,7 +22,7 @@
 | Element | Description |
 |---------|-------------|
 | Time range | Last 1h / 6h / 24h / 7d / Custom |
-| Type filter | All / Heartbeat / Cron / Chat / Error |
+| Source filter | All / Agent Output / Platform Events |
 | Severity filter | All / Info / Warning / Error |
 | Search | Full-text search across log entries |
 
@@ -22,23 +31,21 @@
 | Element | Description |
 |---------|-------------|
 | Timestamp | Monospace, 13px |
-| Type badge | Heartbeat (purple), Cron (blue), Chat (green), Error (red) |
+| Source badge | Agent (green), Platform (blue) |
 | Severity icon | info (circle-i), warning (triangle-alert), error (circle-x) |
 | Summary | One-line description, truncated |
-| Duration | If applicable |
-| Token count | If applicable |
 
 ### Log entry row (expanded)
 
-Full log text (monospace, scrollable). Link to related session (if from chat) or schedule (if from heartbeat/cron). Simple trace waterfall: horizontal bar chart showing sequential steps with durations.
+Full log text (monospace, scrollable). Link to related schedule if the entry was triggered by a heartbeat or cron run.
 
 ## Interactions
 
 - Select time range from dropdown
-- Toggle type and severity filters
+- Toggle source and severity filters
 - Search across log entries
 - Click row to expand/collapse
-- Click related session/schedule link to navigate
+- Click related schedule link to navigate
 
 ## States
 
@@ -48,13 +55,13 @@ Full log text (monospace, scrollable). Link to related session (if from chat) or
 
 ## Acceptance Criteria
 
-- [ ] Log entries display with timestamp, type badge, severity icon, summary, duration, and token count
+- [ ] Log entries display with timestamp, source badge, severity icon, and summary
 - [ ] Time range filter limits entries to selected period
-- [ ] Type filter narrows to Heartbeat / Cron / Chat / Error
+- [ ] Source filter narrows to Agent Output / Platform Events
 - [ ] Severity filter narrows to Info / Warning / Error
 - [ ] Full-text search filters entries matching query
-- [ ] Clicking a row expands to show full log text and trace waterfall
-- [ ] Expanded rows link to related session or schedule
+- [ ] Clicking a row expands to show full log text
+- [ ] Expanded rows link to related schedule when applicable
 - [ ] Error entries have red left border
 - [ ] Empty state shows appropriate message
 - [ ] Logs from Overview "View all activity" link open with pre-applied filters

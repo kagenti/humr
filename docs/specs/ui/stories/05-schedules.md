@@ -1,54 +1,68 @@
 # Schedules
 
-**As a** user, **I want to** create and manage scheduled agent invocations **so that** the agent can run tasks autonomously on a fixed schedule or wake up periodically to decide what to do.
+**As a** user, **I want to** manage the agent's heartbeat interval and create cron schedules **so that** the agent can run tasks autonomously.
 
 ## Screen(s)
 
 - S-06a: Schedules Tab
 
-## Cron vs Heartbeat
+## Heartbeat vs Cron
 
-| | Cron | Heartbeat |
+Every instance has a native heartbeat. Cron schedules are optional. An instance can have one heartbeat + N cron schedules.
+
+| | Heartbeat | Cron |
 |---|---|---|
-| **Purpose** | Run a specific task on a fixed schedule | Periodic autonomous wake-up |
-| **Prompt** | User-defined prompt (explicit task) | Reads `.config/heartbeat.md` — agent decides what to do |
-| **Schedule** | Cron expression ("0 9 * * 1" = Monday 9am) | Interval (every N minutes/hours) |
-| **Example** | "Generate weekly security summary from this week's findings" | "Check for new commits, review for security issues, log findings" |
+| **Nature** | Native to every instance | Optional, user-created |
+| **Purpose** | Periodic autonomous wake-up | Run a specific task on a fixed schedule |
+| **Prompt** | Reads `.config/heartbeat.md` — agent decides what to do. If blank, the run is skipped. | User-defined prompt (explicit task) |
+| **Schedule** | Interval (every N minutes/hours), per-instance configurable (template sets default) | Cron expression ("0 9 * * 1" = Monday 9am) |
+| **Example** | Agent wakes every 30 min, reads heartbeat.md: "Check for new commits, review for security issues, log findings" | "Generate weekly security summary from this week's findings" |
 
 ## Layout
 
-### Schedule table
+### Heartbeat section (top)
+
+Always visible, not a table row. Card-style layout:
+
+| Element | Description |
+|---------|-------------|
+| Label | "Heartbeat" with heartbeat icon |
+| Interval | Editable: number input + unit dropdown (minutes/hours). Shows template default as placeholder. |
+| Status | Next run timestamp + last run timestamp with status badge (success/failed/skipped) |
+| Enabled | Toggle switch |
+| Link | "Edit heartbeat.md" link -> opens Workspace tab with `.config/heartbeat.md` |
+
+### Cron schedule table (below)
 
 | Column | Description |
 |--------|-------------|
 | Name | Schedule display name |
-| Type | Cron / Heartbeat |
-| Schedule | Cron expression with human-readable preview, or interval |
-| Task | Cron: user-defined prompt (truncated). Heartbeat: "Reads heartbeat.md" link. |
+| Schedule | Cron expression with human-readable preview |
+| Task | User-defined prompt (truncated) |
 | Next run | Timestamp |
 | Last run | Timestamp + status badge (success/failed/skipped) |
 | Enabled | Toggle switch |
 
 ## Interactions
 
-- **Add Schedule** button -> Modal:
-  - Type selector (Cron / Heartbeat)
-  - Cron: expression input with human-readable preview ("Every Monday at 9:00 AM"), prompt textarea, timezone selector
-  - Heartbeat: interval input (minutes/hours dropdown), link to edit `.config/heartbeat.md` in Workspace tab. Label: "What should the agent do each heartbeat? Edit heartbeat.md - write in plain English." heartbeat.md is a natural language instruction document, not structured config.
-- **Edit** (click row) -> Same modal, pre-filled
-- **Test Run** button (per schedule) -> Triggers immediately, shows result in activity
-- **Delete** with confirmation
+- **Edit heartbeat interval** inline (number + unit)
+- **Edit heartbeat.md** link -> navigates to Workspace tab
+- **Add Cron Schedule** button -> Modal: name, cron expression input with human-readable preview, prompt textarea, timezone selector
+- **Edit** (click cron row) -> Same modal, pre-filled
+- **Test Run** button (per schedule, including heartbeat) -> Triggers immediately, shows result in activity
+- **Delete** cron schedule with confirmation (heartbeat cannot be deleted, only disabled)
 
 ## States
 
-- **No schedules:** "This agent has no schedules. Add one to make it proactive."
+- **No cron schedules:** Heartbeat section always visible. Cron table shows: "No cron schedules. Add one to run specific tasks on a fixed schedule."
 - **Schedule failed:** Last run shows red badge. Click for error details (navigates to Logs tab filtered to this schedule).
 
-## Scenario: Add Schedules During Agent Setup
+## Scenario: Configure Heartbeat and Add Cron
 
-1. Click "Add Schedule". Select Heartbeat, set 30-min interval. heartbeat.md is already linked. Confirm.
-2. Click "Add Schedule" again. Select Cron, enter "0 9 * * 1" (Monday 9am), prompt: "Generate weekly security summary from this week's findings." Confirm.
-3. Both schedules appear in the table with next run timestamps.
+1. Schedules tab loads. Heartbeat section shows interval inherited from template (e.g. 30 min). heartbeat.md link is visible.
+2. Click "Edit heartbeat.md" to write instructions in Workspace tab.
+3. Return to Schedules. Click "Add Cron Schedule". Enter name: "Weekly Summary", expression: "0 9 * * 1" (preview: "Every Monday at 9:00 AM"), prompt: "Generate weekly security summary from this week's findings." Confirm.
+4. Cron schedule appears in the table with next run timestamp.
 
 ## Scenario: Debug Failing Schedule
 
@@ -60,14 +74,17 @@
 
 ## Acceptance Criteria
 
-- [ ] Schedule table displays all schedules with name, type, schedule, task, next/last run, enabled toggle
-- [ ] Add Schedule modal allows creating Cron schedules with expression, preview, prompt, and timezone
-- [ ] Add Schedule modal allows creating Heartbeat schedules with interval and heartbeat.md link
+- [ ] Heartbeat section is always visible with interval, status, toggle, and heartbeat.md link
+- [ ] Heartbeat interval is editable with number input and unit dropdown
+- [ ] Heartbeat shows template default as placeholder
+- [ ] Heartbeat can be enabled/disabled but not deleted
+- [ ] "Edit heartbeat.md" navigates to Workspace tab
+- [ ] Cron schedule table displays all cron schedules with name, schedule, task, next/last run, enabled toggle
+- [ ] Add Cron Schedule modal allows creating schedules with name, expression, human-readable preview, prompt, and timezone
 - [ ] Cron expression input shows human-readable preview (e.g., "Every Monday at 9:00 AM")
-- [ ] Heartbeat modal links to Workspace tab for editing heartbeat.md
-- [ ] Edit opens pre-filled modal for existing schedule
+- [ ] Edit opens pre-filled modal for existing cron schedule
 - [ ] Test Run triggers schedule immediately and shows result
-- [ ] Delete requires confirmation before removing schedule
+- [ ] Delete cron schedule requires confirmation
 - [ ] Enabled toggle switches schedule on/off
 - [ ] Failed schedule shows red badge with clickable error details
-- [ ] Empty state shows appropriate message with CTA
+- [ ] Empty cron table shows appropriate message with CTA
