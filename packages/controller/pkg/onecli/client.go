@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 )
 
 type Client interface {
@@ -26,10 +27,30 @@ type httpClient struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	mu      sync.Mutex
 }
 
+// NewHTTPClient creates a client. If apiKey is empty, it will be fetched
+// from OneCLI on first use — so the controller can start before OneCLI is ready.
 func NewHTTPClient(baseURL, apiKey string) Client {
 	return &httpClient{baseURL: baseURL, apiKey: apiKey, http: &http.Client{}}
+}
+
+func (c *httpClient) ensureAPIKey(ctx context.Context) error {
+	if c.apiKey != "" {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.apiKey != "" {
+		return nil // fetched by another goroutine
+	}
+	key, err := FetchAPIKey(ctx, c.baseURL)
+	if err != nil {
+		return fmt.Errorf("OneCLI not ready: %w", err)
+	}
+	c.apiKey = key
+	return nil
 }
 
 // FetchAPIKey retrieves the API key from the OneCLI web API.
@@ -60,6 +81,9 @@ func FetchAPIKey(ctx context.Context, baseURL string) (string, error) {
 }
 
 func (c *httpClient) CreateAgent(ctx context.Context, name, identifier, secretMode string) (*Agent, error) {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return nil, err
+	}
 	body, _ := json.Marshal(map[string]string{"name": name, "identifier": identifier})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/agents", bytes.NewReader(body))
 	if err != nil {
@@ -173,6 +197,9 @@ func (c *httpClient) findAgentByIdentifier(ctx context.Context, identifier strin
 
 // DeleteAgent deletes an agent by identifier (looks up the UUID first).
 func (c *httpClient) DeleteAgent(ctx context.Context, identifier string) error {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return err
+	}
 	agent, err := c.findAgentByIdentifier(ctx, identifier)
 	if err != nil {
 		return nil // agent doesn't exist, nothing to delete
