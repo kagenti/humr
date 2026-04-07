@@ -8,7 +8,7 @@ This directory contains ADRs for the Humr project.
 |-----|-------|-------|
 | [001](001-ephemeral-containers.md) | Ephemeral containers + persistent workspace volumes | @tomkis |
 | [002](002-memory-primitives.md) | Memory — platform provides primitives, agents own semantics | @tomkis |
-| [003](003-docker-then-k8s.md) | Docker for prototype, Kubernetes for production | @jezekra1 |
+| [003](003-k8s-from-the-start.md) | Kubernetes from the start — k3s for local dev, K8s for production | @jezekra1 |
 | [004](004-acp-over-a2a.md) | ACP over A2A for the experiment | @tomkis |
 | [005](005-credential-gateway.md) | Gateway pattern for credentials — agent never sees tokens | @pilartomas |
 | [006](006-configmaps-over-crds.md) | ConfigMaps over CRDs — namespace-scoped resource model | @jezekra1 |
