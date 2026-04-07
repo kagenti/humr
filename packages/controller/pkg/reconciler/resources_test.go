@@ -82,10 +82,10 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 	// Probes
 	assert.Equal(t, "/healthz", c.ReadinessProbe.HTTPGet.Path)
-	assert.Equal(t, int32(5), c.ReadinessProbe.InitialDelaySeconds)
-	assert.Equal(t, int32(5), c.ReadinessProbe.PeriodSeconds)
+	assert.Equal(t, int32(0), c.ReadinessProbe.InitialDelaySeconds)
+	assert.Equal(t, int32(1), c.ReadinessProbe.PeriodSeconds)
 	assert.Equal(t, "/healthz", c.LivenessProbe.HTTPGet.Path)
-	assert.Equal(t, int32(15), c.LivenessProbe.InitialDelaySeconds)
+	assert.Equal(t, int32(10), c.LivenessProbe.InitialDelaySeconds)
 
 	// Platform env vars
 	envMap := envToMap(c.Env)

@@ -29,6 +29,7 @@ const DEFAULT_TEMPLATE_SPEC = {
     { path: "/home/agent", persist: true },
     { path: "/tmp", persist: false },
   ],
+  env: [{ name: "PORT", value: "8080" }],
   resources: {
     requests: { cpu: "250m", memory: "512Mi" },
     limits: { cpu: "1", memory: "2Gi" },

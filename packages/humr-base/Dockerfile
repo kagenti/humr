@@ -11,7 +11,7 @@ COPY dist/ dist/
 
 RUN mkdir -p working-dir
 
-ENV PORT=3000
-EXPOSE 3000
+ENV PORT=8080
+EXPOSE 8080
 
 CMD ["node", "dist/index.js"]

@@ -164,14 +164,13 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 						Env:     env,
 						EnvFrom: envFrom,
 						ReadinessProbe: &corev1.Probe{
-							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							InitialDelaySeconds: 5,
-							PeriodSeconds:       5,
+							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							PeriodSeconds: 1,
 						},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       15,
+							InitialDelaySeconds: 10,
+							PeriodSeconds:       10,
 						},
 						Resources:    resourceReqs,
 						VolumeMounts: volumeMounts,
