@@ -7,14 +7,15 @@ import (
 )
 
 type Config struct {
-	Namespace       string // Agent workload namespace
-	ReleaseName     string // Helm release name
-	OneCLIURL       string // OneCLI web API base URL
-	OneCLIAPIKey    string // OneCLI API key
-	GatewayHost     string // OneCLI gateway K8s service host
-	GatewayPort     int    // OneCLI gateway port
-	LeaseName       string // Leader election lease name
-	PodName         string // This pod's name (from downward API)
+	Namespace        string // Agent workload namespace
+	ReleaseNamespace string // Helm release namespace (where controller/OneCLI run)
+	ReleaseName      string // Helm release name
+	OneCLIURL        string // OneCLI web API base URL
+	OneCLIAPIKey     string // OneCLI API key
+	GatewayHost      string // OneCLI gateway K8s service host (short name)
+	GatewayPort      int    // OneCLI gateway port
+	LeaseName        string // Leader election lease name
+	PodName          string // This pod's name (from downward API)
 	CACertConfigMap      string // ConfigMap name for CA cert (derived)
 	AgentImagePullPolicy string // ImagePullPolicy for agent pods (default: IfNotPresent)
 }
@@ -31,18 +32,25 @@ func LoadFromEnv() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Namespace:    envOrDefault("HUMR_AGENT_NAMESPACE", "humr-agents"),
-		ReleaseName:  release,
-		OneCLIURL:    os.Getenv("ONECLI_URL"),
-		OneCLIAPIKey: os.Getenv("ONECLI_API_KEY"),
-		GatewayHost:  envOrDefault("ONECLI_GATEWAY_HOST", release+"-onecli"),
-		GatewayPort:  envOrDefaultInt("ONECLI_GATEWAY_PORT", 10255),
-		LeaseName:    envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
-		PodName:      podName,
+		Namespace:        envOrDefault("HUMR_AGENT_NAMESPACE", "humr-agents"),
+		ReleaseNamespace: envOrDefault("HUMR_RELEASE_NAMESPACE", "default"),
+		ReleaseName:      release,
+		OneCLIURL:        os.Getenv("ONECLI_URL"),
+		OneCLIAPIKey:     os.Getenv("ONECLI_API_KEY"),
+		GatewayHost:      envOrDefault("ONECLI_GATEWAY_HOST", release+"-onecli"),
+		GatewayPort:      envOrDefaultInt("ONECLI_GATEWAY_PORT", 10255),
+		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
+		PodName:          podName,
 	}
 	cfg.CACertConfigMap = release + "-onecli-ca-cert"
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	return cfg, nil
+}
+
+// GatewayFQDN returns the fully-qualified DNS name for the OneCLI gateway service.
+// Required because agent pods run in a different namespace than the gateway.
+func (c *Config) GatewayFQDN() string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local", c.GatewayHost, c.ReleaseNamespace)
 }
 
 func envOrDefault(key, def string) string {
