@@ -1,0 +1,254 @@
+package reconciler
+
+import (
+	"fmt"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/types"
+)
+
+func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.TemplateSpec, cfg *config.Config, ownerCM *corev1.ConfigMap) *appsv1.StatefulSet {
+	replicas := int32(1)
+	if instance.DesiredState == "hibernated" {
+		replicas = 0
+	}
+
+	labels := map[string]string{"humr.ai/instance": name}
+	proxyAddr := fmt.Sprintf("%s:%d", cfg.GatewayHost, cfg.GatewayPort)
+	caCertPath := "/etc/humr/ca/ca.crt"
+
+	// Merge env: platform + template + instance (last wins in K8s)
+	env := []corev1.EnvVar{
+		{Name: "HTTPS_PROXY", Value: proxyAddr},
+		{Name: "HTTP_PROXY", Value: proxyAddr},
+		{Name: "SSL_CERT_FILE", Value: caCertPath},
+		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		{Name: "ADK_INSTANCE_ID", Value: name},
+	}
+	for _, e := range tmpl.Env {
+		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
+	}
+	for _, e := range instance.Env {
+		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
+	}
+
+	// EnvFrom secretRef
+	var envFrom []corev1.EnvFromSource
+	if instance.SecretRef != "" {
+		envFrom = append(envFrom, corev1.EnvFromSource{
+			SecretRef: &corev1.SecretEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: instance.SecretRef},
+			},
+		})
+	}
+
+	// Volumes + mounts + PVC templates
+	var volumes []corev1.Volume
+	var volumeMounts []corev1.VolumeMount
+	var pvcs []corev1.PersistentVolumeClaim
+
+	for _, m := range tmpl.Mounts {
+		volName := types.SanitizeMountName(m.Path)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name: volName, MountPath: m.Path,
+		})
+		if m.Persist {
+			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   volName,
+					Labels: labels,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			})
+		} else {
+			volumes = append(volumes, corev1.Volume{
+				Name:         volName,
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			})
+		}
+	}
+
+	// CA cert volume from ConfigMap
+	volumes = append(volumes, corev1.Volume{
+		Name: "ca-cert",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: cfg.CACertConfigMap},
+			},
+		},
+	})
+	volumeMounts = append(volumeMounts, corev1.VolumeMount{
+		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
+	})
+
+	// Resources
+	resourceReqs := corev1.ResourceRequirements{}
+	if tmpl.Resources.Requests != nil {
+		resourceReqs.Requests = toResourceList(tmpl.Resources.Requests)
+	}
+	if tmpl.Resources.Limits != nil {
+		resourceReqs.Limits = toResourceList(tmpl.Resources.Limits)
+	}
+
+	// Init container
+	var initContainers []corev1.Container
+	if tmpl.Init != "" {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init",
+			Image:           tmpl.Image,
+			ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+			Command:         []string{"sh", "-c", tmpl.Init},
+			VolumeMounts:    volumeMounts,
+		})
+	}
+
+	// Pod security context
+	var podSec *corev1.PodSecurityContext
+	if tmpl.SecurityContext != nil {
+		podSec = &corev1.PodSecurityContext{
+			RunAsNonRoot: tmpl.SecurityContext.RunAsNonRoot,
+		}
+	}
+
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: cfg.Namespace,
+			Labels:    labels,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+			},
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas:             &replicas,
+			ServiceName:          name,
+			Selector:             &metav1.LabelSelector{MatchLabels: labels},
+			VolumeClaimTemplates: pvcs,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					SecurityContext: podSec,
+					InitContainers: initContainers,
+					Containers: []corev1.Container{{
+						Name:            "agent",
+						Image:           tmpl.Image,
+						ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+						Ports:           []corev1.ContainerPort{{
+							Name: "acp", ContainerPort: 8080,
+						}},
+						Env:     env,
+						EnvFrom: envFrom,
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							InitialDelaySeconds: 5,
+							PeriodSeconds:       5,
+						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							InitialDelaySeconds: 15,
+							PeriodSeconds:       15,
+						},
+						Resources:    resourceReqs,
+						VolumeMounts: volumeMounts,
+					}},
+					Volumes: volumes,
+				},
+			},
+		},
+	}
+}
+
+func BuildService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: cfg.Namespace,
+			Labels:    map[string]string{"humr.ai/instance": name},
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: corev1.ClusterIPNone,
+			Selector:  map[string]string{"humr.ai/instance": name},
+			Ports: []corev1.ServicePort{{
+				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
+			}},
+		},
+	}
+}
+
+func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
+	tcp := corev1.ProtocolTCP
+	udp := corev1.ProtocolUDP
+	acpPort := intstr.FromInt32(8080)
+	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
+	dnsPort := intstr.FromInt32(53)
+
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name + "-egress",
+			Namespace: cfg.Namespace,
+			Labels:    map[string]string{"humr.ai/instance": name},
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+			},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"humr.ai/instance": name},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeEgress,
+				networkingv1.PolicyTypeIngress,
+			},
+			Egress: []networkingv1.NetworkPolicyEgressRule{
+				{
+					// OneCLI gateway
+					To: []networkingv1.NetworkPolicyPeer{{
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app.kubernetes.io/component": "onecli"},
+						},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{{
+						Protocol: &tcp, Port: &gwPort,
+					}},
+				},
+				{
+					// DNS
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcp, Port: &dnsPort},
+						{Protocol: &udp, Port: &dnsPort},
+					},
+				},
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{{
+				Ports: []networkingv1.NetworkPolicyPort{{
+					Protocol: &tcp, Port: &acpPort,
+				}},
+			}},
+		},
+	}
+}
+
+func toResourceList(m map[string]string) corev1.ResourceList {
+	rl := make(corev1.ResourceList)
+	for k, v := range m {
+		rl[corev1.ResourceName(k)] = resource.MustParse(v)
+	}
+	return rl
+}

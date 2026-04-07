@@ -12,6 +12,7 @@ import type {
   CreateInstanceInput,
   UpdateInstanceInput,
 } from "api-server-api";
+import { SPEC_VERSION } from "api-server-api";
 
 
 const LABEL_TYPE = "humr.ai/type";
@@ -110,6 +111,7 @@ export function createK8sTemplatesContext(
 
     async create(input: CreateTemplateInput) {
       const spec: TemplateSpec = {
+        version: SPEC_VERSION,
         image: input.image,
         description: input.description,
         ...DEFAULT_TEMPLATE_SPEC,
@@ -149,7 +151,7 @@ export function createK8sInstancesContext(
         }),
         api.listNamespacedPod({
           namespace,
-          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE}`,
+          labelSelector: LABEL_INSTANCE_REF,
         }),
       ]);
       const podMap = new Map<string, k8s.V1Pod>();
@@ -186,6 +188,7 @@ export function createK8sInstancesContext(
       }
 
       const spec: InstanceSpec = {
+        version: SPEC_VERSION,
         templateName: input.templateName,
         desiredState: "running",
         env: input.env,
@@ -278,7 +281,7 @@ export function createK8sInstancesContext(
 }
 
 export function podBaseUrl(instanceId: string, namespace: string): string {
-  return `${instanceId}-0.${instanceId}.${namespace}.svc:3000`;
+  return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
 }
 
 export async function patchPodAnnotation(

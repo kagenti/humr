@@ -35,6 +35,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.url === "/healthz") {
+    res.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
+    return;
+  }
+
   if (req.url?.startsWith("/api/trpc")) {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));

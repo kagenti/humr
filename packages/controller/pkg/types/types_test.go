@@ -1,0 +1,187 @@
+package types
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// --- Template ---
+
+const fixtureTemplateYAML = `version: humr.ai/v1
+image: ghcr.io/myorg/code-guardian:latest
+description: "Persistent agent for repo monitoring"
+mounts:
+  - path: /workspace
+    persist: true
+  - path: /home/agent
+    persist: true
+  - path: /tmp
+    persist: false
+init: |
+  #!/bin/bash
+  if [ -f /workspace/requirements.txt ]; then
+    pip install -r /workspace/requirements.txt
+  fi
+env:
+  - name: ACP_PORT
+    value: "8080"
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: false
+`
+
+func TestParseTemplateSpec(t *testing.T) {
+	spec, err := ParseTemplateSpec(fixtureTemplateYAML)
+	require.NoError(t, err)
+	assert.Equal(t, SpecVersion, spec.Version)
+	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
+	assert.Equal(t, "Persistent agent for repo monitoring", spec.Description)
+	assert.Len(t, spec.Mounts, 3)
+	assert.True(t, spec.Mounts[0].Persist)
+	assert.Equal(t, "/workspace", spec.Mounts[0].Path)
+	assert.False(t, spec.Mounts[2].Persist)
+	assert.Contains(t, spec.Init, "pip install")
+	assert.Len(t, spec.Env, 1)
+	assert.Equal(t, "ACP_PORT", spec.Env[0].Name)
+	assert.Equal(t, "250m", spec.Resources.Requests["cpu"])
+	assert.Equal(t, "2Gi", spec.Resources.Limits["memory"])
+	assert.True(t, *spec.SecurityContext.RunAsNonRoot)
+	assert.False(t, *spec.SecurityContext.ReadOnlyRootFilesystem)
+}
+
+func TestParseTemplateSpec_MissingVersion(t *testing.T) {
+	_, err := ParseTemplateSpec(`image: ghcr.io/myorg/agent:latest`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestParseTemplateSpec_WrongVersion(t *testing.T) {
+	_, err := ParseTemplateSpec("version: humr.ai/v99\nimage: foo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported version")
+}
+
+func TestParseTemplateSpec_MissingImage(t *testing.T) {
+	_, err := ParseTemplateSpec(`version: humr.ai/v1
+description: "no image"`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "image")
+}
+
+func TestParseTemplateSpec_RelativeMountPath(t *testing.T) {
+	_, err := ParseTemplateSpec(`version: humr.ai/v1
+image: foo
+mounts:
+  - path: workspace
+    persist: true`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must be absolute")
+}
+
+// --- Instance ---
+
+func TestParseInstanceSpec(t *testing.T) {
+	spec, err := ParseInstanceSpec(`version: humr.ai/v1
+desiredState: running
+templateName: code-guardian
+env:
+  - name: GITHUB_ORG
+    value: "team-alpha"
+secretRef: cg-team-alpha-secrets
+`)
+	require.NoError(t, err)
+	assert.Equal(t, SpecVersion, spec.Version)
+	assert.Equal(t, "running", spec.DesiredState)
+	assert.Equal(t, "code-guardian", spec.TemplateName)
+	assert.Equal(t, "cg-team-alpha-secrets", spec.SecretRef)
+	assert.Len(t, spec.Env, 1)
+}
+
+func TestParseInstanceSpec_MissingDesiredState(t *testing.T) {
+	_, err := ParseInstanceSpec(`version: humr.ai/v1
+templateName: foo`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "desiredState")
+}
+
+func TestParseInstanceSpec_InvalidDesiredState(t *testing.T) {
+	_, err := ParseInstanceSpec(`version: humr.ai/v1
+desiredState: paused`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "'running' or 'hibernated'")
+}
+
+func TestParseInstanceSpec_MissingVersion(t *testing.T) {
+	_, err := ParseInstanceSpec(`desiredState: running`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version is required")
+}
+
+// --- Schedule ---
+
+func TestParseScheduleSpec(t *testing.T) {
+	spec, err := ParseScheduleSpec(`version: humr.ai/v1
+type: heartbeat
+cron: "*/30 * * * *"
+task: ""
+enabled: true
+`)
+	require.NoError(t, err)
+	assert.Equal(t, SpecVersion, spec.Version)
+	assert.Equal(t, "heartbeat", spec.Type)
+	assert.Equal(t, "*/30 * * * *", spec.Cron)
+	assert.True(t, spec.Enabled)
+}
+
+func TestParseScheduleSpec_InvalidCron(t *testing.T) {
+	_, err := ParseScheduleSpec(`version: humr.ai/v1
+cron: "not a cron"
+enabled: true`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid cron")
+}
+
+func TestParseScheduleSpec_MissingVersion(t *testing.T) {
+	_, err := ParseScheduleSpec(`cron: "* * * * *"
+enabled: true`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version is required")
+}
+
+// --- Helpers ---
+
+func TestSanitizeMountName(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"/workspace", "workspace"},
+		{"/home/agent", "home-agent"},
+		{"/tmp", "tmp"},
+		{"/var/lib/data", "var-lib-data"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, SanitizeMountName(tt.path))
+	}
+}
+
+func TestNewInstanceStatus(t *testing.T) {
+	s := NewInstanceStatus("running", "")
+	assert.Equal(t, SpecVersion, s.Version)
+	assert.Equal(t, "running", s.CurrentState)
+}
+
+func TestNewScheduleStatus(t *testing.T) {
+	s := NewScheduleStatus("2026-04-01T14:00:00Z", "2026-04-01T14:30:00Z", "success")
+	assert.Equal(t, SpecVersion, s.Version)
+	assert.Equal(t, "success", s.LastResult)
+}

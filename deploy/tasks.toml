@@ -29,23 +29,16 @@ export PS1="(humr-k3s) \\${__OLD_PS1}"
 EOF
 """
 
-["cluster:proxy"]
-description = "Port-forward Traefik ingress to localhost:4444 (access via onecli.localtest.me:4444)"
-run = '''
-#!/usr/bin/env bash
-set -eo pipefail
-KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
-echo "Forwarding Traefik to localhost:4444..."
-echo "  onecli.localtest.me:4444  →  OneCLI Web Dashboard"
-echo ""
-echo "Press Ctrl+C to stop."
-kubectl --kubeconfig="$KUBECONFIG" port-forward -n kube-system svc/traefik 4444:80
-'''
-
 # -- Cluster lifecycle (k3s via lima) --
+#
+# Both install and upgrade share the same flow:
+#   ensure VM → cert-manager → build images → load into k3s → helm install/upgrade
+#
+# install: creates VM if needed, uses helm install
+# upgrade: assumes VM exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, install cert-manager + ADK chart"
+description = "Create k3s cluster, build images, install cert-manager + Humr chart"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -54,10 +47,10 @@ set -eo pipefail
 LIMA_INSTANCE="humr-k3s"
 KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 
-# 1. Create and start k3s VM if not running
+# 1. Ensure k3s VM is running
 if ! limactl list --json | grep -q "\"name\":\"$LIMA_INSTANCE\""; then
   echo "Creating k3s VM..."
-  limactl create --name=$LIMA_INSTANCE template:k3s --tty=false
+  limactl create --name=$LIMA_INSTANCE deploy/lima-k3s.yaml --tty=false
 fi
 
 STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
@@ -79,38 +72,9 @@ else
   echo "cert-manager already installed"
 fi
 
-# 3. Build and load api-server image
-echo "Building api-server image..."
-docker build -f packages/api-server/Dockerfile -t humr-api-server:latest .
-IMAGE_TAR="/tmp/humr-api-server.tar"
-docker save humr-api-server:latest -o "$IMAGE_TAR"
-limactl copy "$IMAGE_TAR" "$LIMA_INSTANCE":"$IMAGE_TAR"
-limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$IMAGE_TAR"
-rm -f "$IMAGE_TAR"
-
-# 4. Install ADK chart
-if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
-  echo "Humr already installed, use 'mise run cluster:upgrade' to update"
-else
-  echo "Installing Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr
-fi
-
-echo ""
-echo "=== Cluster ready ==="
-echo "KUBECONFIG=$KUBECONFIG"
-echo ""
-kubectl --kubeconfig="$KUBECONFIG" get pods
-'''
-
-["cluster:upgrade"]
-description = "Build api-server + example-agent images, load into k3s, upgrade Humr chart"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-set -eo pipefail
-
-KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+# 3. Build all images and load into k3s
+echo "Building controller image..."
+docker build -t humr-controller:latest packages/controller/
 
 echo "Building api-server image..."
 docker build -f packages/api-server/Dockerfile -t humr-api-server:latest .
@@ -123,23 +87,89 @@ docker build -t humr-base packages/humr-base
 docker build -t humr-example-agent:latest packages/example-agent
 
 echo "Loading images into k3s..."
-for img in humr-api-server:latest humr-example-agent:latest; do
+for img in humr-controller:latest humr-api-server:latest humr-example-agent:latest; do
   tar="/tmp/${img%%:*}.tar"
   docker save "$img" -o "$tar"
-  limactl copy "$tar" humr-k3s:"$tar"
-  limactl shell humr-k3s sudo k3s ctr images import "$tar"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
   rm -f "$tar"
 done
 
-echo "Upgrading Humr chart..."
-helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr
+# 4. Helm install or upgrade
+if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
+  echo "Upgrading Humr chart..."
+  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr
+else
+  echo "Installing Humr chart..."
+  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr
+fi
 
-echo "Restarting api-server pod..."
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-apiserver
+# 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
+echo "Restarting pods..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-controller --timeout=60s
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
 
 echo ""
+echo "=== Cluster ready ==="
+echo "KUBECONFIG=$KUBECONFIG"
+echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
+'''
+
+["cluster:build-agent"]
+description = "Build and load agent image into k3s, restart agent pods"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+LIMA_INSTANCE="humr-k3s"
+KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+
+echo "Building agent image..."
+pnpm --filter harness-runtime build
+rm -rf packages/humr-base/dist
+cp -r packages/harness-runtime/dist packages/humr-base/dist
+docker build -t humr-base packages/humr-base
+docker build -t humr-example-agent:latest packages/example-agent
+
+echo "Loading into k3s..."
+tar="/tmp/humr-example-agent.tar"
+docker save humr-example-agent:latest -o "$tar"
+limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+rm -f "$tar"
+
+echo "Restarting agent pods..."
+kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all 2>/dev/null || true
+
+echo "Done. Agent pods will restart with new image."
+'''
+
+["cluster:kubectl"]
+description = "Run kubectl against the humr-k3s cluster. Usage: mise run cluster:kubectl -- get pods"
+raw = true
+run = '''
+#!/usr/bin/env bash
+KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+exec kubectl --kubeconfig="$KUBECONFIG" "$@"
+'''
+
+["cluster:shell"]
+description = "Open a shell inside the k3s VM"
+raw = true
+run = '''
+#!/usr/bin/env bash
+exec limactl shell humr-k3s "$@"
+'''
+
+["cluster:stop"]
+description = "Stop the k3s VM (preserves data)"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+limactl stop humr-k3s
 '''
 
 ["cluster:uninstall"]
