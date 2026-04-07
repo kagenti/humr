@@ -45,17 +45,7 @@ func main() {
 
 	var onecliClient onecli.Client
 	if cfg.OneCLIURL != "" {
-		apiKey := cfg.OneCLIAPIKey
-		if apiKey == "" {
-			slog.Info("fetching API key from OneCLI", "url", cfg.OneCLIURL)
-			var err error
-			apiKey, err = onecli.FetchAPIKey(context.Background(), cfg.OneCLIURL)
-			if err != nil {
-				slog.Error("failed to fetch OneCLI API key", "error", err)
-				os.Exit(1)
-			}
-		}
-		onecliClient = onecli.NewHTTPClient(cfg.OneCLIURL, apiKey)
+		onecliClient = onecli.NewHTTPClient(cfg.OneCLIURL, cfg.OneCLIAPIKey)
 		slog.Info("OneCLI client configured", "url", cfg.OneCLIURL)
 	} else {
 		slog.Warn("OneCLI not configured (ONECLI_URL not set), using noop client")
