@@ -1,33 +1,33 @@
-# ADR-003: Docker for prototype, Kubernetes for production
+# ADR-003: Kubernetes from the start — k3s for local dev, K8s for production
 
 **Date:** 2026-04-02
-**Status:** Accepted — prototype phase complete, Kubernetes adopted
+**Status:** Accepted — supersedes original "Docker first" plan
 **Owner:** @jezekra1
 
 ## Context
 
 The team debated whether to build on Kubernetes from the start or use simpler Docker containers for the prototype. Radek advocated for Kubernetes (jobs provide isolation, PVCs handle persistence, built-in scaling). Matous worried Kubernetes is overkill for a prototype and could slow delivery. Tomas W. noted cloud deployment would be hard without Kubernetes.
 
-The prototype needs to ship fast. Production needs to scale and isolate properly.
+The original plan was Docker for the prototype and Kubernetes for production. In practice, the team went straight to Kubernetes using k3s via lima for local development — the gap between "simple Docker" and "real K8s" turned out to be smaller than expected, and avoiding a Docker-to-K8s migration saved time.
 
 ## Decision
 
-Docker for the prototype, Kubernetes for production. Pragmatic split:
+Kubernetes from the start, with k3s (via lima) for local development. No Docker-compose prototype phase.
 
-- **Prototype:** Docker containers orchestrated with simple tooling (docker-compose or scripts). Focus on proving the architecture works, not on production infrastructure.
-- **Production:** Kubernetes jobs for isolation, PVCs for persistence, operators for lifecycle. Port the prototype when the architecture is validated.
+- **Local dev:** k3s VM managed by lima, full cluster lifecycle automated via mise (`mise run cluster:install`, `cluster:upgrade`, `cluster:delete`). Developers get a real K8s environment on their laptop with minimal setup.
+- **Production:** Same Helm chart, same resource model, same controller. The gap between local and production is cluster configuration, not architecture.
 
-The architecture should be designed so that the Docker-to-Kubernetes migration is straightforward (containers are containers).
+The architecture is the same everywhere: ConfigMaps as the resource model (ADR-006), StatefulSets for agent pods, PVCs for persistence, NetworkPolicies for isolation.
 
 ## Alternatives Considered
 
-**Kubernetes from day one.** Rejected for the prototype: too slow, too much infrastructure complexity before the core value is proven. The team agreed speed matters more than production-readiness at this stage.
+**Docker for the prototype, Kubernetes for production.** The original plan (this ADR's predecessor). Rejected in practice: k3s setup was fast enough that the Docker detour wasn't worth the migration cost. Docker-compose networking and orchestration patterns would not have mapped cleanly to the K8s resource model.
 
 **Docker only, no Kubernetes path.** Rejected: Kubernetes is necessary for production multi-tenancy, scaling, and integration with the Red Hat/OpenShift ecosystem.
 
 ## Consequences
 
-- Prototype ships faster — no K8s cluster setup, no CRDs, no operators needed to start
-- Risk: prototype patterns may not map cleanly to K8s jobs (but containers are containers, so the gap should be small)
-- Team can validate the architecture with real usage before investing in production infrastructure
-- Must avoid Docker-specific patterns that don't translate to K8s (e.g., docker-compose networking assumptions)
+- No migration step — local dev and production use the same K8s primitives
+- Slightly higher initial setup cost (lima + k3s) compared to docker-compose, but one-time and automated
+- Team validates against real K8s behavior from day one — no surprises at deployment time
+- Helm chart is the single source of truth for all environments
