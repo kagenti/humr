@@ -33,6 +33,8 @@ spec:
               value: {{ .Values.agentNamespace }}
             - name: ONECLI_URL
               value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
+            - name: HUMR_RELEASE_NAMESPACE
+              value: {{ .Release.Namespace }}
             - name: ONECLI_GATEWAY_HOST
               value: {{ include "humr.onecli.fullname" . }}
             - name: ONECLI_GATEWAY_PORT

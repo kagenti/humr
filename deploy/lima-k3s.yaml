@@ -16,7 +16,7 @@ provision:
     script: |
       #!/bin/sh
       if [ ! -d /var/lib/rancher/k3s ]; then
-        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644" sh -
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16443" sh -
       fi
       # Configure Traefik to also listen on port 4444 (auto-forwarded by lima)
       mkdir -p /var/lib/rancher/k3s/server/manifests
@@ -56,8 +56,8 @@ copyToHost:
 portForwards:
   - guestPort: 4444
     hostPort: 4444
-  - guestPort: 6443
-    hostPort: 6443
+  - guestPort: 16443
+    hostPort: 16443
 
 message: |
   k3s is ready. Access services via http://onecli.localtest.me:4444

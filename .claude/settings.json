@@ -15,6 +15,7 @@
       "Bash(mise run cluster:stop*)",
       "Bash(mise run cluster:uninstall*)",
       "Bash(mise run check*)",
+      "Bash(mise run test*)",
       "Bash(mise run controller:test*)",
       "Bash(mise run helm:check*)",
       "Bash(helm lint*)",

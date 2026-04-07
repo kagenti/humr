@@ -14,11 +14,12 @@ import (
 )
 
 var testConfig = &config.Config{
-	Namespace:       "test-agents",
-	ReleaseName:     "humr",
-	GatewayHost:     "humr-onecli",
-	GatewayPort:     10255,
-	CACertConfigMap: "humr-onecli-ca-cert",
+	Namespace:        "test-agents",
+	ReleaseNamespace: "default",
+	ReleaseName:      "humr",
+	GatewayHost:      "humr-onecli",
+	GatewayPort:      10255,
+	CACertConfigMap:  "humr-onecli-ca-cert",
 }
 
 var testTemplate = &types.TemplateSpec{
@@ -58,7 +59,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -88,8 +89,14 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 	// Platform env vars
 	envMap := envToMap(c.Env)
-	assert.Equal(t, "humr-onecli:10255", envMap["HTTPS_PROXY"])
-	assert.Equal(t, "humr-onecli:10255", envMap["HTTP_PROXY"])
+	assert.Equal(t, "http://$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTP_PROXY"])
+
+	// ONECLI_ACCESS_TOKEN comes from Secret via secretKeyRef
+	tokenEnv := c.Env[0]
+	assert.Equal(t, "ONECLI_ACCESS_TOKEN", tokenEnv.Name)
+	assert.Equal(t, "humr-template-my-template-token", tokenEnv.ValueFrom.SecretKeyRef.Name)
+	assert.Equal(t, "access-token", tokenEnv.ValueFrom.SecretKeyRef.Key)
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
@@ -112,13 +119,13 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 func TestBuildStatefulSet_Hibernated(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
 func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1)
 	ic := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", ic.Image)
@@ -129,13 +136,13 @@ func TestBuildStatefulSet_NoInitWhenEmpty(t *testing.T) {
 	tmpl := *testTemplate
 	tmpl.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &tmpl, testConfig, testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, &tmpl, testConfig, "aoc_test_token", testOwnerCM)
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 
 func TestBuildStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 
 	// 2 PVCs (workspace, home-agent)
 	assert.Len(t, ss.Spec.VolumeClaimTemplates, 2)
@@ -164,7 +171,7 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 
@@ -192,6 +199,13 @@ func TestBuildNetworkPolicy(t *testing.T) {
 
 	// Egress rules: gateway + DNS
 	require.Len(t, np.Spec.Egress, 2)
+
+	// Gateway rule targets OneCLI pods in the release namespace
+	gwRule := np.Spec.Egress[0]
+	require.Len(t, gwRule.To, 1)
+	assert.Equal(t, "onecli", gwRule.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
+	require.NotNil(t, gwRule.To[0].NamespaceSelector, "gateway egress rule must include namespaceSelector for cross-namespace access")
+	assert.Equal(t, "default", gwRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
 
 	// Ingress: allow ACP port
 	require.Len(t, np.Spec.Ingress, 1)
