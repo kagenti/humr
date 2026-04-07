@@ -156,4 +156,37 @@ func TestReconcile_Idempotent(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestDelete_CleansPVCs(t *testing.T) {
+	cm := instanceCM("running")
+	// Pre-create PVCs that would have been created by the StatefulSet controller
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workspace-my-instance-0",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"humr.ai/instance": "my-instance"},
+		},
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"code-guardian": templateCM()},
+		cm, pvc,
+	)
+
+	// Verify PVC exists before deletion
+	ctx := context.Background()
+	pvcs, err := client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
+		LabelSelector: "humr.ai/instance=my-instance",
+	})
+	require.NoError(t, err)
+	assert.Len(t, pvcs.Items, 1)
+
+	// Delete instance — should clean up PVCs
+	r.Delete(ctx, "my-instance")
+
+	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
+		LabelSelector: "humr.ai/instance=my-instance",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, pvcs.Items)
+}
+
 func int32Ptr(i int32) *int32 { return &i }

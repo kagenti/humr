@@ -69,9 +69,29 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus(state, ""))
 }
 
-func (r *InstanceReconciler) Delete(_ context.Context, _ string) {
+func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
 	// Owner references handle cascade deletion of StatefulSet, Service, NetworkPolicy.
 	// OneCLI agent cleanup is handled by TemplateReconciler.
+	//
+	// PVCs created via VolumeClaimTemplates are intentionally NOT deleted by
+	// Kubernetes when the StatefulSet is removed (to prevent data loss).
+	// We clean them up explicitly on instance removal.
+	r.deletePVCs(ctx, name)
+}
+
+func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string) {
+	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
+		metav1.ListOptions{LabelSelector: "humr.ai/instance=" + instanceName},
+	)
+	if err != nil {
+		fmt.Printf("WARN: failed to list PVCs for instance %s: %v\n", instanceName, err)
+		return
+	}
+	for _, pvc := range pvcs.Items {
+		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
+			fmt.Printf("WARN: failed to delete PVC %s for instance %s: %v\n", pvc.Name, instanceName, err)
+		}
+	}
 }
 
 func (r *InstanceReconciler) setError(ctx context.Context, name, msg string) error {
