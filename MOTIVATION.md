@@ -2,17 +2,17 @@
 
 ## What's an agent
 
-A service that has an LLM, calls external systems, and exercises autonomy. The key word is autonomy: the agent decides *how* to solve a problem, not just execute pre-determined logic. This is what makes agents different from traditional services — and what makes them hard to govern.
+A service that has an LLM, calls external systems, and exercises autonomy. The key word is autonomy: the agent decides *how* to solve a problem, not just execute pre-determined logic. This is what makes agents different from traditional services, and what makes them hard to govern.
 
 ## Three levels of abstraction
 
 There are three levels of abstraction for how developers express agent work today. Each gives up some control in exchange for more AI autonomy:
 
-1. **Code.** You write explicit control flow — frameworks like LangGraph or CrewAI, packaged as containers. You decide what happens at each step. The agent follows your logic.
+1. **Code.** You write explicit control flow using frameworks like LangGraph or CrewAI, packaged as containers. You decide what happens at each step. The agent follows your logic.
 
-2. **Harness.** You take a general-purpose tool like Claude Code, Codex, or Gemini CLI, give it a system prompt, file access, and tools. You configure more than you program — though you might still write custom skills or scripts. The harness decides execution details.
+2. **Harness.** You take a general-purpose tool like Claude Code, Codex, or Gemini CLI, give it a system prompt, file access, and tools. You configure more than you program, though you might still write custom skills or scripts. The harness decides execution details.
 
-3. **Always-on assistant.** You interact through conversation. The assistant programs itself based on your interactions — building software, creating skills on the fly, automating workflows. Under the hood it uses a harness, but the user doesn't interact with the harness directly. The harness is the engine; the assistant is the experience. Think OpenClaw or NanoClaw.
+3. **Always-on assistant.** You interact through conversation. The assistant programs itself based on your interactions: building software, creating skills on the fly, automating workflows. Under the hood it uses a harness, but the user doesn't interact with the harness directly. The harness is the engine; the assistant is the experience. Think OpenClaw or NanoClaw.
 
 All three hit the same wall when you try to run them in production: no open-source platform makes them safe, manageable, and independent of a single vendor.
 
@@ -20,9 +20,9 @@ All three hit the same wall when you try to run them in production: no open-sour
 
 OpenClaw is wildly successful and keeps getting better. But it's a general-purpose platform that tries to serve every user and every scenario. Humr takes a different angle: narrower focus, zero-trust by default, building blocks instead of opinions.
 
-When an agent has bash access and can manipulate files, security can't be an afterthought. Credentials shouldn't be passed to the model. Network access shouldn't be open by default. Isolation shouldn't be optional. These aren't features — they're the foundation everything else is built on.
+When an agent has bash access and can manipulate files, security can't be an afterthought. Credentials shouldn't be passed to the model. Network access shouldn't be open by default. Isolation shouldn't be optional. These aren't features. They're the foundation everything else is built on.
 
-And if you want to run agents on your own infrastructure without being tied to a specific vendor's harness, model, or cloud — that option doesn't exist today.
+And if you want to run agents on your own infrastructure without being tied to a specific vendor's harness, model, or cloud, that option doesn't exist today.
 
 ## What Humr does
 
@@ -32,11 +32,11 @@ Humr is a Kubernetes platform focused on running AI harnesses in production. It 
 
 Here's what that means:
 
-- **Your agent runs in an isolated container.** Each invocation gets a fresh pod. Agents can't see each other's files, network, or processes. Workspace files (memory, skills, project artifacts) persist between runs on a volume — but the container itself is disposable.
+- **Your agent runs in an isolated container.** Each invocation gets a fresh pod. Agents can't see each other's files, network, or processes. Workspace files (memory, skills, project artifacts) persist between runs on a volume. The container itself is disposable.
 
 - **Your agent never sees real credentials.** All outbound traffic goes through a credential gateway (OneCLI). The gateway injects real tokens at the HTTP level and enforces per-agent policy rules. The agent only sees placeholders. If the agent gets compromised, there are no secrets to steal.
 
-- **Scheduling and heartbeat are built in.** The platform owns cron — not the agent. When a schedule fires, the platform writes a trigger file to the agent's workspace. The agent wakes up, processes it, and goes back to sleep. A heartbeat works the same way: wake up, review history, decide if anything needs doing.
+- **Scheduling and heartbeat are built in.** The platform owns cron, not the agent. When a schedule fires, the platform writes a trigger file to the agent's workspace. The agent wakes up, processes it, and goes back to sleep. A heartbeat works the same way: wake up, review history, decide if anything needs doing.
 
 - **The harness doesn't know it's managed.** A scheduled task looks the same as a user message. A credential-injected API call looks the same as a normal request. The harness runs the same way locally and in production.
 
@@ -51,4 +51,4 @@ Here's what that means:
 
 ## Where this is going
 
-Humr focuses on harnesses today and is preparing the building blocks for always-on personal assistants (scheduling, heartbeat, persistent workspace, channel integrations). A separate experiment will build an enterprise-grade OpenClaw alternative on top of these building blocks — an assistant that uses the harness to build software, create skills, and automate workflows, but wraps it in an experience that's safe and manageable for enterprise use.
+Humr focuses on harnesses today and is preparing the building blocks for always-on personal assistants (scheduling, heartbeat, persistent workspace, channel integrations). A separate experiment will build an enterprise-grade OpenClaw alternative on top of these building blocks: an assistant that uses the harness to build software, create skills, and automate workflows, wrapped in an experience that's safe and manageable for enterprise use.
