@@ -34,7 +34,6 @@ const DEFAULT_TEMPLATE_SPEC = {
     limits: { cpu: "1", memory: "2Gi" },
   },
   securityContext: {
-    runAsNonRoot: true,
     readOnlyRootFilesystem: false,
   },
 };
