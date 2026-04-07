@@ -151,7 +151,7 @@ export function createK8sInstancesContext(
         }),
         api.listNamespacedPod({
           namespace,
-          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE}`,
+          labelSelector: LABEL_INSTANCE_REF,
         }),
       ]);
       const podMap = new Map<string, k8s.V1Pod>();
@@ -281,7 +281,7 @@ export function createK8sInstancesContext(
 }
 
 export function podBaseUrl(instanceId: string, namespace: string): string {
-  return `${instanceId}-0.${instanceId}.${namespace}.svc:3000`;
+  return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
 }
 
 export async function patchPodAnnotation(
