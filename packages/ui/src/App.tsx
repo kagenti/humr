@@ -155,6 +155,8 @@ export default function App() {
   >([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [creatingInstance, setCreatingInstance] = useState<string | null>(null);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [deletingTemplate, setDeletingTemplate] = useState<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
@@ -248,6 +250,39 @@ export default function App() {
   useEffect(() => {
     fetchInstances();
   }, [fetchInstances]);
+
+  const createTemplate = useCallback(async () => {
+    const name = window.prompt("Template name:");
+    if (!name?.trim()) return;
+    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(name.trim())) {
+      window.alert("Invalid name. Use lowercase alphanumeric, dots, or hyphens (must start/end with alphanumeric).");
+      return;
+    }
+    const image = window.prompt("Image (required):");
+    if (!image?.trim()) return;
+    const description = window.prompt("Description (optional):") || undefined;
+    setCreatingTemplate(true);
+    try {
+      await platform.templates.create.mutate({ name: name.trim(), image: image.trim(), description: description?.trim() || undefined });
+      await fetchTemplates();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to create template");
+    }
+    setCreatingTemplate(false);
+  }, [fetchTemplates]);
+
+  const deleteTemplate = useCallback(async (name: string) => {
+    if (!window.confirm(`Delete template "${name}"?`)) return;
+    setDeletingTemplate(name);
+    try {
+      await platform.templates.delete.mutate({ name });
+      await fetchTemplates();
+      await fetchInstances();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to delete template");
+    }
+    setDeletingTemplate(null);
+  }, [fetchTemplates, fetchInstances]);
 
   const createInstance = useCallback(async (templateName: string) => {
     const name = window.prompt("Instance name:");
@@ -598,6 +633,13 @@ export default function App() {
         <div className="list-view">
           <div className="list-toolbar">
             <span className="list-title">templates</span>
+            <button
+              className="create-template-btn"
+              disabled={creatingTemplate}
+              onClick={createTemplate}
+            >
+              {creatingTemplate ? "…" : "+ template"}
+            </button>
             <button className="left-sidebar-refresh" onClick={() => { fetchTemplates(); fetchInstances(); }}>↻</button>
           </div>
 
@@ -622,6 +664,13 @@ export default function App() {
                         onClick={() => createInstance(tmpl.name)}
                       >
                         {creatingInstance === tmpl.name ? "…" : "+ instance"}
+                      </button>
+                      <button
+                        className="delete-template-btn"
+                        disabled={deletingTemplate === tmpl.name}
+                        onClick={() => deleteTemplate(tmpl.name)}
+                      >
+                        {deletingTemplate === tmpl.name ? "…" : "×"}
                       </button>
                     </div>
                     <span className="template-card-meta">
