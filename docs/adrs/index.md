@@ -18,10 +18,10 @@ This directory contains ADRs for the Humr project.
 | [010](010-onecli-deployment.md) | OneCLI deployment — single image, two Services | @pilartomas |
 | [011](011-skills-claude-marketplace.md) | Skills via Claude plugin marketplace | @pilartomas |
 | [012](012-runtime-lifetime.md) | Runtime lifetime — single-use Jobs | @JanPokorny |
+| [013](013-ui-approach.md) | UI approach — chat-primary, dashboard for inspection | @PetrBulanek |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
-| [DRAFT](DRAFT-ui-tooling.md) | UI wireframes and tooling | @PetrBulanek |
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
