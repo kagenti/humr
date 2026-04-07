@@ -55,6 +55,9 @@ rules:
     resources: ["configmaps", "secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
 ---
