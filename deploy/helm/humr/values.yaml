@@ -51,11 +51,24 @@ onecli:
       memory: 1Gi
 
 # -- Ingress (uses k3s built-in Traefik, accessed via port-forward on port 4444)
-# Subdomains: onecli.localtest.me:4444 (future: humr.localtest.me:4444 for API Server)
+# Subdomains: humr.localtest.me:4444 (UI), humr-api.localtest.me:4444 (API), onecli.localtest.me:4444 (OneCLI)
 ingress:
   enabled: true
   className: ""
   annotations: {}
+
+# -- UI (nginx serving static SPA, reverse-proxies /api to API server)
+ui:
+  image: humr-ui:latest
+  imagePullPolicy: Never
+  port: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 
 # -- API Server
 apiServer:
