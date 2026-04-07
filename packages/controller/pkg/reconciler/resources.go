@@ -14,20 +14,31 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.TemplateSpec, cfg *config.Config, ownerCM *corev1.ConfigMap) *appsv1.StatefulSet {
+func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.TemplateSpec, cfg *config.Config, templateName string, ownerCM *corev1.ConfigMap) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
 	}
 
 	labels := map[string]string{"humr.ai/instance": name}
-	proxyAddr := fmt.Sprintf("%s:%d", cfg.GatewayHost, cfg.GatewayPort)
+	// Proxy URL uses $(ONECLI_ACCESS_TOKEN) interpolation — K8s resolves it from the Secret at pod start.
+	proxyAddr := fmt.Sprintf("http://$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	caCertPath := "/etc/humr/ca/ca.crt"
+	tokenSecretName := TemplateTokenSecretName(templateName)
 
 	// Merge env: platform + template + instance (last wins in K8s)
+	// ONECLI_ACCESS_TOKEN must come before HTTPS_PROXY so $(ONECLI_ACCESS_TOKEN) resolves.
 	env := []corev1.EnvVar{
+		{Name: "ONECLI_ACCESS_TOKEN", ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
+				Key:                  "access-token",
+			},
+		}},
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
+		{Name: "https_proxy", Value: proxyAddr},
+		{Name: "http_proxy", Value: proxyAddr},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "ADK_INSTANCE_ID", Value: name},
@@ -218,10 +229,13 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 			},
 			Egress: []networkingv1.NetworkPolicyEgressRule{
 				{
-					// OneCLI gateway
+					// OneCLI gateway (cross-namespace: gateway runs in the release namespace)
 					To: []networkingv1.NetworkPolicyPeer{{
 						PodSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"app.kubernetes.io/component": "onecli"},
+						},
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
 						},
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{{

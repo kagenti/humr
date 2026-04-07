@@ -12,19 +12,17 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
 type InstanceReconciler struct {
 	client   kubernetes.Interface
 	config   *config.Config
-	onecli   onecli.Client
 	resolver *TemplateResolver
 }
 
-func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, oc onecli.Client, resolver *TemplateResolver) *InstanceReconciler {
-	return &InstanceReconciler{client: client, config: cfg, onecli: oc, resolver: resolver}
+func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *TemplateResolver) *InstanceReconciler {
+	return &InstanceReconciler{client: client, config: cfg, resolver: resolver}
 }
 
 func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
@@ -50,7 +48,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	}
 
 	// Build desired resources
-	ss := BuildStatefulSet(name, instanceSpec, tmplSpec, r.config, cm)
+	ss := BuildStatefulSet(name, instanceSpec, tmplSpec, r.config, templateName, cm)
 	svc := BuildService(name, r.config, cm)
 	np := BuildNetworkPolicy(name, r.config, cm)
 
@@ -64,9 +62,6 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying networkpolicy: %v", err))
 	}
 
-	// Provision OneCLI agent (best-effort)
-	r.onecli.CreateAgent(ctx, name, name)
-
 	state := instanceSpec.DesiredState
 	if state == "" {
 		state = "running"
@@ -74,10 +69,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus(state, ""))
 }
 
-func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
+func (r *InstanceReconciler) Delete(_ context.Context, _ string) {
 	// Owner references handle cascade deletion of StatefulSet, Service, NetworkPolicy.
-	// Clean up OneCLI agent token (best-effort).
-	r.onecli.DeleteAgent(ctx, "agent-"+name)
+	// OneCLI agent cleanup is handled by TemplateReconciler.
 }
 
 func (r *InstanceReconciler) setError(ctx context.Context, name, msg string) error {

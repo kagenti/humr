@@ -44,10 +44,21 @@ func main() {
 	}
 
 	var onecliClient onecli.Client
-	if cfg.OneCLIURL != "" && cfg.OneCLIAPIKey != "" {
-		onecliClient = onecli.NewHTTPClient(cfg.OneCLIURL, cfg.OneCLIAPIKey)
+	if cfg.OneCLIURL != "" {
+		apiKey := cfg.OneCLIAPIKey
+		if apiKey == "" {
+			slog.Info("fetching API key from OneCLI", "url", cfg.OneCLIURL)
+			var err error
+			apiKey, err = onecli.FetchAPIKey(context.Background(), cfg.OneCLIURL)
+			if err != nil {
+				slog.Error("failed to fetch OneCLI API key", "error", err)
+				os.Exit(1)
+			}
+		}
+		onecliClient = onecli.NewHTTPClient(cfg.OneCLIURL, apiKey)
+		slog.Info("OneCLI client configured", "url", cfg.OneCLIURL)
 	} else {
-		slog.Warn("OneCLI not configured, using noop client")
+		slog.Warn("OneCLI not configured (ONECLI_URL not set), using noop client")
 		onecliClient = &onecli.NoopClient{}
 	}
 
@@ -91,7 +102,8 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 
 	cmInformer := factory.Core().V1().ConfigMaps()
 	templateResolver := reconciler.NewTemplateResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, onecliClient, templateResolver)
+	templateReconciler := reconciler.NewTemplateReconciler(client, cfg, onecliClient)
+	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, templateResolver)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()
@@ -123,6 +135,8 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 			}
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
+			case "agent-template":
+				templateReconciler.Delete(ctx, cm.Name)
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":
@@ -155,6 +169,12 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
+			case "agent-template":
+				if err := templateReconciler.Reconcile(ctx, cm); err != nil {
+					slog.Error("reconcile template", "name", name, "error", err)
+					queue.AddRateLimited(key)
+					return
+				}
 			case "agent-instance":
 				if err := instanceReconciler.Reconcile(ctx, cm); err != nil {
 					slog.Error("reconcile instance", "name", name, "error", err)
