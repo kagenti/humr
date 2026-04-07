@@ -17,11 +17,11 @@ This directory contains ADRs for the Humr project.
 | [009](009-go-and-typescript.md) | Go for Controller, TypeScript for API Server | @jezekra1 |
 | [010](010-onecli-deployment.md) | OneCLI deployment — single image, two Services | @pilartomas |
 | [011](011-skills-claude-marketplace.md) | Skills via Claude plugin marketplace | @pilartomas |
+| [012](012-runtime-lifetime.md) | Runtime lifetime — single-use Jobs | @JanPokorny |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
-| [DRAFT](DRAFT-runtime-lifetime.md) | Runtime lifetime — keep-alive vs. kill after response | @JanPokorny |
 | [DRAFT](DRAFT-ui-tooling.md) | UI wireframes and tooling | @PetrBulanek |
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
