@@ -505,6 +505,36 @@ html, body, #root { height: 100%; background: var(--bg); color: var(--fg); font-
 .create-instance-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .create-instance-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.create-template-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg2);
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.create-template-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.create-template-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.delete-template-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg2);
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.delete-template-btn:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+.delete-template-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .template-card-meta {
   font-family: var(--mono);
   font-size: 10px;
