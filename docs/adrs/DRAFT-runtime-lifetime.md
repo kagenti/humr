@@ -3,7 +3,7 @@
 **Date:** 2026-04-07
 **Status:** Accepted
 **Owner:** @JanPokorny
-**Decided with:** @TomasWeiss
+**Decided with:** Tomas W., Radek J.
 
 ## Context
 
