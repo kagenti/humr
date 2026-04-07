@@ -104,11 +104,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		resourceReqs.Limits = toResourceList(tmpl.Resources.Limits)
 	}
 
-	pullPolicy := corev1.PullIfNotPresent
-	if cfg.ImagePullPolicy != "" {
-		pullPolicy = corev1.PullPolicy(cfg.ImagePullPolicy)
-	}
-
 	// Init container
 	var initContainers []corev1.Container
 	if tmpl.Init != "" {
