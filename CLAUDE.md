@@ -19,7 +19,7 @@ Together, `harness-runtime` + `harness-runtime-api` form the agent runtime — t
 
 ## Workflow
 
-mise is the task runner. All tasks are defined in `tasks.toml` files.
+mise is the task runner. All tasks are defined in `tasks.toml` files. **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break.
 
 ```sh
 mise run check              # lint + type-check all packages (also runs as pre-commit hook)
