@@ -42,6 +42,23 @@ export async function patchConfigMapData(
   await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
 }
 
+export async function waitForPodReady(
+  name: string,
+  timeoutMs = 120_000,
+  namespace = NAMESPACE,
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const pod = await api.readNamespacedPod({ name, namespace });
+      const ready = pod.status?.conditions?.find((c) => c.type === "Ready");
+      if (ready?.status === "True") return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(`Pod ${name} not ready after ${timeoutMs}ms`);
+}
+
 export async function waitForConfigMapKey(
   name: string,
   key: string,

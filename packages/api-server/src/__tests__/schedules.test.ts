@@ -6,6 +6,7 @@ import {
   configMapExists,
   patchConfigMapData,
   waitForConfigMapKey,
+  waitForPodReady,
 } from "./helpers/kubectl.js";
 import yaml from "js-yaml";
 
@@ -270,20 +271,32 @@ describe("schedules: API server CRUD", () => {
 });
 
 describe("e2e: controller reconciliation", () => {
+  const E2E_INSTANCE = "e2e-agent";
   const SCHEDULE_NAME = "e2e-cron";
-  const CM_NAME = `${INSTANCE_NAME}-${SCHEDULE_NAME}`;
+  const CM_NAME = `${E2E_INSTANCE}-${SCHEDULE_NAME}`;
+
+  beforeAll(async () => {
+    await client.instances.create.mutate({
+      name: E2E_INSTANCE,
+      templateName: "code-guardian",
+    });
+    await waitForPodReady(`${E2E_INSTANCE}-0`, 180_000);
+  });
 
   afterAll(async () => {
     try {
       await client.schedules.delete.mutate({ name: CM_NAME });
     } catch {}
+    try {
+      await client.instances.delete.mutate({ name: E2E_INSTANCE });
+    } catch {}
   });
 
-  // skip: controller stops processing events after OneCLI registration errors (#34)
+  // skip: controller informer stalls after OneCLI registration — pod never created (#34)
   it.skip("controller writes status.yaml after cron fires", async () => {
     await client.schedules.createCron.mutate({
       name: SCHEDULE_NAME,
-      instanceName: INSTANCE_NAME,
+      instanceName: E2E_INSTANCE,
       cron: "* * * * *",
       task: "e2e test task",
     });
