@@ -15,3 +15,12 @@ export type {
   CreateTemplateInput,
 } from "./modules/templates.js";
 export { SPEC_VERSION } from "./modules/templates.js";
+export type {
+  Schedule,
+  ScheduleSpec,
+  ScheduleStatus,
+  SchedulesContext,
+  ScheduleConfig,
+  CreateCronScheduleInput,
+  CreateHeartbeatScheduleInput,
+} from "./modules/schedules.js";

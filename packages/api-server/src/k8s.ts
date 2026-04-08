@@ -11,17 +11,27 @@ import type {
   InstancesContext,
   CreateInstanceInput,
   UpdateInstanceInput,
+  Schedule,
+  ScheduleSpec,
+  ScheduleStatus,
+  SchedulesContext,
+  CreateCronScheduleInput,
+  CreateHeartbeatScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
+import { parseExpression } from "cron-parser";
 
 
 const LABEL_TYPE = "humr.ai/type";
 const LABEL_TEMPLATE = "agent-template";
 const LABEL_INSTANCE = "agent-instance";
 const LABEL_TEMPLATE_REF = "humr.ai/template";
+const LABEL_SCHEDULE = "agent-schedule";
 const LABEL_INSTANCE_REF = "humr.ai/instance";
 const SPEC_KEY = "spec.yaml";
 const STATUS_KEY = "status.yaml";
+
+const DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 5;
 
 const DEFAULT_TEMPLATE_SPEC = {
   mounts: [
@@ -276,6 +286,137 @@ export function createK8sInstancesContext(
       } catch {
         // PVC cleanup is best-effort; controller may not have labeled them yet
       }
+    },
+  };
+}
+
+function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+  const statusYaml = cm.data?.[STATUS_KEY];
+  let status: ScheduleStatus | undefined;
+  if (statusYaml) {
+    status = yaml.load(statusYaml) as ScheduleStatus;
+  }
+  const instanceName = cm.metadata!.labels![LABEL_INSTANCE_REF];
+  return { name: cm.metadata!.name!, instanceName, spec, status };
+}
+
+function minutesToCron(minutes: number): string {
+  if (minutes === 1) return "* * * * *";
+  return `*/${minutes} * * * *`;
+}
+
+function validateCron(expr: string): void {
+  parseExpression(expr);
+}
+
+export function createK8sSchedulesContext(
+  namespace: string,
+  api: k8s.CoreV1Api,
+  instances: InstancesContext,
+): SchedulesContext {
+  return {
+    async list(instanceName) {
+      const res = await api.listNamespacedConfigMap({
+        namespace,
+        labelSelector: `${LABEL_TYPE}=${LABEL_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceName}`,
+      });
+      return (res.items ?? []).map(parseSchedule);
+    },
+
+    async get(name) {
+      try {
+        const cm = await api.readNamespacedConfigMap({ name, namespace });
+        return parseSchedule(cm);
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async createCron(input: CreateCronScheduleInput) {
+      validateCron(input.cron);
+
+      const inst = await instances.get(input.instanceName);
+      if (!inst) {
+        throw new Error(`Instance "${input.instanceName}" not found`);
+      }
+
+      const cmName = `${input.instanceName}-${input.name}`;
+      const spec: ScheduleSpec = {
+        version: SPEC_VERSION,
+        type: "cron",
+        cron: input.cron,
+        task: input.task,
+        enabled: true,
+      };
+      const cm: k8s.V1ConfigMap = {
+        metadata: {
+          name: cmName,
+          namespace,
+          labels: {
+            [LABEL_TYPE]: LABEL_SCHEDULE,
+            [LABEL_INSTANCE_REF]: input.instanceName,
+            [LABEL_TEMPLATE_REF]: inst.spec.templateName,
+          },
+        },
+        data: { [SPEC_KEY]: yaml.dump(spec) },
+      };
+      const created = await api.createNamespacedConfigMap({ namespace, body: cm });
+      return parseSchedule(created);
+    },
+
+    async createHeartbeat(input: CreateHeartbeatScheduleInput) {
+      const inst = await instances.get(input.instanceName);
+      if (!inst) {
+        throw new Error(`Instance "${input.instanceName}" not found`);
+      }
+
+      const cmName = `${input.instanceName}-${input.name}`;
+      const spec: ScheduleSpec = {
+        version: SPEC_VERSION,
+        type: "heartbeat",
+        cron: minutesToCron(input.intervalMinutes),
+        task: "",
+        enabled: true,
+      };
+      const cm: k8s.V1ConfigMap = {
+        metadata: {
+          name: cmName,
+          namespace,
+          labels: {
+            [LABEL_TYPE]: LABEL_SCHEDULE,
+            [LABEL_INSTANCE_REF]: input.instanceName,
+            [LABEL_TEMPLATE_REF]: inst.spec.templateName,
+          },
+        },
+        data: { [SPEC_KEY]: yaml.dump(spec) },
+      };
+      const created = await api.createNamespacedConfigMap({ namespace, body: cm });
+      return parseSchedule(created);
+    },
+
+    async delete(name) {
+      await api.deleteNamespacedConfigMap({ name, namespace });
+    },
+
+    async toggle(name) {
+      let cm: k8s.V1ConfigMap;
+      try {
+        cm = await api.readNamespacedConfigMap({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+      spec.enabled = !spec.enabled;
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+      return parseSchedule(updated);
+    },
+
+    config() {
+      return { defaultHeartbeatIntervalMinutes: DEFAULT_HEARTBEAT_INTERVAL_MINUTES };
     },
   };
 }
