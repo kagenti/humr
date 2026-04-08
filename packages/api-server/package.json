@@ -14,12 +14,14 @@
     "@kubernetes/client-node": "^1.2.0",
     "@trpc/server": "^11.16.0",
     "api-server-api": "workspace:*",
+    "cron-parser": "^5.5.0",
     "hono": "^4.7.11",
     "js-yaml": "^4.1.0",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@trpc/client": "^11.16.0",
     "@types/js-yaml": "^4.0.9",
     "@types/ws": "^8.18.1",
     "tsup": "^8.5.1",
