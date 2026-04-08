@@ -29,10 +29,11 @@ func TestLoadFromEnv_AllSet(t *testing.T) {
 	assert.Equal(t, "oc_test_key", cfg.OneCLIAPIKey)
 	assert.Equal(t, "my-release-onecli", cfg.GatewayHost)
 	assert.Equal(t, 9999, cfg.GatewayPort)
+	assert.Equal(t, 10254, cfg.WebPort)
 	assert.Equal(t, "custom-lease", cfg.LeaseName)
 	assert.Equal(t, "controller-0", cfg.PodName)
-	assert.Equal(t, "my-release-onecli-ca-cert", cfg.CACertConfigMap)
 	assert.Equal(t, "my-release-onecli.custom-ns.svc.cluster.local", cfg.GatewayFQDN())
+	assert.Equal(t, "http://my-release-onecli.custom-ns.svc.cluster.local:10254", cfg.WebURL())
 }
 
 func TestLoadFromEnv_Defaults(t *testing.T) {
@@ -45,9 +46,11 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "humr-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, 10255, cfg.GatewayPort)
+	assert.Equal(t, 10254, cfg.WebPort)
 	assert.Equal(t, "humr-controller", cfg.LeaseName)
 	assert.Equal(t, "humr-onecli", cfg.GatewayHost)
 	assert.Equal(t, "humr-onecli.default.svc.cluster.local", cfg.GatewayFQDN())
+	assert.Equal(t, "http://humr-onecli.default.svc.cluster.local:10254", cfg.WebURL())
 }
 
 func TestLoadFromEnv_MissingRequired(t *testing.T) {

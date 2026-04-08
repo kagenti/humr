@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { WebSocketServer } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter, type HarnessContext } from "harness-runtime-api";
-import { createClaudeCodeAuthContext } from "./modules/claude-code-auth.js";
 import { createFilesContext } from "./modules/files.js";
 import { config } from "./modules/config.js";
 
@@ -14,7 +13,6 @@ const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
 const WORKING_DIR = join(__dir, "../working-dir");
 
 const createContext = (): HarnessContext => ({
-  claudeCodeAuth: createClaudeCodeAuthContext(),
   files: createFilesContext(WORKING_DIR),
 });
 
@@ -53,14 +51,17 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/acp" });
 
 wss.on("connection", (ws) => {
+  const agentEnv = { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: "placeholder" };
   const agent = config.HUMR_DEV
     ? spawn("npx", ["tsx", agentScript], {
         stdio: ["pipe", "pipe", "inherit"],
         cwd: WORKING_DIR,
+        env: agentEnv,
       })
     : spawn("node", [agentScript], {
         stdio: ["pipe", "pipe", "inherit"],
         cwd: WORKING_DIR,
+        env: agentEnv,
       });
 
   let buf = "";

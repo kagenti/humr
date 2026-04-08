@@ -25,6 +25,16 @@ spec:
                 name: {{ include "humr.onecli.fullname" . }}
                 port:
                   name: web
+    - host: onecli.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "humr.onecli.fullname" . }}
+                port:
+                  name: web
     - host: humr.localtest.me
       http:
         paths:
@@ -35,7 +45,27 @@ spec:
                 name: {{ printf "%s-ui" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
                 port:
                   name: http
+    - host: humr.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-ui" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+                port:
+                  name: http
     - host: humr-api.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+                port:
+                  name: http
+    - host: humr-api.localhost
       http:
         paths:
           - path: /

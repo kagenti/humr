@@ -41,7 +41,7 @@ mise run cluster:uninstall    # helm uninstall + cleanup PVCs
 mise run cluster:delete       # destroy k3s VM entirely
 ```
 
-Services are available at `*.localtest.me:4444` automatically (Traefik on port 4444, auto-forwarded by lima).
+Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.
 
 ### Cluster debugging (pre-approved in .claude/settings.json)
 

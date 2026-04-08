@@ -19,7 +19,8 @@ var testConfig = &config.Config{
 	ReleaseName:      "humr",
 	GatewayHost:      "humr-onecli",
 	GatewayPort:      10255,
-	CACertConfigMap:  "humr-onecli-ca-cert",
+	WebPort:          10254,
+	CACertInitImage:  "busybox:stable",
 }
 
 var testTemplate = &types.TemplateSpec{
@@ -89,8 +90,8 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 	// Platform env vars
 	envMap := envToMap(c.Env)
-	assert.Equal(t, "http://$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTPS_PROXY"])
-	assert.Equal(t, "http://$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTP_PROXY"])
+	assert.Equal(t, "http://x:$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://x:$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTP_PROXY"])
 
 	// ONECLI_ACCESS_TOKEN comes from Secret via secretKeyRef
 	tokenEnv := c.Env[0]
@@ -126,18 +127,33 @@ func TestBuildStatefulSet_Hibernated(t *testing.T) {
 func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
-	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1)
-	ic := ss.Spec.Template.Spec.InitContainers[0]
+	require.Len(t, ss.Spec.Template.Spec.InitContainers, 2)
+
+	// First: platform CA cert fetcher
+	caIC := ss.Spec.Template.Spec.InitContainers[0]
+	assert.Equal(t, "fetch-ca-cert", caIC.Name)
+	assert.Equal(t, "busybox:stable", caIC.Image)
+	assert.Equal(t, corev1.PullIfNotPresent, caIC.ImagePullPolicy)
+	require.Len(t, caIC.Env, 1)
+	assert.Equal(t, "ONECLI_ACCESS_TOKEN", caIC.Env[0].Name)
+	assert.Equal(t, "humr-template-my-template-token", caIC.Env[0].ValueFrom.SecretKeyRef.Name)
+	require.Len(t, caIC.VolumeMounts, 1)
+	assert.Equal(t, "/etc/humr/ca", caIC.VolumeMounts[0].MountPath)
+
+	// Second: user-defined init
+	ic := ss.Spec.Template.Spec.InitContainers[1]
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", ic.Image)
 	assert.Equal(t, []string{"sh", "-c", testTemplate.Init}, ic.Command)
 }
 
-func TestBuildStatefulSet_NoInitWhenEmpty(t *testing.T) {
+func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 	tmpl := *testTemplate
 	tmpl.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, &tmpl, testConfig, "aoc_test_token", testOwnerCM)
-	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
+	// CA cert init container is always present
+	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1)
+	assert.Equal(t, "fetch-ca-cert", ss.Spec.Template.Spec.InitContainers[0].Name)
 }
 
 func TestBuildStatefulSet_Volumes(t *testing.T) {
@@ -149,13 +165,13 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	assert.Equal(t, "workspace", ss.Spec.VolumeClaimTemplates[0].Name)
 	assert.Equal(t, "home-agent", ss.Spec.VolumeClaimTemplates[1].Name)
 
-	// EmptyDir for /tmp + ConfigMap for CA cert
-	volNames := make(map[string]bool)
+	// EmptyDir for /tmp + emptyDir for CA cert
+	volMap := make(map[string]corev1.Volume)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
-		volNames[v.Name] = true
+		volMap[v.Name] = v
 	}
-	assert.True(t, volNames["tmp"])
-	assert.True(t, volNames["ca-cert"])
+	assert.NotNil(t, volMap["tmp"].EmptyDir)
+	assert.NotNil(t, volMap["ca-cert"].EmptyDir)
 
 	// Volume mounts on container
 	c := ss.Spec.Template.Spec.Containers[0]

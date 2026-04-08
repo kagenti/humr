@@ -8,8 +8,7 @@ Components:
 
 Agent namespace: {{ .Values.agentNamespace }}
 
-CA Secret:    {{ include "humr.onecli.ca.fullname" . }} (namespace: {{ .Release.Namespace }})
-CA ConfigMap: {{ include "humr.onecli.ca-cert.fullname" . }} (namespace: {{ .Values.agentNamespace }})
+CA cert: fetched by agent init container from OneCLI /api/container-config (via gateway proxy)
 
 RBAC:
   Controller SA: {{ include "humr.controller.serviceAccountName" . }}
@@ -18,8 +17,7 @@ RBAC:
 To verify:
   kubectl get pods -n {{ .Release.Namespace }}
   kubectl get cm -n {{ .Values.agentNamespace }} -l humr.ai/type=agent-template
-  kubectl get secret {{ include "humr.onecli.ca.fullname" . }} -n {{ .Release.Namespace }}
 
 To access services:
   mise run cluster:proxy     # forwards Traefik to localhost:4444
-  # then open: http://onecli.localtest.me:4444
+  # then open: http://onecli.localhost:4444 (or onecli.localtest.me:4444)
