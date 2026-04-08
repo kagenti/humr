@@ -44,7 +44,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "ANTHROPIC_BASE_URL", Value: proxyAddr},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 	}
 	for _, e := range tmpl.Env {
