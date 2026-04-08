@@ -20,7 +20,7 @@ mise run cluster:status     # check pods
 eval "$(mise run humr:shell)" # activate cluster env
 ```
 
-Open **`humr.localtest.me:4444`** in your browser, create an instance from a template, and start chatting.
+Open **`humr.localhost:4444`** in your browser, create an instance from a template, and start chatting.
 
 ## Development
 

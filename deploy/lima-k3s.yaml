@@ -60,5 +60,5 @@ portForwards:
     hostPort: 16443
 
 message: |
-  k3s is ready. Access services via http://onecli.localtest.me:4444
+  k3s is ready. Access services via http://onecli.localhost:4444
   KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml
