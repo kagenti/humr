@@ -1,5 +1,5 @@
 {
-  "name": "harness-runtime-api",
+  "name": "agent-runtime-api",
   "version": "0.0.1",
   "private": true,
   "type": "module",

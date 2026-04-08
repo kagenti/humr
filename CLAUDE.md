@@ -7,15 +7,15 @@ Always check [docs/architecture.md](docs/architecture.md) for full architecture 
 ### Monorepo Structure
 
 pnpm workspaces + standalone Go module:
-- `packages/harness-runtime/` — HTTP server bridging to ACP agent process
-- `packages/harness-runtime-api/` — API layer for harness-runtime
+- `packages/agent-runtime/` — ACP WebSocket server + trigger watcher inside agent pods
+- `packages/agent-runtime-api/` — tRPC router definitions for agent-runtime
 - `packages/humr-base/` — shared base image/utilities
 - `packages/example-agent/` — example agent configuration
 - `packages/controller/` — Go K8s reconciler + scheduler
 - `packages/ui/` — React chat interface (Vite)
 - `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
 
-Together, `harness-runtime` + `harness-runtime-api` form the agent runtime — the ACP WebSocket server that runs inside each agent pod.
+Together, `agent-runtime` + `agent-runtime-api` form the agent runtime — the ACP WebSocket server that runs inside each agent pod.
 
 ## Workflow
 
@@ -54,7 +54,7 @@ Activate cluster environment for interactive use: `eval "$(mise run humr:shell)"
 Three-tier K8s platform:
 1. **Controller** (Go) — watches ConfigMaps, reconciles StatefulSets/Services/NetworkPolicies, runs cron scheduler
 2. **API Server** (TypeScript) — REST CRUD for instances/templates/schedules, WebSocket ACP relay to agent pods
-3. **Agent Runtime** (TypeScript, `harness-runtime` + `harness-runtime-api`) — ACP WebSocket server inside agent pods
+3. **Agent Runtime** (TypeScript, `agent-runtime` + `agent-runtime-api`) — ACP WebSocket server inside agent pods
 
 Infrastructure:
 - **OneCLI** — credential injection proxy (MITM), single container with Rust gateway + Node.js web dashboard
