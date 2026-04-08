@@ -21,6 +21,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@trpc/client": "^11.16.0",
     "@types/js-yaml": "^4.0.9",
     "@types/ws": "^8.18.1",
     "tsup": "^8.5.1",

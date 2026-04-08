@@ -12,5 +12,8 @@
     "docker:humr-base:start": "docker rm -f humr-base 2>/dev/null; docker run --name humr-base -p 3000:3000 humr-base",
     "docker:example-agent:build": "pnpm docker:humr-base:build && docker build -t humr-example-agent packages/example-agent",
     "docker:example-agent:start": "docker rm -f humr-example-agent 2>/dev/null; docker run --name humr-example-agent -p 3000:3000 humr-example-agent"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.3"
   }
 }

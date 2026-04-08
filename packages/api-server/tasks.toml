@@ -1,0 +1,4 @@
+["api-server:test"]
+description = "Run api-server integration tests"
+dir = "{{config_root}}"
+run = "mise exec -- pnpm --filter api-server exec vitest run"

@@ -19,7 +19,7 @@ import type {
   CreateHeartbeatScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
-import { parseExpression } from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 
 
 const LABEL_TYPE = "humr.ai/type";
@@ -307,7 +307,7 @@ function minutesToCron(minutes: number): string {
 }
 
 function validateCron(expr: string): void {
-  parseExpression(expr);
+  CronExpressionParser.parse(expr);
 }
 
 export function createK8sSchedulesContext(

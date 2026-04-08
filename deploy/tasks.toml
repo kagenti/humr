@@ -258,6 +258,7 @@ echo "=== Pods (humr-agents) ==="
 kubectl --kubeconfig="$KUBECONFIG" get pods -n humr-agents 2>/dev/null || true
 '''
 
+
 ["cluster:logs"]
 description = "Show OneCLI pod logs"
 run = '''
