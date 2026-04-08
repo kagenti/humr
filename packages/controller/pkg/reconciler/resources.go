@@ -22,7 +22,8 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 
 	labels := map[string]string{"humr.ai/instance": name}
 	// Proxy URL uses $(ONECLI_ACCESS_TOKEN) interpolation — K8s resolves it from the Secret at pod start.
-	proxyAddr := fmt.Sprintf("http://$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
+	// OneCLI expects the access token as the password (with "x" as dummy username).
+	proxyAddr := fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	caCertPath := "/etc/humr/ca/ca.crt"
 	tokenSecretName := TemplateTokenSecretName(templateName)
 
@@ -41,6 +42,9 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		{Name: "http_proxy", Value: proxyAddr},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		{Name: "ANTHROPIC_BASE_URL", Value: proxyAddr},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 	}
 	for _, e := range tmpl.Env {

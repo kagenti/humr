@@ -89,8 +89,8 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 	// Platform env vars
 	envMap := envToMap(c.Env)
-	assert.Equal(t, "http://$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTPS_PROXY"])
-	assert.Equal(t, "http://$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTP_PROXY"])
+	assert.Equal(t, "http://x:$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://x:$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTP_PROXY"])
 
 	// ONECLI_ACCESS_TOKEN comes from Secret via secretKeyRef
 	tokenEnv := c.Env[0]
