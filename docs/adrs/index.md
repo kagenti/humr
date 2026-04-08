@@ -25,3 +25,4 @@ This directory contains ADRs for the Humr project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
+| [DRAFT](DRAFT-integration-testing.md) | E2E integration testing against dedicated k3s cluster | @tomkis |

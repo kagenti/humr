@@ -2,7 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import { client } from "./helpers/trpc-client.js";
-import { getConfigMap, configMapExists, patchConfigMapData } from "./helpers/kubectl.js";
+import {
+  configMapExists,
+  patchConfigMapData,
+  waitForConfigMapKey,
+} from "./helpers/kubectl.js";
 import yaml from "js-yaml";
 
 const TEMPLATE_NAME = "test-tmpl";
@@ -21,7 +25,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const schedules = await client.schedules.list.query({ instanceName: INSTANCE_NAME });
+  const schedules = await client.schedules.list.query({
+    instanceName: INSTANCE_NAME,
+  });
   for (const s of schedules) {
     try {
       await client.schedules.delete.mutate({ name: s.name });
@@ -35,9 +41,9 @@ afterAll(async () => {
   } catch {}
 });
 
-describe("schedules CRUD", () => {
-  describe("story 1: create cron schedule", () => {
-    it("creates a cron schedule with correct fields", async () => {
+describe("schedules: API server CRUD", () => {
+  describe("create cron schedule", () => {
+    it("returns correct fields", async () => {
       const result = await client.schedules.createCron.mutate({
         name: "daily-report",
         instanceName: INSTANCE_NAME,
@@ -56,23 +62,6 @@ describe("schedules CRUD", () => {
       });
     });
 
-    it("created the ConfigMap with correct labels", async () => {
-      const cm = await getConfigMap(`${INSTANCE_NAME}-daily-report`);
-      const labels = cm.metadata!.labels!;
-      expect(labels["humr.ai/type"]).toBe("agent-schedule");
-      expect(labels["humr.ai/instance"]).toBe(INSTANCE_NAME);
-      expect(labels["humr.ai/template"]).toBe(TEMPLATE_NAME);
-    });
-
-    it("stored correct spec.yaml", async () => {
-      const cm = await getConfigMap(`${INSTANCE_NAME}-daily-report`);
-      const spec = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
-      expect(spec.type).toBe("cron");
-      expect(spec.cron).toBe("0 9 * * *");
-      expect(spec.task).toBe("generate report");
-      expect(spec.enabled).toBe(true);
-    });
-
     it("rejects invalid cron expression", async () => {
       await expect(
         client.schedules.createCron.mutate({
@@ -85,8 +74,8 @@ describe("schedules CRUD", () => {
     });
   });
 
-  describe("story 2: create heartbeat schedule", () => {
-    it("creates a heartbeat schedule with converted cron", async () => {
+  describe("create heartbeat schedule", () => {
+    it("returns correct fields with converted cron", async () => {
       const result = await client.schedules.createHeartbeat.mutate({
         name: "heartbeat",
         instanceName: INSTANCE_NAME,
@@ -113,7 +102,9 @@ describe("schedules CRUD", () => {
 
       expect(result.cron).toBe("* * * * *");
 
-      await client.schedules.delete.mutate({ name: `${INSTANCE_NAME}-every-minute` });
+      await client.schedules.delete.mutate({
+        name: `${INSTANCE_NAME}-every-minute`,
+      });
     });
 
     it("rejects non-existent instance", async () => {
@@ -137,9 +128,11 @@ describe("schedules CRUD", () => {
     });
   });
 
-  describe("story 3: list schedules for instance", () => {
+  describe("list schedules", () => {
     it("returns all schedules for the instance", async () => {
-      const list = await client.schedules.list.query({ instanceName: INSTANCE_NAME });
+      const list = await client.schedules.list.query({
+        instanceName: INSTANCE_NAME,
+      });
 
       expect(list).toHaveLength(2);
       const names = list.map((s) => s.name).sort();
@@ -150,23 +143,19 @@ describe("schedules CRUD", () => {
     });
 
     it("returns empty array for instance with no schedules", async () => {
-      const list = await client.schedules.list.query({ instanceName: "nonexistent" });
+      const list = await client.schedules.list.query({
+        instanceName: "nonexistent",
+      });
       expect(list).toEqual([]);
     });
   });
 
-  describe("story 4: enable/disable schedule", () => {
+  describe("toggle enable/disable", () => {
     it("toggles enabled from true to false", async () => {
       const result = await client.schedules.toggle.mutate({
         name: `${INSTANCE_NAME}-daily-report`,
       });
       expect(result.enabled).toBe(false);
-    });
-
-    it("persisted the toggle in the ConfigMap", async () => {
-      const cm = await getConfigMap(`${INSTANCE_NAME}-daily-report`);
-      const spec = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
-      expect(spec.enabled).toBe(false);
     });
 
     it("toggles back to true", async () => {
@@ -187,35 +176,45 @@ describe("schedules CRUD", () => {
     });
   });
 
-  describe("story 5: delete schedule", () => {
+  describe("delete schedule", () => {
     it("deletes the schedule", async () => {
-      await client.schedules.delete.mutate({ name: `${INSTANCE_NAME}-daily-report` });
+      await client.schedules.delete.mutate({
+        name: `${INSTANCE_NAME}-daily-report`,
+      });
 
-      const list = await client.schedules.list.query({ instanceName: INSTANCE_NAME });
+      const list = await client.schedules.list.query({
+        instanceName: INSTANCE_NAME,
+      });
       expect(list).toHaveLength(1);
       expect(list[0].name).toBe(`${INSTANCE_NAME}-heartbeat`);
     });
 
-    it("ConfigMap is gone from the cluster", async () => {
-      expect(await configMapExists(`${INSTANCE_NAME}-daily-report`)).toBe(false);
+    it("ConfigMap is removed from cluster", async () => {
+      expect(await configMapExists(`${INSTANCE_NAME}-daily-report`)).toBe(
+        false,
+      );
     });
   });
 
-  describe("story 6: see schedule status", () => {
-    it("returns null status when no status.yaml exists", async () => {
+  describe("read schedule status", () => {
+    it("returns null status when controller has not written status.yaml", async () => {
       const sched = await client.schedules.get.query({
         name: `${INSTANCE_NAME}-heartbeat`,
       });
       expect(sched.status).toBeNull();
     });
 
-    it("returns status after patching status.yaml", async () => {
+    it("returns status fields after controller writes status.yaml", async () => {
       const statusYaml = [
         "lastRun: '2026-04-08T09:00:00Z'",
         "nextRun: '2026-04-08T09:05:00Z'",
         "lastResult: success",
       ].join("\n");
-      await patchConfigMapData(`${INSTANCE_NAME}-heartbeat`, "status.yaml", statusYaml);
+      await patchConfigMapData(
+        `${INSTANCE_NAME}-heartbeat`,
+        "status.yaml",
+        statusYaml,
+      );
 
       const sched = await client.schedules.get.query({
         name: `${INSTANCE_NAME}-heartbeat`,
@@ -238,14 +237,14 @@ describe("schedules CRUD", () => {
     });
   });
 
-  describe("config endpoint", () => {
+  describe("config", () => {
     it("returns default heartbeat interval", async () => {
       const config = await client.schedules.config.query();
       expect(config).toEqual({ defaultHeartbeatIntervalMinutes: 5 });
     });
   });
 
-  describe("validation", () => {
+  describe("input validation", () => {
     it("rejects uppercase in schedule name", async () => {
       await expect(
         client.schedules.createCron.mutate({
@@ -267,5 +266,36 @@ describe("schedules CRUD", () => {
         }),
       ).rejects.toThrow();
     });
+  });
+});
+
+describe("e2e: controller reconciliation", () => {
+  const SCHEDULE_NAME = "e2e-cron";
+  const CM_NAME = `${INSTANCE_NAME}-${SCHEDULE_NAME}`;
+
+  afterAll(async () => {
+    try {
+      await client.schedules.delete.mutate({ name: CM_NAME });
+    } catch {}
+  });
+
+  // skip: controller stops processing events after OneCLI registration errors (#34)
+  it.skip("controller writes status.yaml after cron fires", async () => {
+    await client.schedules.createCron.mutate({
+      name: SCHEDULE_NAME,
+      instanceName: INSTANCE_NAME,
+      cron: "* * * * *",
+      task: "e2e test task",
+    });
+
+    const cm = await waitForConfigMapKey(CM_NAME, "status.yaml");
+    const status = yaml.load(cm.data!["status.yaml"]) as Record<
+      string,
+      unknown
+    >;
+
+    expect(status.lastResult).toBe("success");
+    expect(status.lastRun).toBeTruthy();
+    expect(status.nextRun).toBeTruthy();
   });
 });

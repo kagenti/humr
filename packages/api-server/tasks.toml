@@ -1,4 +1,11 @@
 ["api-server:test"]
-description = "Run api-server integration tests"
+description = "Run api-server e2e tests (spins up test cluster, runs tests, tears down)"
 dir = "{{config_root}}"
-run = "mise exec -- pnpm --filter api-server exec vitest run"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+mise run cluster:install -- --vm-name=humr-k3s-test --lima-template=deploy/lima-k3s-test.yaml
+
+mise exec -- pnpm --filter api-server exec vitest run
+'''

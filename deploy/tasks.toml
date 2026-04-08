@@ -68,20 +68,28 @@ docker build -t humr-example-agent:latest packages/example-agent
 # upgrade: assumes VM exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Humr chart"
+description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH"
 depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
+raw = true
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
 LIMA_INSTANCE="humr-k3s"
+LIMA_TEMPLATE="deploy/lima-k3s.yaml"
+for arg in "$@"; do
+  case "$arg" in
+    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
+    --lima-template=*) LIMA_TEMPLATE="${arg#--lima-template=}" ;;
+  esac
+done
 KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 
 # 1. Ensure k3s VM is running
 if ! limactl list --json | grep -q "\"name\":\"$LIMA_INSTANCE\""; then
-  echo "Creating k3s VM..."
-  limactl create --name=$LIMA_INSTANCE deploy/lima-k3s.yaml --tty=false
+  echo "Creating k3s VM ($LIMA_INSTANCE)..."
+  limactl create --name=$LIMA_INSTANCE "$LIMA_TEMPLATE" --tty=false
 fi
 
 STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
@@ -225,18 +233,31 @@ echo "Humr uninstalled and cleaned up. Use 'mise run cluster:delete' to remove t
 '''
 
 ["cluster:delete"]
-description = "Delete the entire k3s cluster (destroys all data)"
+description = "Delete the entire k3s cluster (destroys all data). Options: --vm-name=NAME --force"
+raw = true
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-echo "This will delete the k3s VM and all cluster data."
-read -p "Continue? [y/N] " -r
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-  echo "Cancelled."
-  exit 0
+
+LIMA_INSTANCE="humr-k3s"
+FORCE=false
+for arg in "$@"; do
+  case "$arg" in
+    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
+    --force) FORCE=true ;;
+  esac
+done
+
+if [ "$FORCE" != "true" ]; then
+  echo "This will delete the k3s VM ($LIMA_INSTANCE) and all cluster data."
+  read -p "Continue? [y/N] " -r
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Cancelled."
+    exit 0
+  fi
 fi
-limactl delete --force humr-k3s 2>/dev/null || true
-echo "k3s cluster deleted."
+limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
+echo "k3s cluster ($LIMA_INSTANCE) deleted."
 '''
 
 ["cluster:status"]
