@@ -47,14 +47,14 @@ dir = "{{config_root}}"
 run = 'docker build -f packages/ui/Dockerfile -t humr-ui:latest .'
 
 ["image:agent"]
-description = "Build agent Docker image (harness-runtime + example-agent)"
+description = "Build agent Docker image (agent-runtime + example-agent)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-pnpm --filter harness-runtime build
+pnpm --filter agent-runtime build
 rm -rf packages/humr-base/dist
-cp -r packages/harness-runtime/dist packages/humr-base/dist
+cp -r packages/agent-runtime/dist packages/humr-base/dist
 docker build -t humr-base packages/humr-base
 docker build -t humr-example-agent:latest packages/example-agent
 '''
