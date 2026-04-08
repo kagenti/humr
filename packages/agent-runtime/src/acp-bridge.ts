@@ -23,15 +23,18 @@ export function spawnAcpSession(options: {
     Object.entries(process.env).filter(([k]) => !k.startsWith("npm_")),
   );
 
+  const agentEnv = { ...cleanEnv, CLAUDE_CODE_OAUTH_TOKEN: "placeholder" };
+
   const child = isDev
     ? spawn("npx", ["tsx", agentScript], {
         stdio: ["pipe", "pipe", "inherit"],
         cwd: workingDir,
-        env: cleanEnv,
+        env: agentEnv,
       })
     : spawn("node", [agentScript], {
         stdio: ["pipe", "pipe", "inherit"],
         cwd: workingDir,
+        env: agentEnv,
       });
 
   child.on("error", (err) => {

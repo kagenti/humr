@@ -3,12 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
-<<<<<<< HEAD:packages/harness-runtime/src/index.ts
-import { appRouter, type HarnessContext } from "harness-runtime-api";
-=======
 import { appRouter, type AgentRuntimeContext } from "agent-runtime-api";
-import { createClaudeCodeAuthContext } from "./modules/claude-code-auth.js";
->>>>>>> 2db88ce (filewatcher trigger sessions):packages/agent-runtime/src/server.ts
 import { createFilesContext } from "./modules/files.js";
 import { config } from "./modules/config.js";
 import { spawnAcpSession } from "./acp-bridge.js";
@@ -20,14 +15,8 @@ const workingDir = config.HUMR_DEV
   ? join(__dir, "../working-dir")
   : config.WORKSPACE_DIR;
 
-<<<<<<< HEAD:packages/harness-runtime/src/index.ts
-const createContext = (): HarnessContext => ({
-  files: createFilesContext(WORKING_DIR),
-=======
 const createContext = (): AgentRuntimeContext => ({
-  claudeCodeAuth: createClaudeCodeAuthContext(),
   files: createFilesContext(workingDir),
->>>>>>> 2db88ce (filewatcher trigger sessions):packages/agent-runtime/src/server.ts
 });
 
 const CORS = {
@@ -65,22 +54,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/acp" });
 
 wss.on("connection", (ws) => {
-<<<<<<< HEAD:packages/harness-runtime/src/index.ts
-  const agentEnv = { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: "placeholder" };
-  const agent = config.HUMR_DEV
-    ? spawn("npx", ["tsx", agentScript], {
-        stdio: ["pipe", "pipe", "inherit"],
-        cwd: WORKING_DIR,
-        env: agentEnv,
-      })
-    : spawn("node", [agentScript], {
-        stdio: ["pipe", "pipe", "inherit"],
-        cwd: WORKING_DIR,
-        env: agentEnv,
-      });
-=======
   const session = spawnAcpSession({ agentScript, workingDir, isDev: config.HUMR_DEV });
->>>>>>> 2db88ce (filewatcher trigger sessions):packages/agent-runtime/src/server.ts
 
   session.onMessage((line) => {
     if (ws.readyState === WebSocket.OPEN) {
