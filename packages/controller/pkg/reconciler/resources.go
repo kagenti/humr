@@ -96,14 +96,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		}
 	}
 
-	// CA cert volume from ConfigMap
+	// CA cert volume (emptyDir, populated by init container)
 	volumes = append(volumes, corev1.Volume{
-		Name: "ca-cert",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: cfg.CACertConfigMap},
-			},
-		},
+		Name:         "ca-cert",
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 	})
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
@@ -118,8 +114,36 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		resourceReqs.Limits = toResourceList(tmpl.Resources.Limits)
 	}
 
-	// Init container
-	var initContainers []corev1.Container
+	// Init containers: CA cert fetch (platform) + optional user init
+	//
+	// The CA init container fetches the MITM CA certificate from the OneCLI web API
+	// by proxying the request through the gateway. This avoids needing a separate
+	// NetworkPolicy rule for the web port — the gateway forwards to localhost:10254
+	// inside the same pod.
+	caCertScript := fmt.Sprintf(
+		`export http_proxy="http://x:${ONECLI_ACCESS_TOKEN}@%s:%d"
+until wget -qO /tmp/config.json "%s/api/container-config" 2>/dev/null; do sleep 2; done
+awk -F'"caCertificate":"' 'NF>1{sub(/".*$/,"",$2); gsub(/\\n/,"\n",$2); print $2}' /tmp/config.json > /etc/humr/ca/ca.crt`,
+		cfg.GatewayFQDN(), cfg.GatewayPort, cfg.WebURL())
+
+	initContainers := []corev1.Container{{
+		Name:            "fetch-ca-cert",
+		Image:           cfg.CACertInitImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"sh", "-c", caCertScript},
+		Env: []corev1.EnvVar{{
+			Name: "ONECLI_ACCESS_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
+					Key:                  "access-token",
+				},
+			},
+		}},
+		VolumeMounts: []corev1.VolumeMount{{
+			Name: "ca-cert", MountPath: "/etc/humr/ca",
+		}},
+	}}
 	if tmpl.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",

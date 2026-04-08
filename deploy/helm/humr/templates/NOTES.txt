@@ -8,8 +8,7 @@ Components:
 
 Agent namespace: {{ .Values.agentNamespace }}
 
-CA ConfigMap: {{ include "humr.onecli.ca-cert.fullname" . }} (namespace: {{ .Values.agentNamespace }})
-  (populated from OneCLI /api/container-config during cluster:install)
+CA cert: fetched by agent init container from OneCLI /api/container-config (via gateway proxy)
 
 RBAC:
   Controller SA: {{ include "humr.controller.serviceAccountName" . }}
@@ -21,4 +20,4 @@ To verify:
 
 To access services:
   mise run cluster:proxy     # forwards Traefik to localhost:4444
-  # then open: http://onecli.localtest.me:4444
+  # then open: http://onecli.localhost:4444 (or onecli.localtest.me:4444)

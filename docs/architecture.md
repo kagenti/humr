@@ -272,7 +272,7 @@ Controller and API Server Deployments are added in subsequent plan phases.
 
 ### CA cert flow
 
-cert-manager generates a self-signed ECDSA CA (PKCS8 format, required by OneCLI's rcgen). The CA Secret is mounted into the OneCLI pod at `/app/data/gateway/ca.key` and `ca.pem` where the gateway reads it from disk. A ConfigMap with the public cert is created in the agent namespace for agent pods to mount as `SSL_CERT_FILE`.
+OneCLI gateway auto-generates a self-signed MITM CA on first start, stored in its PVC at `/app/data/`. Agent pods fetch the CA certificate at startup via an init container that calls the OneCLI `/api/container-config` endpoint through the gateway proxy. The cert is written to a shared `emptyDir` volume at `/etc/humr/ca/ca.crt` and referenced by `SSL_CERT_FILE` and `NODE_EXTRA_CA_CERTS`.
 
 ### OneCLI architecture
 

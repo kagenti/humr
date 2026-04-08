@@ -14,9 +14,10 @@ type Config struct {
 	OneCLIAPIKey     string // OneCLI API key
 	GatewayHost      string // OneCLI gateway K8s service host (short name)
 	GatewayPort      int    // OneCLI gateway port
+	WebPort          int    // OneCLI web API port (for container-config endpoint)
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	CACertConfigMap      string // ConfigMap name for CA cert (derived)
+	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 	AgentImagePullPolicy string // ImagePullPolicy for agent pods (default: IfNotPresent)
 }
 
@@ -39,10 +40,11 @@ func LoadFromEnv() (*Config, error) {
 		OneCLIAPIKey:     os.Getenv("ONECLI_API_KEY"),
 		GatewayHost:      envOrDefault("ONECLI_GATEWAY_HOST", release+"-onecli"),
 		GatewayPort:      envOrDefaultInt("ONECLI_GATEWAY_PORT", 10255),
+		WebPort:          envOrDefaultInt("ONECLI_WEB_PORT", 10254),
 		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
+		CACertInitImage:  envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable"),
 	}
-	cfg.CACertConfigMap = release + "-onecli-ca-cert"
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	return cfg, nil
 }
@@ -51,6 +53,11 @@ func LoadFromEnv() (*Config, error) {
 // Required because agent pods run in a different namespace than the gateway.
 func (c *Config) GatewayFQDN() string {
 	return fmt.Sprintf("%s.%s.svc.cluster.local", c.GatewayHost, c.ReleaseNamespace)
+}
+
+// WebURL returns the HTTP URL for the OneCLI web API (used by init containers to fetch CA cert).
+func (c *Config) WebURL() string {
+	return fmt.Sprintf("http://%s:%d", c.GatewayFQDN(), c.WebPort)
 }
 
 func envOrDefault(key, def string) string {

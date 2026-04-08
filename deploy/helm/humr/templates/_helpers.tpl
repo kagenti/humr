@@ -69,13 +69,6 @@ OneCLI secrets name (passwords, keys)
 {{- end }}
 
 {{/*
-OneCLI CA cert ConfigMap name (for agent pods)
-*/}}
-{{- define "humr.onecli.ca-cert.fullname" -}}
-{{- printf "%s-onecli-ca-cert" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
 OneCLI PostgreSQL DSN
 */}}
 {{- define "humr.onecli.postgres.dsn" -}}
