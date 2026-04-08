@@ -26,12 +26,6 @@ Full e2e tests that spin up a dedicated test cluster (`mise run cluster:install 
 - **Vitest** as test framework, `@trpc/client` for endpoint calls, `@kubernetes/client-node` for K8s assertions
 - **Cluster parameterization** via `--vm-name` and `--lima-template` flags on `cluster:install`/`cluster:delete`
 
-### What is NOT tested (yet)
-
-- Controller reconciliation of schedules — blocked by #34
-- Trigger file delivery to agent pods
-- OneCLI credential injection integration
-
 ## Alternatives Considered
 
 **Ephemeral namespace in existing dev cluster** — faster (~3s) but doesn't test the full stack (no controller, no OneCLI). Also pollutes the dev cluster state and couples test runs to dev cluster availability.
