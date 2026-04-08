@@ -1,0 +1,44 @@
+name: E2E Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - uses: docker/setup-docker-action@v4
+
+      - name: Install dependencies
+        run: mise run setup
+
+      - name: Check (lint + typecheck)
+        run: mise run check
+
+      - name: Build images
+        run: |
+          mise run image:controller
+          mise run image:apiserver
+          mise run image:ui
+          mise run image:agent
+
+      - name: Create test cluster
+        run: mise run cluster:install -- --vm-name=humr-k3s-test --lima-template=deploy/lima-k3s-test.yaml
+
+      - name: Run e2e tests
+        run: mise exec -- pnpm --filter api-server exec vitest run
+
+      - name: Teardown test cluster
+        if: always()
+        run: mise run cluster:delete -- --vm-name=humr-k3s-test --force
