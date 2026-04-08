@@ -3,6 +3,7 @@ import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import { client } from "./helpers/trpc-client.js";
 import {
+  getConfigMap,
   configMapExists,
   patchConfigMapData,
   waitForConfigMapKey,
@@ -61,6 +62,23 @@ describe("schedules: API server CRUD", () => {
         enabled: true,
         status: null,
       });
+    });
+
+    it("created the ConfigMap with correct labels", async () => {
+      const cm = await getConfigMap(`${INSTANCE_NAME}-daily-report`);
+      const labels = cm.metadata!.labels!;
+      expect(labels["humr.ai/type"]).toBe("agent-schedule");
+      expect(labels["humr.ai/instance"]).toBe(INSTANCE_NAME);
+      expect(labels["humr.ai/template"]).toBe(TEMPLATE_NAME);
+    });
+
+    it("stored correct spec.yaml", async () => {
+      const cm = await getConfigMap(`${INSTANCE_NAME}-daily-report`);
+      const spec = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
+      expect(spec.type).toBe("cron");
+      expect(spec.cron).toBe("0 9 * * *");
+      expect(spec.task).toBe("generate report");
+      expect(spec.enabled).toBe(true);
     });
 
     it("rejects invalid cron expression", async () => {
@@ -157,6 +175,12 @@ describe("schedules: API server CRUD", () => {
         name: `${INSTANCE_NAME}-daily-report`,
       });
       expect(result.enabled).toBe(false);
+    });
+
+    it("persisted the toggle in the ConfigMap", async () => {
+      const cm = await getConfigMap(`${INSTANCE_NAME}-daily-report`);
+      const spec = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
+      expect(spec.enabled).toBe(false);
     });
 
     it("toggles back to true", async () => {
