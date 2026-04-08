@@ -13,15 +13,16 @@ const SpecVersion = "humr.ai/v1"
 // --- Template ---
 
 type TemplateSpec struct {
-	Version         string           `yaml:"version"`
-	Image           string           `yaml:"image"`
-	Description     string           `yaml:"description,omitempty"`
-	Mounts          []Mount          `yaml:"mounts,omitempty"`
-	Init            string           `yaml:"init,omitempty"`
-	Env             []EnvVar         `yaml:"env,omitempty"`
-	Resources       ResourceSpec     `yaml:"resources,omitempty"`
-	SecurityContext *SecurityContext  `yaml:"securityContext,omitempty"`
-	SecretMode      string           `yaml:"secretMode,omitempty"` // "all" or "selective" (default)
+	Version         string                      `yaml:"version"`
+	Image           string                      `yaml:"image"`
+	Description     string                      `yaml:"description,omitempty"`
+	Mounts          []Mount                     `yaml:"mounts,omitempty"`
+	Init            string                      `yaml:"init,omitempty"`
+	Env             []EnvVar                    `yaml:"env,omitempty"`
+	Resources       ResourceSpec                `yaml:"resources,omitempty"`
+	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
+	SecretMode      string                      `yaml:"secretMode,omitempty"` // "all" or "selective" (default)
+	MCPServers      map[string]MCPServerConfig  `yaml:"mcpServers,omitempty"`
 }
 
 type Mount struct {
@@ -44,15 +45,25 @@ type SecurityContext struct {
 	ReadOnlyRootFilesystem *bool `yaml:"readOnlyRootFilesystem,omitempty"`
 }
 
+// --- MCP Server ---
+
+type MCPServerConfig struct {
+	Type    string   `yaml:"type"`              // "stdio" or "http"
+	Command string   `yaml:"command,omitempty"` // stdio: command to run
+	Args    []string `yaml:"args,omitempty"`    // stdio: command arguments
+	URL     string   `yaml:"url,omitempty"`     // http: server URL
+}
+
 // --- Instance ---
 
 type InstanceSpec struct {
-	Version      string   `yaml:"version"`
-	DesiredState string   `yaml:"desiredState"`
-	TemplateName string   `yaml:"templateName,omitempty"`
-	Env          []EnvVar `yaml:"env,omitempty"`
-	SecretRef    string   `yaml:"secretRef,omitempty"`
-	Description  string   `yaml:"description,omitempty"`
+	Version            string   `yaml:"version"`
+	DesiredState       string   `yaml:"desiredState"`
+	TemplateName       string   `yaml:"templateName,omitempty"`
+	Env                []EnvVar `yaml:"env,omitempty"`
+	SecretRef          string   `yaml:"secretRef,omitempty"`
+	Description        string   `yaml:"description,omitempty"`
+	EnabledMCPServers  []string `yaml:"enabledMcpServers,omitempty"`
 }
 
 type InstanceStatus struct {
@@ -64,11 +75,12 @@ type InstanceStatus struct {
 // --- Schedule ---
 
 type ScheduleSpec struct {
-	Version string `yaml:"version"`
-	Type    string `yaml:"type"`
-	Cron    string `yaml:"cron"`
-	Task    string `yaml:"task,omitempty"`
-	Enabled bool   `yaml:"enabled"`
+	Version    string                      `yaml:"version"`
+	Type       string                      `yaml:"type"`
+	Cron       string                      `yaml:"cron"`
+	Task       string                      `yaml:"task,omitempty"`
+	Enabled    bool                        `yaml:"enabled"`
+	MCPServers map[string]MCPServerConfig  `yaml:"mcpServers,omitempty"`
 }
 
 type ScheduleStatus struct {
@@ -95,6 +107,9 @@ func ParseTemplateSpec(data string) (*TemplateSpec, error) {
 		if !strings.HasPrefix(m.Path, "/") {
 			return nil, fmt.Errorf("template spec: mount path %q must be absolute", m.Path)
 		}
+	}
+	if err := validateMCPServers(spec.MCPServers); err != nil {
+		return nil, fmt.Errorf("template spec: %w", err)
 	}
 	return &spec, nil
 }
@@ -129,7 +144,28 @@ func ParseScheduleSpec(data string) (*ScheduleSpec, error) {
 			return nil, fmt.Errorf("schedule spec: invalid cron %q: %w", spec.Cron, err)
 		}
 	}
+	if err := validateMCPServers(spec.MCPServers); err != nil {
+		return nil, fmt.Errorf("schedule spec: %w", err)
+	}
 	return &spec, nil
+}
+
+func validateMCPServers(servers map[string]MCPServerConfig) error {
+	for name, s := range servers {
+		switch s.Type {
+		case "stdio":
+			if s.Command == "" {
+				return fmt.Errorf("mcpServer %q: stdio type requires command", name)
+			}
+		case "http":
+			if s.URL == "" {
+				return fmt.Errorf("mcpServer %q: http type requires url", name)
+			}
+		default:
+			return fmt.Errorf("mcpServer %q: unsupported type %q (expected stdio or http)", name, s.Type)
+		}
+	}
+	return nil
 }
 
 func validateVersion(v string) error {

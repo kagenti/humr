@@ -13,6 +13,11 @@ import (
 type Client interface {
 	CreateAgent(ctx context.Context, name, identifier, secretMode string) (*Agent, error)
 	DeleteAgent(ctx context.Context, identifier string) error
+	CreateSecret(ctx context.Context, input CreateSecretInput) (*Secret, error)
+	DeleteSecret(ctx context.Context, id string) error
+	ListSecrets(ctx context.Context) ([]Secret, error)
+	GetAgentSecrets(ctx context.Context, agentID string) ([]string, error)
+	SetAgentSecrets(ctx context.Context, agentID string, secretIDs []string) error
 }
 
 type Agent struct {
@@ -21,6 +26,26 @@ type Agent struct {
 	Identifier  string `json:"identifier"`
 	AccessToken string `json:"accessToken"`
 	SecretMode  string `json:"secretMode"`
+}
+
+type Secret struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	HostPattern string `json:"hostPattern"`
+}
+
+type InjectionConfig struct {
+	HeaderName  string `json:"headerName"`
+	ValueFormat string `json:"valueFormat,omitempty"`
+}
+
+type CreateSecretInput struct {
+	Name            string           `json:"name"`
+	Type            string           `json:"type"`
+	Value           string           `json:"value"`
+	HostPattern     string           `json:"hostPattern"`
+	InjectionConfig *InjectionConfig `json:"injectionConfig,omitempty"`
 }
 
 type httpClient struct {
@@ -224,6 +249,140 @@ func (c *httpClient) DeleteAgent(ctx context.Context, identifier string) error {
 	return fmt.Errorf("deleting agent: status %d: %s", resp.StatusCode, string(respBody))
 }
 
+func (c *httpClient) CreateSecret(ctx context.Context, input CreateSecretInput) (*Secret, error) {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return nil, err
+	}
+	body, _ := json.Marshal(input)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/secrets", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("creating secret: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("creating secret: status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var created Secret
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, fmt.Errorf("decoding secret response: %w", err)
+	}
+	return &created, nil
+}
+
+func (c *httpClient) DeleteSecret(ctx context.Context, id string) error {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "DELETE", c.baseURL+"/api/secrets/"+id, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("deleting secret: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	respBody, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("deleting secret: status %d: %s", resp.StatusCode, string(respBody))
+}
+
+func (c *httpClient) ListSecrets(ctx context.Context) ([]Secret, error) {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/secrets", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing secrets: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("listing secrets: status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var secrets []Secret
+	if err := json.NewDecoder(resp.Body).Decode(&secrets); err != nil {
+		return nil, fmt.Errorf("decoding secrets list: %w", err)
+	}
+	return secrets, nil
+}
+
+func (c *httpClient) GetAgentSecrets(ctx context.Context, agentID string) ([]string, error) {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/agents/"+agentID+"/secrets", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getting agent secrets: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("getting agent secrets: status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var ids []string
+	if err := json.NewDecoder(resp.Body).Decode(&ids); err != nil {
+		return nil, fmt.Errorf("decoding agent secrets: %w", err)
+	}
+	return ids, nil
+}
+
+func (c *httpClient) SetAgentSecrets(ctx context.Context, agentID string, secretIDs []string) error {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string][]string{"secretIds": secretIDs})
+	req, err := http.NewRequestWithContext(ctx, "PUT", c.baseURL+"/api/agents/"+agentID+"/secrets", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("setting agent secrets: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("setting agent secrets: status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 // NoopClient does nothing — used when OneCLI is not configured.
 type NoopClient struct{}
 
@@ -232,3 +391,17 @@ func (n *NoopClient) CreateAgent(_ context.Context, name, _, secretMode string) 
 }
 
 func (n *NoopClient) DeleteAgent(_ context.Context, _ string) error { return nil }
+
+func (n *NoopClient) CreateSecret(_ context.Context, _ CreateSecretInput) (*Secret, error) {
+	return &Secret{ID: "noop"}, nil
+}
+
+func (n *NoopClient) DeleteSecret(_ context.Context, _ string) error { return nil }
+
+func (n *NoopClient) ListSecrets(_ context.Context) ([]Secret, error) { return nil, nil }
+
+func (n *NoopClient) GetAgentSecrets(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (n *NoopClient) SetAgentSecrets(_ context.Context, _ string, _ []string) error { return nil }

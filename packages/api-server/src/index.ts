@@ -5,6 +5,7 @@ import { appRouter, type ApiContext } from "api-server-api";
 import { createApi, createK8sTemplatesContext, createK8sInstancesContext, createK8sSchedulesContext } from "./k8s.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTrpcRelay } from "./trpc-relay.js";
+import { createOAuthRoutes } from "./oauth.js";
 
 const namespace = process.env.NAMESPACE ?? "humr-agents";
 const port = Number(process.env.PORT ?? 4000);
@@ -15,6 +16,10 @@ const instances = createK8sInstancesContext(namespace, api, templates);
 const schedules = createK8sSchedulesContext(namespace, api, instances);
 
 const app = new Hono();
+
+// OAuth flow for custom MCP server authentication
+const uiBaseUrl = process.env.UI_BASE_URL ?? "http://humr.localhost:4444";
+app.route("/", createOAuthRoutes(uiBaseUrl));
 
 app.all("/api/instances/:id/trpc/*", createTrpcRelay(namespace));
 

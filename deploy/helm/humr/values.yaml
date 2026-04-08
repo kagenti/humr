@@ -4,7 +4,7 @@ agentNamespace: humr-agents
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
-  image: ghcr.io/onecli/onecli@sha256:84fdc6c7013f25c873e1bb540be41444ad26cd8d8ae61a0953f202f8f531a8f9
+  image: ghcr.io/onecli/onecli:1.14.1
   replicas: 1
 
   # -- PostgreSQL configuration (OneCLI dependency)

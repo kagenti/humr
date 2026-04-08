@@ -992,3 +992,301 @@ html, body, #root { height: 100%; background: var(--bg); color: var(--fg); font-
 }
 
 .schedule-cancel:hover { color: var(--fg2); border-color: var(--border2); }
+/* ── Create instance dialog ──────────────────────────────────────────── */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.dialog-sub {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--fg3);
+}
+
+.dialog-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
+}
+
+.dialog-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-input:focus { border-color: var(--accent2); }
+
+.dialog-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.dialog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dialog-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
+}
+
+.dialog-add-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dialog-add-btn:hover { border-color: var(--accent2); }
+
+.mcp-entry {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mcp-entry-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mcp-name { max-width: 160px; }
+.mcp-args { flex: 2; }
+
+.mcp-remove-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.mcp-remove-btn:hover { color: var(--red); }
+
+.mcp-connect-btn {
+  background: none;
+  border: 1px solid var(--accent2);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mcp-connect-btn:hover { background: var(--bg2); }
+.mcp-connect-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mcp-connect-btn.connected { color: var(--green); border-color: var(--green); cursor: default; }
+.mcp-connect-btn.expired { color: var(--red); border-color: var(--red); }
+
+/* ── MCP server toggle (instance create) ─────────────────────────── */
+
+.mcp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.mcp-toggle:hover { border-color: var(--border2); }
+.mcp-toggle.expired { opacity: 0.6; }
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-btn:hover { color: var(--accent2); }
+.mcp-toggle input[type="checkbox"] { accent-color: var(--accent); }
+.mcp-toggle-name { color: var(--fg); font-weight: 500; }
+.mcp-toggle-meta { color: var(--fg3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+
+/* ── Connectors page ─────────────────────────────────────────────── */
+
+.connectors-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--fg2);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.connectors-btn:hover { border-color: var(--accent2); color: var(--accent); }
+
+.connectors-page {
+  padding: 24px;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.connectors-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.connectors-title {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.connector-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.connector-host {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg);
+  flex: 1;
+}
+
+.connector-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg3);
+}
+
+.delete-instance-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: auto;
+}
+
+.delete-instance-btn:hover { color: var(--red); }
+
+.mcp-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
+  padding: 8px 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.dialog-cancel-btn, .dialog-submit-btn {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dialog-cancel-btn {
+  background: none;
+  color: var(--fg2);
+}
+
+.dialog-cancel-btn:hover { border-color: var(--fg3); }
+
+.dialog-submit-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.dialog-submit-btn:hover { background: var(--accent2); border-color: var(--accent2); }
+.dialog-submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
