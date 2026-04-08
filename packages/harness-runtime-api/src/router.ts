@@ -4,16 +4,6 @@ import type { HarnessContext } from "./context.js";
 
 const t = initTRPC.context<HarnessContext>().create();
 
-const authRouter = t.router({
-  status: t.procedure.query(({ ctx }) => ctx.claudeCodeAuth.getAuthStatus()),
-
-  login: t.procedure.mutation(({ ctx }) => ctx.claudeCodeAuth.startLogin()),
-
-  code: t.procedure
-    .input(z.object({ code: z.string() }))
-    .mutation(({ ctx, input }) => ctx.claudeCodeAuth.submitAuthCode(input.code)),
-});
-
 const filesRouter = t.router({
   tree: t.procedure.query(({ ctx }) => ({
     entries: ctx.files.buildTree(),
@@ -31,7 +21,6 @@ const filesRouter = t.router({
 });
 
 export const appRouter = t.router({
-  auth: authRouter,
   files: filesRouter,
 });
 

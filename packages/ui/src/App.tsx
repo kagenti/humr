@@ -136,11 +136,6 @@ export default function App() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [authRequired, setAuthRequired] = useState(false);
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [loginUrl, setLoginUrl] = useState<string | null>(null);
-  const [authCode, setAuthCode] = useState("");
-  const [pasteReady, setPasteReady] = useState(false);
   const [rightTab, setRightTab] = useState<"files" | "log">("files");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -157,7 +152,6 @@ export default function App() {
   const [creatingInstance, setCreatingInstance] = useState<string | null>(null);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [deletingTemplate, setDeletingTemplate] = useState<string | null>(null);
-  const pendingPromptRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -172,21 +166,6 @@ export default function App() {
     () => (selectedInstance ? createInstanceTrpc(selectedInstance) : null),
     [selectedInstance],
   );
-
-  const checkAuth = useCallback(async () => {
-    if (!instanceTrpc) return;
-    try {
-      const s = await instanceTrpc.auth.status.query();
-      if (!s.authenticated) setAuthRequired(true);
-      else setAuthRequired(false);
-    } catch {
-      setAuthRequired(false);
-    }
-  }, [instanceTrpc]);
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -307,7 +286,6 @@ export default function App() {
     setSessions([]);
     setFileTree([]);
     setOpenFile(null);
-    setAuthRequired(false);
     setLog([]);
     setView("chat");
   }, []);
@@ -322,7 +300,6 @@ export default function App() {
     setSessions([]);
     setFileTree([]);
     setOpenFile(null);
-    setAuthRequired(false);
     setLog([]);
     setView("list");
     fetchInstances();
@@ -564,10 +541,6 @@ export default function App() {
       );
       addLog("done", { stopReason: result.stopReason });
     } catch (err: any) {
-      if (err?.code === -32000) {
-        setAuthRequired(true);
-        pendingPromptRef.current = text;
-      }
       addLog("error", { message: err?.message });
       setMessages((prev) =>
         prev.map((m) =>
@@ -582,21 +555,6 @@ export default function App() {
       textareaRef.current?.focus();
     }
   }, [input, busy, selectedInstance, sessionId, addLog]);
-
-  const startLogin = useCallback(async () => {
-    if (!instanceTrpc) return;
-    setLoggingIn(true);
-    setLoginUrl(null);
-    setPasteReady(false);
-    try {
-      const { url } = await instanceTrpc.auth.login.mutate();
-      setLoginUrl(url);
-      window.open(url, "_blank");
-      setPasteReady(true);
-    } catch {
-      setLoggingIn(false);
-    }
-  }, [instanceTrpc]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -774,82 +732,13 @@ export default function App() {
 
         <section className="chat-panel">
           <div className="messages">
-            {authRequired && (
-              <div className="auth-banner">
-                <span className="auth-title">authentication required</span>
-                <p className="auth-desc">
-                  Claude is not logged in. Sign in to start a session.
-                </p>
-                {!loggingIn && (
-                  <button className="auth-btn" onClick={startLogin}>
-                    log in
-                  </button>
-                )}
-                {loginUrl && (
-                  <>
-                    <a
-                      className="auth-link"
-                      href={loginUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      open login page
-                    </a>
-                    {!pasteReady && (
-                      <p className="auth-desc">Waiting for login prompt...</p>
-                    )}
-                  </>
-                )}
-                {pasteReady && (
-                  <>
-                    <p className="auth-desc">
-                      Paste the authentication code below:
-                    </p>
-                    <div className="auth-code-row">
-                      <input
-                        className="auth-code-input"
-                        type="text"
-                        value={authCode}
-                        onChange={(e) => setAuthCode(e.target.value)}
-                        placeholder="paste authentication code"
-                      />
-                      <button
-                        className="auth-btn"
-                        disabled={!authCode.trim()}
-                        onClick={async () => {
-                          if (!instanceTrpc) return;
-                          const result = await instanceTrpc.auth.code.mutate({
-                            code: authCode.trim(),
-                          });
-                          if (result.ok) {
-                            setAuthRequired(false);
-                            setLoggingIn(false);
-                            setLoginUrl(null);
-                            setPasteReady(false);
-                            setAuthCode("");
-                            if (pendingPromptRef.current) {
-                              setInput(pendingPromptRef.current);
-                              pendingPromptRef.current = null;
-                            }
-                          } else {
-                            setAuthCode("");
-                          }
-                        }}
-                      >
-                        submit
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            {!authRequired && loadingSession && (
+            {loadingSession && (
               <div className="loading-session">
                 <span className="spinner" />
                 loading session…
               </div>
             )}
-            {!authRequired && !loadingSession && messages.length === 0 && (
+            {!loadingSession && messages.length === 0 && (
               <div className="empty">send a message to start a new session</div>
             )}
             {messages.map((m) => (
@@ -891,12 +780,12 @@ export default function App() {
               onKeyDown={onKeyDown}
               placeholder="message agent  ↵ send  shift+↵ newline"
               rows={1}
-              disabled={busy || authRequired}
+              disabled={busy}
             />
             <button
               className="send-btn"
               onClick={send}
-              disabled={busy || authRequired || !input.trim()}
+              disabled={busy || !input.trim()}
             >
               {busy ? "…" : "send"}
             </button>
