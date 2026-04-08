@@ -14,6 +14,8 @@ const envVarSchema = z.object({
   value: z.string(),
 });
 
+const enabledMcpServersSchema = z.array(z.string()).optional();
+
 function toView(inst: Instance) {
   return {
     name: inst.name,
@@ -22,6 +24,7 @@ function toView(inst: Instance) {
     env: inst.spec.env,
     secretRef: inst.spec.secretRef,
     desiredState: inst.spec.desiredState,
+    enabledMcpServers: inst.spec.enabledMcpServers ?? null,
     status: inst.status ?? null,
   };
 }
@@ -47,6 +50,7 @@ export const instancesRouter = t.router({
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       description: z.string().optional(),
+      enabledMcpServers: enabledMcpServersSchema,
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.create(input);
@@ -58,6 +62,7 @@ export const instancesRouter = t.router({
       name: k8sName,
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
+      enabledMcpServers: enabledMcpServersSchema,
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.update(input);

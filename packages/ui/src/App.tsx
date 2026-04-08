@@ -5,6 +5,7 @@ import {
 } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
+import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { platform } from "./platform.js";
 import { createInstanceTrpc } from "./instance-trpc.js";
 
@@ -48,12 +49,48 @@ interface TreeEntry {
   type: "file" | "dir";
 }
 
+interface MCPServerConfig {
+  type: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+}
+
+interface TemplateView {
+  name: string;
+  image: string;
+  description?: string;
+  mcpServers?: Record<string, MCPServerConfig> | null;
+}
+
 interface InstanceView {
   name: string;
   templateName: string;
   description?: string;
   desiredState: "running" | "hibernated";
+  enabledMcpServers?: string[] | null;
   status: { currentState: string; error?: string; podReady: boolean } | null;
+}
+
+/** Resolve enabled MCP servers from template config + instance enabled list. */
+function resolveAcpMcpServers(
+  templates: TemplateView[],
+  instance?: InstanceView | null,
+): McpServer[] {
+  if (!instance) return [];
+  const tmpl = templates.find((t) => t.name === instance.templateName);
+  if (!tmpl?.mcpServers) return [];
+  const enabled = instance.enabledMcpServers;
+  // If no explicit list, enable all template servers
+  const entries = enabled
+    ? Object.entries(tmpl.mcpServers).filter(([name]) => enabled.includes(name))
+    : Object.entries(tmpl.mcpServers);
+  return entries.map(([name, s]): McpServer => {
+    if (s.type === "http") {
+      return { type: "http", name, url: s.url!, headers: [] };
+    }
+    return { command: s.command!, args: s.args ?? [], env: [], name };
+  });
 }
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
@@ -126,8 +163,432 @@ async function openConnection(
   return { connection, ws };
 }
 
+interface McpFormEntry {
+  id: string;
+  name: string;
+  type: "stdio" | "http";
+  command: string;
+  args: string;
+  url: string;
+}
+
+/** Create template dialog — name, image, description, MCP servers from connectors + custom stdio. */
+function CreateTemplateDialog({
+  onSubmit,
+  onCancel,
+  onGoToConnectors,
+}: {
+  onSubmit: (input: {
+    name: string;
+    image: string;
+    description?: string;
+    mcpServers?: Record<string, MCPServerConfig>;
+  }) => void;
+  onCancel: () => void;
+  onGoToConnectors: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [image, setImage] = useState("");
+  const [description, setDescription] = useState("");
+
+  // Connected remote servers (from OneCLI)
+  const [connections, setConnections] = useState<
+    { hostname: string; connectedAt: string; expired: boolean }[]
+  >([]);
+  const [selectedConnections, setSelectedConnections] = useState<Set<string>>(new Set());
+  const [loadingConnections, setLoadingConnections] = useState(true);
+
+  // Custom stdio MCP servers
+  const [stdioEntries, setStdioEntries] = useState<McpFormEntry[]>([]);
+
+  useEffect(() => {
+    fetch("/api/mcp/connections")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setConnections(data); })
+      .catch(() => {})
+      .finally(() => setLoadingConnections(false));
+  }, []);
+
+  const toggleConnection = (hostname: string) => {
+    setSelectedConnections((prev) => {
+      const next = new Set(prev);
+      if (next.has(hostname)) next.delete(hostname);
+      else next.add(hostname);
+      return next;
+    });
+  };
+
+  const addStdio = () => {
+    setStdioEntries((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), name: "", type: "stdio", command: "", args: "", url: "" },
+    ]);
+  };
+
+  const updateStdio = (id: string, field: keyof McpFormEntry, value: string) => {
+    setStdioEntries((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, [field]: value } : e)),
+    );
+  };
+
+  const removeStdio = (id: string) => {
+    setStdioEntries((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  const handleSubmit = () => {
+    const trimmedName = name.trim();
+    const trimmedImage = image.trim();
+    if (!trimmedName || !trimmedImage) return;
+
+    const servers: Record<string, MCPServerConfig> = {};
+
+    // Add selected remote connections
+    for (const hostname of selectedConnections) {
+      const serverName = hostname.split(".")[0];
+      servers[serverName] = { type: "http", url: `https://${hostname}/mcp` };
+    }
+
+    // Add custom stdio servers
+    for (const e of stdioEntries) {
+      if (!e.name.trim() || !e.command.trim()) continue;
+      const args = e.args.trim() ? e.args.split(/\s+/) : [];
+      servers[e.name.trim()] = { type: "stdio", command: e.command.trim(), args };
+    }
+
+    onSubmit({
+      name: trimmedName,
+      image: trimmedImage,
+      description: description.trim() || undefined,
+      mcpServers: Object.keys(servers).length > 0 ? servers : undefined,
+    });
+  };
+
+  return (
+    <div className="dialog-overlay" onClick={onCancel}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-header">
+          <span>new template</span>
+        </div>
+
+        <label className="dialog-label">
+          name
+          <input
+            className="dialog-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="my-template"
+            autoFocus
+          />
+        </label>
+
+        <label className="dialog-label">
+          image
+          <input
+            className="dialog-input"
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
+            placeholder="humr-base:latest"
+          />
+        </label>
+
+        <label className="dialog-label">
+          description
+          <input
+            className="dialog-input"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="optional"
+          />
+        </label>
+
+        <div className="dialog-section">
+          <div className="dialog-section-header">
+            <span>connectors</span>
+          </div>
+
+          {loadingConnections && <div className="mcp-empty">loading...</div>}
+
+          {!loadingConnections && connections.length === 0 && (
+            <div className="mcp-empty">
+              no connectors available —{" "}
+              <button className="link-btn" onClick={onGoToConnectors}>connect a server</button>
+            </div>
+          )}
+
+          {connections.map((c) => (
+            <label key={c.hostname} className={`mcp-toggle${c.expired ? " expired" : ""}`}>
+              <input
+                type="checkbox"
+                checked={selectedConnections.has(c.hostname)}
+                onChange={() => toggleConnection(c.hostname)}
+                disabled={c.expired}
+              />
+              <span className={`instance-dot ${c.expired ? "dot-error" : "dot-ready"}`} />
+              <span className="mcp-toggle-name">{c.hostname}</span>
+              {c.expired && <span className="mcp-toggle-meta">expired</span>}
+            </label>
+          ))}
+
+          {!loadingConnections && connections.length > 0 && (
+            <button className="link-btn" onClick={onGoToConnectors}>+ connect another server</button>
+          )}
+        </div>
+
+        <div className="dialog-section">
+          <div className="dialog-section-header">
+            <span>custom CLI tools</span>
+            <button className="dialog-add-btn" onClick={addStdio}>+ add</button>
+          </div>
+
+          {stdioEntries.map((entry) => (
+            <div key={entry.id} className="mcp-entry">
+              <div className="mcp-entry-row">
+                <input
+                  className="dialog-input mcp-name"
+                  value={entry.name}
+                  onChange={(e) => updateStdio(entry.id, "name", e.target.value)}
+                  placeholder="server name"
+                />
+                <button className="mcp-remove-btn" onClick={() => removeStdio(entry.id)}>x</button>
+              </div>
+              <div className="mcp-entry-row">
+                <input
+                  className="dialog-input"
+                  value={entry.command}
+                  onChange={(e) => updateStdio(entry.id, "command", e.target.value)}
+                  placeholder="command (e.g. npx)"
+                />
+                <input
+                  className="dialog-input mcp-args"
+                  value={entry.args}
+                  onChange={(e) => updateStdio(entry.id, "args", e.target.value)}
+                  placeholder="args (e.g. -y @modelcontextprotocol/server-github)"
+                />
+              </div>
+            </div>
+          ))}
+
+          {stdioEntries.length === 0 && (
+            <div className="mcp-empty">no custom tools — add stdio MCP servers that run inside the agent pod</div>
+          )}
+        </div>
+
+        <div className="dialog-actions">
+          <button className="dialog-cancel-btn" onClick={onCancel}>cancel</button>
+          <button
+            className="dialog-submit-btn"
+            onClick={handleSubmit}
+            disabled={!name.trim() || !image.trim()}
+          >
+            create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Create instance dialog — name + toggle template MCP servers. */
+function CreateInstanceDialog({
+  templateName,
+  mcpServers,
+  onSubmit,
+  onCancel,
+}: {
+  templateName: string;
+  mcpServers?: Record<string, MCPServerConfig> | null;
+  onSubmit: (name: string, enabledMcpServers?: string[]) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const serverNames = Object.keys(mcpServers ?? {});
+  const [enabled, setEnabled] = useState<Set<string>>(new Set(serverNames));
+
+  const toggle = (serverName: string) => {
+    setEnabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(serverName)) next.delete(serverName);
+      else next.add(serverName);
+      return next;
+    });
+  };
+
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const list = serverNames.filter((n) => enabled.has(n));
+    onSubmit(trimmed, list.length > 0 ? list : undefined);
+  };
+
+  return (
+    <div className="dialog-overlay" onClick={onCancel}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-header">
+          <span>new instance</span>
+          <span className="dialog-sub">template: {templateName}</span>
+        </div>
+
+        <label className="dialog-label">
+          name
+          <input
+            className="dialog-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            placeholder="my-agent"
+            autoFocus
+          />
+        </label>
+
+        {serverNames.length > 0 && (
+          <div className="dialog-section">
+            <div className="dialog-section-header">
+              <span>MCP servers</span>
+              <span className="dialog-sub">{enabled.size}/{serverNames.length} enabled</span>
+            </div>
+            {serverNames.map((serverName) => {
+              const s = mcpServers![serverName];
+              return (
+                <label key={serverName} className="mcp-toggle">
+                  <input
+                    type="checkbox"
+                    checked={enabled.has(serverName)}
+                    onChange={() => toggle(serverName)}
+                  />
+                  <span className="mcp-toggle-name">{serverName}</span>
+                  <span className="mcp-toggle-meta">
+                    {s.type === "http" ? s.url : `${s.command} ${(s.args ?? []).join(" ")}`}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="dialog-actions">
+          <button className="dialog-cancel-btn" onClick={onCancel}>cancel</button>
+          <button className="dialog-submit-btn" onClick={handleSubmit} disabled={!name.trim()}>
+            create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Connectors page — manage global MCP connections (OAuth). */
+function ConnectorsPage({ onBack }: { onBack: () => void }) {
+  const [connections, setConnections] = useState<
+    { hostname: string; connectedAt: string; expired: boolean }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [connectUrl, setConnectUrl] = useState("");
+  const [connecting, setConnecting] = useState(false);
+
+  const fetchConnections = useCallback(() => {
+    setLoading(true);
+    fetch("/api/mcp/connections")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setConnections(data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { fetchConnections(); }, [fetchConnections]);
+
+  const startOAuth = async () => {
+    if (!connectUrl.trim()) return;
+    setConnecting(true);
+    try {
+      const res = await fetch("/api/oauth/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mcpServerUrl: connectUrl.trim() }),
+      });
+      const data = await res.json() as { authUrl?: string; error?: string };
+      if (data.error) {
+        window.alert(`OAuth error: ${data.error}`);
+        setConnecting(false);
+        return;
+      }
+      if (data.authUrl) {
+        sessionStorage.setItem("humr-return-view", "connectors");
+        window.location.href = data.authUrl;
+      }
+    } catch (err) {
+      window.alert(`Failed: ${err}`);
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <div className="shell">
+      <header className="header">
+        <button className="back-btn" onClick={onBack}>← back</button>
+        <span className="header-logo">◈ Humr</span>
+        <span className="header-sub">connectors</span>
+      </header>
+
+      <div className="connectors-page">
+        <div className="connectors-section">
+          <h3 className="connectors-title">connected MCP servers</h3>
+          {loading && <div className="mcp-empty">loading...</div>}
+          {!loading && connections.length === 0 && (
+            <div className="mcp-empty">no connections yet</div>
+          )}
+          {connections.map((c) => (
+            <div key={c.hostname} className="connector-card">
+              <span className={`instance-dot ${c.expired ? "dot-error" : "dot-ready"}`} />
+              <span className="connector-host">{c.hostname}</span>
+              <span className="connector-meta">
+                {c.expired ? "expired" : `connected ${new Date(c.connectedAt).toLocaleDateString()}`}
+              </span>
+              {c.expired && (
+                <button
+                  className="mcp-connect-btn expired"
+                  onClick={() => { setConnectUrl(`https://${c.hostname}/mcp`); }}
+                >
+                  reconnect
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="connectors-section">
+          <h3 className="connectors-title">connect new MCP server</h3>
+          <div className="mcp-entry-row">
+            <input
+              className="dialog-input"
+              value={connectUrl}
+              onChange={(e) => setConnectUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && startOAuth()}
+              placeholder="https://example.com/mcp"
+            />
+            <button
+              className="mcp-connect-btn"
+              onClick={startOAuth}
+              disabled={!connectUrl.trim() || connecting}
+            >
+              {connecting ? "..." : "connect"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [view, setView] = useState<"list" | "chat">("list");
+  const [view, setView] = useState<"list" | "chat" | "connectors">(() => {
+    // Return to connectors page after OAuth redirect if that's where we came from
+    const saved = sessionStorage.getItem("humr-return-view");
+    if (saved) {
+      sessionStorage.removeItem("humr-return-view");
+      return saved as "list" | "chat" | "connectors";
+    }
+    return "list";
+  });
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
   const [instances, setInstances] = useState<InstanceView[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(false);
@@ -165,11 +626,10 @@ export default function App() {
     path: string;
     content: string;
   } | null>(null);
-  const [templates, setTemplates] = useState<
-    { name: string; image: string; description?: string }[]
-  >([]);
+  const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [creatingInstance, setCreatingInstance] = useState<string | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState<string | null>(null);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [deletingTemplate, setDeletingTemplate] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -186,6 +646,22 @@ export default function App() {
     () => (selectedInstance ? createInstanceTrpc(selectedInstance) : null),
     [selectedInstance],
   );
+
+  const selectedMcpServers = useMemo(
+    () => resolveAcpMcpServers(templates, instances.find((i) => i.name === selectedInstance)),
+    [templates, instances, selectedInstance],
+  );
+
+  // Handle OAuth callback redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthResult = params.get("oauth");
+    if (!oauthResult) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    if (oauthResult === "error") {
+      window.alert(`OAuth failed: ${params.get("message") ?? "Unknown error"}`);
+    }
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -265,19 +741,18 @@ export default function App() {
     fetchInstances();
   }, [fetchInstances]);
 
-  const createTemplate = useCallback(async () => {
-    const name = window.prompt("Template name:");
-    if (!name?.trim()) return;
-    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(name.trim())) {
-      window.alert("Invalid name. Use lowercase alphanumeric, dots, or hyphens (must start/end with alphanumeric).");
-      return;
-    }
-    const image = window.prompt("Image (required):");
-    if (!image?.trim()) return;
-    const description = window.prompt("Description (optional):") || undefined;
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+
+  const submitCreateTemplate = useCallback(async (input: {
+    name: string;
+    image: string;
+    description?: string;
+    mcpServers?: Record<string, MCPServerConfig>;
+  }) => {
+    setShowTemplateDialog(false);
     setCreatingTemplate(true);
     try {
-      await platform.templates.create.mutate({ name: name.trim(), image: image.trim(), description: description?.trim() || undefined });
+      await platform.templates.create.mutate(input);
       await fetchTemplates();
     } catch (err: any) {
       window.alert(err?.message ?? "Failed to create template");
@@ -298,12 +773,33 @@ export default function App() {
     setDeletingTemplate(null);
   }, [fetchTemplates, fetchInstances]);
 
-  const createInstance = useCallback(async (templateName: string) => {
-    const name = window.prompt("Instance name:");
-    if (!name?.trim()) return;
-    setCreatingInstance(templateName);
+  const deleteInstance = useCallback(async (name: string) => {
+    if (!window.confirm(`Delete instance "${name}"?`)) return;
     try {
-      await platform.instances.create.mutate({ name: name.trim(), templateName });
+      await platform.instances.delete.mutate({ name });
+      await fetchInstances();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to delete instance");
+    }
+  }, [fetchInstances]);
+
+  const createInstance = useCallback((templateName: string) => {
+    setShowCreateDialog(templateName);
+  }, []);
+
+  const submitCreateInstance = useCallback(async (
+    templateName: string,
+    name: string,
+    enabledMcpServers?: string[],
+  ) => {
+    setCreatingInstance(templateName);
+    setShowCreateDialog(null);
+    try {
+      await platform.instances.create.mutate({
+        name,
+        templateName,
+        enabledMcpServers,
+      });
       await fetchInstances();
     } catch (err: any) {
       window.alert(err?.message ?? "Failed to create instance");
@@ -423,7 +919,7 @@ export default function App() {
       await connection.loadSession({
         sessionId: sid,
         cwd: ".",
-        mcpServers: [],
+        mcpServers: selectedMcpServers,
       });
       ws.close();
     } catch {}
@@ -550,13 +1046,13 @@ export default function App() {
           await conn.unstable_resumeSession({
             sessionId,
             cwd: ".",
-            mcpServers: [],
+            mcpServers: selectedMcpServers,
           });
           activeSessionIdRef.current = sessionId;
         } else {
           const session = await conn.newSession({
             cwd: ".",
-            mcpServers: [],
+            mcpServers: selectedMcpServers,
           });
           setSessionId(session.sessionId);
           activeSessionIdRef.current = session.sessionId;
@@ -615,12 +1111,17 @@ export default function App() {
     return map;
   }, [instances]);
 
+  if (view === "connectors") {
+    return <ConnectorsPage onBack={() => setView("list")} />;
+  }
+
   if (view === "list") {
     return (
       <div className="shell">
         <header className="header">
           <span className="header-logo">◈ Humr</span>
           <span className="header-sub">PROTOTYPE</span>
+          <button className="connectors-btn" onClick={() => setView("connectors")}>connectors</button>
         </header>
 
         <div className="list-view">
@@ -629,7 +1130,7 @@ export default function App() {
             <button
               className="create-template-btn"
               disabled={creatingTemplate}
-              onClick={createTemplate}
+              onClick={() => setShowTemplateDialog(true)}
             >
               {creatingTemplate ? "…" : "+ template"}
             </button>
@@ -695,6 +1196,10 @@ export default function App() {
                                   : inst.status.currentState
                               : "unknown"}
                           </span>
+                          <button
+                            className="delete-instance-btn"
+                            onClick={(e) => { e.stopPropagation(); deleteInstance(inst.name); }}
+                          >×</button>
                         </div>
                       );
                     })}
@@ -704,6 +1209,23 @@ export default function App() {
             })}
           </div>
         </div>
+
+        {showTemplateDialog && (
+          <CreateTemplateDialog
+            onSubmit={submitCreateTemplate}
+            onCancel={() => setShowTemplateDialog(false)}
+            onGoToConnectors={() => { setShowTemplateDialog(false); setView("connectors"); }}
+          />
+        )}
+
+        {showCreateDialog && (
+          <CreateInstanceDialog
+            templateName={showCreateDialog}
+            mcpServers={templates.find((t) => t.name === showCreateDialog)?.mcpServers}
+            onSubmit={(name, enabled) => submitCreateInstance(showCreateDialog, name, enabled)}
+            onCancel={() => setShowCreateDialog(null)}
+          />
+        )}
       </div>
     );
   }

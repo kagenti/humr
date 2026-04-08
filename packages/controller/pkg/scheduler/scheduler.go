@@ -94,6 +94,9 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"schedule":  scheduleName,
 	}
+	if len(spec.MCPServers) > 0 {
+		trigger["mcpServers"] = spec.MCPServers
+	}
 	triggerJSON, _ := json.Marshal(trigger)
 	filename := fmt.Sprintf("/workspace/.triggers/%d.json", time.Now().UnixMilli())
 

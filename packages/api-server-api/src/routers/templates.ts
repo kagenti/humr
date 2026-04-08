@@ -14,6 +14,7 @@ function toView(tmpl: Template) {
     name: tmpl.name,
     image: tmpl.spec.image,
     description: tmpl.spec.description,
+    mcpServers: tmpl.spec.mcpServers ?? null,
   };
 }
 
@@ -36,13 +37,15 @@ export const templatesRouter = t.router({
       name: k8sName,
       image: z.string(),
       description: z.string().optional(),
+      mcpServers: z.record(z.string(), z.object({
+        type: z.enum(["stdio", "http"]),
+        command: z.string().optional(),
+        args: z.array(z.string()).optional(),
+        url: z.string().optional(),
+      })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const tmpl = await ctx.templates.create({
-        name: input.name,
-        image: input.image,
-        description: input.description,
-      });
+      const tmpl = await ctx.templates.create(input);
       return toView(tmpl);
     }),
 

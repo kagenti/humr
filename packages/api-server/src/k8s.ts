@@ -125,6 +125,7 @@ export function createK8sTemplatesContext(
         image: input.image,
         description: input.description,
         ...DEFAULT_TEMPLATE_SPEC,
+        mcpServers: input.mcpServers,
       };
       const cm: k8s.V1ConfigMap = {
         metadata: {
@@ -204,6 +205,7 @@ export function createK8sInstancesContext(
         env: input.env,
         secretRef: input.secretRef,
         description: input.description,
+        enabledMcpServers: input.enabledMcpServers,
       };
       const cm: k8s.V1ConfigMap = {
         metadata: {
@@ -238,6 +240,7 @@ export function createK8sInstancesContext(
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
       if (input.env !== undefined) spec.env = input.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+      if (input.enabledMcpServers !== undefined) spec.enabledMcpServers = input.enabledMcpServers;
 
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
       const updated = await api.replaceNamespacedConfigMap({

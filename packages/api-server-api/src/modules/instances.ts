@@ -7,6 +7,7 @@ export interface InstanceSpec {
   env?: EnvVar[];
   secretRef?: string;
   description?: string;
+  enabledMcpServers?: string[];
 }
 
 export interface InstanceStatus {
@@ -27,12 +28,14 @@ export interface CreateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   description?: string;
+  enabledMcpServers?: string[];
 }
 
 export interface UpdateInstanceInput {
   name: string;
   env?: EnvVar[];
   secretRef?: string;
+  enabledMcpServers?: string[];
 }
 
 export interface InstancesContext {
