@@ -22,6 +22,15 @@ eval "$(mise run humr:shell)" # activate cluster env
 
 Open **`humr.localhost:4444`** in your browser, create an instance from a template, and start chatting.
 
+## Configuration
+
+Agent harnesses and other connections require API tokens to communicate with their providers. These secrets are managed through the OneCLI dashboard at **`onecli.localhost:4444`**.
+
+OneCLI acts as a proxy — agents never see the secrets directly. Instead, OneCLI intercepts outgoing requests from agent pods and injects the appropriate credentials before forwarding them to the provider.
+
+1. **Add a secret** — open the OneCLI UI and create a new secret. For Anthropic, you can use `claude setup-token` as the token value. For other connections, use Apps or Generic secret.
+2. **Allow the secret for an agent** — in the OneCLI UI, grant the secret to the specific agent that needs it. Only requests from allowed agents will have credentials injected.
+
 ## Development
 
 ```sh
