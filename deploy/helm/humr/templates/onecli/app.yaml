@@ -1,5 +1,4 @@
 {{- $appName := printf "%s-onecli" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- $caSecretName := include "humr.onecli.ca.fullname" . }}
 ---
 # OneCLI Service (gateway + web on same pod)
 apiVersion: v1
@@ -24,6 +23,22 @@ spec:
   selector:
     app.kubernetes.io/component: onecli
     app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Persistent data for OneCLI gateway (auto-generated MITM CA, runtime config)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $appName }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.onecli.data.size }}
 ---
 # Single Deployment: entrypoint.sh runs migrations, starts gateway (Rust) + web (Node.js)
 apiVersion: apps/v1
@@ -94,16 +109,9 @@ spec:
           resources:
             {{- toYaml .Values.onecli.resources | nindent 12 }}
           volumeMounts:
-            # cert-manager Secret mounted as files where gateway expects them
-            - name: ca
-              mountPath: /app/data/gateway/ca.key
-              subPath: tls.key
-              readOnly: true
-            - name: ca
-              mountPath: /app/data/gateway/ca.pem
-              subPath: tls.crt
-              readOnly: true
+            - name: data
+              mountPath: /app/data
       volumes:
-        - name: ca
-          secret:
-            secretName: {{ $caSecretName }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $appName }}-data

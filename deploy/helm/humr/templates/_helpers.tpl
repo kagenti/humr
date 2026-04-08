@@ -69,14 +69,7 @@ OneCLI secrets name (passwords, keys)
 {{- end }}
 
 {{/*
-OneCLI CA secret name
-*/}}
-{{- define "humr.onecli.ca.fullname" -}}
-{{- printf "%s-onecli-ca" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-OneCLI CA cert ConfigMap name (public half, for agent pods)
+OneCLI CA cert ConfigMap name (for agent pods)
 */}}
 {{- define "humr.onecli.ca-cert.fullname" -}}
 {{- printf "%s-onecli-ca-cert" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
