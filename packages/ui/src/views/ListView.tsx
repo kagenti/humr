@@ -78,11 +78,8 @@ export function ListView() {
           </div>
         </div>
 
-        {/* Loading / empty */}
-        {(loading.templates || loading.instances) && (
-          <p className="text-center py-20 text-[14px] text-text-muted">Loading...</p>
-        )}
-        {!loading.templates && templates.length === 0 && (
+        {/* Empty state (only when not loading) */}
+        {!loading.templates && !loading.instances && templates.length === 0 && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-8 py-16 text-center">
             <p className="text-[15px] text-text-secondary mb-4">No templates yet</p>
             <button

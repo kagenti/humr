@@ -2,11 +2,17 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 
 export type Role = "user" | "assistant";
 
+export interface ToolContent {
+  type: "content" | "diff" | "terminal";
+  text?: string;
+}
+
 export interface ToolChip {
   kind: "tool";
   toolCallId?: string;
   title: string;
   status: string;
+  content?: ToolContent[];
 }
 
 export interface TextPart {

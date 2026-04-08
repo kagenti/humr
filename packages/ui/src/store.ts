@@ -20,7 +20,13 @@ interface LoadingState {
   session: boolean;
 }
 
+type Theme = "light" | "dark" | "system";
+
 export interface HumrStore {
+  // Theme
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+
   // Navigation
   view: View;
   setView: (v: View) => void;
@@ -86,7 +92,32 @@ export interface HumrStore {
   deleteSchedule: (name: string) => Promise<void>;
 }
 
+function applyTheme(theme: Theme) {
+  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", isDark);
+}
+
+function viewToPath(view: View, instance?: string | null): string {
+  if (view === "chat" && instance) return `/chat/${encodeURIComponent(instance)}`;
+  if (view === "connectors") return "/connectors";
+  return "/";
+}
+
+function pathToState(path: string): { view: View; instance?: string } {
+  if (path.startsWith("/chat/")) return { view: "chat", instance: decodeURIComponent(path.slice(6)) };
+  if (path === "/connectors") return { view: "connectors" };
+  return { view: "list" };
+}
+
 export const useStore = create<HumrStore>((set, get) => ({
+  // Theme
+  theme: (localStorage.getItem("humr-theme") as Theme) || "system",
+  setTheme: (t) => {
+    localStorage.setItem("humr-theme", t);
+    applyTheme(t);
+    set({ theme: t });
+  },
+
   // Navigation
   view: (() => {
     const saved = sessionStorage.getItem("humr-return-view");
@@ -94,9 +125,12 @@ export const useStore = create<HumrStore>((set, get) => ({
       sessionStorage.removeItem("humr-return-view");
       return saved as View;
     }
-    return "list";
+    return pathToState(window.location.pathname).view;
   })(),
-  setView: (v) => set({ view: v }),
+  setView: (v) => {
+    history.pushState(null, "", viewToPath(v));
+    set({ view: v });
+  },
 
   // Data
   templates: [],
@@ -173,6 +207,7 @@ export const useStore = create<HumrStore>((set, get) => ({
   },
 
   selectInstance: (name) => {
+    history.pushState(null, "", viewToPath("chat", name));
     set({
       selectedInstance: name,
       sessionId: null,
@@ -186,6 +221,7 @@ export const useStore = create<HumrStore>((set, get) => ({
   },
 
   goBack: () => {
+    history.pushState(null, "", "/");
     set({
       selectedInstance: null,
       sessionId: null,

@@ -16,6 +16,7 @@ import type { Message, ToolChip as ToolChipT } from "../types.js";
 import { ArrowLeft, Plus, Send as SendIcon } from "lucide-react";
 import { Markdown } from "../components/Markdown.js";
 import { ToolChip } from "../components/ToolChip.js";
+import { ResizeHandle } from "../components/ResizeHandle.js";
 import { SessionsSidebar } from "../panels/SessionsSidebar.js";
 import { FilesPanel } from "../panels/FilesPanel.js";
 import { LogPanel } from "../panels/LogPanel.js";
@@ -44,6 +45,8 @@ export function ChatView() {
   const openFile = useStore((s) => s.openFile);
 
   const [input, setInput] = useState("");
+  const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
+  const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const connectionRef = useRef<{
@@ -180,11 +183,17 @@ export function ChatView() {
               l?.kind === "text" ? (l.text += u.content.text) : target.parts.push({ kind: "text", text: u.content.text });
             } else if (u.sessionUpdate === "tool_call") {
               const target = currentAssistant();
-              target.parts.push({ kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status });
+              const content = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
+              target.parts.push({ kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content });
             } else if (u.sessionUpdate === "tool_call_update") {
               for (const [, m] of mm) {
                 const chip = m.parts.find((p): p is ToolChipT => p.kind === "tool" && p.toolCallId === u.toolCallId);
-                if (chip) { if (u.status) chip.status = u.status; if (u.title) chip.title = u.title; break; }
+                if (chip) {
+                  if (u.status) chip.status = u.status;
+                  if (u.title) chip.title = u.title;
+                  if (u.content) chip.content = u.content.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
+                  break;
+                }
               }
             }
           },
@@ -225,8 +234,10 @@ export function ChatView() {
       }
       try {
         const d = await instanceTrpc.files.read.query({ path });
-        if (d.content !== undefined)
+        if (d.content !== undefined) {
           setOpenFile({ path: d.path, content: d.content });
+          setRightTab("files");
+        }
       } catch {}
     },
     [instanceTrpc, openFile, setOpenFile],
@@ -283,26 +294,17 @@ export function ChatView() {
               );
               addLog("text", { text: u.content.text });
             } else if (u.sessionUpdate === "tool_call") {
+              const content = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
               setMessages((p) =>
                 p.map((m) =>
                   m.id === aid
-                    ? {
-                        ...m,
-                        parts: [
-                          ...m.parts,
-                          {
-                            kind: "tool",
-                            toolCallId: u.toolCallId,
-                            title: u.title,
-                            status: u.status,
-                          } as ToolChipT,
-                        ],
-                      }
+                    ? { ...m, parts: [...m.parts, { kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content } as ToolChipT] }
                     : m,
                 ),
               );
               addLog("tool", { title: u.title, status: u.status });
             } else if (u.sessionUpdate === "tool_call_update") {
+              const newContent = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
               setMessages((p) =>
                 p.map((m) => {
                   if (m.id !== aid) return m;
@@ -312,6 +314,7 @@ export function ChatView() {
                           ...part,
                           status: u.status ?? part.status,
                           title: u.title ?? part.title,
+                          content: newContent?.length ? newContent : part.content,
                         }
                       : part,
                   );
@@ -391,55 +394,39 @@ export function ChatView() {
   };
 
   return (
-    <div className="flex h-screen bg-bg">
-      <SessionsSidebar
-        onResumeSession={resumeSession}
-        onRefresh={fetchSessions}
-      />
+    <div className="flex h-screen bg-bg relative overflow-hidden">
+      <div className="blob blob-1" />
+      <div className="blob blob-2" />
+      <div className="blob blob-3" />
+      {/* ── Left: Sessions ── */}
+      <div style={{ width: leftW }} className="shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
+        <SessionsSidebar onResumeSession={resumeSession} onRefresh={fetchSessions} />
+      </div>
+      <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("humr-left-w", String(v)); return v; })} />
 
       {/* ── Main chat column ── */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="flex items-center gap-4 px-6 h-12 border-b-[3px] border-border bg-surface shrink-0">
+        <header className="flex items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0">
           <button
-            className="text-[13px] font-semibold text-text-secondary hover:text-accent transition-colors"
-            onClick={() => {
-              connectionRef.current?.ws.close();
-              connectionRef.current = null;
-              activeSessionIdRef.current = null;
-              goBack();
-            }}
+            className="flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
+            onClick={() => { connectionRef.current?.ws.close(); connectionRef.current = null; activeSessionIdRef.current = null; goBack(); }}
           >
-            <ArrowLeft size={14} className="inline -mt-px" /> Agents
+            <ArrowLeft size={14} /> Agents
           </button>
-          <span className="text-border-light">|</span>
-          <h1 className="text-[14px] font-bold text-text">
-            {selectedInstance}
-          </h1>
+          <span className="w-px h-4 bg-border-light" />
+          <h1 className="text-[14px] font-bold text-text">{selectedInstance}</h1>
           {sessionId && (
             <button
-              className="btn-brutal ml-auto h-7 rounded-md border-2 border-border px-3 text-[11px] font-bold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
-              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-              onClick={() => {
-                connectionRef.current?.ws.close();
-                connectionRef.current = null;
-                activeSessionIdRef.current = null;
-                setSessionId(null);
-                setMessages([]);
-              }}
+              className="btn-brutal ml-auto h-7 rounded-lg border border-border-light px-3 text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
+              onClick={() => { connectionRef.current?.ws.close(); connectionRef.current = null; activeSessionIdRef.current = null; setSessionId(null); setMessages([]); }}
             >
               <Plus size={12} /> New Session
             </button>
           )}
-          <div
-            className={`${sessionId ? "" : "ml-auto"} flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.03em]`}
-          >
-            <span
-              className={`inline-flex items-center gap-1.5 border-2 rounded-full px-2.5 py-0.5 ${busy ? "bg-warning-light text-warning border-warning" : "bg-success-light text-success border-success"}`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${busy ? "bg-warning anim-pulse" : "bg-success"}`}
-              />
+          <div className={`${sessionId ? "" : "ml-auto"} flex items-center gap-2`}>
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${busy ? "bg-warning-light text-warning border-warning" : "bg-success-light text-success border-success"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${busy ? "bg-warning anim-pulse" : "bg-success"}`} />
               {busy ? "Running" : "Ready"}
             </span>
           </div>
@@ -456,52 +443,31 @@ export function ChatView() {
             )}
             {!loadingSession && messages.length === 0 && (
               <div className="py-24 text-center">
-                <p className="text-[16px] font-bold text-text mb-2">
-                  Start a conversation
-                </p>
-                <p className="text-[14px] text-text-muted">
-                  Send a message to begin a new session with this agent
-                </p>
+                <p className="text-[16px] font-bold text-text mb-2">Start a conversation</p>
+                <p className="text-[14px] text-text-muted">Send a message to begin a new session with this agent</p>
               </div>
             )}
 
             {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
-              >
+              <div key={m.id} className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}>
                 <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
                   {m.role === "user" ? "You" : "Agent"}
                 </span>
-                <div
-                  className={
-                    m.role === "user"
-                      ? "rounded-xl rounded-br-sm border-2 border-accent bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
-                      : "flex flex-col gap-2 max-w-full"
-                  }
-                >
+                <div className={m.role === "user"
+                  ? "rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
+                  : "flex flex-col gap-2 max-w-full"
+                }>
                   {m.parts.map((p, i) =>
                     p.kind === "text" ? (
-                      m.role === "assistant" ? (
-                        <Markdown key={i}>{p.text}</Markdown>
-                      ) : (
-                        <span
-                          key={i}
-                          className="whitespace-pre-wrap break-words"
-                        >
+                      m.role === "assistant" ? <Markdown key={i} onFileClick={openFileHandler}>{p.text}</Markdown> : (
+                        <span key={i} className="whitespace-pre-wrap break-words">
                           {p.text}
-                          {m.streaming && i === m.parts.length - 1 && (
-                            <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
-                          )}
+                          {m.streaming && i === m.parts.length - 1 && <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />}
                         </span>
                       )
-                    ) : (
-                      <ToolChip key={i} chip={p} />
-                    ),
+                    ) : <ToolChip key={i} chip={p} />
                   )}
-                  {m.streaming && m.parts.length === 0 && (
-                    <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
-                  )}
+                  {m.streaming && m.parts.length === 0 && <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />}
                 </div>
               </div>
             ))}
@@ -510,23 +476,18 @@ export function ChatView() {
         </div>
 
         {/* Input */}
-        <div className="border-t-[3px] border-border bg-surface px-8 py-4 shrink-0">
+        <div className="border-t border-border-light bg-surface/50 backdrop-blur-xl px-8 py-4 shrink-0">
           <div className="mx-auto max-w-[760px] flex items-end gap-3">
             <textarea
               ref={textareaRef}
-              className="flex-1 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[180px] overflow-y-auto transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Message agent... (Enter to send)"
-              rows={1}
-              disabled={busy}
+              className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[180px] overflow-y-auto transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
+              value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
+              placeholder="Message agent... (Enter to send)" rows={1} disabled={busy}
             />
             <button
               className="btn-brutal h-[44px] rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 flex items-center gap-1.5"
               style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-              onClick={send}
-              disabled={busy || !input.trim()}
+              onClick={send} disabled={busy || !input.trim()}
             >
               {busy ? "..." : <><SendIcon size={14} /> Send</>}
             </button>
@@ -534,15 +495,13 @@ export function ChatView() {
         </div>
       </div>
 
-      {/* ── Right sidebar ── */}
-      <aside className="w-[320px] shrink-0 flex flex-col border-l-[3px] border-border bg-surface overflow-hidden">
-        <div className="flex border-b-2 border-border-light shrink-0">
-          {(["files", "log", "schedules"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setRightTab(tab)}
-              className={`flex-1 h-10 text-[12px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}
-            >
+      {/* ── Right: Files/Log/Schedules ── */}
+      <ResizeHandle side="right" onResize={d => setRightW(w => { const v = Math.max(240, Math.min(600, w + d)); localStorage.setItem("humr-right-w", String(v)); return v; })} />
+      <div style={{ width: rightW }} className="shrink-0 flex flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
+        <div className="flex border-b border-border-light shrink-0">
+          {(["files", "log", "schedules"] as const).map(tab => (
+            <button key={tab} onClick={() => setRightTab(tab)}
+              className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
               {tab}
             </button>
           ))}
@@ -552,7 +511,7 @@ export function ChatView() {
           {rightTab === "log" && <LogPanel />}
           {rightTab === "schedules" && <SchedulesPanel />}
         </div>
-      </aside>
+      </div>
     </div>
   );
 }

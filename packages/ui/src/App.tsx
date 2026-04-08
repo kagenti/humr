@@ -3,12 +3,26 @@ import { useStore } from "./store.js";
 import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
 import { ConnectorsView } from "./views/ConnectorsView.js";
-import { Shell as ShellIcon } from "lucide-react";
+import { Shell as ShellIcon, Sun, Moon, Monitor } from "lucide-react";
 
 export default function App() {
   const view = useStore((s) => s.view);
+  const theme = useStore((s) => s.theme);
   const fetchTemplates = useStore((s) => s.fetchTemplates);
   const fetchInstances = useStore((s) => s.fetchInstances);
+
+  // Apply theme on mount + listen for system preference changes
+  useEffect(() => {
+    const apply = () => {
+      const t = useStore.getState().theme;
+      const isDark = t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", isDark);
+    };
+    apply();
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [theme]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -18,6 +32,29 @@ export default function App() {
     if (oauthResult === "error") {
       window.alert(`OAuth failed: ${params.get("message") ?? "Unknown error"}`);
     }
+  }, []);
+
+  // Browser back/forward
+  useEffect(() => {
+    const onPopState = () => {
+      const path = window.location.pathname;
+      if (path.startsWith("/chat/")) {
+        const inst = decodeURIComponent(path.slice(6));
+        useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
+      } else if (path === "/connectors") {
+        useStore.setState({ view: "connectors" });
+      } else {
+        useStore.setState({ selectedInstance: null, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "list" });
+      }
+    };
+    // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
+    const path = window.location.pathname;
+    if (path.startsWith("/chat/")) {
+      const inst = decodeURIComponent(path.slice(6));
+      useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
@@ -44,12 +81,20 @@ export default function App() {
   );
 }
 
+const themeOptions = [
+  { value: "light" as const, icon: Sun, label: "Light" },
+  { value: "dark" as const, icon: Moon, label: "Dark" },
+  { value: "system" as const, icon: Monitor, label: "System" },
+];
+
 function Nav() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const theme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
 
   return (
-    <nav className="sticky top-0 z-50 flex items-center gap-6 border-b-[3px] border-border bg-surface/80 backdrop-blur-sm px-[5%] h-14">
+    <nav className="sticky top-0 z-50 flex items-center gap-6 border-b border-border-light bg-surface/80 backdrop-blur-sm px-[5%] h-12">
       <div className="flex items-center gap-2">
         <ShellIcon size={20} className="text-accent" />
         <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">humr</span>
@@ -69,6 +114,20 @@ function Nav() {
             </button>
           );
         })}
+      </div>
+
+      {/* Theme toggle */}
+      <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-border-light p-0.5">
+        {themeOptions.map(({ value, icon: Icon, label }) => (
+          <button
+            key={value}
+            onClick={() => setTheme(value)}
+            title={label}
+            className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors ${theme === value ? "bg-accent text-white" : "text-text-muted hover:text-text-secondary"}`}
+          >
+            <Icon size={14} />
+          </button>
+        ))}
       </div>
     </nav>
   );
