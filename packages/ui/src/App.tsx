@@ -148,6 +148,15 @@ export default function App() {
       status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
     }[]
   >([]);
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({
+    type: "cron" as "cron" | "heartbeat",
+    name: "",
+    cron: "",
+    task: "",
+    intervalMinutes: 5,
+  });
+  const [creatingSched, setCreatingSched] = useState(false);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -903,7 +912,109 @@ export default function App() {
             )}
             {rightTab === "schedules" && (
               <div className="schedule-panel">
-                {schedules.length === 0 && (
+                <div className="schedule-toolbar">
+                  <button
+                    className="create-schedule-btn"
+                    onClick={() => {
+                      setScheduleForm({ type: "cron", name: "", cron: "", task: "", intervalMinutes: 5 });
+                      setShowCreateSchedule(true);
+                    }}
+                  >
+                    + add schedule
+                  </button>
+                </div>
+                {showCreateSchedule && (
+                  <div className="schedule-form">
+                    <div className="schedule-form-type">
+                      <button
+                        className={`schedule-type-btn ${scheduleForm.type === "cron" ? "active" : ""}`}
+                        onClick={() => setScheduleForm((f) => ({ ...f, type: "cron" }))}
+                      >
+                        cron
+                      </button>
+                      <button
+                        className={`schedule-type-btn ${scheduleForm.type === "heartbeat" ? "active" : ""}`}
+                        onClick={() => setScheduleForm((f) => ({ ...f, type: "heartbeat" }))}
+                      >
+                        heartbeat
+                      </button>
+                    </div>
+                    <input
+                      className="schedule-input"
+                      placeholder="name"
+                      value={scheduleForm.name}
+                      onChange={(e) => setScheduleForm((f) => ({ ...f, name: e.target.value }))}
+                    />
+                    {scheduleForm.type === "cron" && (
+                      <>
+                        <input
+                          className="schedule-input"
+                          placeholder="cron expression"
+                          value={scheduleForm.cron}
+                          onChange={(e) => setScheduleForm((f) => ({ ...f, cron: e.target.value }))}
+                        />
+                        <textarea
+                          className="schedule-textarea"
+                          placeholder="task prompt"
+                          value={scheduleForm.task}
+                          onChange={(e) => setScheduleForm((f) => ({ ...f, task: e.target.value }))}
+                          rows={3}
+                        />
+                      </>
+                    )}
+                    {scheduleForm.type === "heartbeat" && (
+                      <input
+                        className="schedule-input"
+                        type="number"
+                        min={1}
+                        placeholder="interval (minutes)"
+                        value={scheduleForm.intervalMinutes}
+                        onChange={(e) => setScheduleForm((f) => ({ ...f, intervalMinutes: parseInt(e.target.value) || 1 }))}
+                      />
+                    )}
+                    <div className="schedule-form-actions">
+                      <button
+                        className="schedule-submit"
+                        disabled={creatingSched || !scheduleForm.name.trim()}
+                        onClick={async () => {
+                          if (!selectedInstance) return;
+                          setCreatingSched(true);
+                          try {
+                            if (scheduleForm.type === "cron") {
+                              await platform.schedules.createCron.mutate({
+                                name: scheduleForm.name,
+                                instanceName: selectedInstance,
+                                cron: scheduleForm.cron,
+                                task: scheduleForm.task,
+                              });
+                            } else {
+                              await platform.schedules.createHeartbeat.mutate({
+                                name: scheduleForm.name,
+                                instanceName: selectedInstance,
+                                intervalMinutes: scheduleForm.intervalMinutes,
+                              });
+                            }
+                            setShowCreateSchedule(false);
+                            fetchSchedules();
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : "failed to create schedule");
+                          } finally {
+                            setCreatingSched(false);
+                          }
+                        }}
+                      >
+                        {creatingSched ? "…" : "create"}
+                      </button>
+                      <button
+                        className="schedule-cancel"
+                        onClick={() => setShowCreateSchedule(false)}
+                      >
+                        cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {schedules.length === 0 && !showCreateSchedule && (
                   <div className="schedule-empty">no schedules</div>
                 )}
                 {schedules.map((s) => (
