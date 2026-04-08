@@ -1,0 +1,246 @@
+import { create } from "zustand";
+import { platform } from "./platform.js";
+import type {
+  TemplateView,
+  InstanceView,
+  SessionInfo,
+  Message,
+  LogEntry,
+  TreeEntry,
+  Schedule,
+  MCPServerConfig,
+} from "./types.js";
+
+type View = "list" | "chat" | "connectors";
+
+interface LoadingState {
+  templates: boolean;
+  instances: boolean;
+  sessions: boolean;
+  session: boolean;
+}
+
+export interface HumrStore {
+  // Navigation
+  view: View;
+  setView: (v: View) => void;
+
+  // Data
+  templates: TemplateView[];
+  instances: InstanceView[];
+  selectedInstance: string | null;
+  sessions: SessionInfo[];
+  messages: Message[];
+  schedules: Schedule[];
+  fileTree: TreeEntry[];
+  openFile: { path: string; content: string } | null;
+  log: LogEntry[];
+  busy: boolean;
+  sessionId: string | null;
+  rightTab: "files" | "log" | "schedules";
+
+  // Loading states
+  loading: LoadingState;
+
+  // Template actions
+  fetchTemplates: () => Promise<void>;
+  createTemplate: (input: {
+    name: string;
+    image: string;
+    description?: string;
+    mcpServers?: Record<string, MCPServerConfig>;
+  }) => Promise<void>;
+  deleteTemplate: (name: string) => Promise<void>;
+
+  // Instance actions
+  fetchInstances: () => Promise<void>;
+  createInstance: (
+    templateName: string,
+    name: string,
+    enabledMcpServers?: string[],
+  ) => Promise<void>;
+  deleteInstance: (name: string) => Promise<void>;
+  selectInstance: (name: string) => void;
+  goBack: () => void;
+
+  // Session/chat actions
+  setSessionId: (id: string | null) => void;
+  setSessions: (sessions: SessionInfo[]) => void;
+  setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
+  setBusy: (busy: boolean) => void;
+  setLoadingSessions: (loading: boolean) => void;
+  setLoadingSession: (loading: boolean) => void;
+  addLog: (type: string, payload: object) => void;
+
+  // File tree
+  setFileTree: (entries: TreeEntry[]) => void;
+  setOpenFile: (file: { path: string; content: string } | null) => void;
+
+  // Right tab
+  setRightTab: (tab: "files" | "log" | "schedules") => void;
+
+  // Schedules
+  setSchedules: (schedules: Schedule[]) => void;
+  fetchSchedules: () => Promise<void>;
+  toggleSchedule: (name: string) => Promise<void>;
+  deleteSchedule: (name: string) => Promise<void>;
+}
+
+export const useStore = create<HumrStore>((set, get) => ({
+  // Navigation
+  view: (() => {
+    const saved = sessionStorage.getItem("humr-return-view");
+    if (saved) {
+      sessionStorage.removeItem("humr-return-view");
+      return saved as View;
+    }
+    return "list";
+  })(),
+  setView: (v) => set({ view: v }),
+
+  // Data
+  templates: [],
+  instances: [],
+  selectedInstance: null,
+  sessions: [],
+  messages: [],
+  schedules: [],
+  fileTree: [],
+  openFile: null,
+  log: [],
+  busy: false,
+  sessionId: null,
+  rightTab: "files",
+
+  // Loading states
+  loading: { templates: false, instances: false, sessions: false, session: false },
+
+  // Template actions
+  fetchTemplates: async () => {
+    set((s) => ({ loading: { ...s.loading, templates: true } }));
+    try {
+      const list = await platform.templates.list.query();
+      set({ templates: list });
+    } catch {}
+    set((s) => ({ loading: { ...s.loading, templates: false } }));
+  },
+
+  createTemplate: async (input) => {
+    try {
+      await platform.templates.create.mutate(input);
+      await get().fetchTemplates();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to create template");
+    }
+  },
+
+  deleteTemplate: async (name) => {
+    try {
+      await platform.templates.delete.mutate({ name });
+      await get().fetchTemplates();
+      await get().fetchInstances();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to delete template");
+    }
+  },
+
+  // Instance actions
+  fetchInstances: async () => {
+    set((s) => ({ loading: { ...s.loading, instances: true } }));
+    try {
+      const list = await platform.instances.list.query();
+      set({ instances: list });
+    } catch {}
+    set((s) => ({ loading: { ...s.loading, instances: false } }));
+  },
+
+  createInstance: async (templateName, name, enabledMcpServers) => {
+    try {
+      await platform.instances.create.mutate({ name, templateName, enabledMcpServers });
+      await get().fetchInstances();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to create instance");
+    }
+  },
+
+  deleteInstance: async (name) => {
+    try {
+      await platform.instances.delete.mutate({ name });
+      await get().fetchInstances();
+    } catch (err: any) {
+      window.alert(err?.message ?? "Failed to delete instance");
+    }
+  },
+
+  selectInstance: (name) => {
+    set({
+      selectedInstance: name,
+      sessionId: null,
+      messages: [],
+      sessions: [],
+      fileTree: [],
+      openFile: null,
+      log: [],
+      view: "chat",
+    });
+  },
+
+  goBack: () => {
+    set({
+      selectedInstance: null,
+      sessionId: null,
+      messages: [],
+      sessions: [],
+      fileTree: [],
+      openFile: null,
+      log: [],
+      view: "list",
+    });
+    get().fetchInstances();
+  },
+
+  // Session/chat actions
+  setSessionId: (id) => set({ sessionId: id }),
+  setSessions: (sessions) => set({ sessions }),
+  setMessages: (updater) =>
+    set((s) => ({
+      messages: typeof updater === "function" ? updater(s.messages) : updater,
+    })),
+  setBusy: (busy) => set({ busy }),
+  setLoadingSessions: (loading) =>
+    set((s) => ({ loading: { ...s.loading, sessions: loading } })),
+  setLoadingSession: (loading) =>
+    set((s) => ({ loading: { ...s.loading, session: loading } })),
+  addLog: (type, payload) => {
+    const ts = new Date().toISOString().slice(11, 23);
+    set((s) => ({
+      log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }],
+    }));
+  },
+
+  // File tree
+  setFileTree: (entries) => set({ fileTree: entries }),
+  setOpenFile: (file) => set({ openFile: file }),
+
+  // Right tab
+  setRightTab: (tab) => set({ rightTab: tab }),
+
+  // Schedules
+  setSchedules: (schedules) => set({ schedules }),
+  fetchSchedules: async () => {
+    const { selectedInstance } = get();
+    if (!selectedInstance) return;
+    try {
+      const list = await platform.schedules.list.query({ instanceName: selectedInstance });
+      set({ schedules: list });
+    } catch {}
+  },
+  toggleSchedule: async (name) => {
+    await platform.schedules.toggle.mutate({ name });
+    await get().fetchSchedules();
+  },
+  deleteSchedule: async (name) => {
+    await platform.schedules.delete.mutate({ name });
+    await get().fetchSchedules();
+  },
+}));
