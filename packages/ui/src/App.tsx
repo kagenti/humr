@@ -136,7 +136,18 @@ export default function App() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [rightTab, setRightTab] = useState<"files" | "log">("files");
+  const [rightTab, setRightTab] = useState<"files" | "log" | "schedules">("files");
+  const [schedules, setSchedules] = useState<
+    {
+      name: string;
+      instanceName: string;
+      type: "heartbeat" | "cron";
+      cron: string;
+      task: string | null;
+      enabled: boolean;
+      status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
+    }[]
+  >([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -174,6 +185,21 @@ export default function App() {
   useEffect(() => {
     logBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
+
+  const fetchSchedules = useCallback(async () => {
+    if (!selectedInstance) return;
+    try {
+      const list = await platform.schedules.list.query({ instanceName: selectedInstance });
+      setSchedules(list);
+    } catch {}
+  }, [selectedInstance]);
+
+  useEffect(() => {
+    if (!selectedInstance || rightTab !== "schedules") return;
+    fetchSchedules();
+    const poll = setInterval(fetchSchedules, 5000);
+    return () => clearInterval(poll);
+  }, [selectedInstance, rightTab, fetchSchedules]);
 
   useEffect(() => {
     if (!instanceTrpc) return;
@@ -806,6 +832,12 @@ export default function App() {
             >
               log
             </button>
+            <button
+              className={`sidebar-tab ${rightTab === "schedules" ? "active" : ""}`}
+              onClick={() => setRightTab("schedules")}
+            >
+              schedules
+            </button>
           </div>
           <div className="sidebar-content">
             {rightTab === "files" && !openFile && (
@@ -867,6 +899,54 @@ export default function App() {
                   ))}
                   <div ref={logBottomRef} />
                 </div>
+              </div>
+            )}
+            {rightTab === "schedules" && (
+              <div className="schedule-panel">
+                {schedules.length === 0 && (
+                  <div className="schedule-empty">no schedules</div>
+                )}
+                {schedules.map((s) => (
+                  <div key={s.name} className="schedule-row">
+                    <div className="schedule-row-top">
+                      <span className={`schedule-badge ${s.type}`}>
+                        {s.type}
+                      </span>
+                      <span className="schedule-name">{s.name}</span>
+                      <span className="schedule-expr">{s.cron}</span>
+                      <button
+                        className={`schedule-toggle ${s.enabled ? "on" : "off"}`}
+                        onClick={async () => {
+                          await platform.schedules.toggle.mutate({ name: s.name });
+                          fetchSchedules();
+                        }}
+                      >
+                        {s.enabled ? "on" : "off"}
+                      </button>
+                      <button
+                        className="schedule-delete"
+                        onClick={async () => {
+                          if (!window.confirm(`Delete schedule "${s.name}"?`)) return;
+                          await platform.schedules.delete.mutate({ name: s.name });
+                          fetchSchedules();
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {s.status && (
+                      <div className="schedule-status">
+                        {s.status.lastRun && <span>last: {s.status.lastRun}</span>}
+                        {s.status.nextRun && <span>next: {s.status.nextRun}</span>}
+                        {s.status.lastResult && (
+                          <span className={`schedule-result ${s.status.lastResult}`}>
+                            {s.status.lastResult}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
