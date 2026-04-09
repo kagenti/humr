@@ -104,34 +104,38 @@ export function ChatView() {
     return () => clearInterval(i);
   }, [instanceTrpc, setFileTree, setOpenFile]);
 
-  // Sessions — retry on failure (pod may be waking up)
+  // Sessions — poll until successfully loaded (pod may be waking)
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return;
     setLoadingSessions(true);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const { connection, ws } = await openConnection(
-          selectedInstance,
-          () => {},
-        );
-        await connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-        });
-        const r = await connection.listSessions({ cwd: "." });
-        setSessions(r.sessions ?? []);
-        ws.close();
-        setLoadingSessions(false);
-        return;
-      } catch {
-        await new Promise(r => setTimeout(r, 3000));
-      }
+    try {
+      const { connection, ws } = await openConnection(
+        selectedInstance,
+        () => {},
+      );
+      await connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      });
+      const r = await connection.listSessions({ cwd: "." });
+      setSessions(r.sessions ?? []);
+      ws.close();
+    } catch {
+      setSessions([]);
     }
-    setSessions([]);
     setLoadingSessions(false);
   }, [selectedInstance, setLoadingSessions, setSessions]);
   useEffect(() => {
-    if (selectedInstance) fetchSessions();
+    if (!selectedInstance) return;
+    fetchSessions();
+    // Re-fetch sessions when instance becomes ready (e.g. after wake)
+    const i = setInterval(() => {
+      const inst = useStore.getState().instances.find(x => x.name === selectedInstance);
+      if (inst?.status?.podReady && useStore.getState().sessions.length === 0 && !useStore.getState().loading.sessions) {
+        fetchSessions();
+      }
+    }, 3000);
+    return () => clearInterval(i);
   }, [selectedInstance, fetchSessions]);
 
   const resumeSession = useCallback(
@@ -380,6 +384,7 @@ export function ChatView() {
       activeSessionIdRef.current = null;
     } finally {
       setBusy(false);
+      fetchSessions();
       textareaRef.current?.focus();
     }
   }, [
@@ -392,6 +397,7 @@ export function ChatView() {
     setBusy,
     setMessages,
     setSessionId,
+    fetchSessions,
   ]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
