@@ -61,6 +61,8 @@ export default function App() {
   useEffect(() => {
     fetchTemplates();
     fetchInstances();
+    const i = setInterval(fetchInstances, 5000);
+    return () => clearInterval(i);
   }, [fetchTemplates, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)

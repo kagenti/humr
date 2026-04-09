@@ -96,7 +96,16 @@ func TestRemoveSchedule_NonExistent(t *testing.T) {
 
 func TestFire_WritesExecAndStatus(t *testing.T) {
 	scheduleCm := scheduleCM("my-schedule", "my-instance", true)
-	client := fake.NewSimpleClientset(scheduleCm)
+	instanceCm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-instance", Namespace: "test-agents",
+			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+		},
+		Data: map[string]string{
+			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
+		},
+	}
+	client := fake.NewSimpleClientset(scheduleCm, instanceCm)
 	s := New(client, testCfg)
 	s.Start()
 	defer s.Stop()
@@ -114,4 +123,8 @@ func TestFire_WritesExecAndStatus(t *testing.T) {
 	// Verify schedule status updated
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-schedule", metav1.GetOptions{})
 	assert.Contains(t, updated.Data["status.yaml"], "lastResult: success")
+
+	// Verify last-activity annotation patched on instance ConfigMap
+	instance, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	assert.Contains(t, instance.Annotations, "humr.ai/last-activity")
 }

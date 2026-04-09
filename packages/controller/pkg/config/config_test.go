@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,6 +52,29 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "humr-onecli", cfg.GatewayHost)
 	assert.Equal(t, "humr-onecli.default.svc.cluster.local", cfg.GatewayFQDN())
 	assert.Equal(t, "http://humr-onecli.default.svc.cluster.local:10254", cfg.WebURL())
+	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
+}
+
+func TestLoadFromEnv_IdleTimeout(t *testing.T) {
+	setEnv(t, map[string]string{
+		"HUMR_RELEASE_NAME": "humr",
+		"POD_NAME":          "controller-0",
+		"HUMR_IDLE_TIMEOUT": "30m",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Minute, cfg.IdleTimeout)
+}
+
+func TestLoadFromEnv_IdleTimeoutDisabled(t *testing.T) {
+	setEnv(t, map[string]string{
+		"HUMR_RELEASE_NAME": "humr",
+		"POD_NAME":          "controller-0",
+		"HUMR_IDLE_TIMEOUT": "0s",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), cfg.IdleTimeout)
 }
 
 func TestLoadFromEnv_MissingRequired(t *testing.T) {
@@ -75,7 +99,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"HUMR_AGENT_NAMESPACE", "HUMR_RELEASE_NAMESPACE", "HUMR_RELEASE_NAME",
 		"ONECLI_URL", "ONECLI_API_KEY",
 		"ONECLI_GATEWAY_HOST", "ONECLI_GATEWAY_PORT",
-		"HUMR_LEASE_NAME", "POD_NAME",
+		"HUMR_LEASE_NAME", "POD_NAME", "HUMR_IDLE_TIMEOUT",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })

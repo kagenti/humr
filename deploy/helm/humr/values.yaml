@@ -92,6 +92,8 @@ controller:
   imagePullPolicy: Never
   agentImagePullPolicy: Never
   replicas: 1
+  # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
+  idleTimeout: "1h"
   resources:
     requests:
       cpu: 100m

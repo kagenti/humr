@@ -10,6 +10,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
@@ -131,6 +132,11 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 	}
 	slog.Info("trigger delivered", "pod", podName, "file", filename)
 
+	// Update last-activity annotation on instance ConfigMap
+	if err := patchLastActivity(ctx, s.client, s.config.Namespace, instanceName); err != nil {
+		slog.Warn("failed to update last-activity", "instance", instanceName, "error", err)
+	}
+
 	// Update schedule status
 	now := time.Now().UTC().Format(time.RFC3339)
 	nextRun := ""
@@ -144,4 +150,17 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 		return fmt.Errorf("writing status for %s: %w", scheduleName, err)
 	}
 	return nil
+}
+
+func patchLastActivity(ctx context.Context, client kubernetes.Interface, namespace, instanceName string) error {
+	cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, instanceName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if cm.Annotations == nil {
+		cm.Annotations = make(map[string]string)
+	}
+	cm.Annotations["humr.ai/last-activity"] = time.Now().UTC().Format(time.RFC3339)
+	_, err = client.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	return err
 }

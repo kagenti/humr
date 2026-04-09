@@ -455,4 +455,17 @@ export async function removePodAnnotation(
   });
 }
 
+export async function patchConfigMapAnnotation(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  name: string,
+  key: string,
+  value: string,
+): Promise<void> {
+  const cm = await api.readNamespacedConfigMap({ name, namespace });
+  if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+  cm.metadata!.annotations[key] = value;
+  await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+}
+
 export { createApi };
