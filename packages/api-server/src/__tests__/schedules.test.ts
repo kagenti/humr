@@ -8,6 +8,10 @@ import {
   patchConfigMapData,
   waitForConfigMapKey,
   waitForPodReady,
+  dumpPodLogs,
+  describePod,
+  describeConfigMap,
+  getEvents,
 } from "./helpers/kubectl.js";
 import yaml from "js-yaml";
 
@@ -293,8 +297,7 @@ describe("e2e: controller reconciliation", () => {
     } catch {}
   });
 
-  // skip: controller informer stalls after OneCLI registration — pod never created (#34)
-  it.skip("controller writes status.yaml after cron fires", async () => {
+  it("controller writes status.yaml after cron fires", async () => {
     await client.schedules.createCron.mutate({
       name: SCHEDULE_NAME,
       instanceName: E2E_INSTANCE,
@@ -302,14 +305,41 @@ describe("e2e: controller reconciliation", () => {
       task: "e2e test task",
     });
 
-    const cm = await waitForConfigMapKey(CM_NAME, "status.yaml");
-    const status = yaml.load(cm.data!["status.yaml"]) as Record<
-      string,
-      unknown
-    >;
+    try {
+      const cm = await waitForConfigMapKey(CM_NAME, "status.yaml");
+      const status = yaml.load(cm.data!["status.yaml"]) as Record<
+        string,
+        unknown
+      >;
 
-    expect(status.lastResult).toBe("success");
-    expect(status.lastRun).toBeTruthy();
-    expect(status.nextRun).toBeTruthy();
+      expect(status.lastResult).toBe("success");
+      expect(status.lastRun).toBeTruthy();
+      expect(status.nextRun).toBeTruthy();
+    } catch (e) {
+      const podName = `${E2E_INSTANCE}-0`;
+      const [ctrlLogs, podInfo, podLogs, podEvents, scheduleCm] =
+        await Promise.all([
+          dumpPodLogs("app.kubernetes.io/component=controller"),
+          describePod(podName),
+          dumpPodLogs(`humr.ai/instance=${E2E_INSTANCE}`, "humr-agents"),
+          getEvents(podName),
+          describeConfigMap(CM_NAME),
+        ]);
+      console.error(
+        [
+          "=== Controller Logs ===",
+          ctrlLogs,
+          "=== Agent Pod Describe ===",
+          podInfo,
+          "=== Agent Pod Logs (incl. init) ===",
+          podLogs,
+          "=== Agent Pod Events ===",
+          podEvents,
+          "=== Schedule ConfigMap ===",
+          scheduleCm,
+        ].join("\n"),
+      );
+      throw e;
+    }
   });
 });

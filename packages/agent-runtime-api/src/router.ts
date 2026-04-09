@@ -1,8 +1,8 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
-import type { HarnessContext } from "./context.js";
+import type { AgentRuntimeContext } from "./context.js";
 
-const t = initTRPC.context<HarnessContext>().create();
+const t = initTRPC.context<AgentRuntimeContext>().create();
 
 const filesRouter = t.router({
   tree: t.procedure.query(({ ctx }) => ({

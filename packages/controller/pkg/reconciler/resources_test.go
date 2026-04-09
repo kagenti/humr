@@ -20,7 +20,6 @@ var testConfig = &config.Config{
 	GatewayHost:      "humr-onecli",
 	GatewayPort:      10255,
 	WebPort:          10254,
-	CACertInitImage:  "busybox:stable",
 }
 
 var testTemplate = &types.TemplateSpec{
@@ -129,11 +128,10 @@ func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 2)
 
-	// First: platform CA cert fetcher
+	// First: platform CA cert fetcher (uses agent image — shared layers, no extra pull)
 	caIC := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "fetch-ca-cert", caIC.Name)
-	assert.Equal(t, "busybox:stable", caIC.Image)
-	assert.Equal(t, corev1.PullIfNotPresent, caIC.ImagePullPolicy)
+	assert.Equal(t, testTemplate.Image, caIC.Image)
 	require.Len(t, caIC.Env, 1)
 	assert.Equal(t, "ONECLI_ACCESS_TOKEN", caIC.Env[0].Name)
 	assert.Equal(t, "humr-template-my-template-token", caIC.Env[0].ValueFrom.SecretKeyRef.Name)

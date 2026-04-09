@@ -47,14 +47,14 @@ dir = "{{config_root}}"
 run = 'docker build -f packages/ui/Dockerfile -t humr-ui:latest .'
 
 ["image:agent"]
-description = "Build agent Docker image (harness-runtime + example-agent)"
+description = "Build agent Docker image (agent-runtime + example-agent)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-pnpm --filter harness-runtime build
+pnpm --filter agent-runtime build
 rm -rf packages/humr-base/dist
-cp -r packages/harness-runtime/dist packages/humr-base/dist
+cp -r packages/agent-runtime/dist packages/humr-base/dist
 docker build -t humr-base packages/humr-base
 docker build -t humr-example-agent:latest packages/example-agent
 '''
@@ -68,7 +68,7 @@ docker build -t humr-example-agent:latest packages/example-agent
 # upgrade: assumes VM exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH"
+description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH"
 depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
 raw = true
@@ -78,10 +78,12 @@ set -eo pipefail
 
 LIMA_INSTANCE="humr-k3s"
 LIMA_TEMPLATE="deploy/lima-k3s.yaml"
+HELM_VALUES=""
 for arg in "$@"; do
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
     --lima-template=*) LIMA_TEMPLATE="${arg#--lima-template=}" ;;
+    --helm-values=*) HELM_VALUES="${arg#--helm-values=}" ;;
   esac
 done
 KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
@@ -122,12 +124,16 @@ for img in humr-controller:latest humr-api-server:latest humr-ui:latest humr-exa
 done
 
 # 4. Helm install or upgrade
+HELM_VALUES_FLAG=""
+if [ -n "$HELM_VALUES" ]; then
+  HELM_VALUES_FLAG="-f $HELM_VALUES"
+fi
 if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
   echo "Upgrading Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr
+  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr $HELM_VALUES_FLAG
 else
   echo "Installing Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr
+  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr $HELM_VALUES_FLAG
 fi
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)

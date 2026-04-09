@@ -17,7 +17,6 @@ type Config struct {
 	WebPort          int    // OneCLI web API port (for container-config endpoint)
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 	AgentImagePullPolicy string // ImagePullPolicy for agent pods (default: IfNotPresent)
 }
 
@@ -43,7 +42,6 @@ func LoadFromEnv() (*Config, error) {
 		WebPort:          envOrDefaultInt("ONECLI_WEB_PORT", 10254),
 		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
-		CACertInitImage:  envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable"),
 	}
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	return cfg, nil

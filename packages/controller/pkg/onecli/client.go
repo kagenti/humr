@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type Client interface {
@@ -58,7 +59,7 @@ type httpClient struct {
 // NewHTTPClient creates a client. If apiKey is empty, it will be fetched
 // from OneCLI on first use — so the controller can start before OneCLI is ready.
 func NewHTTPClient(baseURL, apiKey string) Client {
-	return &httpClient{baseURL: baseURL, apiKey: apiKey, http: &http.Client{}}
+	return &httpClient{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func (c *httpClient) ensureAPIKey(ctx context.Context) error {
@@ -70,7 +71,7 @@ func (c *httpClient) ensureAPIKey(ctx context.Context) error {
 	if c.apiKey != "" {
 		return nil // fetched by another goroutine
 	}
-	key, err := FetchAPIKey(ctx, c.baseURL)
+	key, err := fetchAPIKey(ctx, c.http, c.baseURL)
 	if err != nil {
 		return fmt.Errorf("OneCLI not ready: %w", err)
 	}
@@ -78,14 +79,18 @@ func (c *httpClient) ensureAPIKey(ctx context.Context) error {
 	return nil
 }
 
-// FetchAPIKey retrieves the API key from the OneCLI web API.
+// FetchAPIKey retrieves the API key from the OneCLI web API (uses http.DefaultClient).
 // The /api/user/api-key endpoint requires no authentication.
 func FetchAPIKey(ctx context.Context, baseURL string) (string, error) {
+	return fetchAPIKey(ctx, http.DefaultClient, baseURL)
+}
+
+func fetchAPIKey(ctx context.Context, client *http.Client, baseURL string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/api/user/api-key", nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching API key: %w", err)
 	}

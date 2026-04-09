@@ -26,7 +26,6 @@ func setupReconciler(t *testing.T, templates map[string]*corev1.ConfigMap, objec
 		GatewayHost:      "humr-onecli",
 		GatewayPort:      10255,
 		WebPort:          10254,
-		CACertInitImage:  "busybox:stable",
 	}
 	getter := &fakeGetter{cms: templates}
 	r := NewInstanceReconciler(client, cfg, NewTemplateResolver(getter))

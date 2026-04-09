@@ -5,7 +5,7 @@ images:
     arch: x86_64
 
 cpus: 2
-memory: 2GiB
+memory: 3GiB
 disk: 20GiB
 
 provision:

@@ -84,7 +84,7 @@ Technology: TypeScript/Node.js.
 
 ### Agent Runtime (TypeScript)
 
-Runs inside each agent pod. Listens on port 8080 as an ACP WebSocket server, bridging the API Server's inbound connection to the harness process (Claude Code) over stdio. Exposes `/healthz` for readiness and liveness probes. Watches `/workspace/.triggers/` for JSON files written by the Controller on schedule fires, creating a new ACP session per trigger — the same code path as an interactive user session. Evolution of `packages/harness-runtime`.
+Runs inside each agent pod. Listens on port 8080 as an ACP WebSocket server, bridging the API Server's inbound connection to the harness process (Claude Code) over stdio. Exposes `/healthz` for readiness and liveness probes. Watches `/workspace/.triggers/` for JSON files written by the Controller on schedule fires, creating a new ACP session per trigger — the same code path as an interactive user session. Implemented in `packages/agent-runtime`.
 
 Talks to: API Server (inbound ACP WebSocket), harness process (stdio).
 Technology: TypeScript/Node.js, ACP SDK.
@@ -298,7 +298,7 @@ context/
   onecli/              # OneCLI reference source (read-only)
 ```
 
-The Go controller is a standalone module (`packages/controller/go.mod`). TypeScript packages share a pnpm workspace (`pnpm-workspace.yaml`). Current packages include `harness-runtime` (the prototype, being evolved into `agent-runtime`) and `ui`.
+The Go controller is a standalone module (`packages/controller/go.mod`). TypeScript packages share a pnpm workspace (`pnpm-workspace.yaml`). Current packages include `agent-runtime` (ACP server inside agent pods) and `ui`.
 
 ---
 

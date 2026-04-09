@@ -4,7 +4,7 @@
 
 **Goal:** Build the full ADK platform — Helm chart, Go controller, TypeScript API server, agent runtime, and React UI — deployable to k3s via a single `helm install`.
 
-**Architecture:** Six components communicating through K8s resources (ConfigMaps, Secrets). Controller (Go) reconciles desired state into StatefulSets, Services, NetworkPolicies. API Server (TypeScript) provides REST + WebSocket ACP relay. Agent Runtime (TypeScript) runs inside agent pods, evolving the existing harness-runtime. OneCLI Gateway (deployed as-is) handles credential injection via MITM proxy. React UI for instance management and chat.
+**Architecture:** Six components communicating through K8s resources (ConfigMaps, Secrets). Controller (Go) reconciles desired state into StatefulSets, Services, NetworkPolicies. API Server (TypeScript) provides REST + WebSocket ACP relay. Agent Runtime (TypeScript) runs inside agent pods, evolving the existing agent-runtime. OneCLI Gateway (deployed as-is) handles credential injection via MITM proxy. React UI for instance management and chat.
 
 **Tech Stack:** Go (controller), TypeScript/Node.js (API server, agent runtime), React 18 + Vite (UI), Helm 3 (deployment), k3s (target cluster), OneCLI (credential proxy), PostgreSQL (OneCLI dependency)
 
@@ -43,7 +43,7 @@ Each sub-plan is independently implementable and testable. Execute in order — 
 
 **Plan:** `2026-04-02-adk-02-agent-runtime.md` (to be written)
 
-**Delivers:** Evolution of `packages/harness-runtime/` into `packages/agent-runtime/`. WebSocket ACP server on port 8080, `/healthz` endpoint, trigger file watcher for scheduled execution, Dockerfile.
+**Delivers:** Evolution of `packages/agent-runtime/` into `packages/agent-runtime/`. WebSocket ACP server on port 8080, `/healthz` endpoint, trigger file watcher for scheduled execution, Dockerfile.
 
 **Done when:** Docker image builds. Pod starts in k3s, readiness probe passes. Can connect via WebSocket, create a session, send a prompt, get a streaming response. Trigger file in `/workspace/.triggers/` creates a new session.
 
@@ -58,7 +58,7 @@ Each sub-plan is independently implementable and testable. Execute in order — 
 - Create: `packages/agent-runtime/package.json`
 - Create: `packages/agent-runtime/tsconfig.json`
 - Create: `packages/agent-runtime/src/server.ts` — WebSocket server + `/healthz`
-- Create: `packages/agent-runtime/src/acp-bridge.ts` — ACP stdio bridge (evolved from harness-runtime)
+- Create: `packages/agent-runtime/src/acp-bridge.ts` — ACP stdio bridge (evolved from agent-runtime)
 - Create: `packages/agent-runtime/src/trigger-watcher.ts` — `/workspace/.triggers/` directory watcher
 - Create: `packages/agent-runtime/Dockerfile`
 - Modify: `package.json` (root) — add workspace entry + scripts
