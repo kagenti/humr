@@ -220,6 +220,11 @@ attempt();
 							InitialDelaySeconds: 10,
 							PeriodSeconds:       10,
 						},
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{"ALL"},
+							},
+						},
 						Resources:    resourceReqs,
 						VolumeMounts: volumeMounts,
 					}},

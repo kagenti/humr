@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ToolChip as T } from "../types.js";
-import { ChevronRight, ChevronDown, Settings, Check, X, Loader } from "lucide-react";
+import { ChevronRight, ChevronDown, Check, X, Loader } from "lucide-react";
 
 const statusColor: Record<string, string> = {
   pending: "text-text-muted",
@@ -10,32 +10,42 @@ const statusColor: Record<string, string> = {
   failed: "text-danger",
 };
 
+function stripFences(text: string): string {
+  return text.replace(/^```\w*\n?/, "").replace(/\n?```\s*$/, "");
+}
+
+const statusIcon = (status: string) => {
+  if (status === "completed") return <Check size={12} className="shrink-0" />;
+  if (status === "failed") return <X size={12} className="shrink-0" />;
+  if (status === "in_progress" || status === "running") return <Loader size={11} className="anim-spin shrink-0" />;
+  return null;
+};
+
 export function ToolChip({ chip }: { chip: T }) {
   const [open, setOpen] = useState(false);
   const hasContent = chip.content && chip.content.length > 0;
   const color = statusColor[chip.status] ?? statusColor.pending;
 
   return (
-    <div className="text-[12px]">
+    <div className="text-[12px] max-w-full">
       <button
-        className={`inline-flex items-center gap-1 py-0.5 font-medium ${color} ${hasContent ? "cursor-pointer hover:opacity-80" : ""}`}
+        className={`flex items-center gap-1.5 py-1 px-2 rounded-md border border-border-light bg-surface font-medium ${color} max-w-full ${hasContent ? "cursor-pointer hover:bg-surface-raised" : ""}`}
         onClick={hasContent ? () => setOpen(o => !o) : undefined}
       >
         {hasContent ? (
-          open ? <ChevronDown size={12} /> : <ChevronRight size={12} />
-        ) : (
-          <Settings size={11} />
-        )}
-        <span className="font-semibold">{chip.title}</span>
-        {chip.status === "completed" ? <Check size={12} /> :
-         chip.status === "failed" ? <X size={12} /> :
-         (chip.status === "in_progress" || chip.status === "running") ? <Loader size={11} className="anim-spin" /> :
-         <span className="text-[10px] opacity-60">{chip.status}</span>}
+          open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />
+        ) : null}
+        {statusIcon(chip.status)}
+        <span className="font-semibold truncate">{chip.title}</span>
       </button>
       {open && chip.content && (
-        <pre className="mt-1 ml-4 px-3 py-2 rounded-lg bg-surface-raised border border-border-light text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto leading-[1.5]">
-          {chip.content.map(c => c.text).join("\n")}
-        </pre>
+        <div className="mt-1 rounded-lg bg-surface-raised border border-border-light overflow-hidden">
+          {chip.content.map((c, i) => (
+            c.text ? (
+              <pre key={i} className="px-3 py-1.5 text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]">{stripFences(c.text)}</pre>
+            ) : null
+          ))}
+        </div>
       )}
     </div>
   );

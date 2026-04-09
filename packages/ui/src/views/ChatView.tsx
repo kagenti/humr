@@ -11,6 +11,7 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { createInstanceTrpc } from "../instance-trpc.js";
+import { platform } from "../platform.js";
 import { resolveAcpMcpServers } from "../types.js";
 import type { Message, ToolChip as ToolChipT } from "../types.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "../components/StatusIndicator.js";
@@ -104,35 +105,53 @@ export function ChatView() {
     return () => clearInterval(i);
   }, [instanceTrpc, setFileTree, setOpenFile]);
 
-  // Sessions — retry on failure (pod may be waking up)
+  // Wake instance if hibernated on entry
+  useEffect(() => {
+    if (!selectedInstance) return;
+    const inst = instances.find(i => i.name === selectedInstance);
+    const state = inst ? instanceState(inst) : "unknown";
+    if (state === "hibernated") {
+      platform.instances.wake.mutate({ name: selectedInstance }).catch(() => {});
+    }
+  }, [selectedInstance, instances]);
+
+  // Sessions — show spinner, skip connect if pod not ready, retry until loaded
   const fetchSessions = useCallback(async () => {
+    if (!selectedInstance) return false;
+    const inst = useStore.getState().instances.find(x => x.name === selectedInstance);
+    if (!inst?.status?.podReady) return false;
+    try {
+      const { connection, ws } = await openConnection(
+        selectedInstance,
+        () => {},
+      );
+      await connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      });
+      const r = await connection.listSessions({ cwd: "." });
+      setSessions(r.sessions ?? []);
+      ws.close();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [selectedInstance, setSessions]);
+  useEffect(() => {
     if (!selectedInstance) return;
     setLoadingSessions(true);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const { connection, ws } = await openConnection(
-          selectedInstance,
-          () => {},
-        );
-        await connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-        });
-        const r = await connection.listSessions({ cwd: "." });
-        setSessions(r.sessions ?? []);
-        ws.close();
-        setLoadingSessions(false);
-        return;
-      } catch {
-        await new Promise(r => setTimeout(r, 3000));
-      }
-    }
-    setSessions([]);
-    setLoadingSessions(false);
-  }, [selectedInstance, setLoadingSessions, setSessions]);
-  useEffect(() => {
-    if (selectedInstance) fetchSessions();
-  }, [selectedInstance, fetchSessions]);
+    let stopped = false;
+    const attempt = () => {
+      if (stopped) return;
+      fetchSessions().then((ok) => {
+        if (stopped) return;
+        if (ok) { setLoadingSessions(false); return; }
+        setTimeout(attempt, 3000);
+      });
+    };
+    attempt();
+    return () => { stopped = true; };
+  }, [selectedInstance, fetchSessions, setLoadingSessions]);
 
   const resumeSession = useCallback(
     async (sid: string) => {
@@ -380,6 +399,7 @@ export function ChatView() {
       activeSessionIdRef.current = null;
     } finally {
       setBusy(false);
+      fetchSessions();
       textareaRef.current?.focus();
     }
   }, [
@@ -392,6 +412,7 @@ export function ChatView() {
     setBusy,
     setMessages,
     setSessionId,
+    fetchSessions,
   ]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
