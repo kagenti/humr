@@ -1,7 +1,7 @@
 # ADR-DRAFT: Multi-user authentication via Keycloak + OneCLI fork with token exchange
 
 **Date:** 2026-04-08
-**Status:** Draft
+**Status:** Accepted
 **Owner:** @tomkis
 
 ## Context
