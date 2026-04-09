@@ -80,6 +80,9 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
     wss.handleUpgrade(req, socket, head, (client) => {
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
+      // Mark session active immediately to prevent idle hibernation during connect
+      patchConfigMapAnnotation(api, namespace, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+
       // Buffer client messages until upstream is connected
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
@@ -96,7 +99,6 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
           return connectUpstream(upstreamUrl);
         })
         .then((upstream) => {
-          patchConfigMapAnnotation(api, namespace, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
           // Flush buffered messages
           for (const msg of pending) {
