@@ -94,6 +94,8 @@ controller:
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
   idleTimeout: "1h"
+  # -- Termination grace period in seconds for agent pods
+  terminationGracePeriod: 5
   resources:
     requests:
       cpu: 100m

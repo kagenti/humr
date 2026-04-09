@@ -200,6 +200,7 @@ attempt();
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
+					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					SecurityContext: podSec,
 					InitContainers: initContainers,
 					Containers: []corev1.Container{{

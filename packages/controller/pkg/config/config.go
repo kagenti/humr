@@ -18,8 +18,9 @@ type Config struct {
 	WebPort          int    // OneCLI web API port (for container-config endpoint)
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	AgentImagePullPolicy string        // ImagePullPolicy for agent pods (default: IfNotPresent)
-	IdleTimeout          time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
+	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
+	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
+	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -47,6 +48,7 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
+	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	return cfg, nil
 }
 
