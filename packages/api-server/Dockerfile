@@ -8,7 +8,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/api-server/package.json packages/api-server/
 COPY packages/api-server-api/package.json packages/api-server-api/
 
-RUN pnpm install --frozen-lockfile --filter api-server
+RUN pnpm install --frozen-lockfile --filter api-server...
 
 COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/api-server/ packages/api-server/
