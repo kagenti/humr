@@ -45,6 +45,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
+		{Name: "HOME", Value: "/home/agent"},
 	}
 	for _, e := range tmpl.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
