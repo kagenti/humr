@@ -4,6 +4,7 @@ import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
 import { ConnectorsView } from "./views/ConnectorsView.js";
 import { Shell as ShellIcon, Sun, Moon, Monitor } from "lucide-react";
+import { DialogOverlay } from "./components/DialogOverlay.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -30,7 +31,7 @@ export default function App() {
     if (!oauthResult) return;
     window.history.replaceState({}, "", window.location.pathname);
     if (oauthResult === "error") {
-      window.alert(`OAuth failed: ${params.get("message") ?? "Unknown error"}`);
+      useStore.getState().showAlert(params.get("message") ?? "Unknown error", "OAuth Failed");
     }
   }, []);
 
@@ -63,7 +64,7 @@ export default function App() {
   }, [fetchTemplates, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)
-  if (view === "chat") return <ChatView />;
+  if (view === "chat") return <><ChatView /><DialogOverlay /></>;
 
   // List + Connectors share the shell
   return (
@@ -77,6 +78,7 @@ export default function App() {
       <main className="relative z-10 mx-auto w-full max-w-[960px] px-[5%] py-10">
         {view === "connectors" ? <ConnectorsView /> : <ListView />}
       </main>
+      <DialogOverlay />
     </div>
   );
 }

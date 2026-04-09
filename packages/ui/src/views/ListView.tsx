@@ -40,6 +40,7 @@ export function ListView() {
   const deleteInstance = useStore(s => s.deleteInstance);
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
+  const showConfirm = useStore(s => s.showConfirm);
 
   const [showTmplDlg, setShowTmplDlg] = useState(false);
   const [busyTmpl, setBusyTmpl] = useState(false);
@@ -137,7 +138,7 @@ export function ListView() {
                         <Plus size={12} /> Instance
                       </button>
                       <button
-                        onClick={async () => { if (!confirm(`Delete template "${tmpl.name}"?`)) return; setDelTmpl(tmpl.name); await deleteTemplate(tmpl.name); setDelTmpl(null); }}
+                        onClick={async () => { if (!await showConfirm(`Delete template "${tmpl.name}"?`, "Delete Template")) return; setDelTmpl(tmpl.name); await deleteTemplate(tmpl.name); setDelTmpl(null); }}
                         disabled={delTmpl === tmpl.name}
                         className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
@@ -179,7 +180,7 @@ export function ListView() {
                         )}
 
                         <button
-                          onClick={e => { e.stopPropagation(); if (confirm(`Delete "${inst.name}"?`)) deleteInstance(inst.name); }}
+                          onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.name); }}
                           className="h-7 w-7 rounded-md border-2 border-border-light flex items-center justify-center text-text-muted hover:text-danger hover:border-danger transition-colors"
                           title="Delete"
                         >

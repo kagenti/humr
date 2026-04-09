@@ -9,6 +9,8 @@ export function SchedulesPanel() {
   const fetchSchedules = useStore(s => s.fetchSchedules);
   const toggleSchedule = useStore(s => s.toggleSchedule);
   const deleteSchedule = useStore(s => s.deleteSchedule);
+  const showAlert = useStore(s => s.showAlert);
+  const showConfirm = useStore(s => s.showConfirm);
 
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -23,7 +25,7 @@ export function SchedulesPanel() {
       if (f.type === "cron") await platform.schedules.createCron.mutate({ name: f.name, instanceName: inst, cron: f.cron, task: f.task });
       else await platform.schedules.createHeartbeat.mutate({ name: f.name, instanceName: inst, intervalMinutes: f.mins });
       setShow(false); fetchSchedules();
-    } catch (e) { alert(e instanceof Error ? e.message : "Failed"); }
+    } catch (e) { showAlert(e instanceof Error ? e.message : "Failed", "Schedule Error"); }
     finally { setBusy(false); }
   };
 
@@ -89,7 +91,7 @@ export function SchedulesPanel() {
             </button>
             <button
               className="text-text-muted hover:text-danger transition-colors"
-              onClick={() => { if (confirm(`Delete "${s.name}"?`)) deleteSchedule(s.name); }}
+              onClick={async () => { if (await showConfirm(`Delete schedule "${s.name}"?`, "Delete Schedule")) deleteSchedule(s.name); }}
             >
               <X size={14} />
             </button>
