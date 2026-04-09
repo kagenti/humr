@@ -3,6 +3,7 @@
 **Date:** 2026-04-08
 **Status:** Draft
 **Owner:** @tomkis
+**PRD:** [Multi-User Support PRD](../specs/2026-04-09-multiuser-prd.md)
 
 ## Context
 
