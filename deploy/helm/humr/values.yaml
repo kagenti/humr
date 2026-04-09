@@ -90,6 +90,7 @@ apiServer:
 controller:
   image: humr-controller:latest
   imagePullPolicy: Never
+  caCertInitImage: busybox:stable
   agentImagePullPolicy: Never
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)

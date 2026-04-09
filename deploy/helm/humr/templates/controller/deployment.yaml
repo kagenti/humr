@@ -39,6 +39,8 @@ spec:
               value: {{ include "humr.onecli.fullname" . }}
             - name: ONECLI_GATEWAY_PORT
               value: {{ .Values.onecli.gateway.port | quote }}
+            - name: CA_CERT_INIT_IMAGE
+              value: {{ .Values.controller.caCertInitImage | default "busybox:stable" }}
             - name: AGENT_IMAGE_PULL_POLICY
               value: {{ .Values.controller.agentImagePullPolicy | default "IfNotPresent" }}
             - name: HUMR_IDLE_TIMEOUT

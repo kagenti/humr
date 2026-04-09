@@ -6,7 +6,7 @@ import { spawnAcpSession } from "./acp-bridge.js";
 const TriggerFile = z.object({
   schedule: z.string(),
   timestamp: z.string(),
-  prompt: z.string(),
+  task: z.string(),
   params: z.record(z.string(), z.unknown()).optional(),
   mcpServers: z.array(z.unknown()).default([]),
 });
@@ -150,7 +150,7 @@ async function runTriggerSession(trigger: TriggerPayload, options: TriggerWatche
 
     const result = await rpcRequest("session/prompt", {
       sessionId,
-      prompt: [{ type: "text", text: trigger.prompt }],
+      prompt: [{ type: "text", text: trigger.task }],
     });
 
     process.stderr.write(`[trigger] Session ${sessionId} completed: ${result.stopReason ?? "done"}\n`);
