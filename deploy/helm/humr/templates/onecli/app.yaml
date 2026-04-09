@@ -51,6 +51,8 @@ metadata:
     app.kubernetes.io/component: onecli
 spec:
   replicas: {{ .Values.onecli.replicas }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/component: onecli
