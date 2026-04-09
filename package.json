@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter harness-runtime dev",
-    "start": "pnpm --filter harness-runtime start",
+    "dev": "pnpm --filter agent-runtime dev",
+    "start": "pnpm --filter agent-runtime start",
     "ui": "pnpm --filter humr-ui dev",
     "api-server": "pnpm --filter api-server dev",
     "typecheck": "pnpm -r --parallel run typecheck",
-    "docker:humr-base:build": "pnpm --filter harness-runtime build && cp -r packages/harness-runtime/dist packages/humr-base/dist && docker build -t humr-base packages/humr-base",
-    "docker:humr-base:start": "docker rm -f humr-base 2>/dev/null; docker run --name humr-base -p 3000:3000 humr-base",
+    "docker:humr-base:build": "pnpm --filter agent-runtime build && cp -r packages/agent-runtime/dist packages/humr-base/dist && docker build -t humr-base packages/humr-base",
+    "docker:humr-base:start": "docker rm -f humr-base 2>/dev/null; docker run --name humr-base -p 8080:8080 humr-base",
     "docker:example-agent:build": "pnpm docker:humr-base:build && docker build -t humr-example-agent packages/example-agent",
     "docker:example-agent:start": "docker rm -f humr-example-agent 2>/dev/null; docker run --name humr-example-agent -p 3000:3000 humr-example-agent"
   },

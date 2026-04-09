@@ -144,7 +144,7 @@ What OneCLI needs for this project (contribute upstream or extend):
 A long-running pod (StatefulSet with replicas: 0 or 1) per instance. StatefulSet provides stable pod name (`{instance}-0`), stable DNS via headless Service, and built-in PVC lifecycle management via `volumeClaimTemplates`. Contains:
 
 - **Harness container:** Claude Code (first target), or any other harness. Runs unmodified. Configured via environment variables and mounted files (CLAUDE.md, system prompt, rules).
-- **ACP server:** Listens on a WebSocket port (default 8080). The API Server connects to this port when a user opens a chat. The bridge translates between the WebSocket connection and the harness's ACP interface (stdio). This is a direct evolution of the current `harness-runtime` — same Node.js codebase, same "listen on a port" pattern.
+- **ACP server:** Listens on a WebSocket port (default 8080). The API Server connects to this port when a user opens a chat. The bridge translates between the WebSocket connection and the harness's ACP interface (stdio). This is a direct evolution of the current `agent-runtime` — same Node.js codebase, same "listen on a port" pattern.
 - **Trigger watcher:** Monitors `/workspace/.triggers/` directory for new JSON files (written by Controller via `kubectl exec` on schedule fire). When a new file appears, the harness creates a new ACP session with the prompt from the trigger file, then deletes it. Same code path as a user starting a new session. No cron library inside the harness.
 - **Readiness probe:** HTTP GET on the ACP port (e.g. `/healthz`). The pod is ready only when the ACP server is listening and the harness process is alive. This ensures the API Server (and scheduled triggers) don't attempt to connect before the agent is ready.
 - **Liveness probe:** Same endpoint. If the harness process dies, the probe fails, kubelet restarts the container, PVCs remain mounted.
@@ -545,7 +545,7 @@ The ACP connection topology (inbound to agent):
 5. If agent pod is unavailable (hibernated, crashed), API Server returns an error to UI with option to wake
 6. API Server disconnects from agent pod when user closes chat (no persistent connection)
 
-This is the same pattern as the current prototype's harness-runtime (listen on a port, accept connections), which means the agent pod code requires minimal changes. The API Server is the only external component that connects to agent pods — the NetworkPolicy enforces this. Scheduled execution doesn't require external ACP connections; the harness creates sessions internally.
+This is the same pattern as the current prototype's agent-runtime (listen on a port, accept connections), which means the agent pod code requires minimal changes. The API Server is the only external component that connects to agent pods — the NetworkPolicy enforces this. Scheduled execution doesn't require external ACP connections; the harness creates sessions internally.
 
 ACP is the wire protocol for all agent interaction, whether interactive (user via API Server) or scheduled (harness-internal).
 
@@ -581,7 +581,7 @@ Schedule state is split across ConfigMap keys: `spec.yaml` (user configuration, 
 packages/
   controller/          # Go — K8s reconciler + scheduler (standalone Go module)
   api-server/          # TypeScript — REST + ACP WebSocket relay + static UI serving
-  agent-runtime/       # TypeScript — ACP WebSocket server inside agent pod (evolution of harness-runtime)
+  agent-runtime/       # TypeScript — ACP WebSocket server inside agent pod (evolution of agent-runtime)
   ui/                  # React + Vite — instance management, chat, file browser
 deploy/
   helm/adk/            # Helm chart — all components + OneCLI + PostgreSQL
@@ -602,7 +602,7 @@ The Go controller is a standalone Go module (`packages/controller/go.mod`). The 
 | OneCLI Gateway | Rust (existing) | Used directly, high-performance MITM proxy |
 | Web UI | React 18 + Vite | Existing prototype, WebSocket support, rich chat interface |
 | Agent harness | Claude Code (first target) | Highest adoption, clearest pattern |
-| Agent pod runtime | TypeScript / Node.js | Evolution of existing harness-runtime prototype |
+| Agent pod runtime | TypeScript / Node.js | Evolution of existing agent-runtime prototype |
 | Storage | Filesystem PVCs | Pay-per-use on all cloud providers |
 | Database | **None** | K8s ConfigMaps + Secrets. Controller + API Server are stateless. |
 | Scheduling | In-process (Go, Controller) | Schedule state in ConfigMaps, no external dependency |
@@ -653,7 +653,7 @@ The Controller interacts with OneCLI programmatically:
 - Web UI (React): instance list, chat, file browser, session management, schedule CRUD
 - Claude Code as first harness
 - Agent template / instance ConfigMap format with spec/status key split
-- Agent pod: evolution of existing harness-runtime (listens on ACP port, accepts connections from API Server)
+- Agent pod: evolution of existing agent-runtime (listens on ACP port, accepts connections from API Server)
 - Readiness + liveness probes on agent pods
 
 **Out of scope for v1:**

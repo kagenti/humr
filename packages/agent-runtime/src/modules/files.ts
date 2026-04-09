@@ -5,7 +5,7 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
-import type { FilesContext } from "harness-runtime-api";
+import type { FilesContext } from "agent-runtime-api";
 
 const EXCLUDE = new Set([".git", ".claude", "node_modules", ".DS_Store"]);
 

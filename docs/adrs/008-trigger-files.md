@@ -12,7 +12,7 @@ The delivery mechanism must work regardless of which harness is running and must
 
 ## Decision
 
-The Controller delivers triggers via `kubectl exec`, writing a JSON file into `/workspace/.triggers/{timestamp}.json` inside the running pod. The **harness-runtime** (the platform's adapter layer inside the pod) watches that directory, creates a new ACP session per trigger file, and deletes the file after processing. The actual harness (Claude Code, Pyre, etc.) is unaware of trigger files — it just receives a normal ACP prompt. This is a file-based integration contract: the controller doesn't call the harness directly, it drops a file. Anything that watches the directory works.
+The Controller delivers triggers via `kubectl exec`, writing a JSON file into `/workspace/.triggers/{timestamp}.json` inside the running pod. The **agent-runtime** (the platform's adapter layer inside the pod) watches that directory, creates a new ACP session per trigger file, and deletes the file after processing. The actual harness (Claude Code, Pyre, etc.) is unaware of trigger files — it just receives a normal ACP prompt. This is a file-based integration contract: the controller doesn't call the harness directly, it drops a file. Anything that watches the directory works.
 
 - The Controller owns all cron scheduling (harness has no internal cron)
 - Trigger files contain the schedule name, timestamp, and any configured parameters

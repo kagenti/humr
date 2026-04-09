@@ -177,6 +177,7 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 					queue.AddRateLimited(key)
 					return
 				}
+				slog.Info("synced schedule", "name", name)
 			}
 			queue.Forget(key)
 		}()

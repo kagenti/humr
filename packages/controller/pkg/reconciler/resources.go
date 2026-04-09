@@ -96,7 +96,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		}
 	}
 
-	// CA cert volume (emptyDir, populated by init container)
+	// CA cert volume (emptyDir, populated by init container via gateway TLS handshake)
 	volumes = append(volumes, corev1.Volume{
 		Name:         "ca-cert",
 		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
@@ -114,22 +114,42 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		resourceReqs.Limits = toResourceList(tmpl.Resources.Limits)
 	}
 
-	// Init containers: CA cert fetch (platform) + optional user init
+	// Init containers: CA cert extraction (platform) + optional user init
 	//
-	// The CA init container fetches the MITM CA certificate from the OneCLI web API
-	// by proxying the request through the gateway. This avoids needing a separate
-	// NetworkPolicy rule for the web port — the gateway forwards to localhost:10254
-	// inside the same pod.
-	caCertScript := fmt.Sprintf(
-		`export http_proxy="http://x:${ONECLI_ACCESS_TOKEN}@%s:%d"
-until wget -qO /tmp/config.json "%s/api/container-config" 2>/dev/null; do sleep 2; done
-awk -F'"caCertificate":"' 'NF>1{sub(/".*$/,"",$2); gsub(/\\n/,"\n",$2); print $2}' /tmp/config.json > /etc/humr/ca/ca.crt`,
-		cfg.GatewayFQDN(), cfg.GatewayPort, cfg.WebURL())
+	// The CA init container extracts the MITM CA certificate by performing a TLS
+	// handshake through the gateway proxy. OneCLI's gateway and web API may use
+	// different CA certs, so we extract from the actual TLS handshake.
+	// Uses the agent image (already pulled for the main container — shared layers).
+	caCertScript := fmt.Sprintf(`node -e '
+var net=require("net"),tls=require("tls"),crypto=require("crypto"),fs=require("fs");
+var gw="%s",port=%d;
+function attempt(){
+  var s=net.connect(port,gw);
+  s.on("connect",function(){
+    var auth=Buffer.from("x:"+process.env.ONECLI_ACCESS_TOKEN).toString("base64");
+    s.write("CONNECT api.anthropic.com:443 HTTP/1.1\r\nHost: api.anthropic.com\r\nProxy-Authorization: Basic "+auth+"\r\n\r\n");
+  });
+  s.once("data",function(d){
+    if(d.toString().indexOf(" 200 ")<0){s.destroy();return retry();}
+    var t=tls.connect({socket:s,servername:"api.anthropic.com",rejectUnauthorized:false},function(){
+      var peer=t.getPeerCertificate(true);
+      var ca=new crypto.X509Certificate(peer.issuerCertificate.raw);
+      fs.writeFileSync("/etc/humr/ca/ca.crt",ca.toString());
+      process.stderr.write("extracted gateway CA: "+ca.subject+"\n");
+      t.destroy();process.exit(0);
+    });
+    t.on("error",function(e){process.stderr.write("tls: "+e.message+"\n");s.destroy();retry()});
+  });
+  s.on("error",function(e){process.stderr.write("connect: "+e.message+"\n");retry()});
+}
+function retry(){setTimeout(attempt,2000);}
+attempt();
+'`, cfg.GatewayFQDN(), cfg.GatewayPort)
 
 	initContainers := []corev1.Container{{
 		Name:            "fetch-ca-cert",
-		Image:           cfg.CACertInitImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		Image:           tmpl.Image,
+		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
 		Command:         []string{"sh", "-c", caCertScript},
 		Env: []corev1.EnvVar{{
 			Name: "ONECLI_ACCESS_TOKEN",

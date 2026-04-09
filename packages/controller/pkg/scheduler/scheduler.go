@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -77,6 +78,7 @@ func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 		return fmt.Errorf("schedule %s: invalid cron %q: %w", name, spec.Cron, err)
 	}
 	s.schedules[name] = entryID
+	slog.Info("cron registered", "schedule", name, "cron", spec.Cron)
 	return nil
 }
 
@@ -120,7 +122,10 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 		if err != nil {
 			return fmt.Errorf("exec into %s: %w", podName, err)
 		}
-		if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{}); err != nil {
+		if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+			Stdout: io.Discard,
+			Stderr: io.Discard,
+		}); err != nil {
 			return fmt.Errorf("exec stream to %s: %w", podName, err)
 		}
 	}
@@ -135,6 +140,8 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 			nextRun = entry.Next.UTC().Format(time.RFC3339)
 		}
 	}
-	reconciler.WriteScheduleStatus(ctx, s.client, s.config.Namespace, scheduleName, types.NewScheduleStatus(now, nextRun, "success"))
+	if err := reconciler.WriteScheduleStatus(ctx, s.client, s.config.Namespace, scheduleName, types.NewScheduleStatus(now, nextRun, "success")); err != nil {
+		return fmt.Errorf("writing status for %s: %w", scheduleName, err)
+	}
 	return nil
 }

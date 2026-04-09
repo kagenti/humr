@@ -1,5 +1,5 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import type { AppRouter } from "harness-runtime-api";
+import type { AppRouter } from "agent-runtime-api";
 
 export function createInstanceTrpc(instanceId: string) {
   return createTRPCClient<AppRouter>({
