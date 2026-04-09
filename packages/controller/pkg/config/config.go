@@ -21,6 +21,7 @@ type Config struct {
 	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
+	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -46,6 +47,7 @@ func LoadFromEnv() (*Config, error) {
 		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}
+	cfg.CACertInitImage = envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable")
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))

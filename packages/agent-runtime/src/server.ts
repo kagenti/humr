@@ -58,6 +58,28 @@ wss.on("connection", (ws) => {
 
   session.onMessage((line) => {
     if (ws.readyState === WebSocket.OPEN) {
+      try {
+        const msg = JSON.parse(line);
+        const hint =
+          "Authentication Error: Ensure the API/OAuth credential secret is correct and linked to this agent in the OneCLI dashboard (Agents > select agent > Secrets).\n\nError: ";
+
+        // JSON-RPC error response (e.g. internal error wrapping the API failure)
+        if (msg.error?.message?.includes("authentication_error")) {
+          msg.error.message = hint + msg.error.message;
+          ws.send(JSON.stringify(msg));
+          return;
+        }
+
+        // Session update notification (agent_message_chunk with error text)
+        const text = msg.params?.update?.content?.text;
+        if (typeof text === "string" && text.includes("authentication_error")) {
+          msg.params.update.content.text = hint + msg.params.update.content.text;
+          ws.send(JSON.stringify(msg));
+          return;
+        }
+      } catch {
+        // not JSON — relay as-is
+      }
       ws.send(line);
     }
   });
