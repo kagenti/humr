@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { StatusIndicator } from "../components/StatusIndicator.js";
 import { Unplug, RefreshCw } from "lucide-react";
+import { authFetch } from "../auth.js";
 
 export function ConnectorsView() {
   const [connections, setConnections] = useState<{ hostname: string; connectedAt: string; expired: boolean }[]>([]);
@@ -17,7 +18,7 @@ export function ConnectorsView() {
     // Only show loading spinner on first load — subsequent refreshes are silent
     if (!loaded.current) setLoading(true);
     try {
-      const r = await fetch("/api/mcp/connections");
+      const r = await authFetch("/api/mcp/connections");
       const d = await r.json();
       if (Array.isArray(d)) setConnections(d);
       loaded.current = true;
@@ -31,7 +32,7 @@ export function ConnectorsView() {
     if (!url.trim()) return;
     setConnecting(true);
     try {
-      const res = await fetch("/api/oauth/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mcpServerUrl: url.trim() }) });
+      const res = await authFetch("/api/oauth/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mcpServerUrl: url.trim() }) });
       const data = (await res.json()) as { authUrl?: string; error?: string };
       if (data.error) { showAlert(data.error, "OAuth Error"); setConnecting(false); return; }
       if (data.authUrl) { sessionStorage.setItem("humr-return-view", "connectors"); window.location.href = data.authUrl; }
@@ -42,7 +43,7 @@ export function ConnectorsView() {
     if (!await showConfirm(`Disconnect "${hostname}"?`, "Disconnect Server")) return;
     setDisconnecting(hostname);
     try {
-      await fetch(`/api/mcp/connections/${encodeURIComponent(hostname)}`, { method: "DELETE" });
+      await authFetch(`/api/mcp/connections/${encodeURIComponent(hostname)}`, { method: "DELETE" });
       await load();
     } catch (err) { showAlert(`${err}`, "Disconnect Failed"); }
     setDisconnecting(null);

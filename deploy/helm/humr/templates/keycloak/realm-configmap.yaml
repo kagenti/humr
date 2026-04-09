@@ -1,0 +1,92 @@
+{{- if .Values.keycloak.enabled }}
+{{- $appName := include "humr.keycloak.fullname" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $appName }}-realm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+data:
+  humr-realm.json: |
+    {
+      "realm": {{ .Values.keycloak.realm | quote }},
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": false,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "clientScopes": [
+        {
+          "name": "humr-api-audience",
+          "protocol": "openid-connect",
+          "attributes": {
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "humr-api-audience-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.custom.audience": {{ .Values.keycloak.apiAudience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "clients": [
+        {
+          "clientId": {{ .Values.keycloak.clientId | quote }},
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            "http://humr.localhost:4444/*",
+            "http://humr.localtest.me:4444/*",
+            "http://localhost:5173/*"
+          ],
+          "webOrigins": [
+            "http://humr.localhost:4444",
+            "http://humr.localtest.me:4444",
+            "http://localhost:5173"
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          },
+          "defaultClientScopes": [
+            "web-origins",
+            "acr",
+            "profile",
+            "email",
+            "humr-api-audience"
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": {{ .Values.keycloak.testUser.username | quote }},
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Dev",
+          "lastName": "User",
+          "email": "dev@humr.local",
+          "credentials": [
+            {
+              "type": "password",
+              "value": {{ .Values.keycloak.testUser.password | quote }},
+              "temporary": false
+            }
+          ]
+        }
+      ]
+    }
+{{- end }}

@@ -1,8 +1,31 @@
+{{- if .Values.postgres.enabled }}
+{{- $pgName := include "humr.postgres.fullname" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $pgName }}-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+    # Create additional databases beyond the default ($POSTGRES_DB).
+    # This script runs only on first PGDATA init.
+    for db in onecli keycloak; do
+      echo "Creating database '$db' (if not exists)..."
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
+        SELECT 'CREATE DATABASE $db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$db')\gexec
+    SQL
+    done
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "humr.onecli.postgres.fullname" . }}
+  name: {{ $pgName }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "humr.labels" . | nindent 4 }}
@@ -21,13 +44,13 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "humr.onecli.postgres.fullname" . }}
+  name: {{ $pgName }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
-  serviceName: {{ include "humr.onecli.postgres.fullname" . }}
+  serviceName: {{ $pgName }}
   replicas: 1
   selector:
     matchLabels:
@@ -41,20 +64,20 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: {{ .Values.onecli.postgres.image }}
+          image: {{ .Values.postgres.image }}
           ports:
             - containerPort: 5432
               name: postgres
           env:
             - name: POSTGRES_USER
-              value: {{ .Values.onecli.postgres.user | quote }}
+              value: {{ .Values.postgres.user | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  name: {{ include "humr.postgres.secrets.fullname" . }}
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
-              value: {{ .Values.onecli.postgres.database | quote }}
+              value: "postgres"
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           readinessProbe:
@@ -62,7 +85,7 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - {{ .Values.onecli.postgres.user }}
+                - {{ .Values.postgres.user }}
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -72,24 +95,31 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - {{ .Values.onecli.postgres.user }}
+                - {{ .Values.postgres.user }}
             initialDelaySeconds: 15
             periodSeconds: 15
             timeoutSeconds: 3
           resources:
-            {{- toYaml .Values.onecli.postgres.resources | nindent 12 }}
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
           volumeMounts:
             - name: pgdata
               mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: {{ $pgName }}-init
   volumeClaimTemplates:
     - metadata:
         name: pgdata
       spec:
         accessModes:
           - ReadWriteOnce
-        {{- if .Values.onecli.postgres.storageClass }}
-        storageClassName: {{ .Values.onecli.postgres.storageClass | quote }}
+        {{- if .Values.postgres.storageClass }}
+        storageClassName: {{ .Values.postgres.storageClass | quote }}
         {{- end }}
         resources:
           requests:
-            storage: {{ .Values.onecli.postgres.storage }}
+            storage: {{ .Values.postgres.storage }}
+{{- end }}

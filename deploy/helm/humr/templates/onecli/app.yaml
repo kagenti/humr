@@ -65,11 +65,11 @@ spec:
     spec:
       initContainers:
         - name: wait-for-postgres
-          image: {{ .Values.onecli.postgres.image }}
+          image: {{ .Values.postgres.image }}
           command: ["sh", "-c"]
           args:
             - |
-              until pg_isready -h {{ include "humr.onecli.postgres.fullname" . }} -U {{ .Values.onecli.postgres.user }}; do
+              until pg_isready -h {{ include "humr.onecli.db.host" . }} -U {{ .Values.onecli.db.user }}; do
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
@@ -85,7 +85,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  name: {{ include "humr.onecli.db.password.secretName" . }}
                   key: POSTGRES_PASSWORD
             - name: DATABASE_URL
               value: {{ include "humr.onecli.postgres.dsn" . | quote }}

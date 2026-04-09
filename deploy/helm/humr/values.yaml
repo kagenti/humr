@@ -1,28 +1,37 @@
 # -- Target namespace for agent workloads (instances, templates, schedules)
 agentNamespace: humr-agents
 
+# -- Shared local PostgreSQL instance
+# Set enabled: false when using external/cloud DBs for all services.
+postgres:
+  enabled: true
+  image: postgres:18-alpine
+  user: humr
+  # password is auto-generated if not set
+  password: ""
+  storage: 5Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
   image: ghcr.io/onecli/onecli:1.14.1
   replicas: 1
 
-  # -- PostgreSQL configuration (OneCLI dependency)
-  postgres:
-    image: postgres:18-alpine
-    user: onecli
-    # password is auto-generated if not set
+  # -- Database connection (empty host = use shared local postgres)
+  db:
+    host: ""
+    port: 5432
+    user: humr
     password: ""
     database: onecli
-    storage: 5Gi
-    storageClass: ""
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
 
   # -- Gateway settings (Rust binary, runs inside the OneCLI container)
   gateway:
@@ -42,6 +51,44 @@ onecli:
     size: 1Gi
 
   # -- Combined container resources
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# -- Keycloak (OIDC identity provider)
+keycloak:
+  enabled: true
+  image: quay.io/keycloak/keycloak:26.2
+  port: 8080
+
+  # -- Admin credentials (for Keycloak admin console)
+  admin:
+    user: admin
+    # password is auto-generated if not set
+    password: ""
+
+  # -- Realm and OIDC client configuration
+  realm: humr
+  clientId: humr-ui
+  apiAudience: humr-api
+
+  # -- Test user bootstrapped via realm import
+  testUser:
+    username: dev
+    password: dev
+
+  # -- Database connection (empty host = use shared local postgres)
+  db:
+    host: ""
+    port: 5432
+    user: humr
+    password: ""
+    database: keycloak
+
   resources:
     requests:
       cpu: 200m

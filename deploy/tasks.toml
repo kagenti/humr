@@ -137,18 +137,22 @@ HELM_VALUES_FLAG=""
 if [ -n "$HELM_VALUES" ]; then
   HELM_VALUES_FLAG="-f $HELM_VALUES"
 fi
+# Dev-cluster defaults (overridable via --set)
+DEV_DEFAULTS=(--set keycloak.admin.password=admin)
+
 if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
   echo "Upgrading Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr $HELM_VALUES_FLAG "${HELM_EXTRA_ARGS[@]}"
+  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr $HELM_VALUES_FLAG "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 else
   echo "Installing Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr $HELM_VALUES_FLAG "${HELM_EXTRA_ARGS[@]}"
+  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr $HELM_VALUES_FLAG "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 fi
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 echo "Restarting pods..."
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui humr-onecli
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui humr-onecli humr-keycloak
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-onecli --timeout=120s
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-keycloak --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-controller --timeout=60s
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s

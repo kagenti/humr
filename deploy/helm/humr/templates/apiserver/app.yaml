@@ -52,6 +52,18 @@ spec:
               value: {{ .Values.agentNamespace | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            {{- if .Values.keycloak.enabled }}
+            - name: KEYCLOAK_URL
+              value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
+            - name: KEYCLOAK_EXTERNAL_URL
+              value: "http://keycloak.localhost:4444"
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.clientId | quote }}
+            - name: KEYCLOAK_API_AUDIENCE
+              value: {{ .Values.keycloak.apiAudience | quote }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: http

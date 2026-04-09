@@ -1,10 +1,16 @@
 Humr has been deployed!
 
 Components:
-  - PostgreSQL: {{ include "humr.onecli.postgres.fullname" . }}.{{ .Release.Namespace }}.svc:5432
-  - OneCLI:     {{ printf "%s-onecli" (include "humr.fullname" .) }}.{{ .Release.Namespace }}.svc
+  - PostgreSQL: {{ include "humr.postgres.fullname" . }}.{{ .Release.Namespace }}.svc:5432
+  - OneCLI:     {{ include "humr.onecli.fullname" . }}.{{ .Release.Namespace }}.svc
     - Gateway:  port {{ .Values.onecli.gateway.port }}
     - Web:      port {{ .Values.onecli.web.port }}
+{{- if .Values.keycloak.enabled }}
+  - Keycloak:   {{ include "humr.keycloak.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.keycloak.port }}
+    - Admin:    http://keycloak.localhost:4444 (user: {{ .Values.keycloak.admin.user }})
+    - Realm:    {{ .Values.keycloak.realm }}
+    - Test user: {{ .Values.keycloak.testUser.username }} / {{ .Values.keycloak.testUser.password }}
+{{- end }}
 
 Agent namespace: {{ .Values.agentNamespace }}
 
@@ -20,4 +26,8 @@ To verify:
 
 To access services:
   mise run cluster:proxy     # forwards Traefik to localhost:4444
-  # then open: http://onecli.localhost:4444 (or onecli.localtest.me:4444)
+  # then open: http://humr.localhost:4444 (UI)
+  #            http://onecli.localhost:4444 (OneCLI)
+{{- if .Values.keycloak.enabled }}
+  #            http://keycloak.localhost:4444 (Keycloak admin)
+{{- end }}

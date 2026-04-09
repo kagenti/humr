@@ -28,6 +28,7 @@ const LABEL_INSTANCE = "agent-instance";
 const LABEL_TEMPLATE_REF = "humr.ai/template";
 const LABEL_SCHEDULE = "agent-schedule";
 const LABEL_INSTANCE_REF = "humr.ai/instance";
+const LABEL_OWNER = "humr.ai/owner";
 const SPEC_KEY = "spec.yaml";
 const STATUS_KEY = "status.yaml";
 
@@ -48,6 +49,10 @@ const DEFAULT_TEMPLATE_SPEC = {
     readOnlyRootFilesystem: false,
   },
 };
+
+function hasOwner(cm: k8s.V1ConfigMap, owner: string): boolean {
+  return cm.metadata?.labels?.[LABEL_OWNER] === owner;
+}
 
 function is404(err: unknown): boolean {
   return (
@@ -152,13 +157,25 @@ export function createK8sInstancesContext(
   namespace: string,
   api: k8s.CoreV1Api,
   templates: TemplatesContext,
+  owner: string,
 ): InstancesContext {
+  /** Read a ConfigMap and verify ownership. Returns null if not found or not owned. */
+  async function readOwned(name: string): Promise<k8s.V1ConfigMap | null> {
+    try {
+      const cm = await api.readNamespacedConfigMap({ name, namespace });
+      return hasOwner(cm, owner) ? cm : null;
+    } catch (err) {
+      if (is404(err)) return null;
+      throw err;
+    }
+  }
+
   return {
     async list() {
       const [configMaps, pods] = await Promise.all([
         api.listNamespacedConfigMap({
           namespace,
-          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE}`,
+          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE},${LABEL_OWNER}=${owner}`,
         }),
         api.listNamespacedPod({
           namespace,
@@ -178,18 +195,14 @@ export function createK8sInstancesContext(
     },
 
     async get(name) {
+      const cm = await readOwned(name);
+      if (!cm) return null;
+      const inst = parseInstance(cm);
+      let pod: k8s.V1Pod | undefined;
       try {
-        const cm = await api.readNamespacedConfigMap({ name, namespace });
-        const inst = parseInstance(cm);
-        let pod: k8s.V1Pod | undefined;
-        try {
-          pod = await api.readNamespacedPod({ name: `${name}-0`, namespace });
-        } catch {}
-        return enrichWithPodStatus(inst, pod);
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+        pod = await api.readNamespacedPod({ name: `${name}-0`, namespace });
+      } catch {}
+      return enrichWithPodStatus(inst, pod);
     },
 
     async create(input: CreateInstanceInput) {
@@ -214,6 +227,7 @@ export function createK8sInstancesContext(
           labels: {
             [LABEL_TYPE]: LABEL_INSTANCE,
             [LABEL_TEMPLATE_REF]: input.templateName,
+            [LABEL_OWNER]: owner,
           },
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
@@ -226,16 +240,8 @@ export function createK8sInstancesContext(
     },
 
     async update(input: UpdateInstanceInput) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({
-          name: input.name,
-          namespace,
-        });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+      const cm = await readOwned(input.name);
+      if (!cm) return null;
 
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
       if (input.env !== undefined) spec.env = input.env;
@@ -252,13 +258,8 @@ export function createK8sInstancesContext(
     },
 
     async wake(name) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({ name, namespace });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+      const cm = await readOwned(name);
+      if (!cm) return null;
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
       spec.desiredState = "running";
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
@@ -271,6 +272,9 @@ export function createK8sInstancesContext(
     },
 
     async delete(name) {
+      const cm = await readOwned(name);
+      if (!cm) return;
+
       await api.deleteNamespacedConfigMap({ name, namespace });
 
       try {
@@ -317,24 +321,31 @@ export function createK8sSchedulesContext(
   namespace: string,
   api: k8s.CoreV1Api,
   instances: InstancesContext,
+  owner: string,
 ): SchedulesContext {
+  async function readOwned(name: string): Promise<k8s.V1ConfigMap | null> {
+    try {
+      const cm = await api.readNamespacedConfigMap({ name, namespace });
+      return hasOwner(cm, owner) ? cm : null;
+    } catch (err) {
+      if (is404(err)) return null;
+      throw err;
+    }
+  }
+
   return {
     async list(instanceName) {
       const res = await api.listNamespacedConfigMap({
         namespace,
-        labelSelector: `${LABEL_TYPE}=${LABEL_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceName}`,
+        labelSelector: `${LABEL_TYPE}=${LABEL_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceName},${LABEL_OWNER}=${owner}`,
       });
       return (res.items ?? []).map(parseSchedule);
     },
 
     async get(name) {
-      try {
-        const cm = await api.readNamespacedConfigMap({ name, namespace });
-        return parseSchedule(cm);
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+      const cm = await readOwned(name);
+      if (!cm) return null;
+      return parseSchedule(cm);
     },
 
     async createCron(input: CreateCronScheduleInput) {
@@ -361,6 +372,7 @@ export function createK8sSchedulesContext(
             [LABEL_TYPE]: LABEL_SCHEDULE,
             [LABEL_INSTANCE_REF]: input.instanceName,
             [LABEL_TEMPLATE_REF]: inst.spec.templateName,
+            [LABEL_OWNER]: owner,
           },
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
@@ -391,6 +403,7 @@ export function createK8sSchedulesContext(
             [LABEL_TYPE]: LABEL_SCHEDULE,
             [LABEL_INSTANCE_REF]: input.instanceName,
             [LABEL_TEMPLATE_REF]: inst.spec.templateName,
+            [LABEL_OWNER]: owner,
           },
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
@@ -400,17 +413,14 @@ export function createK8sSchedulesContext(
     },
 
     async delete(name) {
+      const cm = await readOwned(name);
+      if (!cm) return;
       await api.deleteNamespacedConfigMap({ name, namespace });
     },
 
     async toggle(name) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({ name, namespace });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+      const cm = await readOwned(name);
+      if (!cm) return null;
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
       spec.enabled = !spec.enabled;
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
@@ -466,6 +476,21 @@ export async function patchConfigMapAnnotation(
   if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
   cm.metadata!.annotations[key] = value;
   await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+}
+
+/** Verify that an instance ConfigMap is owned by the given user. */
+export async function verifyInstanceOwner(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  instanceId: string,
+  owner: string,
+): Promise<boolean> {
+  try {
+    const cm = await api.readNamespacedConfigMap({ name: instanceId, namespace });
+    return hasOwner(cm, owner);
+  } catch {
+    return false;
+  }
 }
 
 export { createApi };

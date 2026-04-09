@@ -45,6 +45,22 @@ Chart label
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* ---- Shared PostgreSQL ---- */}}
+
+{{/*
+Shared PostgreSQL fullname (StatefulSet + Service)
+*/}}
+{{- define "humr.postgres.fullname" -}}
+{{- printf "%s-postgres" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Shared PostgreSQL secrets name
+*/}}
+{{- define "humr.postgres.secrets.fullname" -}}
+{{- printf "%s-postgres-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/* ---- OneCLI resources ---- */}}
 
 {{/*
@@ -55,24 +71,84 @@ OneCLI app name (Deployment + Service)
 {{- end }}
 
 {{/*
-OneCLI PostgreSQL fullname
-*/}}
-{{- define "humr.onecli.postgres.fullname" -}}
-{{- printf "%s-onecli-postgres" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-OneCLI secrets name (passwords, keys)
+OneCLI secrets name (encryption key)
 */}}
 {{- define "humr.onecli.secrets.fullname" -}}
 {{- printf "%s-onecli-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
+OneCLI database host — uses external host if set, otherwise shared postgres
+*/}}
+{{- define "humr.onecli.db.host" -}}
+{{- if .Values.onecli.db.host }}
+{{- .Values.onecli.db.host }}
+{{- else }}
+{{- include "humr.postgres.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+OneCLI database password secret name — uses shared postgres secret when db.password is empty
+*/}}
+{{- define "humr.onecli.db.password.secretName" -}}
+{{- if .Values.onecli.db.password }}
+{{- include "humr.onecli.secrets.fullname" . }}
+{{- else }}
+{{- include "humr.postgres.secrets.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
 OneCLI PostgreSQL DSN
 */}}
 {{- define "humr.onecli.postgres.dsn" -}}
-{{- printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:5432/%s" .Values.onecli.postgres.user (include "humr.onecli.postgres.fullname" .) .Values.onecli.postgres.database }}
+{{- printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.onecli.db.user (include "humr.onecli.db.host" .) (int .Values.onecli.db.port) .Values.onecli.db.database }}
+{{- end }}
+
+{{/* ---- Keycloak resources ---- */}}
+
+{{/*
+Keycloak app name (Deployment + Service)
+*/}}
+{{- define "humr.keycloak.fullname" -}}
+{{- printf "%s-keycloak" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Keycloak secrets name (admin password)
+*/}}
+{{- define "humr.keycloak.secrets.fullname" -}}
+{{- printf "%s-keycloak-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Keycloak database host — uses external host if set, otherwise shared postgres
+*/}}
+{{- define "humr.keycloak.db.host" -}}
+{{- if .Values.keycloak.db.host }}
+{{- .Values.keycloak.db.host }}
+{{- else }}
+{{- include "humr.postgres.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Keycloak database password secret name — uses shared postgres secret when db.password is empty
+*/}}
+{{- define "humr.keycloak.db.password.secretName" -}}
+{{- if .Values.keycloak.db.password }}
+{{- include "humr.keycloak.secrets.fullname" . }}
+{{- else }}
+{{- include "humr.postgres.secrets.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Keycloak JDBC URL
+*/}}
+{{- define "humr.keycloak.db.url" -}}
+{{- printf "jdbc:postgresql://%s:%v/%s" (include "humr.keycloak.db.host" .) (int .Values.keycloak.db.port) .Values.keycloak.db.database }}
 {{- end }}
 
 {{/* ---- Platform resources ---- */}}

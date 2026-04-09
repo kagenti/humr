@@ -3,7 +3,8 @@ import { useStore } from "./store.js";
 import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
 import { ConnectorsView } from "./views/ConnectorsView.js";
-import { Shell as ShellIcon, Sun, Moon, Monitor } from "lucide-react";
+import { Shell as ShellIcon, Sun, Moon, Monitor, LogOut } from "lucide-react";
+import { getUser, logout } from "./auth.js";
 import { DialogOverlay } from "./components/DialogOverlay.js";
 
 export default function App() {
@@ -96,6 +97,7 @@ function Nav() {
   const setView = useStore((s) => s.setView);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const user = getUser();
 
   return (
     <nav className="sticky top-0 z-50 flex items-center gap-6 border-b border-border-light bg-surface/80 backdrop-blur-sm px-[5%] h-12">
@@ -132,6 +134,22 @@ function Nav() {
             <Icon size={14} />
           </button>
         ))}
+      </div>
+
+      {/* User / logout */}
+      <div className="flex items-center gap-2">
+        {user && (
+          <span className="text-[13px] text-text-secondary">
+            {user.profile.preferred_username ?? user.profile.sub}
+          </span>
+        )}
+        <button
+          onClick={() => logout()}
+          title="Log out"
+          className="h-7 w-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors"
+        >
+          <LogOut size={14} />
+        </button>
       </div>
     </nav>
   );

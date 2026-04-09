@@ -55,6 +55,28 @@ spec:
                 name: {{ printf "%s-ui" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
                 port:
                   name: http
+    {{- if .Values.keycloak.enabled }}
+    - host: keycloak.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "humr.keycloak.fullname" . }}
+                port:
+                  name: http
+    - host: keycloak.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "humr.keycloak.fullname" . }}
+                port:
+                  name: http
+    {{- end }}
     - host: humr-api.localtest.me
       http:
         paths:

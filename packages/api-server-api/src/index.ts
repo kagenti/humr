@@ -1,5 +1,5 @@
 export { appRouter, type AppRouter } from "./router.js";
-export type { ApiContext } from "./context.js";
+export type { ApiContext, UserIdentity } from "./context.js";
 export type {
   Instance,
   InstanceSpec,

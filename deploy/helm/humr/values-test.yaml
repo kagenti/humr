@@ -1,18 +1,28 @@
 # Reduced resource requests for e2e test clusters (2-3 GiB VMs).
 # Used via: helm install -f values-test.yaml
+postgres:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
 onecli:
-  postgres:
-    resources:
-      requests:
-        cpu: 50m
-        memory: 128Mi
-      limits:
-        cpu: 250m
-        memory: 256Mi
   resources:
     requests:
       cpu: 100m
       memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+keycloak:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
     limits:
       cpu: 500m
       memory: 512Mi
