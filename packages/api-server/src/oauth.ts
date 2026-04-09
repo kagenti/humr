@@ -172,6 +172,30 @@ export function createOAuthRoutes(uiBaseUrl: string) {
   });
 
   /**
+   * DELETE /api/mcp/connections/:hostname
+   *
+   * Removes the OneCLI secret for the given MCP server hostname.
+   */
+  oauth.delete("/api/mcp/connections/:hostname", async (c) => {
+    const hostname = c.req.param("hostname");
+    try {
+      const apiKey = await ensureOnecliApiKey();
+      const secrets = await listOnecliSecrets();
+      const secret = secrets.find((s) => s.name === mcpSecretName(hostname));
+      if (!secret) return c.json({ error: "Not found" }, 404);
+      const res = await fetch(`${onecliBaseUrl}/api/secrets/${secret.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!res.ok) throw new Error(`OneCLI delete failed: ${res.status}`);
+      return c.json({ ok: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      return c.json({ error: msg }, 500);
+    }
+  });
+
+  /**
    * POST /api/oauth/start
    * Body: { mcpServerUrl: string }
    *

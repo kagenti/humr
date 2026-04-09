@@ -22,7 +22,20 @@ interface LoadingState {
 
 type Theme = "light" | "dark" | "system";
 
+export interface DialogState {
+  type: "alert" | "confirm";
+  title: string;
+  message: string;
+  resolve: (ok: boolean) => void;
+}
+
 export interface HumrStore {
+  // Dialog
+  dialog: DialogState | null;
+  showAlert: (message: string, title?: string) => Promise<void>;
+  showConfirm: (message: string, title?: string) => Promise<boolean>;
+  closeDialog: (ok: boolean) => void;
+
   // Theme
   theme: Theme;
   setTheme: (t: Theme) => void;
@@ -110,6 +123,21 @@ function pathToState(path: string): { view: View; instance?: string } {
 }
 
 export const useStore = create<HumrStore>((set, get) => ({
+  // Dialog
+  dialog: null,
+  showAlert: (message, title = "Error") =>
+    new Promise<void>((resolve) => {
+      set({ dialog: { type: "alert", title, message, resolve: () => resolve() } });
+    }),
+  showConfirm: (message, title = "Confirm") =>
+    new Promise<boolean>((resolve) => {
+      set({ dialog: { type: "confirm", title, message, resolve } });
+    }),
+  closeDialog: (ok) => {
+    const d = get().dialog;
+    if (d) { d.resolve(ok); set({ dialog: null }); }
+  },
+
   // Theme
   theme: (localStorage.getItem("humr-theme") as Theme) || "system",
   setTheme: (t) => {
@@ -164,7 +192,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       await platform.templates.create.mutate(input);
       await get().fetchTemplates();
     } catch (err: any) {
-      window.alert(err?.message ?? "Failed to create template");
+      get().showAlert(err?.message ?? "Failed to create template");
     }
   },
 
@@ -174,7 +202,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       await get().fetchTemplates();
       await get().fetchInstances();
     } catch (err: any) {
-      window.alert(err?.message ?? "Failed to delete template");
+      get().showAlert(err?.message ?? "Failed to delete template");
     }
   },
 
@@ -193,7 +221,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       await platform.instances.create.mutate({ name, templateName, enabledMcpServers });
       await get().fetchInstances();
     } catch (err: any) {
-      window.alert(err?.message ?? "Failed to create instance");
+      get().showAlert(err?.message ?? "Failed to create instance");
     }
   },
 
@@ -202,7 +230,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       await platform.instances.delete.mutate({ name });
       await get().fetchInstances();
     } catch (err: any) {
-      window.alert(err?.message ?? "Failed to delete instance");
+      get().showAlert(err?.message ?? "Failed to delete instance");
     }
   },
 
