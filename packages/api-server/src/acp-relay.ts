@@ -32,6 +32,8 @@ async function wakeIfHibernated(
 
   spec.desiredState = "running";
   cm.data = { ...cm.data, "spec.yaml": yaml.dump(spec) };
+  if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+  cm.metadata!.annotations[LAST_ACTIVITY_KEY] = new Date().toISOString();
   await api.replaceNamespacedConfigMap({ name: instanceId, namespace, body: cm });
   return true;
 }

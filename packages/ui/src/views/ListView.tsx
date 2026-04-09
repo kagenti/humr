@@ -1,32 +1,10 @@
 import { useState, useMemo } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
-import { StatusIndicator } from "../components/StatusIndicator.js";
+import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/StatusIndicator.js";
 import { CreateTemplateDialog } from "../dialogs/CreateTemplateDialog.js";
 import { CreateInstanceDialog } from "../dialogs/CreateInstanceDialog.js";
 import { RefreshCw, Plus, Trash2 } from "lucide-react";
-
-function statusLabel(i: InstanceView) {
-  if (!i.status) return "unknown";
-  if (i.status.podReady) return i.status.currentState;
-  return i.status.currentState === "running" ? "starting" : i.status.currentState;
-}
-
-function statusState(i: InstanceView) {
-  if (i.status?.podReady) return "ready";
-  if (i.status?.currentState === "error") return "error";
-  if (i.desiredState === "hibernated" || i.status?.currentState === "hibernated") return "hibernated";
-  return "running";
-}
-
-const badgeColors: Record<string, string> = {
-  ready: "bg-success-light text-success border-success",
-  running: "bg-warning-light text-warning border-warning",
-  starting: "bg-warning-light text-warning border-warning",
-  error: "bg-danger-light text-danger border-danger",
-  hibernated: "bg-bg text-text-muted border-border-light",
-  unknown: "bg-bg text-text-muted border-border-light",
-};
 
 export function ListView() {
   const templates = useStore(s => s.templates);
@@ -157,15 +135,15 @@ export function ListView() {
                   </div>
                 ) : (
                   insts.map(inst => {
-                    const ready = inst.status?.podReady === true;
-                    const state = statusState(inst);
-                    const label = statusLabel(inst);
-                    const colors = badgeColors[state] || badgeColors.unknown;
+                    const state = instanceState(inst);
+                    const clickable = state === "running" || state === "hibernated";
+                    const label = stateLabel[state];
+                    const colors = badgeColors[state];
                     return (
                       <div
                         key={inst.name}
-                        onClick={ready ? () => selectInstance(inst.name) : undefined}
-                        className={`flex items-center gap-4 border-t-2 border-border-light px-6 py-3.5 transition-colors ${ready ? "cursor-pointer hover:bg-accent-light" : "opacity-50"}`}
+                        onClick={clickable ? () => selectInstance(inst.name) : undefined}
+                        className={`flex items-center gap-4 border-t-2 border-border-light px-6 py-3.5 transition-colors ${clickable ? "cursor-pointer hover:bg-accent-light" : "opacity-50"}`}
                       >
                         <StatusIndicator state={state} />
                         <span className="text-[14px] font-semibold text-text">{inst.name}</span>
