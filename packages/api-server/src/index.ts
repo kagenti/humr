@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { appRouter, type ApiContext } from "api-server-api";
+import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
 import { createApi, createK8sTemplatesContext, createK8sInstancesContext, createK8sSchedulesContext, verifyInstanceOwner } from "./k8s.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTrpcRelay } from "./trpc-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
-import { createAuth, type UserIdentity } from "./auth.js";
+import { createAuth } from "./auth.js";
 
 const namespace = process.env.NAMESPACE ?? "humr-agents";
 const port = Number(process.env.PORT ?? 4000);

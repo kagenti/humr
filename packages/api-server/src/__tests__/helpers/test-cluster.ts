@@ -1,4 +1,6 @@
 import { execSync } from "node:child_process";
+import { waitForKeycloak, getToken } from "./auth.js";
+import { setToken } from "./trpc-client.js";
 
 const API_URL = "http://humr-api.localtest.me:5555";
 
@@ -15,8 +17,16 @@ async function waitForReady(url: string, timeoutMs = 120_000) {
 }
 
 export async function setup() {
+  console.log("Waiting for Keycloak realm to be ready...");
+  await waitForKeycloak();
+
   console.log("Waiting for API server to be reachable...");
-  await waitForReady(`${API_URL}/api/trpc/schedules.config`);
+  await waitForReady(`${API_URL}/api/health`);
+
+  console.log("Getting auth token...");
+  const token = await getToken();
+  setToken(token);
+
   console.log("Test cluster ready.");
 }
 

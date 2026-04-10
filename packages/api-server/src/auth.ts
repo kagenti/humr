@@ -1,10 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { MiddlewareHandler } from "hono";
-
-export interface UserIdentity {
-  sub: string;
-  preferredUsername: string;
-}
+import type { UserIdentity } from "api-server-api";
 
 export interface AuthConfig {
   /** External issuer URL (matches token `iss` claim), e.g. http://keycloak.localhost:4444/realms/humr */
@@ -15,7 +11,11 @@ export interface AuthConfig {
   audience?: string;
 }
 
-const PUBLIC_PATHS = new Set(["/api/health", "/api/auth/config"]);
+const PUBLIC_PATHS = new Set([
+  "/api/health",
+  "/api/auth/config",
+  "/api/oauth/callback",
+]);
 
 export function createAuth(config: AuthConfig) {
   const JWKS = createRemoteJWKSet(new URL(config.jwksUrl));
