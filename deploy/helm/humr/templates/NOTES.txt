@@ -7,7 +7,7 @@ Components:
     - Web:      port {{ .Values.onecli.web.port }}
 {{- if .Values.keycloak.enabled }}
   - Keycloak:   {{ include "humr.keycloak.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.keycloak.port }}
-    - Admin:    http://keycloak.localhost:4444 (user: {{ .Values.keycloak.admin.user }})
+    - Admin:    {{ include "humr.url.keycloak" . }} (user: {{ .Values.keycloak.admin.user }})
     - Realm:    {{ .Values.keycloak.realm }}
     - Test user: {{ .Values.keycloak.testUser.username }} / {{ .Values.keycloak.testUser.password }}
 {{- end }}
@@ -25,9 +25,8 @@ To verify:
   kubectl get cm -n {{ .Values.agentNamespace }} -l humr.ai/type=agent-template
 
 To access services:
-  mise run cluster:proxy     # forwards Traefik to localhost:4444
-  # then open: http://humr.localhost:4444 (UI)
-  #            http://onecli.localhost:4444 (OneCLI)
+  {{ include "humr.url.ui" . }}          (UI)
+  {{ include "humr.url.onecli" . }}      (OneCLI)
 {{- if .Values.keycloak.enabled }}
-  #            http://keycloak.localhost:4444 (Keycloak admin)
+  {{ include "humr.url.keycloak" . }}    (Keycloak admin)
 {{- end }}

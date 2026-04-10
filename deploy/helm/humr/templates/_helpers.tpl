@@ -45,6 +45,35 @@ Chart label
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* ---- Public URLs (derived from domain + port + scheme) ---- */}}
+
+{{/*
+Host:port string for URLs (includes port if non-empty)
+*/}}
+{{- define "humr.hostport" -}}
+{{- if .Values.port }}
+{{- printf "%s:%s" .Values.domain .Values.port }}
+{{- else }}
+{{- .Values.domain }}
+{{- end }}
+{{- end }}
+
+{{- define "humr.url.ui" -}}
+{{- printf "%s://humr.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
+
+{{- define "humr.url.api" -}}
+{{- printf "%s://humr-api.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
+
+{{- define "humr.url.keycloak" -}}
+{{- printf "%s://keycloak.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
+
+{{- define "humr.url.onecli" -}}
+{{- printf "%s://onecli.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
+
 {{/* ---- Shared PostgreSQL ---- */}}
 
 {{/*

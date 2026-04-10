@@ -52,11 +52,13 @@ spec:
               value: {{ .Values.agentNamespace | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            - name: UI_BASE_URL
+              value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
             - name: KEYCLOAK_EXTERNAL_URL
-              value: "http://keycloak.localhost:4444"
+              value: {{ include "humr.url.keycloak" . | quote }}
             - name: KEYCLOAK_REALM
               value: {{ .Values.keycloak.realm | quote }}
             - name: KEYCLOAK_CLIENT_ID
