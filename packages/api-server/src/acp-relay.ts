@@ -2,8 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type * as k8s from "@kubernetes/client-node";
-import yaml from "js-yaml";
-import { podBaseUrl, patchConfigMapAnnotation } from "./k8s.js";
+import { podBaseUrl, patchConfigMapAnnotation, wakeInstance } from "./k8s.js";
 
 const LAST_ACTIVITY_KEY = "humr.ai/last-activity";
 const ACTIVE_SESSION_KEY = "humr.ai/active-session";
@@ -18,23 +17,6 @@ function shouldUpdateActivity(instanceId: string): boolean {
   const last = lastActivityTimestamps.get(instanceId) ?? 0;
   if (now - last < DEBOUNCE_MS) return false;
   lastActivityTimestamps.set(instanceId, now);
-  return true;
-}
-
-async function wakeIfHibernated(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  instanceId: string,
-): Promise<boolean> {
-  const cm = await api.readNamespacedConfigMap({ name: instanceId, namespace });
-  const spec = yaml.load(cm.data?.["spec.yaml"] ?? "") as { desiredState?: string };
-  if (spec.desiredState !== "hibernated") return false;
-
-  spec.desiredState = "running";
-  cm.data = { ...cm.data, "spec.yaml": yaml.dump(spec) };
-  if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
-  cm.metadata!.annotations[LAST_ACTIVITY_KEY] = new Date().toISOString();
-  await api.replaceNamespacedConfigMap({ name: instanceId, namespace, body: cm });
   return true;
 }
 
@@ -91,7 +73,7 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
 
       connectUpstream(upstreamUrl)
         .catch(async () => {
-          const woke = await wakeIfHibernated(api, namespace, instanceId);
+          const woke = await wakeInstance(api, namespace, instanceId);
           if (woke) {
             const ready = await waitForPodReady(api, namespace, instanceId);
             if (!ready) throw new Error("pod did not become ready after wake");
