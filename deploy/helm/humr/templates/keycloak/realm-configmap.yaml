@@ -53,6 +53,39 @@ data:
               }
             }
           ]
+        },
+        {
+          "clientId": {{ .Values.onecli.oauth.clientId | quote }},
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "$(env:ONECLI_CLIENT_SECRET)",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            {{ printf "%s/api/auth/callback/oidc" (include "humr.url.onecli" .) | quote }}
+          ],
+          "webOrigins": [
+            {{ include "humr.url.onecli" . | quote }}
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          },
+          "protocolMappers": [
+            {
+              "name": "onecli-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.onecli.oauth.audience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
         }
       ],
       "users": [

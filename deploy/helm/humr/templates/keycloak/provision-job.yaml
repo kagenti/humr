@@ -39,6 +39,13 @@ spec:
               value: "true"
             - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
               value: "120s"
+            - name: IMPORT_VARSUBSTITUTION_ENABLED
+              value: "true"
+            - name: ONECLI_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  key: OAUTH_CLIENT_SECRET
           volumeMounts:
             - name: realm-config
               mountPath: /config

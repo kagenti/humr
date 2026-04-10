@@ -135,6 +135,13 @@ OneCLI PostgreSQL DSN
 {{- printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.onecli.db.user (include "humr.onecli.db.host" .) (int .Values.onecli.db.port) .Values.onecli.db.database }}
 {{- end }}
 
+{{/*
+Keycloak OIDC issuer URL (external, for iss claim matching in JWTs)
+*/}}
+{{- define "humr.keycloak.issuer" -}}
+{{- printf "%s/realms/%s" (include "humr.url.keycloak" .) .Values.keycloak.realm }}
+{{- end }}
+
 {{/* ---- Keycloak resources ---- */}}
 
 {{/*

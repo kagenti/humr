@@ -98,6 +98,33 @@ spec:
               value: {{ .Values.onecli.gateway.port | quote }}
             - name: PORT
               value: {{ .Values.onecli.web.port | quote }}
+            {{- if .Values.keycloak.enabled }}
+            - name: AUTH_MODE
+              value: "oauth"
+            - name: OAUTH_ISSUER
+              value: {{ include "humr.keycloak.issuer" . | quote }}
+            - name: OAUTH_AUDIENCE
+              value: {{ .Values.onecli.oauth.audience | quote }}
+            - name: OAUTH_CLIENT_ID
+              value: {{ .Values.onecli.oauth.clientId | quote }}
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  key: OAUTH_CLIENT_SECRET
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  key: NEXTAUTH_SECRET
+            - name: APP_URL
+              value: {{ include "humr.url.onecli" . | quote }}
+            - name: NEXT_PUBLIC_APP_URL
+              value: {{ include "humr.url.onecli" . | quote }}
+            {{- else }}
+            - name: AUTH_MODE
+              value: "local"
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: gateway
