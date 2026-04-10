@@ -103,6 +103,8 @@ spec:
               value: "oauth"
             - name: OAUTH_ISSUER
               value: {{ include "humr.keycloak.issuer" . | quote }}
+            - name: OAUTH_JWKS_URL
+              value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
             - name: OAUTH_AUDIENCE
               value: {{ .Values.onecli.oauth.audience | quote }}
             - name: OAUTH_CLIENT_ID
