@@ -4,7 +4,6 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
 import { createApi, createK8sTemplatesContext, createK8sInstancesContext, createK8sSchedulesContext, verifyInstanceOwner } from "./k8s.js";
 import { createAcpRelay } from "./acp-relay.js";
-import { createTrpcRelay } from "./trpc-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { createAuth } from "./auth.js";
 
@@ -25,9 +24,6 @@ const auth = createAuth({
 
 const { api } = createApi(namespace);
 
-// Templates are shared (no owner scoping)
-const templates = createK8sTemplatesContext(namespace, api);
-
 const app = new Hono<{ Variables: { user: UserIdentity } }>();
 
 // Public endpoints (no auth required)
@@ -46,21 +42,37 @@ app.use("/api/*", auth.middleware);
 const uiBaseUrl = process.env.UI_BASE_URL ?? "http://humr.localhost:4444";
 app.route("/", createOAuthRoutes(uiBaseUrl));
 
-// Instance relay paths — verify ownership before forwarding
+// Instance relay paths — verify ownership and translate to qualified K8s name
 app.all("/api/instances/:id/trpc/*", async (c) => {
   const user = c.get("user");
   const instanceId = c.req.param("id")!;
-  if (!await verifyInstanceOwner(api, namespace, instanceId, user.sub)) {
-    return c.json({ error: "not found" }, 404);
+  const qName = await verifyInstanceOwner(api, namespace, instanceId, user.sub, user.preferredUsername);
+  if (!qName) return c.json({ error: "not found" }, 404);
+  // Rewrite the path to use the qualified name for the upstream relay
+  const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
+  const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
+  const upstreamUrl = `http://${qName}-0.${qName}.${namespace}.svc:8080/api/trpc${rest}${qs}`;
+  try {
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("host");
+    const upstream = await fetch(upstreamUrl, {
+      method: c.req.method,
+      headers,
+      body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+      // @ts-expect-error -- node fetch supports duplex
+      duplex: "half",
+    });
+    return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+  } catch {
+    return c.json({ error: "instance unreachable" }, 502);
   }
-  return createTrpcRelay(namespace)(c);
 });
 
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
-  // Instances and schedules are scoped per-request by owner
-  const instances = createK8sInstancesContext(namespace, api, templates, user.sub);
-  const schedules = createK8sSchedulesContext(namespace, api, instances, user.sub);
+  const templates = createK8sTemplatesContext(namespace, api, user.sub, user.preferredUsername);
+  const instances = createK8sInstancesContext(namespace, api, user.sub, user.preferredUsername);
+  const schedules = createK8sSchedulesContext(namespace, api, user.sub, user.preferredUsername);
 
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -105,13 +117,13 @@ server.on("upgrade", async (req, socket, head) => {
     return;
   }
 
-  // Verify instance ownership
   const instanceId = match[1];
-  if (!await verifyInstanceOwner(api, namespace, instanceId, user.sub)) {
+  const qName = await verifyInstanceOwner(api, namespace, instanceId, user.sub, user.preferredUsername);
+  if (!qName) {
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  acpRelay.handleUpgrade(req, socket, head, instanceId);
+  acpRelay.handleUpgrade(req, socket, head, qName);
 });
