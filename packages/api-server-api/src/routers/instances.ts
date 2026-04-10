@@ -14,7 +14,7 @@ function toView(inst: Instance) {
   return {
     id: inst.id,
     name: inst.name,
-    templateName: inst.spec.templateName,
+    agentId: inst.spec.agentId,
     description: inst.spec.description,
     env: inst.spec.env,
     secretRef: inst.spec.secretRef,
@@ -41,7 +41,7 @@ export const instancesRouter = t.router({
   create: t.procedure
     .input(z.object({
       name: z.string().min(1),
-      templateId: z.string().min(1),
+      agentId: z.string().min(1),
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       description: z.string().optional(),

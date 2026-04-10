@@ -5,7 +5,11 @@ import type {
   Template,
   TemplateSpec,
   TemplatesContext,
-  CreateTemplateInput,
+  Agent,
+  AgentSpec,
+  AgentsContext,
+  CreateAgentInput,
+  UpdateAgentInput,
   Instance,
   InstanceSpec,
   InstanceStatus,
@@ -25,8 +29,10 @@ import { CronExpressionParser } from "cron-parser";
 
 const LABEL_TYPE = "humr.ai/type";
 const LABEL_TEMPLATE = "agent-template";
+const LABEL_AGENT = "agent";
 const LABEL_INSTANCE = "agent-instance";
 const LABEL_TEMPLATE_REF = "humr.ai/template";
+const LABEL_AGENT_REF = "humr.ai/agent";
 const LABEL_SCHEDULE = "agent-schedule";
 const LABEL_INSTANCE_REF = "humr.ai/instance";
 const LABEL_OWNER = "humr.ai/owner";
@@ -87,6 +93,16 @@ function parseTemplate(cm: k8s.V1ConfigMap): Template {
   return { id: cm.metadata!.name!, name: displayName(cm), spec };
 }
 
+function parseAgent(cm: k8s.V1ConfigMap): Agent {
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as AgentSpec;
+  return {
+    id: cm.metadata!.name!,
+    name: displayName(cm),
+    templateId: cm.metadata!.labels?.[LABEL_TEMPLATE_REF],
+    spec,
+  };
+}
+
 function parseInstance(cm: k8s.V1ConfigMap): Instance {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
   const statusYaml = cm.data?.[STATUS_KEY];
@@ -137,12 +153,11 @@ function createApi(namespace: string) {
   return { api: kc.makeApiClient(k8s.CoreV1Api), namespace };
 }
 
-// ---- Templates ----
+// ---- Templates (read-only catalog) ----
 
 export function createK8sTemplatesContext(
   namespace: string,
   api: k8s.CoreV1Api,
-  owner: string,
 ): TemplatesContext {
   return {
     async list() {
@@ -150,54 +165,115 @@ export function createK8sTemplatesContext(
         namespace,
         labelSelector: `${LABEL_TYPE}=${LABEL_TEMPLATE}`,
       });
+      // Catalog items have no owner label
       return (res.items ?? [])
-        .filter((cm) => {
-          const cmOwner = cm.metadata?.labels?.[LABEL_OWNER];
-          return !cmOwner || cmOwner === owner;
-        })
+        .filter((cm) => !cm.metadata?.labels?.[LABEL_OWNER])
         .map(parseTemplate);
     },
 
     async get(id) {
       try {
         const cm = await api.readNamespacedConfigMap({ name: id, namespace });
-        const cmOwner = cm.metadata?.labels?.[LABEL_OWNER];
-        if (cmOwner && cmOwner !== owner) return null;
+        if (cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_TEMPLATE) return null;
+        if (cm.metadata?.labels?.[LABEL_OWNER]) return null; // not a catalog item
         return parseTemplate(cm);
       } catch (err) {
         if (is404(err)) return null;
         throw err;
       }
     },
+  };
+}
 
-    async create(input: CreateTemplateInput) {
-      const k8sName = generateK8sName("tmpl");
-      const spec = {
-        name: input.name,
-        version: SPEC_VERSION,
-        image: input.image,
-        description: input.description,
-        ...DEFAULT_TEMPLATE_SPEC,
-        mcpServers: input.mcpServers,
+// ---- Agents (user-owned) ----
+
+export function createK8sAgentsContext(
+  namespace: string,
+  api: k8s.CoreV1Api,
+  owner: string,
+): AgentsContext {
+  return {
+    async list() {
+      const res = await api.listNamespacedConfigMap({
+        namespace,
+        labelSelector: `${LABEL_TYPE}=${LABEL_AGENT},${LABEL_OWNER}=${owner}`,
+      });
+      return (res.items ?? []).map(parseAgent);
+    },
+
+    async get(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm || cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) return null;
+      return parseAgent(cm);
+    },
+
+    async create(input: CreateAgentInput) {
+      let spec: Record<string, unknown>;
+      const labels: Record<string, string> = {
+        [LABEL_TYPE]: LABEL_AGENT,
+        [LABEL_OWNER]: owner,
       };
+
+      if (input.templateId) {
+        // Copy from catalog template
+        const tmplCm = await api.readNamespacedConfigMap({ name: input.templateId, namespace }).catch((err) => {
+          if (is404(err)) throw new Error(`Template "${input.templateId}" not found`);
+          throw err;
+        });
+        if (tmplCm.metadata?.labels?.[LABEL_OWNER]) {
+          throw new Error(`Template "${input.templateId}" not found`);
+        }
+        const tmplSpec = yaml.load(tmplCm.data?.[SPEC_KEY] ?? "") as TemplateSpec;
+        labels[LABEL_TEMPLATE_REF] = input.templateId;
+        spec = {
+          name: input.name,
+          version: SPEC_VERSION,
+          image: tmplSpec.image,
+          description: input.description ?? tmplSpec.description,
+          mounts: tmplSpec.mounts,
+          init: tmplSpec.init,
+          env: tmplSpec.env,
+          resources: tmplSpec.resources,
+          securityContext: tmplSpec.securityContext,
+          mcpServers: input.mcpServers,
+        };
+      } else {
+        // Custom image
+        spec = {
+          name: input.name,
+          version: SPEC_VERSION,
+          image: input.image,
+          description: input.description,
+          ...DEFAULT_TEMPLATE_SPEC,
+          mcpServers: input.mcpServers,
+        };
+      }
+
+      const k8sName = generateK8sName("agent");
       const cm: k8s.V1ConfigMap = {
-        metadata: {
-          name: k8sName,
-          namespace,
-          labels: {
-            [LABEL_TYPE]: LABEL_TEMPLATE,
-            [LABEL_OWNER]: owner,
-          },
-        },
+        metadata: { name: k8sName, namespace, labels },
         data: { [SPEC_KEY]: yaml.dump(spec) },
       };
       const created = await api.createNamespacedConfigMap({ namespace, body: cm });
-      return parseTemplate(created);
+      return parseAgent(created);
+    },
+
+    async update(input: UpdateAgentInput) {
+      const cm = await readOwned(api, namespace, input.id, owner);
+      if (!cm || cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) return null;
+
+      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as AgentSpec;
+      if (input.description !== undefined) spec.description = input.description;
+      if (input.mcpServers !== undefined) spec.mcpServers = input.mcpServers;
+
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      const updated = await api.replaceNamespacedConfigMap({ name: input.id, namespace, body: cm });
+      return parseAgent(updated);
     },
 
     async delete(id) {
       const cm = await readOwned(api, namespace, id, owner);
-      if (!cm) return;
+      if (!cm || cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) return;
       await api.deleteNamespacedConfigMap({ name: id, namespace });
     },
   };
@@ -246,23 +322,17 @@ export function createK8sInstancesContext(
     },
 
     async create(input: CreateInstanceInput) {
-      // Verify template exists and is accessible
-      try {
-        const tmplCm = await api.readNamespacedConfigMap({ name: input.templateId, namespace });
-        const tmplOwner = tmplCm.metadata?.labels?.[LABEL_OWNER];
-        if (tmplOwner && tmplOwner !== owner) {
-          throw new Error(`Template "${input.templateId}" not found`);
-        }
-      } catch (err) {
-        if (is404(err)) throw new Error(`Template "${input.templateId}" not found`);
-        throw err;
+      // Verify agent exists and is owned by user
+      const agentCm = await readOwned(api, namespace, input.agentId, owner);
+      if (!agentCm || agentCm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) {
+        throw new Error(`Agent "${input.agentId}" not found`);
       }
 
       const k8sName = generateK8sName("inst");
       const spec = {
         name: input.name,
         version: SPEC_VERSION,
-        templateName: input.templateId,
+        agentId: input.agentId,
         desiredState: "running" as const,
         env: input.env,
         secretRef: input.secretRef,
@@ -275,7 +345,7 @@ export function createK8sInstancesContext(
           namespace,
           labels: {
             [LABEL_TYPE]: LABEL_INSTANCE,
-            [LABEL_TEMPLATE_REF]: input.templateId,
+            [LABEL_AGENT_REF]: input.agentId,
             [LABEL_OWNER]: owner,
           },
         },
@@ -371,7 +441,7 @@ export function createK8sSchedulesContext(
 
       const instCm = await readOwned(api, namespace, input.instanceId, owner);
       if (!instCm) throw new Error(`Instance "${input.instanceId}" not found`);
-      const templateRef = instCm.metadata!.labels![LABEL_TEMPLATE_REF];
+      const agentRef = instCm.metadata!.labels![LABEL_AGENT_REF];
 
       const k8sName = generateK8sName("sched");
       const spec = {
@@ -389,7 +459,7 @@ export function createK8sSchedulesContext(
           labels: {
             [LABEL_TYPE]: LABEL_SCHEDULE,
             [LABEL_INSTANCE_REF]: input.instanceId,
-            [LABEL_TEMPLATE_REF]: templateRef,
+            [LABEL_AGENT_REF]: agentRef,
             [LABEL_OWNER]: owner,
           },
         },
@@ -402,7 +472,7 @@ export function createK8sSchedulesContext(
     async createHeartbeat(input: CreateHeartbeatScheduleInput) {
       const instCm = await readOwned(api, namespace, input.instanceId, owner);
       if (!instCm) throw new Error(`Instance "${input.instanceId}" not found`);
-      const templateRef = instCm.metadata!.labels![LABEL_TEMPLATE_REF];
+      const agentRef = instCm.metadata!.labels![LABEL_AGENT_REF];
 
       const k8sName = generateK8sName("sched");
       const spec = {
@@ -420,7 +490,7 @@ export function createK8sSchedulesContext(
           labels: {
             [LABEL_TYPE]: LABEL_SCHEDULE,
             [LABEL_INSTANCE_REF]: input.instanceId,
-            [LABEL_TEMPLATE_REF]: templateRef,
+            [LABEL_AGENT_REF]: agentRef,
             [LABEL_OWNER]: owner,
           },
         },

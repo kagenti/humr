@@ -98,9 +98,9 @@ done
 KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 
 # 1. Ensure k3s VM is running
-if ! limactl list --json | grep -q "\"name\":\"$LIMA_INSTANCE\""; then
+if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
   echo "Creating k3s VM ($LIMA_INSTANCE)..."
-  limactl create --name=$LIMA_INSTANCE "$LIMA_TEMPLATE" --tty=false
+  limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
 fi
 
 STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")

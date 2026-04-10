@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { platform } from "./platform.js";
 import type {
   TemplateView,
+  AgentView,
   InstanceView,
   SessionInfo,
   Message,
@@ -15,6 +16,7 @@ type View = "list" | "chat" | "connectors";
 
 interface LoadingState {
   templates: boolean;
+  agents: boolean;
   instances: boolean;
   sessions: boolean;
   session: boolean;
@@ -46,6 +48,7 @@ export interface HumrStore {
 
   // Data
   templates: TemplateView[];
+  agents: AgentView[];
   instances: InstanceView[];
   selectedInstance: string | null;
   sessions: SessionInfo[];
@@ -61,20 +64,24 @@ export interface HumrStore {
   // Loading states
   loading: LoadingState;
 
-  // Template actions
+  // Template actions (read-only catalog)
   fetchTemplates: () => Promise<void>;
-  createTemplate: (input: {
+
+  // Agent actions
+  fetchAgents: () => Promise<void>;
+  createAgent: (input: {
     name: string;
-    image: string;
+    templateId?: string;
+    image?: string;
     description?: string;
     mcpServers?: Record<string, MCPServerConfig>;
   }) => Promise<void>;
-  deleteTemplate: (id: string) => Promise<void>;
+  deleteAgent: (id: string) => Promise<void>;
 
   // Instance actions
   fetchInstances: () => Promise<void>;
   createInstance: (
-    templateId: string,
+    agentId: string,
     name: string,
     enabledMcpServers?: string[],
   ) => Promise<void>;
@@ -162,6 +169,7 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Data
   templates: [],
+  agents: [],
   instances: [],
   selectedInstance: null,
   sessions: [],
@@ -175,9 +183,9 @@ export const useStore = create<HumrStore>((set, get) => ({
   rightTab: "files",
 
   // Loading states
-  loading: { templates: false, instances: false, sessions: false, session: false },
+  loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
 
-  // Template actions
+  // Template actions (read-only catalog)
   fetchTemplates: async () => {
     set((s) => ({ loading: { ...s.loading, templates: true } }));
     try {
@@ -187,22 +195,32 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, templates: false } }));
   },
 
-  createTemplate: async (input) => {
+  // Agent actions
+  fetchAgents: async () => {
+    set((s) => ({ loading: { ...s.loading, agents: true } }));
     try {
-      await platform.templates.create.mutate(input);
-      await get().fetchTemplates();
+      const list = await platform.agents.list.query();
+      set({ agents: list });
+    } catch {}
+    set((s) => ({ loading: { ...s.loading, agents: false } }));
+  },
+
+  createAgent: async (input) => {
+    try {
+      await platform.agents.create.mutate(input);
+      await get().fetchAgents();
     } catch (err: any) {
-      get().showAlert(err?.message ?? "Failed to create template");
+      get().showAlert(err?.message ?? "Failed to create agent");
     }
   },
 
-  deleteTemplate: async (id) => {
+  deleteAgent: async (id) => {
     try {
-      await platform.templates.delete.mutate({ id });
-      await get().fetchTemplates();
+      await platform.agents.delete.mutate({ id });
+      await get().fetchAgents();
       await get().fetchInstances();
     } catch (err: any) {
-      get().showAlert(err?.message ?? "Failed to delete template");
+      get().showAlert(err?.message ?? "Failed to delete agent");
     }
   },
 
@@ -216,9 +234,9 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, instances: false } }));
   },
 
-  createInstance: async (templateId, name, enabledMcpServers) => {
+  createInstance: async (agentId, name, enabledMcpServers) => {
     try {
-      await platform.instances.create.mutate({ name, templateId, enabledMcpServers });
+      await platform.instances.create.mutate({ name, agentId, enabledMcpServers });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create instance");
@@ -260,6 +278,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       log: [],
       view: "list",
     });
+    get().fetchAgents();
     get().fetchInstances();
   },
 

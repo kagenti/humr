@@ -91,9 +91,9 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	)
 
 	cmInformer := factory.Core().V1().ConfigMaps()
-	templateResolver := reconciler.NewTemplateResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	templateReconciler := reconciler.NewTemplateReconciler(client, cfg, onecliClient)
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, templateResolver)
+	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliClient)
+	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()
@@ -128,8 +128,8 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 			}
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
-			case "agent-template":
-				templateReconciler.Delete(ctx, cm.Name)
+			case "agent":
+				agentReconciler.Delete(ctx, cm.Name)
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":
@@ -162,9 +162,9 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
-			case "agent-template":
-				if err := templateReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile template", "name", name, "error", err)
+			case "agent":
+				if err := agentReconciler.Reconcile(ctx, cm); err != nil {
+					slog.Error("reconcile agent", "name", name, "error", err)
 					queue.AddRateLimited(key)
 					return
 				}

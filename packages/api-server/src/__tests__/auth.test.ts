@@ -79,19 +79,15 @@ describe("auth: resource ownership", () => {
   const INSTANCE_NAME = "auth-test-inst";
 
   it("instances are scoped to the authenticated user", async () => {
-    // Create a template and instance as dev user
-    try {
-      await client.templates.create.mutate({
-        name: "auth-test-tmpl",
-        image: "alpine:latest",
-      });
-    } catch {
-      // Template may already exist from other test runs
-    }
+    // Create an agent and instance as dev user
+    const agent = await client.agents.create.mutate({
+      name: "auth-test-agent",
+      image: "alpine:latest",
+    });
 
     await client.instances.create.mutate({
       name: INSTANCE_NAME,
-      templateName: "auth-test-tmpl",
+      agentId: agent.id,
     });
 
     // dev user can see their own instance
@@ -100,14 +96,16 @@ describe("auth: resource ownership", () => {
     expect(found).toBeDefined();
 
     // Cleanup
-    await client.instances.delete.mutate({ name: INSTANCE_NAME });
+    if (found) {
+      await client.instances.delete.mutate({ id: found.id });
+    }
 
     // Verify deleted
     const after = await client.instances.list.query();
     expect(after.find((i) => i.name === INSTANCE_NAME)).toBeUndefined();
 
     try {
-      await client.templates.delete.mutate({ name: "auth-test-tmpl" });
+      await client.agents.delete.mutate({ id: agent.id });
     } catch {}
   });
 });

@@ -18,10 +18,10 @@ import (
 type InstanceReconciler struct {
 	client   kubernetes.Interface
 	config   *config.Config
-	resolver *TemplateResolver
+	resolver *AgentResolver
 }
 
-func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *TemplateResolver) *InstanceReconciler {
+func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver) *InstanceReconciler {
 	return &InstanceReconciler{client: client, config: cfg, resolver: resolver}
 }
 
@@ -37,18 +37,18 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, err.Error())
 	}
 
-	// Resolve template — prefer label, fall back to spec field
-	templateName := cm.Labels["humr.ai/template"]
-	if templateName == "" {
-		templateName = instanceSpec.TemplateName
+	// Resolve agent — prefer label, fall back to spec field
+	agentName := cm.Labels["humr.ai/agent"]
+	if agentName == "" {
+		agentName = instanceSpec.AgentName
 	}
-	tmplSpec, err := r.resolver.Resolve(templateName)
+	agentSpec, err := r.resolver.Resolve(agentName)
 	if err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 
 	// Build desired resources
-	ss := BuildStatefulSet(name, instanceSpec, tmplSpec, r.config, templateName, cm)
+	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm)
 	svc := BuildService(name, r.config, cm)
 	np := BuildNetworkPolicy(name, r.config, cm)
 
@@ -71,7 +71,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
 	// Owner references handle cascade deletion of StatefulSet, Service, NetworkPolicy.
-	// OneCLI agent cleanup is handled by TemplateReconciler.
+	// OneCLI agent cleanup is handled by AgentReconciler.
 	//
 	// PVCs created via VolumeClaimTemplates are intentionally NOT deleted by
 	// Kubernetes when the StatefulSet is removed (to prevent data loss).

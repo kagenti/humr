@@ -11,6 +11,7 @@ export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
   const fetchTemplates = useStore((s) => s.fetchTemplates);
+  const fetchAgents = useStore((s) => s.fetchAgents);
   const fetchInstances = useStore((s) => s.fetchInstances);
 
   // Apply theme on mount + listen for system preference changes
@@ -61,10 +62,11 @@ export default function App() {
 
   useEffect(() => {
     fetchTemplates();
+    fetchAgents();
     fetchInstances();
     const i = setInterval(fetchInstances, 5000);
     return () => clearInterval(i);
-  }, [fetchTemplates, fetchInstances]);
+  }, [fetchTemplates, fetchAgents, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)
   if (view === "chat") return <><ChatView /><DialogOverlay /></>;

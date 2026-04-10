@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const fixtureTemplateYAML = `version: humr.ai/v1
+const fixtureAgentYAML = `version: humr.ai/v1
 image: ghcr.io/myorg/code-guardian:latest
 description: "Persistent agent for repo monitoring"
 mounts:
@@ -38,7 +38,7 @@ securityContext:
   readOnlyRootFilesystem: false
 `
 
-// fakeGetter implements TemplateGetter for tests
+// fakeGetter implements AgentGetter for tests
 type fakeGetter struct {
 	cms map[string]*corev1.ConfigMap
 }
@@ -51,36 +51,36 @@ func (f *fakeGetter) Get(name string) (*corev1.ConfigMap, error) {
 	return cm, nil
 }
 
-func TestResolveTemplate(t *testing.T) {
+func TestResolveAgent(t *testing.T) {
 	getter := &fakeGetter{cms: map[string]*corev1.ConfigMap{
 		"code-guardian": {
 			ObjectMeta: metav1.ObjectMeta{Name: "code-guardian", Namespace: "test-agents"},
-			Data:       map[string]string{"spec.yaml": fixtureTemplateYAML},
+			Data:       map[string]string{"spec.yaml": fixtureAgentYAML},
 		},
 	}}
-	resolver := NewTemplateResolver(getter)
+	resolver := NewAgentResolver(getter)
 	spec, err := resolver.Resolve("code-guardian")
 	require.NoError(t, err)
 	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
 	assert.Len(t, spec.Mounts, 3)
 }
 
-func TestResolveTemplate_NotFound(t *testing.T) {
-	resolver := NewTemplateResolver(&fakeGetter{cms: map[string]*corev1.ConfigMap{}})
+func TestResolveAgent_NotFound(t *testing.T) {
+	resolver := NewAgentResolver(&fakeGetter{cms: map[string]*corev1.ConfigMap{}})
 	_, err := resolver.Resolve("missing")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestResolveTemplate_NoSpecYAML(t *testing.T) {
+func TestResolveAgent_NoSpecYAML(t *testing.T) {
 	getter := &fakeGetter{cms: map[string]*corev1.ConfigMap{
-		"bad-template": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bad-template", Namespace: "test-agents"},
+		"bad-agent": {
+			ObjectMeta: metav1.ObjectMeta{Name: "bad-agent", Namespace: "test-agents"},
 			Data:       map[string]string{"other": "data"},
 		},
 	}}
-	resolver := NewTemplateResolver(getter)
-	_, err := resolver.Resolve("bad-template")
+	resolver := NewAgentResolver(getter)
+	_, err := resolver.Resolve("bad-agent")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no spec.yaml")
 }

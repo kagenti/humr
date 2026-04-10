@@ -26,7 +26,7 @@ import { SchedulesPanel } from "../panels/SchedulesPanel.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
-  const templates = useStore((s) => s.templates);
+  const agents = useStore((s) => s.agents);
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
@@ -65,10 +65,10 @@ export function ChatView() {
   const selectedMcpServers = useMemo(
     () =>
       resolveAcpMcpServers(
-        templates,
+        agents,
         instances.find((i) => i.id === selectedInstance),
       ),
-    [templates, instances, selectedInstance],
+    [agents, instances, selectedInstance],
   );
 
   useEffect(() => {

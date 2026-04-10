@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
-import { createApi, createK8sTemplatesContext, createK8sInstancesContext, createK8sSchedulesContext, verifyInstanceOwner, podBaseUrl } from "./k8s.js";
+import { createApi, createK8sTemplatesContext, createK8sAgentsContext, createK8sInstancesContext, createK8sSchedulesContext, verifyInstanceOwner, podBaseUrl } from "./k8s.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { createAuth } from "./auth.js";
@@ -71,7 +71,8 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
 
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
-  const templates = createK8sTemplatesContext(namespace, api, user.sub);
+  const templates = createK8sTemplatesContext(namespace, api);
+  const agents = createK8sAgentsContext(namespace, api, user.sub);
   const instances = createK8sInstancesContext(namespace, api, user.sub);
   const schedules = createK8sSchedulesContext(namespace, api, user.sub);
 
@@ -81,6 +82,7 @@ app.all("/api/trpc/*", (c) => {
     router: appRouter,
     createContext: (): ApiContext => ({
       templates,
+      agents,
       instances,
       schedules,
       user,

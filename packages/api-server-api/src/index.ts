@@ -1,6 +1,13 @@
 export { appRouter, type AppRouter } from "./router.js";
 export type { ApiContext, UserIdentity } from "./context.js";
 export type {
+  Agent,
+  AgentSpec,
+  AgentsContext,
+  CreateAgentInput,
+  UpdateAgentInput,
+} from "./modules/agents.js";
+export type {
   Instance,
   InstanceSpec,
   InstanceStatus,
@@ -12,7 +19,6 @@ export type {
   Template,
   TemplateSpec,
   TemplatesContext,
-  CreateTemplateInput,
 } from "./modules/templates.js";
 export { SPEC_VERSION } from "./modules/templates.js";
 export type {

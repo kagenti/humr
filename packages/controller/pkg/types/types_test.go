@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- Template ---
+// --- Agent ---
 
 const fixtureTemplateYAML = `version: humr.ai/v1
 image: ghcr.io/myorg/code-guardian:latest
@@ -39,8 +39,8 @@ securityContext:
   readOnlyRootFilesystem: false
 `
 
-func TestParseTemplateSpec(t *testing.T) {
-	spec, err := ParseTemplateSpec(fixtureTemplateYAML)
+func TestParseAgentSpec(t *testing.T) {
+	spec, err := ParseAgentSpec(fixtureTemplateYAML)
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
@@ -58,27 +58,27 @@ func TestParseTemplateSpec(t *testing.T) {
 	assert.False(t, *spec.SecurityContext.ReadOnlyRootFilesystem)
 }
 
-func TestParseTemplateSpec_MissingVersion(t *testing.T) {
-	_, err := ParseTemplateSpec(`image: ghcr.io/myorg/agent:latest`)
+func TestParseAgentSpec_MissingVersion(t *testing.T) {
+	_, err := ParseAgentSpec(`image: ghcr.io/myorg/agent:latest`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "version is required")
 }
 
-func TestParseTemplateSpec_WrongVersion(t *testing.T) {
-	_, err := ParseTemplateSpec("version: humr.ai/v99\nimage: foo")
+func TestParseAgentSpec_WrongVersion(t *testing.T) {
+	_, err := ParseAgentSpec("version: humr.ai/v99\nimage: foo")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported version")
 }
 
-func TestParseTemplateSpec_MissingImage(t *testing.T) {
-	_, err := ParseTemplateSpec(`version: humr.ai/v1
+func TestParseAgentSpec_MissingImage(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
 description: "no image"`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "image")
 }
 
-func TestParseTemplateSpec_RelativeMountPath(t *testing.T) {
-	_, err := ParseTemplateSpec(`version: humr.ai/v1
+func TestParseAgentSpec_RelativeMountPath(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
 image: foo
 mounts:
   - path: workspace
@@ -92,7 +92,7 @@ mounts:
 func TestParseInstanceSpec(t *testing.T) {
 	spec, err := ParseInstanceSpec(`version: humr.ai/v1
 desiredState: running
-templateName: code-guardian
+agentId: code-guardian
 env:
   - name: GITHUB_ORG
     value: "team-alpha"
@@ -101,14 +101,14 @@ secretRef: cg-team-alpha-secrets
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "running", spec.DesiredState)
-	assert.Equal(t, "code-guardian", spec.TemplateName)
+	assert.Equal(t, "code-guardian", spec.AgentName)
 	assert.Equal(t, "cg-team-alpha-secrets", spec.SecretRef)
 	assert.Len(t, spec.Env, 1)
 }
 
 func TestParseInstanceSpec_MissingDesiredState(t *testing.T) {
 	_, err := ParseInstanceSpec(`version: humr.ai/v1
-templateName: foo`)
+agentId: foo`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "desiredState")
 }

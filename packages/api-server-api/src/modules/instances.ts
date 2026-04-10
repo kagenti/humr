@@ -2,7 +2,7 @@ import type { EnvVar } from "./templates.js";
 
 export interface InstanceSpec {
   version: string;
-  templateName: string;
+  agentId: string;
   desiredState: "running" | "hibernated";
   env?: EnvVar[];
   secretRef?: string;
@@ -25,7 +25,7 @@ export interface Instance {
 
 export interface CreateInstanceInput {
   name: string;
-  templateId: string;
+  agentId: string;
   env?: EnvVar[];
   secretRef?: string;
   description?: string;

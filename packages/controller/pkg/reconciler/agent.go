@@ -19,71 +19,70 @@ import (
 
 const mcpSecretPrefix = "__humr_mcp:"
 
-// TemplateGetter abstracts how templates are looked up — informer lister in prod, map in tests.
-type TemplateGetter interface {
+// AgentGetter abstracts how agents are looked up — informer lister in prod, map in tests.
+type AgentGetter interface {
 	Get(name string) (*corev1.ConfigMap, error)
 }
 
-type TemplateResolver struct {
-	getter TemplateGetter
+type AgentResolver struct {
+	getter AgentGetter
 }
 
-func NewTemplateResolver(getter TemplateGetter) *TemplateResolver {
-	return &TemplateResolver{getter: getter}
+func NewAgentResolver(getter AgentGetter) *AgentResolver {
+	return &AgentResolver{getter: getter}
 }
 
-func (r *TemplateResolver) Resolve(name string) (*types.TemplateSpec, error) {
+func (r *AgentResolver) Resolve(name string) (*types.AgentSpec, error) {
 	cm, err := r.getter.Get(name)
 	if err != nil {
-		return nil, fmt.Errorf("template %q not found: %w", name, err)
+		return nil, fmt.Errorf("agent %q not found: %w", name, err)
 	}
 	specYAML, ok := cm.Data["spec.yaml"]
 	if !ok {
-		return nil, fmt.Errorf("template %q has no spec.yaml", name)
+		return nil, fmt.Errorf("agent %q has no spec.yaml", name)
 	}
-	return types.ParseTemplateSpec(specYAML)
+	return types.ParseAgentSpec(specYAML)
 }
 
-// TemplateTokenSecretName returns the K8s Secret name that stores the OneCLI access token for a template.
-func TemplateTokenSecretName(templateName string) string {
-	return "humr-template-" + templateName + "-token"
+// AgentTokenSecretName returns the K8s Secret name that stores the OneCLI access token for an agent.
+func AgentTokenSecretName(agentName string) string {
+	return "humr-agent-" + agentName + "-token"
 }
 
-// TemplateReconciler registers templates as agents in OneCLI and stores their access tokens.
-type TemplateReconciler struct {
+// AgentReconciler registers agents in OneCLI and stores their access tokens.
+type AgentReconciler struct {
 	client kubernetes.Interface
 	config *config.Config
 	onecli onecli.Client
 }
 
-func NewTemplateReconciler(client kubernetes.Interface, cfg *config.Config, oc onecli.Client) *TemplateReconciler {
-	return &TemplateReconciler{client: client, config: cfg, onecli: oc}
+func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config, oc onecli.Client) *AgentReconciler {
+	return &AgentReconciler{client: client, config: cfg, onecli: oc}
 }
 
-// Reconcile registers the template as an agent in OneCLI, stores the access token,
+// Reconcile registers the agent in OneCLI, stores the access token,
 // and syncs MCP server secrets to the agent.
-func (r *TemplateReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
+func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
 	name := cm.Name
-	// Parse template spec.
-	var tmpl *types.TemplateSpec
+	var agentSpec *types.AgentSpec
 	if specYAML, ok := cm.Data["spec.yaml"]; ok {
 		var err error
-		tmpl, err = types.ParseTemplateSpec(specYAML)
+		agentSpec, err = types.ParseAgentSpec(specYAML)
 		if err != nil {
-			return fmt.Errorf("parsing template %q: %w", name, err)
+			return fmt.Errorf("parsing agent %q: %w", name, err)
 		}
 	}
 
 	// Ensure agent is registered in OneCLI (one-time).
-	agent, err := r.ensureAgent(ctx, cm, name, tmpl)
+	agent, err := r.ensureAgent(ctx, cm, name, agentSpec)
 	if err != nil {
 		return err
 	}
 
 	// Sync MCP secrets to agent (every reconcile).
-	if agent != nil && tmpl != nil && len(tmpl.MCPServers) > 0 {
-		if err := r.syncMCPSecrets(ctx, agent.ID, tmpl); err != nil {
-			slog.Error("failed to sync MCP secrets", "template", name, "error", err)
+	if agent != nil && agentSpec != nil && len(agentSpec.MCPServers) > 0 {
+		if err := r.syncMCPSecrets(ctx, agent.ID, agentSpec); err != nil {
+			slog.Error("failed to sync MCP secrets", "agent", name, "error", err)
 			// Non-fatal — agent still works, just without MCP credential injection.
 		}
 	}
@@ -91,15 +90,15 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	return nil
 }
 
-// ensureAgent registers the template as an agent in OneCLI if not already done.
-func (r *TemplateReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap, name string, tmpl *types.TemplateSpec) (*onecli.Agent, error) {
-	secretName := TemplateTokenSecretName(name)
+// ensureAgent registers the agent in OneCLI if not already done.
+func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap, name string, agentSpec *types.AgentSpec) (*onecli.Agent, error) {
+	secretName := AgentTokenSecretName(name)
 	_, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err == nil {
 		// Already registered — look up the agent to get its ID for secret syncing.
 		agent, err := r.onecli.CreateAgent(ctx, name, name, "selective")
 		if err != nil {
-			slog.Warn("cannot reach OneCLI for agent lookup, skipping MCP sync", "template", name, "error", err)
+			slog.Warn("cannot reach OneCLI for agent lookup, skipping MCP sync", "agent", name, "error", err)
 			return nil, nil
 		}
 		return agent, nil
@@ -109,23 +108,23 @@ func (r *TemplateReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigM
 	}
 
 	secretMode := "selective"
-	if tmpl != nil && tmpl.SecretMode != "" {
-		secretMode = tmpl.SecretMode
+	if agentSpec != nil && agentSpec.SecretMode != "" {
+		secretMode = agentSpec.SecretMode
 	}
 
 	agent, err := r.onecli.CreateAgent(ctx, name, name, secretMode)
 	if err != nil {
-		return nil, fmt.Errorf("registering template %q in OneCLI: %w", name, err)
+		return nil, fmt.Errorf("registering agent %q in OneCLI: %w", name, err)
 	}
-	slog.Info("registered template in OneCLI", "template", name, "agentID", agent.ID)
+	slog.Info("registered agent in OneCLI", "agent", name, "agentID", agent.ID)
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: r.config.Namespace,
 			Labels: map[string]string{
-				"humr.ai/type":     "template-token",
-				"humr.ai/template": name,
+				"humr.ai/type":  "agent-token",
+				"humr.ai/agent": name,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(cm, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
@@ -139,17 +138,17 @@ func (r *TemplateReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigM
 	if _, err := r.client.CoreV1().Secrets(r.config.Namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
 		return nil, fmt.Errorf("creating token secret: %w", err)
 	}
-	slog.Info("created template token secret", "template", name, "secret", secretName)
+	slog.Info("created agent token secret", "agent", name, "secret", secretName)
 	return agent, nil
 }
 
-// syncMCPSecrets ensures that OneCLI secrets matching the template's HTTP MCP servers
-// are linked to the template's agent. This allows the gateway to inject auth tokens
+// syncMCPSecrets ensures that OneCLI secrets matching the agent's HTTP MCP servers
+// are linked to the agent. This allows the gateway to inject auth tokens
 // for MCP server requests.
-func (r *TemplateReconciler) syncMCPSecrets(ctx context.Context, agentID string, tmpl *types.TemplateSpec) error {
-	// Collect hostnames from template's HTTP MCP servers.
+func (r *AgentReconciler) syncMCPSecrets(ctx context.Context, agentID string, agentSpec *types.AgentSpec) error {
+	// Collect hostnames from agent's HTTP MCP servers.
 	wantHosts := make(map[string]bool)
-	for _, s := range tmpl.MCPServers {
+	for _, s := range agentSpec.MCPServers {
 		if s.Type == "http" && s.URL != "" {
 			if u, err := url.Parse(s.URL); err == nil {
 				wantHosts[u.Hostname()] = true
@@ -211,7 +210,7 @@ func (r *TemplateReconciler) syncMCPSecrets(ctx context.Context, agentID string,
 	return nil
 }
 
-// Delete removes the OneCLI agent for a template.
-func (r *TemplateReconciler) Delete(ctx context.Context, name string) {
+// Delete removes the OneCLI agent.
+func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	r.onecli.DeleteAgent(ctx, name)
 }
