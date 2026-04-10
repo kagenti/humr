@@ -38,7 +38,7 @@ Each @mention creates a **new ACP session** — stateless from the ACP perspecti
 
 No session-to-thread mapping, no persistent state in the bot. The messenger is the source of truth for conversation history.
 
-Sessions carry `_meta: { source: "slack", channelId: "..." }` so the UI can filter them out — messenger sessions are headless.
+Sessions should be hidden from the UI — messenger sessions are headless. ACP's `_meta` on `newSession` is not persisted by the agent in `listSessions` responses, so filtering by metadata alone is insufficient. This requires a server-side session registry that tracks which sessions were created by channels, allowing the API Server to enrich or filter `listSessions` responses before they reach the UI.
 
 ### Instance configuration
 
