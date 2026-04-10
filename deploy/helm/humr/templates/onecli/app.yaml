@@ -73,6 +73,17 @@ spec:
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
+        {{- if .Values.keycloak.enabled }}
+        - name: wait-for-keycloak
+          image: {{ .Values.controller.caCertInitImage | default "busybox:stable" }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until wget -qO- http://{{ include "humr.keycloak.fullname" . }}:9000/health/ready >/dev/null 2>&1; do
+                echo "Waiting for Keycloak..."
+                sleep 2
+              done
+        {{- end }}
       containers:
         - name: onecli
           image: {{ .Values.onecli.image }}
