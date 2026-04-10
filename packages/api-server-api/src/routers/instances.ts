@@ -25,7 +25,7 @@ function toView(inst: Instance) {
     secretRef: inst.spec.secretRef,
     desiredState: inst.spec.desiredState,
     enabledMcpServers: inst.spec.enabledMcpServers ?? null,
-    slackConnected: !!inst.spec.slackConfig,
+    connectedChannels: (inst.spec.channels ?? []).map(c => c.type),
     status: inst.status ?? null,
   };
 }
@@ -87,10 +87,10 @@ export const instancesRouter = t.router({
     .input(z.object({
       name: k8sName,
       botToken: z.string().min(1),
-      appToken: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const inst = await ctx.instances.connectSlack(input.name, input.botToken, input.appToken);
+      if (!ctx.channels.available.slack) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Slack app token not configured" });
+      const inst = await ctx.instances.connectSlack(input.name, input.botToken);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(inst);
     }),

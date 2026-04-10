@@ -1,9 +1,19 @@
 import type { EnvVar } from "./templates.js";
 
-export interface SlackConfig {
-  botToken: string;
-  appToken: string;
+export enum ChannelType {
+  Slack = "slack",
 }
+
+export interface Channel {
+  type: ChannelType;
+}
+
+export interface SlackChannel extends Channel {
+  type: ChannelType.Slack;
+  botToken: string;
+}
+
+export type ChannelConfig = SlackChannel;
 
 export interface InstanceSpec {
   version: string;
@@ -13,7 +23,7 @@ export interface InstanceSpec {
   secretRef?: string;
   description?: string;
   enabledMcpServers?: string[];
-  slackConfig?: SlackConfig;
+  channels?: ChannelConfig[];
 }
 
 export interface InstanceStatus {
@@ -44,12 +54,6 @@ export interface UpdateInstanceInput {
   enabledMcpServers?: string[];
 }
 
-export interface SlackBotManager {
-  start(instanceName: string, botToken: string, appToken: string): Promise<void>;
-  stop(instanceName: string): Promise<void>;
-  stopAll(): Promise<void>;
-}
-
 export interface InstancesContext {
   list: () => Promise<Instance[]>;
   get: (name: string) => Promise<Instance | null>;
@@ -57,6 +61,6 @@ export interface InstancesContext {
   update: (input: UpdateInstanceInput) => Promise<Instance | null>;
   delete: (name: string) => Promise<void>;
   wake: (name: string) => Promise<Instance | null>;
-  connectSlack: (name: string, botToken: string, appToken: string) => Promise<Instance | null>;
+  connectSlack: (name: string, botToken: string) => Promise<Instance | null>;
   disconnectSlack: (name: string) => Promise<Instance | null>;
 }

@@ -1,23 +1,24 @@
 import * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
-import type {
-  Template,
-  TemplateSpec,
-  TemplatesContext,
-  CreateTemplateInput,
-  Instance,
-  InstanceSpec,
-  InstanceStatus,
-  InstancesContext,
-  CreateInstanceInput,
-  UpdateInstanceInput,
-  SlackBotManager,
-  Schedule,
-  ScheduleSpec,
-  ScheduleStatus,
-  SchedulesContext,
-  CreateCronScheduleInput,
-  CreateHeartbeatScheduleInput,
+import type { ChannelManager } from "./channels/channel-manager.js";
+import {
+  ChannelType,
+  type Template,
+  type TemplateSpec,
+  type TemplatesContext,
+  type CreateTemplateInput,
+  type Instance,
+  type InstanceSpec,
+  type InstanceStatus,
+  type InstancesContext,
+  type CreateInstanceInput,
+  type UpdateInstanceInput,
+  type Schedule,
+  type ScheduleSpec,
+  type ScheduleStatus,
+  type SchedulesContext,
+  type CreateCronScheduleInput,
+  type CreateHeartbeatScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
 import { CronExpressionParser } from "cron-parser";
@@ -153,7 +154,7 @@ export function createK8sInstancesContext(
   namespace: string,
   api: k8s.CoreV1Api,
   templates: TemplatesContext,
-  slackBots: SlackBotManager,
+  channels: ChannelManager[],
 ): InstancesContext {
   return {
     async list() {
@@ -272,7 +273,7 @@ export function createK8sInstancesContext(
       return parseInstance(updated);
     },
 
-    async connectSlack(name: string, botToken: string, appToken: string) {
+    async connectSlack(name: string, botToken: string) {
       let cm: k8s.V1ConfigMap;
       try {
         cm = await api.readNamespacedConfigMap({ name, namespace });
@@ -281,10 +282,12 @@ export function createK8sInstancesContext(
         throw err;
       }
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-      spec.slackConfig = { botToken, appToken };
+      const slackChannel = { type: ChannelType.Slack, botToken };
+      spec.channels = [...(spec.channels ?? []).filter(c => c.type !== ChannelType.Slack), slackChannel];
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
       const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
-      await slackBots.start(name, botToken, appToken);
+      const mgr = channels.find(m => m.type === slackChannel.type);
+      if (mgr) await mgr.start(name, slackChannel);
       return parseInstance(updated);
     },
 
@@ -297,15 +300,15 @@ export function createK8sInstancesContext(
         throw err;
       }
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-      delete spec.slackConfig;
+      spec.channels = (spec.channels ?? []).filter(c => c.type !== ChannelType.Slack);
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
       const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
-      await slackBots.stop(name);
+      await Promise.all(channels.map(m => m.stop(name)));
       return parseInstance(updated);
     },
 
     async delete(name) {
-      await slackBots.stop(name);
+      await Promise.all(channels.map(m => m.stop(name)));
       await api.deleteNamespacedConfigMap({ name, namespace });
 
       try {

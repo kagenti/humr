@@ -45,6 +45,7 @@ export interface HumrStore {
   setView: (v: View) => void;
 
   // Data
+  availableChannels: Record<string, boolean>;
   templates: TemplateView[];
   instances: InstanceView[];
   selectedInstance: string | null;
@@ -79,7 +80,7 @@ export interface HumrStore {
     enabledMcpServers?: string[],
   ) => Promise<void>;
   deleteInstance: (name: string) => Promise<void>;
-  connectSlack: (name: string, botToken: string, appToken: string) => Promise<void>;
+  connectSlack: (name: string, botToken: string) => Promise<void>;
   disconnectSlack: (name: string) => Promise<void>;
   selectInstance: (name: string) => void;
   goBack: () => void;
@@ -163,6 +164,7 @@ export const useStore = create<HumrStore>((set, get) => ({
   },
 
   // Data
+  availableChannels: {},
   templates: [],
   instances: [],
   selectedInstance: null,
@@ -212,8 +214,11 @@ export const useStore = create<HumrStore>((set, get) => ({
   fetchInstances: async () => {
     set((s) => ({ loading: { ...s.loading, instances: true } }));
     try {
-      const list = await platform.instances.list.query();
-      set({ instances: list });
+      const [list, availableChannels] = await Promise.all([
+        platform.instances.list.query(),
+        platform.channels.available.query(),
+      ]);
+      set({ instances: list, availableChannels });
     } catch {}
     set((s) => ({ loading: { ...s.loading, instances: false } }));
   },
@@ -236,9 +241,9 @@ export const useStore = create<HumrStore>((set, get) => ({
     }
   },
 
-  connectSlack: async (name, botToken, appToken) => {
+  connectSlack: async (name, botToken) => {
     try {
-      await platform.instances.connectSlack.mutate({ name, botToken, appToken });
+      await platform.instances.connectSlack.mutate({ name, botToken });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to connect Slack");

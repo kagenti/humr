@@ -44,6 +44,7 @@ export function ListView() {
   const showConfirm = useStore(s => s.showConfirm);
   const connectSlack = useStore(s => s.connectSlack);
   const disconnectSlack = useStore(s => s.disconnectSlack);
+  const slackAvailable = useStore(s => !!s.availableChannels.slack);
 
   const [showTmplDlg, setShowTmplDlg] = useState(false);
   const [busyTmpl, setBusyTmpl] = useState(false);
@@ -183,20 +184,22 @@ export function ListView() {
                           <span className="text-[12px] font-mono text-text-muted">{inst.enabledMcpServers.length} MCP</span>
                         )}
 
+                        {slackAvailable && (
                         <button
                           onClick={async e => {
                             e.stopPropagation();
-                            if (inst.slackConnected) {
+                            if (inst.connectedChannels.includes("slack")) {
                               if (await showConfirm(`Disconnect Slack from "${inst.name}"?`, "Disconnect Slack")) disconnectSlack(inst.name);
                             } else {
                               setShowSlackDlg(inst.name);
                             }
                           }}
-                          className={`h-7 w-7 rounded-md border-2 flex items-center justify-center transition-colors ${inst.slackConnected ? "border-accent text-accent hover:text-danger hover:border-danger" : "border-border-light text-text-muted hover:text-accent hover:border-accent"}`}
-                          title={inst.slackConnected ? "Disconnect Slack" : "Connect Slack"}
+                          className={`h-7 w-7 rounded-md border-2 flex items-center justify-center transition-colors ${inst.connectedChannels.includes("slack") ? "border-accent text-accent hover:text-danger hover:border-danger" : "border-border-light text-text-muted hover:text-accent hover:border-accent"}`}
+                          title={inst.connectedChannels.includes("slack") ? "Disconnect Slack" : "Connect Slack"}
                         >
-                          {inst.slackConnected ? <MessageSquareOff size={12} /> : <MessageSquare size={12} />}
+                          {inst.connectedChannels.includes("slack") ? <MessageSquareOff size={12} /> : <MessageSquare size={12} />}
                         </button>
+                        )}
                         <button
                           onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.name); }}
                           className="h-7 w-7 rounded-md border-2 border-border-light flex items-center justify-center text-text-muted hover:text-danger hover:border-danger transition-colors"
@@ -232,7 +235,7 @@ export function ListView() {
       {showSlackDlg && (
         <ConnectSlackDialog
           instanceName={showSlackDlg}
-          onSubmit={async (botToken, appToken) => { const n = showSlackDlg; setShowSlackDlg(null); await connectSlack(n, botToken, appToken); }}
+          onSubmit={async (botToken: string) => { const n = showSlackDlg; setShowSlackDlg(null); await connectSlack(n, botToken); }}
           onCancel={() => setShowSlackDlg(null)}
         />
       )}

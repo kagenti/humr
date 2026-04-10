@@ -6,51 +6,51 @@ import { createApi, createK8sTemplatesContext, createK8sInstancesContext, create
 import { createAcpRelay } from "./acp-relay.js";
 import { createTrpcRelay } from "./trpc-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
-import { createSlackBotManager } from "./slack-bot.js";
+import { createSlackChannelManager, type ChannelManager } from "./channels/index.js";
+import { loadConfig } from "./config.js";
 
-const namespace = process.env.NAMESPACE ?? "humr-agents";
-const port = Number(process.env.PORT ?? 4000);
+const config = loadConfig();
 
-const { api } = createApi(namespace);
-const slackBots = createSlackBotManager(namespace);
-const templates = createK8sTemplatesContext(namespace, api);
-const instances = createK8sInstancesContext(namespace, api, templates, slackBots);
-const schedules = createK8sSchedulesContext(namespace, api, instances);
+const { api } = createApi(config.namespace);
+const managers: ChannelManager[] = [];
+if (config.slackAppToken) managers.push(createSlackChannelManager(config.namespace, config.slackAppToken));
+const templates = createK8sTemplatesContext(config.namespace, api);
+const instances = createK8sInstancesContext(config.namespace, api, templates, managers);
+const schedules = createK8sSchedulesContext(config.namespace, api, instances);
 
 const app = new Hono();
 
-// OAuth flow for custom MCP server authentication
-const uiBaseUrl = process.env.UI_BASE_URL ?? "http://humr.localhost:4444";
-app.route("/", createOAuthRoutes(uiBaseUrl));
+app.route("/", createOAuthRoutes(config.uiBaseUrl));
 
-app.all("/api/instances/:id/trpc/*", createTrpcRelay(namespace));
+app.all("/api/instances/:id/trpc/*", createTrpcRelay(config.namespace));
 
 app.all("/api/trpc/*", (c) =>
   fetchRequestHandler({
     endpoint: "/api/trpc",
     req: c.req.raw,
     router: appRouter,
-    createContext: (): ApiContext => ({ templates, instances, schedules }),
+    createContext: (): ApiContext => ({ templates, instances, schedules, channels: { available: Object.fromEntries(managers.map(m => [m.type, true])) } }),
   }),
 );
 
-const server = serve({ fetch: app.fetch, port }, () => {
-  process.stderr.write(`api-server listening on http://localhost:${port}\n`);
+const server = serve({ fetch: app.fetch, port: config.port }, () => {
+  process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(namespace, api);
+const acpRelay = createAcpRelay(config.namespace, api);
 
 instances.list().then((all) => {
   for (const inst of all) {
-    if (inst.spec.slackConfig) {
-      slackBots.start(inst.name, inst.spec.slackConfig.botToken, inst.spec.slackConfig.appToken);
+    for (const channel of inst.spec.channels ?? []) {
+      const mgr = managers.find(m => m.type === channel.type);
+      if (mgr) mgr.start(inst.name, channel);
     }
   }
 });
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
-  await slackBots.stopAll();
+  await Promise.all(managers.map(m => m.stopAll()));
   server.close();
   process.exit(0);
 }

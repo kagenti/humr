@@ -1,10 +1,10 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs } from "@slack/bolt";
-import type { SlackBotManager } from "api-server-api";
-import { sendPrompt } from "./acp-client.js";
+import { ChannelType, type ChannelConfig, type SlackChannel } from "api-server-api";
+import type { ChannelManager } from "./channel-manager.js";
+import { sendPrompt } from "../acp-client.js";
 
 type BoltApp = InstanceType<typeof App>;
 
-/** Fetches whole thread if in a thread, otherwise last 10 messages from the channel. */
 async function getContextMessages(
   app: BoltApp,
   channel: string,
@@ -32,12 +32,15 @@ async function getContextMessages(
     .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
 }
 
-export function createSlackBotManager(namespace: string): SlackBotManager {
+export function createSlackChannelManager(namespace: string, appToken: string): ChannelManager {
   const bots = new Map<string, BoltApp>();
 
   return {
-    async start(instanceName: string, botToken: string, appToken: string) {
+    type: ChannelType.Slack,
+
+    async start(instanceName: string, channel: ChannelConfig) {
       if (bots.has(instanceName)) await this.stop(instanceName);
+      const { botToken } = channel as SlackChannel;
 
       const app = new App({
         token: botToken,

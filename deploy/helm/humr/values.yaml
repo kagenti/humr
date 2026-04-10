@@ -78,6 +78,8 @@ apiServer:
   image: humr-api-server:latest
   imagePullPolicy: Never
   port: 4000
+  # -- Slack app-level token (xapp-...) for Socket Mode. Leave empty to disable Slack integration.
+  slackAppToken: ""
   resources:
     requests:
       cpu: 100m

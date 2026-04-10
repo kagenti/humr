@@ -2,15 +2,14 @@ import { useState } from "react";
 
 export function ConnectSlackDialog({ instanceName, onSubmit, onCancel }: {
   instanceName: string;
-  onSubmit: (botToken: string, appToken: string) => void;
+  onSubmit: (botToken: string) => void;
   onCancel: () => void;
 }) {
   const [botToken, setBotToken] = useState("");
-  const [appToken, setAppToken] = useState("");
 
   const submit = () => {
-    if (!botToken.trim() || !appToken.trim()) return;
-    onSubmit(botToken.trim(), appToken.trim());
+    if (!botToken.trim()) return;
+    onSubmit(botToken.trim());
   };
 
   return (
@@ -31,19 +30,9 @@ export function ConnectSlackDialog({ instanceName, onSubmit, onCancel }: {
             className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted font-mono"
             value={botToken}
             onChange={e => setBotToken(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && submit()}
             placeholder="xoxb-..."
             autoFocus
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">App Token</span>
-          <input
-            className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted font-mono"
-            value={appToken}
-            onChange={e => setAppToken(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && submit()}
-            placeholder="xapp-..."
           />
         </label>
 
@@ -59,7 +48,7 @@ export function ConnectSlackDialog({ instanceName, onSubmit, onCancel }: {
             className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
             style={{ boxShadow: "var(--shadow-brutal-accent)" }}
             onClick={submit}
-            disabled={!botToken.trim() || !appToken.trim()}
+            disabled={!botToken.trim()}
           >
             Connect
           </button>

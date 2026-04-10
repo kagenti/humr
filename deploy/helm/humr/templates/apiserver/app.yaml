@@ -52,6 +52,10 @@ spec:
               value: {{ .Values.agentNamespace | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            {{- if .Values.apiServer.slackAppToken }}
+            - name: SLACK_APP_TOKEN
+              value: {{ .Values.apiServer.slackAppToken | quote }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: http

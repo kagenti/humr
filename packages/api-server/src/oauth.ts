@@ -7,6 +7,7 @@
 
 import { Hono } from "hono";
 import crypto from "node:crypto";
+import { loadConfig } from "./config.js";
 
 // --- In-memory state store (PoC — not persistent across restarts) ---
 
@@ -43,7 +44,7 @@ function generateCodeChallenge(verifier: string): string {
 
 // --- OneCLI client ---
 
-const onecliBaseUrl = process.env.ONECLI_WEB_URL ?? "http://humr-onecli:10254";
+const { onecliBaseUrl } = loadConfig();
 let onecliApiKey: string | null = null;
 
 async function ensureOnecliApiKey(): Promise<string> {
