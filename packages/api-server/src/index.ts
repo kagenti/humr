@@ -6,13 +6,15 @@ import { createApi, createK8sTemplatesContext, createK8sInstancesContext, create
 import { createAcpRelay } from "./acp-relay.js";
 import { createTrpcRelay } from "./trpc-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
+import { createSlackBotManager } from "./slack-bot.js";
 
 const namespace = process.env.NAMESPACE ?? "humr-agents";
 const port = Number(process.env.PORT ?? 4000);
 
 const { api } = createApi(namespace);
+const slackBots = createSlackBotManager(namespace);
 const templates = createK8sTemplatesContext(namespace, api);
-const instances = createK8sInstancesContext(namespace, api, templates);
+const instances = createK8sInstancesContext(namespace, api, templates, slackBots);
 const schedules = createK8sSchedulesContext(namespace, api, instances);
 
 const app = new Hono();
@@ -37,6 +39,23 @@ const server = serve({ fetch: app.fetch, port }, () => {
 });
 
 const acpRelay = createAcpRelay(namespace, api);
+
+instances.list().then((all) => {
+  for (const inst of all) {
+    if (inst.spec.slackConfig) {
+      slackBots.start(inst.name, inst.spec.slackConfig.botToken, inst.spec.slackConfig.appToken);
+    }
+  }
+});
+
+async function shutdown() {
+  process.stderr.write("shutting down...\n");
+  await slackBots.stopAll();
+  server.close();
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 server.on("upgrade", (req, socket, head) => {
   const match = req.url?.match(/^\/api\/instances\/([^/]+)\/acp$/);

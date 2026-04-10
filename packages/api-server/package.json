@@ -10,8 +10,10 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.17.1",
     "@hono/node-server": "^1.14.3",
     "@kubernetes/client-node": "^1.2.0",
+    "@slack/bolt": "^4.7.0",
     "@trpc/server": "^11.16.0",
     "api-server-api": "workspace:*",
     "cron-parser": "^5.5.0",

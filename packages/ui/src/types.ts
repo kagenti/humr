@@ -67,6 +67,7 @@ export interface InstanceView {
   description?: string;
   desiredState: "running" | "hibernated";
   enabledMcpServers?: string[] | null;
+  slackConnected: boolean;
   status: { currentState: string; error?: string; podReady: boolean } | null;
 }
 

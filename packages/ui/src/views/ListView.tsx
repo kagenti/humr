@@ -4,7 +4,8 @@ import type { InstanceView } from "../types.js";
 import { StatusIndicator } from "../components/StatusIndicator.js";
 import { CreateTemplateDialog } from "../dialogs/CreateTemplateDialog.js";
 import { CreateInstanceDialog } from "../dialogs/CreateInstanceDialog.js";
-import { RefreshCw, Plus, Trash2 } from "lucide-react";
+import { RefreshCw, Plus, Trash2, MessageSquare, MessageSquareOff } from "lucide-react";
+import { ConnectSlackDialog } from "../dialogs/ConnectSlackDialog.js";
 
 function statusLabel(i: InstanceView) {
   if (!i.status) return "unknown";
@@ -41,12 +42,15 @@ export function ListView() {
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
+  const connectSlack = useStore(s => s.connectSlack);
+  const disconnectSlack = useStore(s => s.disconnectSlack);
 
   const [showTmplDlg, setShowTmplDlg] = useState(false);
   const [busyTmpl, setBusyTmpl] = useState(false);
   const [showInstDlg, setShowInstDlg] = useState<string | null>(null);
   const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delTmpl, setDelTmpl] = useState<string | null>(null);
+  const [showSlackDlg, setShowSlackDlg] = useState<string | null>(null);
 
   const byTemplate = useMemo(() => {
     const m = new Map<string, InstanceView[]>();
@@ -180,6 +184,20 @@ export function ListView() {
                         )}
 
                         <button
+                          onClick={async e => {
+                            e.stopPropagation();
+                            if (inst.slackConnected) {
+                              if (await showConfirm(`Disconnect Slack from "${inst.name}"?`, "Disconnect Slack")) disconnectSlack(inst.name);
+                            } else {
+                              setShowSlackDlg(inst.name);
+                            }
+                          }}
+                          className={`h-7 w-7 rounded-md border-2 flex items-center justify-center transition-colors ${inst.slackConnected ? "border-accent text-accent hover:text-danger hover:border-danger" : "border-border-light text-text-muted hover:text-accent hover:border-accent"}`}
+                          title={inst.slackConnected ? "Disconnect Slack" : "Connect Slack"}
+                        >
+                          {inst.slackConnected ? <MessageSquareOff size={12} /> : <MessageSquare size={12} />}
+                        </button>
+                        <button
                           onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.name); }}
                           className="h-7 w-7 rounded-md border-2 border-border-light flex items-center justify-center text-text-muted hover:text-danger hover:border-danger transition-colors"
                           title="Delete"
@@ -209,6 +227,13 @@ export function ListView() {
           mcpServers={templates.find(t => t.name === showInstDlg)?.mcpServers}
           onSubmit={async (name, mcp) => { const t = showInstDlg; setShowInstDlg(null); setBusyInst(t); await createInstance(t, name, mcp); setBusyInst(null); }}
           onCancel={() => setShowInstDlg(null)}
+        />
+      )}
+      {showSlackDlg && (
+        <ConnectSlackDialog
+          instanceName={showSlackDlg}
+          onSubmit={async (botToken, appToken) => { const n = showSlackDlg; setShowSlackDlg(null); await connectSlack(n, botToken, appToken); }}
+          onCancel={() => setShowSlackDlg(null)}
         />
       )}
     </>

@@ -25,6 +25,7 @@ function toView(inst: Instance) {
     secretRef: inst.spec.secretRef,
     desiredState: inst.spec.desiredState,
     enabledMcpServers: inst.spec.enabledMcpServers ?? null,
+    slackConnected: !!inst.spec.slackConfig,
     status: inst.status ?? null,
   };
 }
@@ -78,6 +79,26 @@ export const instancesRouter = t.router({
     .input(z.object({ name: k8sName }))
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.wake(input.name);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(inst);
+    }),
+
+  connectSlack: t.procedure
+    .input(z.object({
+      name: k8sName,
+      botToken: z.string().min(1),
+      appToken: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const inst = await ctx.instances.connectSlack(input.name, input.botToken, input.appToken);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(inst);
+    }),
+
+  disconnectSlack: t.procedure
+    .input(z.object({ name: k8sName }))
+    .mutation(async ({ ctx, input }) => {
+      const inst = await ctx.instances.disconnectSlack(input.name);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(inst);
     }),

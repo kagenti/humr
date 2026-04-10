@@ -5,6 +5,8 @@ export type {
   InstanceSpec,
   InstanceStatus,
   InstancesContext,
+  SlackConfig,
+  SlackBotManager,
   CreateInstanceInput,
   UpdateInstanceInput,
 } from "./modules/instances.js";

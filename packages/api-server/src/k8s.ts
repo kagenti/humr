@@ -11,6 +11,7 @@ import type {
   InstancesContext,
   CreateInstanceInput,
   UpdateInstanceInput,
+  SlackBotManager,
   Schedule,
   ScheduleSpec,
   ScheduleStatus,
@@ -152,6 +153,7 @@ export function createK8sInstancesContext(
   namespace: string,
   api: k8s.CoreV1Api,
   templates: TemplatesContext,
+  slackBots: SlackBotManager,
 ): InstancesContext {
   return {
     async list() {
@@ -270,7 +272,40 @@ export function createK8sInstancesContext(
       return parseInstance(updated);
     },
 
+    async connectSlack(name: string, botToken: string, appToken: string) {
+      let cm: k8s.V1ConfigMap;
+      try {
+        cm = await api.readNamespacedConfigMap({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
+      spec.slackConfig = { botToken, appToken };
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+      await slackBots.start(name, botToken, appToken);
+      return parseInstance(updated);
+    },
+
+    async disconnectSlack(name: string) {
+      let cm: k8s.V1ConfigMap;
+      try {
+        cm = await api.readNamespacedConfigMap({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
+      delete spec.slackConfig;
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+      await slackBots.stop(name);
+      return parseInstance(updated);
+    },
+
     async delete(name) {
+      await slackBots.stop(name);
       await api.deleteNamespacedConfigMap({ name, namespace });
 
       try {

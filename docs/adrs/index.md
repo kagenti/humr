@@ -27,3 +27,4 @@ This directory contains ADRs for the Humr project.
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 | [DRAFT](DRAFT-integration-testing.md) | E2E integration testing against dedicated k3s cluster | @tomkis |
 | [DRAFT](DRAFT-multi-user-auth.md) | Multi-user auth via Keycloak + OneCLI fork with token exchange | @tomkis |
+| [DRAFT](DRAFT-messenger-integration.md) | Messenger integration handled by API Server | @tomkis |

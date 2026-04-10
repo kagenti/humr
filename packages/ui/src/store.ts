@@ -79,6 +79,8 @@ export interface HumrStore {
     enabledMcpServers?: string[],
   ) => Promise<void>;
   deleteInstance: (name: string) => Promise<void>;
+  connectSlack: (name: string, botToken: string, appToken: string) => Promise<void>;
+  disconnectSlack: (name: string) => Promise<void>;
   selectInstance: (name: string) => void;
   goBack: () => void;
 
@@ -231,6 +233,24 @@ export const useStore = create<HumrStore>((set, get) => ({
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to delete instance");
+    }
+  },
+
+  connectSlack: async (name, botToken, appToken) => {
+    try {
+      await platform.instances.connectSlack.mutate({ name, botToken, appToken });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to connect Slack");
+    }
+  },
+
+  disconnectSlack: async (name) => {
+    try {
+      await platform.instances.disconnectSlack.mutate({ name });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to disconnect Slack");
     }
   },
 
