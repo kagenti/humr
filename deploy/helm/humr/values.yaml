@@ -30,7 +30,7 @@ postgres:
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
-  image: ghcr.io/kagenti/onecli:0.0.5
+  image: ghcr.io/kagenti/onecli:0.0.6
   replicas: 1
 
   # -- Database connection (empty host = use shared local postgres)
