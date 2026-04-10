@@ -2,11 +2,16 @@ package reconciler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
@@ -93,26 +98,63 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
+		// Probe the pod — if it has active sessions or triggers, skip hibernation
+		if c.podIsBusy(cm.Name) {
+			slog.Info("idle checker: skipping busy instance", "instance", cm.Name)
+			continue
+		}
+
 		slog.Info("hibernating idle instance", "instance", cm.Name, "idle", now.Sub(t).Round(time.Second))
-		if err := c.hibernate(ctx, cm.Name, spec); err != nil {
+		if err := c.hibernate(ctx, cm.Name); err != nil {
 			slog.Error("idle checker: hibernating", "instance", cm.Name, "error", err)
 		}
 	}
 }
 
-func (c *IdleChecker) hibernate(ctx context.Context, name string, spec *types.InstanceSpec) error {
-	// Re-fetch to avoid conflicts
-	fresh, err := c.client.CoreV1().ConfigMaps(c.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+// podIsBusy probes the agent runtime's /api/status endpoint to check for active sessions or triggers.
+// Returns false (not busy) on any error — allows hibernation if the pod is unreachable.
+func (c *IdleChecker) podIsBusy(instanceName string) bool {
+	url := fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", instanceName, instanceName, c.config.Namespace)
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
 	if err != nil {
-		return err
+		return false
 	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+	var status struct {
+		ActiveSessions int `json:"activeSessions"`
+		ActiveTriggers int `json:"activeTriggers"`
+	}
+	if err := json.Unmarshal(body, &status); err != nil {
+		return false
+	}
+	return status.ActiveSessions > 0 || status.ActiveTriggers > 0
+}
 
-	spec.DesiredState = "hibernated"
-	specYAML, err := yaml.Marshal(spec)
-	if err != nil {
+func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh, err := c.client.CoreV1().ConfigMaps(c.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		freshSpec, err := types.ParseInstanceSpec(fresh.Data["spec.yaml"])
+		if err != nil {
+			return err
+		}
+		if freshSpec.DesiredState != "running" {
+			return nil // already changed by someone else
+		}
+		freshSpec.DesiredState = "hibernated"
+		specYAML, err := yaml.Marshal(freshSpec)
+		if err != nil {
+			return err
+		}
+		fresh.Data["spec.yaml"] = string(specYAML)
+		_, err = c.client.CoreV1().ConfigMaps(c.config.Namespace).Update(ctx, fresh, metav1.UpdateOptions{})
 		return err
-	}
-	fresh.Data["spec.yaml"] = string(specYAML)
-	_, err = c.client.CoreV1().ConfigMaps(c.config.Namespace).Update(ctx, fresh, metav1.UpdateOptions{})
-	return err
+	})
 }

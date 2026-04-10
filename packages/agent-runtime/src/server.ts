@@ -7,7 +7,9 @@ import { appRouter, type AgentRuntimeContext } from "agent-runtime-api";
 import { createFilesContext } from "./modules/files.js";
 import { config } from "./modules/config.js";
 import { spawnAcpSession } from "./acp-bridge.js";
-import { startTriggerWatcher } from "./trigger-watcher.js";
+import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
+
+let triggerWatcher: TriggerWatcher | undefined;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
@@ -38,6 +40,15 @@ const server = http.createServer((req, res) => {
 
   if (req.url === "/healthz") {
     res.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
+    return;
+  }
+
+  if (req.url === "/api/status") {
+    const status = {
+      activeSessions: wss.clients.size,
+      activeTriggers: triggerWatcher?.activeCount() ?? 0,
+    };
+    res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
     return;
   }
 
@@ -105,7 +116,7 @@ wss.on("connection", (ws) => {
 server.listen(config.PORT, () => {
   process.stderr.write(`Humr on http://localhost:${config.PORT}\n`);
 
-  startTriggerWatcher({
+  triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,
     workingDir,
     agentScript,

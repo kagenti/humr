@@ -20,7 +20,12 @@ interface TriggerWatcherOptions {
   isDev: boolean;
 }
 
-export function startTriggerWatcher(options: TriggerWatcherOptions): void {
+export interface TriggerWatcher {
+  /** Number of triggers currently being processed. */
+  activeCount(): number;
+}
+
+export function startTriggerWatcher(options: TriggerWatcherOptions): TriggerWatcher {
   const { triggersDir } = options;
   const inflight = new Set<string>();
 
@@ -43,6 +48,8 @@ export function startTriggerWatcher(options: TriggerWatcherOptions): void {
   });
 
   process.stderr.write(`[trigger] Watching ${triggersDir}\n`);
+
+  return { activeCount: () => inflight.size };
 }
 
 async function processTriggerFile(filePath: string, options: TriggerWatcherOptions): Promise<void> {
