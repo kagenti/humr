@@ -276,22 +276,40 @@ echo "k3s cluster ($LIMA_INSTANCE) deleted."
 '''
 
 ["cluster:status"]
-description = "Show cluster and pod status"
+description = "Show cluster and pod status. Options: --watch (continuous refresh every 2s)"
+raw = true
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
-echo "=== Lima VM ==="
+
+STATUS_CMD="
+echo '=== Lima VM ==='
 limactl list
-echo ""
-echo "=== Nodes ==="
-kubectl --kubeconfig="$KUBECONFIG" get nodes 2>/dev/null || echo "Cluster not reachable"
-echo ""
-echo "=== Pods (default) ==="
-kubectl --kubeconfig="$KUBECONFIG" get pods 2>/dev/null || true
-echo ""
-echo "=== Pods (humr-agents) ==="
-kubectl --kubeconfig="$KUBECONFIG" get pods -n humr-agents 2>/dev/null || true
+echo ''
+echo '=== Nodes ==='
+kubectl --kubeconfig='$KUBECONFIG' get nodes 2>/dev/null || echo 'Cluster not reachable'
+echo ''
+echo '=== Pods (default) ==='
+kubectl --kubeconfig='$KUBECONFIG' get pods 2>/dev/null || true
+echo ''
+echo '=== Pods (humr-agents) ==='
+kubectl --kubeconfig='$KUBECONFIG' get pods -n humr-agents 2>/dev/null || true
+"
+
+case "${1:-}" in
+  --watch|-w)
+    tput civis 2>/dev/null
+    trap 'tput cnorm 2>/dev/null; exit' INT TERM
+    while true; do
+      tput home 2>/dev/null
+      eval "$STATUS_CMD" | sed $'s/$/\033[K/'
+      tput ed 2>/dev/null
+      sleep 0.5
+    done
+    ;;
+  *) eval "$STATUS_CMD" ;;
+esac
 '''
 
 
