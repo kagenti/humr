@@ -390,9 +390,14 @@ export function ChatView() {
       );
       addLog("done", { stopReason: r.stopReason });
     } catch (err: any) {
-      addLog("error", { message: err?.message });
+      const errMsg = err?.message ?? String(err);
+      addLog("error", { message: errMsg });
       setMessages((p) =>
-        p.map((m) => (m.id === aId ? { ...m, streaming: false } : m)),
+        p.map((m) =>
+          m.id === aId
+            ? { ...m, streaming: false, parts: [{ kind: "text" as const, text: errMsg }] }
+            : m,
+        ),
       );
       connectionRef.current?.ws.close();
       connectionRef.current = null;
