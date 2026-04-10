@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
-import { createApi, createK8sTemplatesContext, createK8sInstancesContext, createK8sSchedulesContext, verifyInstanceOwner } from "./k8s.js";
+import { createApi, createK8sTemplatesContext, createK8sInstancesContext, createK8sSchedulesContext, verifyInstanceOwner, podBaseUrl } from "./k8s.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { createAuth } from "./auth.js";
@@ -42,16 +42,17 @@ app.use("/api/*", auth.middleware);
 const uiBaseUrl = process.env.UI_BASE_URL ?? "http://humr.localhost:4444";
 app.route("/", createOAuthRoutes(uiBaseUrl));
 
-// Instance relay paths — verify ownership and translate to qualified K8s name
+// Instance tRPC relay — id is the K8s name, verify ownership then forward
 app.all("/api/instances/:id/trpc/*", async (c) => {
   const user = c.get("user");
   const instanceId = c.req.param("id")!;
-  const qName = await verifyInstanceOwner(api, namespace, instanceId, user.sub, user.preferredUsername);
-  if (!qName) return c.json({ error: "not found" }, 404);
-  // Rewrite the path to use the qualified name for the upstream relay
+  if (!await verifyInstanceOwner(api, namespace, instanceId, user.sub)) {
+    return c.json({ error: "not found" }, 404);
+  }
+
   const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
   const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-  const upstreamUrl = `http://${qName}-0.${qName}.${namespace}.svc:8080/api/trpc${rest}${qs}`;
+  const upstreamUrl = `http://${podBaseUrl(instanceId, namespace)}/api/trpc${rest}${qs}`;
   try {
     const headers = new Headers(c.req.raw.headers);
     headers.delete("host");
@@ -70,9 +71,9 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
 
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
-  const templates = createK8sTemplatesContext(namespace, api, user.sub, user.preferredUsername);
-  const instances = createK8sInstancesContext(namespace, api, user.sub, user.preferredUsername);
-  const schedules = createK8sSchedulesContext(namespace, api, user.sub, user.preferredUsername);
+  const templates = createK8sTemplatesContext(namespace, api, user.sub);
+  const instances = createK8sInstancesContext(namespace, api, user.sub);
+  const schedules = createK8sSchedulesContext(namespace, api, user.sub);
 
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -117,13 +118,12 @@ server.on("upgrade", async (req, socket, head) => {
     return;
   }
 
-  const instanceId = match[1];
-  const qName = await verifyInstanceOwner(api, namespace, instanceId, user.sub, user.preferredUsername);
-  if (!qName) {
+  const instanceId = decodeURIComponent(match[1]);
+  if (!await verifyInstanceOwner(api, namespace, instanceId, user.sub)) {
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  acpRelay.handleUpgrade(req, socket, head, qName);
+  acpRelay.handleUpgrade(req, socket, head, instanceId);
 });

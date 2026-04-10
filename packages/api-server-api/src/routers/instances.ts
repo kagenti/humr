@@ -3,12 +3,6 @@ import { z } from "zod";
 import { t } from "../trpc.js";
 import type { Instance } from "../modules/instances.js";
 
-const k8sName = z
-  .string()
-  .min(1)
-  .max(253)
-  .regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/);
-
 const envVarSchema = z.object({
   name: z.string(),
   value: z.string(),
@@ -18,6 +12,7 @@ const enabledMcpServersSchema = z.array(z.string()).optional();
 
 function toView(inst: Instance) {
   return {
+    id: inst.id,
     name: inst.name,
     templateName: inst.spec.templateName,
     description: inst.spec.description,
@@ -36,17 +31,17 @@ export const instancesRouter = t.router({
   }),
 
   get: t.procedure
-    .input(z.object({ name: k8sName }))
+    .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const inst = await ctx.instances.get(input.name);
+      const inst = await ctx.instances.get(input.id);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(inst);
     }),
 
   create: t.procedure
     .input(z.object({
-      name: k8sName,
-      templateName: k8sName,
+      name: z.string().min(1),
+      templateId: z.string().min(1),
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       description: z.string().optional(),
@@ -59,7 +54,7 @@ export const instancesRouter = t.router({
 
   update: t.procedure
     .input(z.object({
-      name: k8sName,
+      id: z.string().min(1),
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       enabledMcpServers: enabledMcpServersSchema,
@@ -71,13 +66,13 @@ export const instancesRouter = t.router({
     }),
 
   delete: t.procedure
-    .input(z.object({ name: k8sName }))
-    .mutation(({ ctx, input }) => ctx.instances.delete(input.name)),
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(({ ctx, input }) => ctx.instances.delete(input.id)),
 
   wake: t.procedure
-    .input(z.object({ name: k8sName }))
+    .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const inst = await ctx.instances.wake(input.name);
+      const inst = await ctx.instances.wake(input.id);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(inst);
     }),

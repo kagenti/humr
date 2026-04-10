@@ -22,7 +22,7 @@ export function ListView() {
 
   const [showTmplDlg, setShowTmplDlg] = useState(false);
   const [busyTmpl, setBusyTmpl] = useState(false);
-  const [showInstDlg, setShowInstDlg] = useState<string | null>(null);
+  const [showInstDlg, setShowInstDlg] = useState<string | null>(null); // template id
   const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delTmpl, setDelTmpl] = useState<string | null>(null);
 
@@ -74,10 +74,10 @@ export function ListView() {
         {/* Template cards */}
         <div className="flex flex-col gap-6">
           {templates.map(tmpl => {
-            const insts = byTemplate.get(tmpl.name) ?? [];
+            const insts = byTemplate.get(tmpl.id) ?? [];
             return (
               <div
-                key={tmpl.name}
+                key={tmpl.id}
                 className="rounded-xl border-2 border-border bg-surface overflow-hidden anim-in transition-shadow hover:shadow-[4px_4px_0_#292524]"
                 style={{ boxShadow: "var(--shadow-brutal)" }}
               >
@@ -108,16 +108,16 @@ export function ListView() {
 
                     <div className="flex items-center gap-2 shrink-0">
                       <button
-                        onClick={() => setShowInstDlg(tmpl.name)}
-                        disabled={busyInst === tmpl.name}
+                        onClick={() => setShowInstDlg(tmpl.id)}
+                        disabled={busyInst === tmpl.id}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 flex items-center gap-1"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                       >
                         <Plus size={12} /> Instance
                       </button>
                       <button
-                        onClick={async () => { if (!await showConfirm(`Delete template "${tmpl.name}"?`, "Delete Template")) return; setDelTmpl(tmpl.name); await deleteTemplate(tmpl.name); setDelTmpl(null); }}
-                        disabled={delTmpl === tmpl.name}
+                        onClick={async () => { if (!await showConfirm(`Delete template "${tmpl.name}"?`, "Delete Template")) return; setDelTmpl(tmpl.id); await deleteTemplate(tmpl.id); setDelTmpl(null); }}
+                        disabled={delTmpl === tmpl.id}
                         className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                         title="Delete template"
@@ -141,8 +141,8 @@ export function ListView() {
                     const colors = badgeColors[state];
                     return (
                       <div
-                        key={inst.name}
-                        onClick={clickable ? () => selectInstance(inst.name) : undefined}
+                        key={inst.id}
+                        onClick={clickable ? () => selectInstance(inst.id) : undefined}
                         className={`flex items-center gap-4 border-t-2 border-border-light px-6 py-3.5 transition-colors ${clickable ? "cursor-pointer hover:bg-accent-light" : "opacity-50"}`}
                       >
                         <StatusIndicator state={state} />
@@ -158,7 +158,7 @@ export function ListView() {
                         )}
 
                         <button
-                          onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.name); }}
+                          onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.id); }}
                           className="h-7 w-7 rounded-md border-2 border-border-light flex items-center justify-center text-text-muted hover:text-danger hover:border-danger transition-colors"
                           title="Delete"
                         >
@@ -183,9 +183,9 @@ export function ListView() {
       )}
       {showInstDlg && (
         <CreateInstanceDialog
-          templateName={showInstDlg}
-          mcpServers={templates.find(t => t.name === showInstDlg)?.mcpServers}
-          onSubmit={async (name, mcp) => { const t = showInstDlg; setShowInstDlg(null); setBusyInst(t); await createInstance(t, name, mcp); setBusyInst(null); }}
+          templateName={templates.find(t => t.id === showInstDlg)?.name ?? showInstDlg}
+          mcpServers={templates.find(t => t.id === showInstDlg)?.mcpServers}
+          onSubmit={async (name, mcp) => { const tid = showInstDlg; setShowInstDlg(null); setBusyInst(tid); await createInstance(tid, name, mcp); setBusyInst(null); }}
           onCancel={() => setShowInstDlg(null)}
         />
       )}

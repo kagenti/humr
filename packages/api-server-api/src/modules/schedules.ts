@@ -13,22 +13,23 @@ export interface ScheduleStatus {
 }
 
 export interface Schedule {
+  id: string;
   name: string;
-  instanceName: string;
+  instanceId: string;
   spec: ScheduleSpec;
   status?: ScheduleStatus;
 }
 
 export interface CreateCronScheduleInput {
   name: string;
-  instanceName: string;
+  instanceId: string;
   cron: string;
   task: string;
 }
 
 export interface CreateHeartbeatScheduleInput {
   name: string;
-  instanceName: string;
+  instanceId: string;
   intervalMinutes: number;
 }
 
@@ -37,11 +38,11 @@ export interface ScheduleConfig {
 }
 
 export interface SchedulesContext {
-  list: (instanceName: string) => Promise<Schedule[]>;
-  get: (name: string) => Promise<Schedule | null>;
+  list: (instanceId: string) => Promise<Schedule[]>;
+  get: (id: string) => Promise<Schedule | null>;
   createCron: (input: CreateCronScheduleInput) => Promise<Schedule>;
   createHeartbeat: (input: CreateHeartbeatScheduleInput) => Promise<Schedule>;
-  delete: (name: string) => Promise<void>;
-  toggle: (name: string) => Promise<Schedule | null>;
+  delete: (id: string) => Promise<void>;
+  toggle: (id: string) => Promise<Schedule | null>;
   config: () => ScheduleConfig;
 }

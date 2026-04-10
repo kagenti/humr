@@ -17,6 +17,7 @@ export interface InstanceStatus {
 }
 
 export interface Instance {
+  id: string;
   name: string;
   spec: InstanceSpec;
   status?: InstanceStatus;
@@ -24,7 +25,7 @@ export interface Instance {
 
 export interface CreateInstanceInput {
   name: string;
-  templateName: string;
+  templateId: string;
   env?: EnvVar[];
   secretRef?: string;
   description?: string;
@@ -32,7 +33,7 @@ export interface CreateInstanceInput {
 }
 
 export interface UpdateInstanceInput {
-  name: string;
+  id: string;
   env?: EnvVar[];
   secretRef?: string;
   enabledMcpServers?: string[];
@@ -40,9 +41,9 @@ export interface UpdateInstanceInput {
 
 export interface InstancesContext {
   list: () => Promise<Instance[]>;
-  get: (name: string) => Promise<Instance | null>;
+  get: (id: string) => Promise<Instance | null>;
   create: (input: CreateInstanceInput) => Promise<Instance>;
   update: (input: UpdateInstanceInput) => Promise<Instance | null>;
-  delete: (name: string) => Promise<void>;
-  wake: (name: string) => Promise<Instance | null>;
+  delete: (id: string) => Promise<void>;
+  wake: (id: string) => Promise<Instance | null>;
 }

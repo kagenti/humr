@@ -40,6 +40,7 @@ export interface TemplateSpec {
 }
 
 export interface Template {
+  id: string;
   name: string;
   spec: TemplateSpec;
 }
@@ -53,7 +54,7 @@ export interface CreateTemplateInput {
 
 export interface TemplatesContext {
   list: () => Promise<Template[]>;
-  get: (name: string) => Promise<Template | null>;
+  get: (id: string) => Promise<Template | null>;
   create: (input: CreateTemplateInput) => Promise<Template>;
-  delete: (name: string) => Promise<void>;
+  delete: (id: string) => Promise<void>;
 }

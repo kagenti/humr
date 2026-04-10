@@ -69,17 +69,17 @@ export interface HumrStore {
     description?: string;
     mcpServers?: Record<string, MCPServerConfig>;
   }) => Promise<void>;
-  deleteTemplate: (name: string) => Promise<void>;
+  deleteTemplate: (id: string) => Promise<void>;
 
   // Instance actions
   fetchInstances: () => Promise<void>;
   createInstance: (
-    templateName: string,
+    templateId: string,
     name: string,
     enabledMcpServers?: string[],
   ) => Promise<void>;
-  deleteInstance: (name: string) => Promise<void>;
-  selectInstance: (name: string) => void;
+  deleteInstance: (id: string) => Promise<void>;
+  selectInstance: (id: string) => void;
   goBack: () => void;
 
   // Session/chat actions
@@ -101,8 +101,8 @@ export interface HumrStore {
   // Schedules
   setSchedules: (schedules: Schedule[]) => void;
   fetchSchedules: () => Promise<void>;
-  toggleSchedule: (name: string) => Promise<void>;
-  deleteSchedule: (name: string) => Promise<void>;
+  toggleSchedule: (id: string) => Promise<void>;
+  deleteSchedule: (id: string) => Promise<void>;
 }
 
 function applyTheme(theme: Theme) {
@@ -196,9 +196,9 @@ export const useStore = create<HumrStore>((set, get) => ({
     }
   },
 
-  deleteTemplate: async (name) => {
+  deleteTemplate: async (id) => {
     try {
-      await platform.templates.delete.mutate({ name });
+      await platform.templates.delete.mutate({ id });
       await get().fetchTemplates();
       await get().fetchInstances();
     } catch (err: any) {
@@ -216,28 +216,28 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, instances: false } }));
   },
 
-  createInstance: async (templateName, name, enabledMcpServers) => {
+  createInstance: async (templateId, name, enabledMcpServers) => {
     try {
-      await platform.instances.create.mutate({ name, templateName, enabledMcpServers });
+      await platform.instances.create.mutate({ name, templateId, enabledMcpServers });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create instance");
     }
   },
 
-  deleteInstance: async (name) => {
+  deleteInstance: async (id) => {
     try {
-      await platform.instances.delete.mutate({ name });
+      await platform.instances.delete.mutate({ id });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to delete instance");
     }
   },
 
-  selectInstance: (name) => {
-    history.pushState(null, "", viewToPath("chat", name));
+  selectInstance: (id) => {
+    history.pushState(null, "", viewToPath("chat", id));
     set({
-      selectedInstance: name,
+      selectedInstance: id,
       sessionId: null,
       messages: [],
       sessions: [],
@@ -295,16 +295,16 @@ export const useStore = create<HumrStore>((set, get) => ({
     const { selectedInstance } = get();
     if (!selectedInstance) return;
     try {
-      const list = await platform.schedules.list.query({ instanceName: selectedInstance });
+      const list = await platform.schedules.list.query({ instanceId: selectedInstance });
       set({ schedules: list });
     } catch {}
   },
-  toggleSchedule: async (name) => {
-    await platform.schedules.toggle.mutate({ name });
+  toggleSchedule: async (id) => {
+    await platform.schedules.toggle.mutate({ id });
     await get().fetchSchedules();
   },
-  deleteSchedule: async (name) => {
-    await platform.schedules.delete.mutate({ name });
+  deleteSchedule: async (id) => {
+    await platform.schedules.delete.mutate({ id });
     await get().fetchSchedules();
   },
 }));

@@ -55,6 +55,7 @@ export interface MCPServerConfig {
 }
 
 export interface TemplateView {
+  id: string;
   name: string;
   image: string;
   description?: string;
@@ -62,6 +63,7 @@ export interface TemplateView {
 }
 
 export interface InstanceView {
+  id: string;
   name: string;
   templateName: string;
   description?: string;
@@ -71,8 +73,9 @@ export interface InstanceView {
 }
 
 export interface Schedule {
+  id: string;
   name: string;
-  instanceName: string;
+  instanceId: string;
   type: "heartbeat" | "cron";
   cron: string;
   task: string | null;
@@ -101,7 +104,7 @@ export function resolveAcpMcpServers(
   instance?: InstanceView | null,
 ): McpServer[] {
   if (!instance) return [];
-  const tmpl = templates.find((t) => t.name === instance.templateName);
+  const tmpl = templates.find((t) => t.id === instance.templateName);
   if (!tmpl?.mcpServers) return [];
   const enabled = instance.enabledMcpServers;
   const entries = enabled
