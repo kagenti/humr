@@ -158,6 +158,8 @@ This project follows the [TypeScript Engineering](tseng/index.md) architecture.
 - Apply changes incrementally. Don't rewrite the entire project in one shot.
 - The architecture docs are the source of truth — don't deviate from them.
 - The server runtime is pluggable (Hono or Express). Accept either as valid.
+- Package names are flexible. Never propose renaming packages to match a convention — discover what the project calls its server/client packages and record them in `tseng/project-structure.md` with the correct role. A project may have multiple server and client packages.
+- Packages outside the scope of this architecture (e.g., different language, infra tooling) should be recorded with `role: other` and not audited.
 - If the project doesn't use tRPC/Zod at all, propose adding them as the first step rather than trying to restructure everything at once.
 - Adoption is iterative — the user can run `/tseng:adopt` multiple times. Each run produces a new review record.
 - Review records are **immutable once locked**. Never modify a previously locked review file. Always create a new record for new runs.

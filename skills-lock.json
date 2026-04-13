@@ -4,7 +4,7 @@
     "adopt": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",
-      "computedHash": "cc4ddc2b96b9872dbf96304bb85d1ff8725edb579dd83a1b6ee9df872e33dfc8"
+      "computedHash": "76b6d1b28e701196a17bf9bca42ef36de38f0d7e495519d4e0f7fab363e38d8d"
     },
     "bootstrap": {
       "source": "tomkis/typescript-engineering",
@@ -29,7 +29,7 @@
     "review": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",
-      "computedHash": "a0f3280de54f043ce36ec3d7581d400cf9e5e55cbd916c456603069e6ef03a9b"
+      "computedHash": "1acfedd41ece21bd86e3b4fe8067f1f0dd82efb0d165ee2e1952d082948d74fd"
     },
     "upgrade": {
       "source": "tomkis/typescript-engineering",

@@ -10,7 +10,7 @@ project-root/
 ├── tsconfig.base.json            # Shared strict TypeScript config
 ├── pnpm-workspace.yaml           # (if using pnpm)
 ├── packages/
-│   ├── server/
+│   ├── <server-pkg>/             # One or more server packages (name is flexible)
 │   │   ├── package.json          # @trpc/server, zod
 │   │   ├── tsconfig.json         # Extends ../../tsconfig.base.json
 │   │   └── src/
@@ -21,7 +21,7 @@ project-root/
 │   │               ├── domain/   # Domain layer
 │   │               │   └── events/
 │   │               └── index.ts  # Public API
-│   ├── client/
+│   ├── <client-pkg>/             # One or more client packages (name is flexible)
 │   │   ├── package.json          # @trpc/client (+ framework deps)
 │   │   ├── tsconfig.json         # Extends ../../tsconfig.base.json
 │   │   └── src/
@@ -41,24 +41,30 @@ project-root/
         └── ...                   # One file per review, never modified after locking
 ```
 
+Package names are **not enforced** — projects may use any naming convention (e.g., `api-server`, `backend`, `web`, `ui`, `dashboard`). What matters is the role (server vs client) and the internal structure, not the directory name. A project may also have multiple server or client packages.
+
 ## Package Responsibilities
 
-### `packages/server/`
+### Server packages
 
-The server package contains the API and all backend logic, organized into modules. Each module is a bounded context expressed as a vertical slice containing the three architectural layers (see [slice-composition.md](slice-composition.md) and [modules.md](modules.md)).
+Each server package contains an API and backend logic, organized into modules. Each module is a bounded context expressed as a vertical slice containing the three architectural layers (see [slice-composition.md](slice-composition.md) and [modules.md](modules.md)). A project may have one or more server packages.
 
 **Required dependencies:** `@trpc/server`, `zod`
 **Required dev dependencies:** `@types/node`
 
-### `packages/client/`
+### Client packages
 
-The client package consumes the API via a typed tRPC client. The UI framework is flexible.
+Each client package consumes an API via a typed tRPC client. The UI framework is flexible. A project may have one or more client packages.
 
 **Required dependencies:** `@trpc/client`
 
 ### API contract package
 
 A workspace package that exports the `AppRouter` type and API type definitions for the client to consume. This enables end-to-end type safety without coupling the client directly to server internals. The naming and scope of this package is flexible — it may only re-export types, or it may also contain the router definitions themselves.
+
+### Other packages
+
+The monorepo may contain packages that fall outside the scope of this architecture (e.g., packages in a different language, shared utilities, infrastructure tooling). These should be listed in `tseng/project-structure.md` under the `other` role so the architecture is aware of them but does not attempt to enforce rules on them.
 
 ## Workspace Configuration
 
@@ -85,20 +91,23 @@ The server package must add `"types": ["node"]` in its `compilerOptions` since i
 
 ## Project Metadata (`tseng/project-structure.md`)
 
-After bootstrapping or reviewing, a `tseng/project-structure.md` file records the project layout with machine-readable HTML comments for tooling:
+After bootstrapping or reviewing, a `tseng/project-structure.md` file records the project layout with machine-readable HTML comments for tooling.
+
+Each package is listed with a `role` (`server`, `client`, `contract`, or `other`), its `path`, and its `package_name`. Multiple packages of the same role are supported.
 
 ```markdown
 <!-- package_manager: pnpm -->
-<!-- server_runtime: hono -->
-<!-- server_path: packages/server -->
-<!-- server_package_name: @myapp/server -->
-<!-- client_path: packages/client -->
-<!-- client_package_name: @myapp/client -->
 <!-- workspace_root: . -->
 <!-- workspace_config: pnpm-workspace.yaml -->
+
+<!-- package: api-server | role: server | runtime: hono | path: packages/api-server | package_name: @myapp/api-server -->
+<!-- package: ui | role: client | path: packages/ui | package_name: @myapp/ui -->
+<!-- package: dashboard | role: client | path: packages/dashboard | package_name: @myapp/dashboard -->
+<!-- package: api-types | role: contract | path: packages/api-types | package_name: @myapp/api-types -->
+<!-- package: scripts | role: other | path: packages/scripts | package_name: @myapp/scripts -->
 ```
 
-Valid values for `server_runtime`: `hono` (default), `express`.
+Valid values for `runtime` (server packages only): `hono` (default), `express`.
 
 This file is the source of truth for other skills that need to locate packages.
 

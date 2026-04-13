@@ -124,6 +124,7 @@ Do **not** update the review record with audit results — the review skill is r
 
 - This is a **read-only audit** by default. Don't modify files unless the user asks you to fix violations.
 - The server runtime is pluggable (Hono or Express). Accept either as valid.
+- Package names are flexible. Do not flag packages for having non-standard names — audit their internal structure and dependencies instead. A project may have multiple server and client packages.
 - If a `tseng/project-structure.md` exists, check whether it is outdated and offer to update it.
 - Do not flag the absence of `tseng/` — it is a generated folder.
 - If the project doesn't use the expected stack at all, say so and suggest whether bootstrapping from scratch would be more appropriate.
