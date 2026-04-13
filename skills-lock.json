@@ -1,6 +1,16 @@
 {
   "version": 1,
   "skills": {
+    "adopt": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "cc4ddc2b96b9872dbf96304bb85d1ff8725edb579dd83a1b6ee9df872e33dfc8"
+    },
+    "bootstrap": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "9455bc004c16b9fbda7a2f158f19480716a56986dca17c0f8389b81ea10967c6"
+    },
     "design-first-engineering": {
       "source": "apocohq/skills",
       "sourceType": "github",
@@ -15,6 +25,16 @@
       "source": "apocohq/skills",
       "sourceType": "github",
       "computedHash": "c75f3ffd7f894ff4c0911a5240d9dd00b15fc5b40bf5372f6afadd47ff56b9f3"
+    },
+    "review": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "a0f3280de54f043ce36ec3d7581d400cf9e5e55cbd916c456603069e6ef03a9b"
+    },
+    "upgrade": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "7ef9af8655423649cef3f18770245d598eaa3743317c798951c91082f9b97637"
     },
     "write-a-prd": {
       "source": "apocohq/skills",
