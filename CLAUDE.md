@@ -47,7 +47,7 @@ Services are available at `*.localhost:4444` automatically (Traefik on port 4444
 
 Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` instead of raw `kubectl` or `export KUBECONFIG=...`. These are auto-approved.
 
-Activate cluster environment for interactive use: `eval "$(mise run humr:shell)"` (sets KUBECONFIG, adds prompt prefix, `deactivate` to undo).
+Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run cluster:kubeconfig)"`.
 
 ## Architecture
 
