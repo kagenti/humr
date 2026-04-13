@@ -1,33 +1,10 @@
 import { execSync } from "node:child_process";
-import { waitForKeycloak, getToken } from "./auth.js";
-import { setToken } from "./trpc-client.js";
-
-const API_URL = "http://humr-api.localtest.me:5555";
-
-async function waitForReady(url: string, timeoutMs = 120_000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  throw new Error(`API server not ready after ${timeoutMs}ms`);
-}
 
 export async function setup() {
-  console.log("Waiting for Keycloak realm to be ready...");
-  await waitForKeycloak();
-
-  console.log("Waiting for API server to be reachable...");
-  await waitForReady(`${API_URL}/api/health`);
-
-  console.log("Getting auth token...");
-  const token = await getToken();
-  setToken(token);
-
-  console.log("Test cluster ready.");
+  // Cluster is brought up by `mise run cluster:install` before vitest runs.
+  // Per-worker readiness + token acquisition lives in ./worker-setup.ts
+  // (setupFiles), because globalSetup runs in a separate process and cannot
+  // seed module state in test workers.
 }
 
 export async function teardown() {
