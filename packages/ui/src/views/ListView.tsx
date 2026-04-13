@@ -168,16 +168,16 @@ export function ListView() {
                         <button
                           onClick={async e => {
                             e.stopPropagation();
-                            if (inst.connectedChannels.includes("slack")) {
+                            if (inst.channels.some(c => c.type === "slack")) {
                               if (await showConfirm(`Disconnect Slack from "${inst.name}"?`, "Disconnect Slack")) disconnectSlack(inst.id);
                             } else {
                               setShowSlackDlg(inst.id);
                             }
                           }}
-                          className={`h-7 w-7 rounded-md border-2 flex items-center justify-center transition-colors ${inst.connectedChannels.includes("slack") ? "border-accent text-accent hover:text-danger hover:border-danger" : "border-border-light text-text-muted hover:text-accent hover:border-accent"}`}
-                          title={inst.connectedChannels.includes("slack") ? "Disconnect Slack" : "Connect Slack"}
+                          className={`h-7 w-7 rounded-md border-2 flex items-center justify-center transition-colors ${inst.channels.some(c => c.type === "slack") ? "border-accent text-accent hover:text-danger hover:border-danger" : "border-border-light text-text-muted hover:text-accent hover:border-accent"}`}
+                          title={inst.channels.some(c => c.type === "slack") ? "Disconnect Slack" : "Connect Slack"}
                         >
-                          {inst.connectedChannels.includes("slack") ? <MessageSquareOff size={12} /> : <MessageSquare size={12} />}
+                          {inst.channels.some(c => c.type === "slack") ? <MessageSquareOff size={12} /> : <MessageSquare size={12} />}
                         </button>
                         )}
                         <button

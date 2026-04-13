@@ -45,14 +45,14 @@ export async function ensureRunning(
   const inst = await instances.get(name);
   if (!inst) throw new Error(`Instance "${name}" not found`);
 
-  if (inst.spec.desiredState === "hibernated") {
+  if (inst.state === "hibernated") {
     await instances.wake(name);
   }
 
   const deadline = Date.now() + WAKE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const current = await instances.get(name);
-    if (current?.status?.podReady) return;
+    if (current?.state === "running") return;
     await sleep(WAKE_POLL_INTERVAL_MS);
   }
   throw new Error(`Instance "${name}" pod not ready within ${WAKE_TIMEOUT_MS / 1000}s`);

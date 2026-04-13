@@ -13,28 +13,17 @@ export interface SlackChannel extends Channel {
 
 export type ChannelConfig = SlackChannel;
 
-export interface InstanceSpec {
-  version: string;
-  agentId: string;
-  desiredState: "running" | "hibernated";
-  env?: EnvVar[];
-  secretRef?: string;
-  description?: string;
-  enabledMcpServers?: string[];
-  channels?: ChannelConfig[];
-}
-
-export interface InstanceStatus {
-  currentState: "running" | "hibernated" | "error";
-  error?: string;
-  podReady: boolean;
-}
+export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
 
 export interface Instance {
   id: string;
   name: string;
-  spec: InstanceSpec;
-  status?: InstanceStatus;
+  agentId: string;
+  description?: string;
+  state: InstanceState;
+  error?: string;
+  channels: ChannelConfig[];
+  enabledMcpServers: string[];
 }
 
 export interface CreateInstanceInput {

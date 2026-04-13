@@ -1,18 +1,24 @@
 import type * as k8s from "@kubernetes/client-node";
+import type { Db } from "db";
 import type { TemplatesService, AgentsService, InstancesService, SchedulesService } from "api-server-api";
 import {
   listTemplates, getTemplate, readTemplateSpec,
   listAgents, getAgent, createAgent, updateAgentSpec, deleteAgent,
-  listInstances, getInstance, createInstance, updateInstanceSpec, readInstanceSpec, deleteInstance, wakeInstance,
+  listInstances, getInstance, createInstance, updateInstanceSpec, deleteInstance, wakeInstance,
   listSchedules, getSchedule, createSchedule, deleteSchedule, toggleSchedule,
   readAgentRef,
 } from "./infrastructure/k8s.js";
+import {
+  listChannelsByOwner, listChannelsByInstance,
+  upsertChannel, deleteChannelsByInstance, deleteChannelByType,
+  allChannelInstanceIds, deleteChannelsByInstanceIds,
+} from "./infrastructure/channels-repository.js";
 import { createTemplatesService } from "./services/TemplatesService.js";
 import { createAgentsService } from "./services/AgentsService.js";
 import { createInstancesService } from "./services/InstancesService.js";
 import { createSchedulesService } from "./services/SchedulesService.js";
 
-export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string): {
+export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
   templates: TemplatesService;
   agents: AgentsService;
   instances: InstancesService;
@@ -38,8 +44,14 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
       update: updateInstanceSpec(api, namespace, owner),
       delete: deleteInstance(api, namespace, owner),
       wake: wakeInstance(api, namespace),
-      readSpec: readInstanceSpec(api, namespace, owner),
       getAgent: getAgent(api, namespace, owner),
+      listChannelsByOwner: listChannelsByOwner(db, owner),
+      listChannelsByInstance: listChannelsByInstance(db, owner),
+      upsertChannel: upsertChannel(db, owner),
+      deleteChannelsByInstance: deleteChannelsByInstance(db),
+      deleteChannelByType: deleteChannelByType(db, owner),
+      allChannelInstanceIds: allChannelInstanceIds(db),
+      deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
     }),
     schedules: createSchedulesService({
       list: listSchedules(api, namespace, owner),
@@ -52,7 +64,7 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
   };
 }
 
-export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string): InstancesService {
+export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db: Db): InstancesService {
   return createInstancesService({
     list: listInstances(api, namespace),
     get: getInstance(api, namespace),
@@ -60,7 +72,13 @@ export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string): I
     update: updateInstanceSpec(api, namespace, ""),
     delete: deleteInstance(api, namespace, ""),
     wake: wakeInstance(api, namespace),
-    readSpec: readInstanceSpec(api, namespace, ""),
     getAgent: getAgent(api, namespace, ""),
+    listChannelsByOwner: listChannelsByOwner(db, ""),
+    listChannelsByInstance: listChannelsByInstance(db, ""),
+    upsertChannel: upsertChannel(db, ""),
+    deleteChannelsByInstance: deleteChannelsByInstance(db),
+    deleteChannelByType: deleteChannelByType(db, ""),
+    allChannelInstanceIds: allChannelInstanceIds(db),
+    deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
   });
 }
