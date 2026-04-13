@@ -1,11 +1,8 @@
+import type { EnvVar } from "../../../shared/domain/types.js";
+
 export interface Mount {
   path: string;
   persist: boolean;
-}
-
-export interface EnvVar {
-  name: string;
-  value: string;
 }
 
 export interface Resources {
@@ -49,11 +46,4 @@ export interface CreateTemplateInput {
   image: string;
   description?: string;
   mcpServers?: Record<string, MCPServerConfig>;
-}
-
-export interface TemplatesContext {
-  list: () => Promise<Template[]>;
-  get: (name: string) => Promise<Template | null>;
-  create: (input: CreateTemplateInput) => Promise<Template>;
-  delete: (name: string) => Promise<void>;
 }

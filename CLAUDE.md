@@ -101,3 +101,7 @@ Run tests to confirm a clean baseline before starting work. If tests fail, repor
 ### Report
 
 After setup, report: worktree path, test results, and readiness.
+
+## TSEng
+
+This project follows the [TypeScript Engineering](tseng/index.md) architecture.
