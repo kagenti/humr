@@ -24,8 +24,8 @@ spec:
       serviceAccountName: {{ include "humr.controller.serviceAccountName" . }}
       containers:
         - name: controller
-          image: "{{ .Values.controller.image }}"
-          imagePullPolicy: {{ .Values.controller.imagePullPolicy | default "IfNotPresent" }}
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
           env:
             - name: HUMR_RELEASE_NAME
               value: {{ include "humr.fullname" . }}

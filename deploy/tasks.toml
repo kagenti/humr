@@ -52,10 +52,7 @@ dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-pnpm --filter agent-runtime build
-rm -rf packages/humr-base/dist
-cp -r packages/agent-runtime/dist packages/humr-base/dist
-docker build -t humr-base packages/humr-base
+docker build -f packages/humr-base/Dockerfile -t humr-base .
 docker build -t humr-example-agent:latest packages/example-agent
 '''
 
@@ -139,10 +136,10 @@ if [ -n "$HELM_VALUES" ]; then
 fi
 if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
   echo "Upgrading Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr $HELM_VALUES_FLAG "${HELM_EXTRA_ARGS[@]}"
+  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml $HELM_VALUES_FLAG "${HELM_EXTRA_ARGS[@]}"
 else
   echo "Installing Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr $HELM_VALUES_FLAG "${HELM_EXTRA_ARGS[@]}"
+  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml $HELM_VALUES_FLAG "${HELM_EXTRA_ARGS[@]}"
 fi
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)

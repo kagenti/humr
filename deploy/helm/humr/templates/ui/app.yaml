@@ -86,8 +86,8 @@ spec:
     spec:
       containers:
         - name: ui
-          image: {{ .Values.ui.image }}
-          imagePullPolicy: {{ .Values.ui.imagePullPolicy | default "IfNotPresent" }}
+          image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.ui.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - containerPort: {{ .Values.ui.port }}
               name: http
