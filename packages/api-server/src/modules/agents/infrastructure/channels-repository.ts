@@ -1,6 +1,5 @@
-import { eq, and, inArray } from "drizzle-orm";
 import type { Db } from "db";
-import { channels } from "db";
+import { channels, eq, and, inArray } from "db";
 import type { ChannelConfig } from "api-server-api";
 import { ChannelType } from "api-server-api";
 
