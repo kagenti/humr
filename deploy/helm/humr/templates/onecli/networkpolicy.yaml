@@ -68,9 +68,11 @@ spec:
 
     {{- if .Values.onecli.networkPolicy.serviceCIDR }}
     # Explicit allow for the cluster service CIDR.
-    # Some CNIs (e.g. OVN-Kubernetes) evaluate egress policy before DNAT, so
-    # podSelector rules above won't match traffic destined for service ClusterIPs.
-    # This ipBlock rule ensures connectivity to in-cluster services via their VIPs.
+    # OVN-Kubernetes uses longest-prefix-match for ACL priority. The
+    # blockedCIDRs deny (e.g. /12) outranks the unrestricted port-53 allow
+    # (implicit /0) for cluster-internal IPs like the DNS service VIP. This
+    # /16 ipBlock is more specific than the /12 deny, so it wins — restoring
+    # connectivity to in-cluster DNS, Postgres, and Keycloak via their VIPs.
     - to:
         - ipBlock:
             cidr: {{ .Values.onecli.networkPolicy.serviceCIDR }}
@@ -83,6 +85,10 @@ spec:
         - protocol: TCP
           port: {{ .Values.keycloak.port }}
         {{- end }}
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
     {{- end }}
 
     # Public internet — everything except private/special-use ranges
