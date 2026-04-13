@@ -104,8 +104,8 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
               upstream.send(data, { binary: isBinary });
 
               if (shouldUpdateActivity(instanceId)) {
-                patchConfigMapAnnotation(
-                  api, namespace, instanceId,
+                patchCmAnnotation(
+                  instanceId,
                   LAST_ACTIVITY_KEY, new Date().toISOString(),
                 ).catch(() => {});
               }
