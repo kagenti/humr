@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
-import { createDb } from "db";
+import { createDb, runMigrations } from "db";
 import {
   createApi,
   verifyOwner, podBaseUrl,
@@ -34,6 +34,7 @@ const onecli = createOnecliClient({
 });
 
 const { api } = createApi(config.namespace);
+await runMigrations(config.databaseUrl);
 const { db, sql } = createDb(config.databaseUrl);
 
 const systemInstances = composeSystemInstances(api, config.namespace, db);
