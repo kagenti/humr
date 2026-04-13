@@ -137,6 +137,13 @@ kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-controller --t
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s
 
+# Wait for the Keycloak provision Job (post-install hook: realm import via
+# keycloak-config-cli + token-exchange permissions via Admin API). Without
+# this, tests that log in as the dev user can race the realm import and hit
+# "Invalid user credentials".
+echo "Waiting for humr-keycloak-provision Job to complete..."
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=complete job/humr-keycloak-provision --timeout=300s
+
 echo ""
 echo "=== Cluster ready ==="
 echo "KUBECONFIG=$KUBECONFIG"
