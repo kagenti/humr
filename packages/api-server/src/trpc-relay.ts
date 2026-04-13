@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { podBaseUrl } from "./k8s.js";
+import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 export function createTrpcRelay(namespace: string) {
   return async (c: Context) => {
