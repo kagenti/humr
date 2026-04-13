@@ -1,0 +1,157 @@
+{{- if .Values.keycloak.enabled }}
+{{- $appName := include "humr.keycloak.fullname" . }}
+{{- $uiUrl := include "humr.url.ui" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $appName }}-realm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+data:
+  humr-realm.json: |-
+    {
+      "realm": {{ .Values.keycloak.realm | quote }},
+      "enabled": true,
+      "sslRequired": {{ if eq .Values.scheme "https" }}"external"{{ else }}"none"{{ end }},
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": false,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "clients": [
+        {
+          "clientId": {{ .Values.keycloak.clientId | quote }},
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            {{ printf "%s/*" $uiUrl | quote }},
+            "http://localhost:5173/*"
+          ],
+          "webOrigins": [
+            {{ $uiUrl | quote }},
+            "http://localhost:5173"
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          },
+          "protocolMappers": [
+            {
+              "name": "humr-api-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.keycloak.apiAudience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": {{ .Values.keycloak.apiClientId | quote }},
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "$(env:HUMR_API_CLIENT_SECRET)",
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true,
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "onecli-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.onecli.oauth.audience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": {{ .Values.keycloak.controllerClientId | quote }},
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "$(env:HUMR_CONTROLLER_CLIENT_SECRET)",
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true,
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "onecli-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.onecli.oauth.audience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": {{ .Values.onecli.oauth.clientId | quote }},
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "$(env:ONECLI_CLIENT_SECRET)",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            {{ printf "%s/api/auth/callback/oidc" (include "humr.url.onecli" .) | quote }}
+          ],
+          "webOrigins": [
+            {{ include "humr.url.onecli" . | quote }}
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          },
+          "protocolMappers": [
+            {
+              "name": "onecli-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.onecli.oauth.audience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": {{ .Values.keycloak.testUser.username | quote }},
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Dev",
+          "lastName": "User",
+          "email": "dev@humr.local",
+          "credentials": [
+            {
+              "type": "password",
+              "value": {{ .Values.keycloak.testUser.password | quote }},
+              "temporary": false
+            }
+          ]
+        }
+      ]
+    }
+{{- end }}

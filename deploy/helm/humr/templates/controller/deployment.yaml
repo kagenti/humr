@@ -33,6 +33,21 @@ spec:
               value: {{ .Values.agentNamespace }}
             - name: ONECLI_URL
               value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
+            {{- if .Values.keycloak.enabled }}
+            - name: KEYCLOAK_URL
+              value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.controllerClientId | quote }}
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.keycloak.secrets.fullname" . }}
+                  key: HUMR_CONTROLLER_CLIENT_SECRET
+            - name: ONECLI_AUDIENCE
+              value: {{ .Values.onecli.oauth.audience | quote }}
+            {{- end }}
             - name: HUMR_RELEASE_NAMESPACE
               value: {{ .Release.Namespace }}
             - name: ONECLI_GATEWAY_HOST

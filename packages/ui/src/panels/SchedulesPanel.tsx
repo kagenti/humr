@@ -22,8 +22,8 @@ export function SchedulesPanel() {
   const create = async () => {
     if (!inst) return; setBusy(true);
     try {
-      if (f.type === "cron") await platform.schedules.createCron.mutate({ name: f.name, instanceName: inst, cron: f.cron, task: f.task });
-      else await platform.schedules.createHeartbeat.mutate({ name: f.name, instanceName: inst, intervalMinutes: f.mins });
+      if (f.type === "cron") await platform.schedules.createCron.mutate({ name: f.name, instanceId: inst, cron: f.cron, task: f.task });
+      else await platform.schedules.createHeartbeat.mutate({ name: f.name, instanceId: inst, intervalMinutes: f.mins });
       setShow(false); fetchSchedules();
     } catch (e) { showAlert(e instanceof Error ? e.message : "Failed", "Schedule Error"); }
     finally { setBusy(false); }
@@ -78,20 +78,20 @@ export function SchedulesPanel() {
 
       {schedules.length === 0 && !show && <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>}
       {schedules.map(s => (
-        <div key={s.name} className="flex flex-col gap-1.5 border-b border-border-light px-4 py-3">
+        <div key={s.id} className="flex flex-col gap-1.5 border-b border-border-light px-4 py-3">
           <div className="flex items-center gap-2">
             <span className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 ${s.type === "cron" ? "bg-info-light text-info border-info" : "bg-success-light text-success border-success"}`}>{s.type}</span>
             <span className="text-[13px] font-semibold text-text flex-1 truncate">{s.name}</span>
             <span className="text-[11px] font-mono text-text-muted">{s.cron}</span>
             <button
               className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${s.enabled ? "bg-success-light text-success border-success" : "bg-bg text-text-muted border-border-light"} hover:opacity-80`}
-              onClick={() => toggleSchedule(s.name)}
+              onClick={() => toggleSchedule(s.id)}
             >
               {s.enabled ? "On" : "Off"}
             </button>
             <button
               className="text-text-muted hover:text-danger transition-colors"
-              onClick={async () => { if (await showConfirm(`Delete schedule "${s.name}"?`, "Delete Schedule")) deleteSchedule(s.name); }}
+              onClick={async () => { if (await showConfirm(`Delete schedule "${s.name}"?`, "Delete Schedule")) deleteSchedule(s.id); }}
             >
               <X size={14} />
             </button>

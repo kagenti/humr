@@ -12,10 +12,13 @@ type Config struct {
 	ReleaseNamespace string // Helm release namespace (where controller/OneCLI run)
 	ReleaseName      string // Helm release name
 	OneCLIURL        string // OneCLI web API base URL
-	OneCLIAPIKey     string // OneCLI API key
+	OneCLIAudience   string // OneCLI token audience (e.g. "onecli")
 	GatewayHost      string // OneCLI gateway K8s service host (short name)
 	GatewayPort      int    // OneCLI gateway port
 	WebPort          int    // OneCLI web API port (for container-config endpoint)
+	KeycloakTokenURL     string // Keycloak token endpoint for RFC 8693 exchange
+	KeycloakClientID     string // Confidential client ID (e.g. humr-controller)
+	KeycloakClientSecret string // Confidential client secret
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
 	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
@@ -39,8 +42,11 @@ func LoadFromEnv() (*Config, error) {
 		Namespace:        envOrDefault("HUMR_AGENT_NAMESPACE", "humr-agents"),
 		ReleaseNamespace: envOrDefault("HUMR_RELEASE_NAMESPACE", "default"),
 		ReleaseName:      release,
-		OneCLIURL:        os.Getenv("ONECLI_URL"),
-		OneCLIAPIKey:     os.Getenv("ONECLI_API_KEY"),
+		OneCLIURL:            os.Getenv("ONECLI_URL"),
+		OneCLIAudience:       envOrDefault("ONECLI_AUDIENCE", "onecli"),
+		KeycloakTokenURL:     keycloakTokenURL(),
+		KeycloakClientID:     envOrDefault("KEYCLOAK_CLIENT_ID", "humr-controller"),
+		KeycloakClientSecret: os.Getenv("KEYCLOAK_CLIENT_SECRET"),
 		GatewayHost:      envOrDefault("ONECLI_GATEWAY_HOST", release+"-onecli"),
 		GatewayPort:      envOrDefaultInt("ONECLI_GATEWAY_PORT", 10255),
 		WebPort:          envOrDefaultInt("ONECLI_WEB_PORT", 10254),
@@ -63,6 +69,18 @@ func (c *Config) GatewayFQDN() string {
 // WebURL returns the HTTP URL for the OneCLI web API (used by init containers to fetch CA cert).
 func (c *Config) WebURL() string {
 	return fmt.Sprintf("http://%s:%d", c.GatewayFQDN(), c.WebPort)
+}
+
+func keycloakTokenURL() string {
+	if v := os.Getenv("KEYCLOAK_TOKEN_URL"); v != "" {
+		return v
+	}
+	base := os.Getenv("KEYCLOAK_URL")
+	realm := envOrDefault("KEYCLOAK_REALM", "humr")
+	if base == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", base, realm)
 }
 
 func envOrDefault(key, def string) string {

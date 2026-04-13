@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { platform } from "./platform.js";
 import type {
   TemplateView,
+  AgentView,
   InstanceView,
   SessionInfo,
   Message,
@@ -15,6 +16,7 @@ type View = "list" | "chat" | "connectors";
 
 interface LoadingState {
   templates: boolean;
+  agents: boolean;
   instances: boolean;
   sessions: boolean;
   session: boolean;
@@ -47,6 +49,7 @@ export interface HumrStore {
   // Data
   availableChannels: Record<string, boolean>;
   templates: TemplateView[];
+  agents: AgentView[];
   instances: InstanceView[];
   selectedInstance: string | null;
   sessions: SessionInfo[];
@@ -62,27 +65,31 @@ export interface HumrStore {
   // Loading states
   loading: LoadingState;
 
-  // Template actions
+  // Template actions (read-only catalog)
   fetchTemplates: () => Promise<void>;
-  createTemplate: (input: {
+
+  // Agent actions
+  fetchAgents: () => Promise<void>;
+  createAgent: (input: {
     name: string;
-    image: string;
+    templateId?: string;
+    image?: string;
     description?: string;
     mcpServers?: Record<string, MCPServerConfig>;
   }) => Promise<void>;
-  deleteTemplate: (name: string) => Promise<void>;
+  deleteAgent: (id: string) => Promise<void>;
 
   // Instance actions
   fetchInstances: () => Promise<void>;
   createInstance: (
-    templateName: string,
+    agentId: string,
     name: string,
     enabledMcpServers?: string[],
   ) => Promise<void>;
-  deleteInstance: (name: string) => Promise<void>;
-  connectSlack: (name: string, botToken: string) => Promise<void>;
-  disconnectSlack: (name: string) => Promise<void>;
-  selectInstance: (name: string) => void;
+  deleteInstance: (id: string) => Promise<void>;
+  connectSlack: (id: string, botToken: string) => Promise<void>;
+  disconnectSlack: (id: string) => Promise<void>;
+  selectInstance: (id: string) => void;
   goBack: () => void;
 
   // Session/chat actions
@@ -104,8 +111,8 @@ export interface HumrStore {
   // Schedules
   setSchedules: (schedules: Schedule[]) => void;
   fetchSchedules: () => Promise<void>;
-  toggleSchedule: (name: string) => Promise<void>;
-  deleteSchedule: (name: string) => Promise<void>;
+  toggleSchedule: (id: string) => Promise<void>;
+  deleteSchedule: (id: string) => Promise<void>;
 }
 
 function applyTheme(theme: Theme) {
@@ -166,6 +173,7 @@ export const useStore = create<HumrStore>((set, get) => ({
   // Data
   availableChannels: {},
   templates: [],
+  agents: [],
   instances: [],
   selectedInstance: null,
   sessions: [],
@@ -179,9 +187,9 @@ export const useStore = create<HumrStore>((set, get) => ({
   rightTab: "files",
 
   // Loading states
-  loading: { templates: false, instances: false, sessions: false, session: false },
+  loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
 
-  // Template actions
+  // Template actions (read-only catalog)
   fetchTemplates: async () => {
     set((s) => ({ loading: { ...s.loading, templates: true } }));
     try {
@@ -191,22 +199,32 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, templates: false } }));
   },
 
-  createTemplate: async (input) => {
+  // Agent actions
+  fetchAgents: async () => {
+    set((s) => ({ loading: { ...s.loading, agents: true } }));
     try {
-      await platform.templates.create.mutate(input);
-      await get().fetchTemplates();
+      const list = await platform.agents.list.query();
+      set({ agents: list });
+    } catch {}
+    set((s) => ({ loading: { ...s.loading, agents: false } }));
+  },
+
+  createAgent: async (input) => {
+    try {
+      await platform.agents.create.mutate(input);
+      await get().fetchAgents();
     } catch (err: any) {
-      get().showAlert(err?.message ?? "Failed to create template");
+      get().showAlert(err?.message ?? "Failed to create agent");
     }
   },
 
-  deleteTemplate: async (name) => {
+  deleteAgent: async (id) => {
     try {
-      await platform.templates.delete.mutate({ name });
-      await get().fetchTemplates();
+      await platform.agents.delete.mutate({ id });
+      await get().fetchAgents();
       await get().fetchInstances();
     } catch (err: any) {
-      get().showAlert(err?.message ?? "Failed to delete template");
+      get().showAlert(err?.message ?? "Failed to delete agent");
     }
   },
 
@@ -223,46 +241,46 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, instances: false } }));
   },
 
-  createInstance: async (templateName, name, enabledMcpServers) => {
+  createInstance: async (agentId, name, enabledMcpServers) => {
     try {
-      await platform.instances.create.mutate({ name, templateName, enabledMcpServers });
+      await platform.instances.create.mutate({ name, agentId, enabledMcpServers });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create instance");
     }
   },
 
-  deleteInstance: async (name) => {
+  deleteInstance: async (id) => {
     try {
-      await platform.instances.delete.mutate({ name });
+      await platform.instances.delete.mutate({ id });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to delete instance");
     }
   },
 
-  connectSlack: async (name, botToken) => {
+  connectSlack: async (id, botToken) => {
     try {
-      await platform.instances.connectSlack.mutate({ name, botToken });
+      await platform.instances.connectSlack.mutate({ id, botToken });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to connect Slack");
     }
   },
 
-  disconnectSlack: async (name) => {
+  disconnectSlack: async (id) => {
     try {
-      await platform.instances.disconnectSlack.mutate({ name });
+      await platform.instances.disconnectSlack.mutate({ id });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to disconnect Slack");
     }
   },
 
-  selectInstance: (name) => {
-    history.pushState(null, "", viewToPath("chat", name));
+  selectInstance: (id) => {
+    history.pushState(null, "", viewToPath("chat", id));
     set({
-      selectedInstance: name,
+      selectedInstance: id,
       sessionId: null,
       messages: [],
       sessions: [],
@@ -285,6 +303,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       log: [],
       view: "list",
     });
+    get().fetchAgents();
     get().fetchInstances();
   },
 
@@ -320,16 +339,16 @@ export const useStore = create<HumrStore>((set, get) => ({
     const { selectedInstance } = get();
     if (!selectedInstance) return;
     try {
-      const list = await platform.schedules.list.query({ instanceName: selectedInstance });
+      const list = await platform.schedules.list.query({ instanceId: selectedInstance });
       set({ schedules: list });
     } catch {}
   },
-  toggleSchedule: async (name) => {
-    await platform.schedules.toggle.mutate({ name });
+  toggleSchedule: async (id) => {
+    await platform.schedules.toggle.mutate({ id });
     await get().fetchSchedules();
   },
-  deleteSchedule: async (name) => {
-    await platform.schedules.delete.mutate({ name });
+  deleteSchedule: async (id) => {
+    await platform.schedules.delete.mutate({ id });
     await get().fetchSchedules();
   },
 }));

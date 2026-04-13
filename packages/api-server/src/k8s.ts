@@ -1,12 +1,17 @@
 import * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
+import crypto from "node:crypto";
 import type { ChannelManager } from "./channels/channel-manager.js";
 import {
   ChannelType,
   type Template,
   type TemplateSpec,
   type TemplatesService,
-  type CreateTemplateInput,
+  type Agent,
+  type AgentSpec,
+  type AgentsService,
+  type CreateAgentInput,
+  type UpdateAgentInput,
   type Instance,
   type InstanceSpec,
   type InstanceStatus,
@@ -26,10 +31,13 @@ import { CronExpressionParser } from "cron-parser";
 
 const LABEL_TYPE = "humr.ai/type";
 const LABEL_TEMPLATE = "agent-template";
+const LABEL_AGENT = "agent";
 const LABEL_INSTANCE = "agent-instance";
 const LABEL_TEMPLATE_REF = "humr.ai/template";
+const LABEL_AGENT_REF = "humr.ai/agent";
 const LABEL_SCHEDULE = "agent-schedule";
 const LABEL_INSTANCE_REF = "humr.ai/instance";
+const LABEL_OWNER = "humr.ai/owner";
 const SPEC_KEY = "spec.yaml";
 const STATUS_KEY = "status.yaml";
 
@@ -51,6 +59,15 @@ const DEFAULT_TEMPLATE_SPEC = {
   },
 };
 
+function generateK8sName(prefix: string): string {
+  return `${prefix}-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+function displayName(cm: k8s.V1ConfigMap): string {
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as { name?: string } | null;
+  return spec?.name ?? cm.metadata!.name!;
+}
+
 function is404(err: unknown): boolean {
   return (
     err instanceof Error &&
@@ -59,9 +76,33 @@ function is404(err: unknown): boolean {
   );
 }
 
+/** Read a ConfigMap by K8s name, verify it's owned by the given user. */
+async function readOwned(
+  api: k8s.CoreV1Api, namespace: string, id: string, owner: string,
+): Promise<k8s.V1ConfigMap | null> {
+  try {
+    const cm = await api.readNamespacedConfigMap({ name: id, namespace });
+    if (cm.metadata?.labels?.[LABEL_OWNER] !== owner) return null;
+    return cm;
+  } catch (err) {
+    if (is404(err)) return null;
+    throw err;
+  }
+}
+
 function parseTemplate(cm: k8s.V1ConfigMap): Template {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as TemplateSpec;
-  return { name: cm.metadata!.name!, spec };
+  return { id: cm.metadata!.name!, name: displayName(cm), spec };
+}
+
+function parseAgent(cm: k8s.V1ConfigMap): Agent {
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as AgentSpec;
+  return {
+    id: cm.metadata!.name!,
+    name: displayName(cm),
+    templateId: cm.metadata!.labels?.[LABEL_TEMPLATE_REF],
+    spec,
+  };
 }
 
 function parseInstance(cm: k8s.V1ConfigMap): Instance {
@@ -76,7 +117,23 @@ function parseInstance(cm: k8s.V1ConfigMap): Instance {
       podReady: false,
     };
   }
-  return { name: cm.metadata!.name!, spec, status };
+  return { id: cm.metadata!.name!, name: displayName(cm), spec, status };
+}
+
+function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+  const statusYaml = cm.data?.[STATUS_KEY];
+  let status: ScheduleStatus | undefined;
+  if (statusYaml) {
+    status = yaml.load(statusYaml) as ScheduleStatus;
+  }
+  return {
+    id: cm.metadata!.name!,
+    name: displayName(cm),
+    instanceId: cm.metadata!.labels![LABEL_INSTANCE_REF],
+    spec,
+    status,
+  };
 }
 
 function isPodReady(pod: k8s.V1Pod): boolean {
@@ -98,6 +155,8 @@ function createApi(namespace: string) {
   return { api: kc.makeApiClient(k8s.CoreV1Api), namespace };
 }
 
+// ---- Templates (read-only catalog) ----
+
 export function createK8sTemplatesContext(
   namespace: string,
   api: k8s.CoreV1Api,
@@ -108,53 +167,131 @@ export function createK8sTemplatesContext(
         namespace,
         labelSelector: `${LABEL_TYPE}=${LABEL_TEMPLATE}`,
       });
-      return (res.items ?? []).map(parseTemplate);
+      // Catalog items have no owner label
+      return (res.items ?? [])
+        .filter((cm) => !cm.metadata?.labels?.[LABEL_OWNER])
+        .map(parseTemplate);
     },
 
-    async get(name) {
+    async get(id) {
       try {
-        const cm = await api.readNamespacedConfigMap({ name, namespace });
+        const cm = await api.readNamespacedConfigMap({ name: id, namespace });
+        if (cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_TEMPLATE) return null;
+        if (cm.metadata?.labels?.[LABEL_OWNER]) return null; // not a catalog item
         return parseTemplate(cm);
       } catch (err) {
         if (is404(err)) return null;
         throw err;
       }
     },
+  };
+}
 
-    async create(input: CreateTemplateInput) {
-      const spec: TemplateSpec = {
-        version: SPEC_VERSION,
-        image: input.image,
-        description: input.description,
-        ...DEFAULT_TEMPLATE_SPEC,
-        mcpServers: input.mcpServers,
-      };
-      const cm: k8s.V1ConfigMap = {
-        metadata: {
-          name: input.name,
-          namespace,
-          labels: { [LABEL_TYPE]: LABEL_TEMPLATE },
-        },
-        data: { [SPEC_KEY]: yaml.dump(spec) },
-      };
-      const created = await api.createNamespacedConfigMap({
+// ---- Agents (user-owned) ----
+
+export function createK8sAgentsContext(
+  namespace: string,
+  api: k8s.CoreV1Api,
+  owner: string,
+): AgentsService {
+  return {
+    async list() {
+      const res = await api.listNamespacedConfigMap({
         namespace,
-        body: cm,
+        labelSelector: `${LABEL_TYPE}=${LABEL_AGENT},${LABEL_OWNER}=${owner}`,
       });
-      return parseTemplate(created);
+      return (res.items ?? []).map(parseAgent);
     },
 
-    async delete(name) {
-      await api.deleteNamespacedConfigMap({ name, namespace });
+    async get(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm || cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) return null;
+      return parseAgent(cm);
+    },
+
+    async create(input: CreateAgentInput) {
+      let spec: Record<string, unknown>;
+      const labels: Record<string, string> = {
+        [LABEL_TYPE]: LABEL_AGENT,
+        [LABEL_OWNER]: owner,
+      };
+
+      if (input.templateId) {
+        // Copy from catalog template
+        const tmplCm = await api.readNamespacedConfigMap({ name: input.templateId, namespace }).catch((err) => {
+          if (is404(err)) throw new Error(`Template "${input.templateId}" not found`);
+          throw err;
+        });
+        if (tmplCm.metadata?.labels?.[LABEL_OWNER]) {
+          throw new Error(`Template "${input.templateId}" not found`);
+        }
+        const tmplSpec = yaml.load(tmplCm.data?.[SPEC_KEY] ?? "") as TemplateSpec;
+        labels[LABEL_TEMPLATE_REF] = input.templateId;
+        spec = {
+          name: input.name,
+          version: SPEC_VERSION,
+          image: tmplSpec.image,
+          description: input.description ?? tmplSpec.description,
+          mounts: tmplSpec.mounts,
+          init: tmplSpec.init,
+          env: tmplSpec.env,
+          resources: tmplSpec.resources,
+          securityContext: tmplSpec.securityContext,
+          mcpServers: input.mcpServers,
+        };
+      } else {
+        // Custom image
+        spec = {
+          name: input.name,
+          version: SPEC_VERSION,
+          image: input.image,
+          description: input.description,
+          ...DEFAULT_TEMPLATE_SPEC,
+          mcpServers: input.mcpServers,
+        };
+      }
+
+      const k8sName = generateK8sName("agent");
+      const cm: k8s.V1ConfigMap = {
+        metadata: { name: k8sName, namespace, labels },
+        data: { [SPEC_KEY]: yaml.dump(spec) },
+      };
+      const created = await api.createNamespacedConfigMap({ namespace, body: cm });
+      return parseAgent(created);
+    },
+
+    async update(input: UpdateAgentInput) {
+      const cm = await readOwned(api, namespace, input.id, owner);
+      if (!cm || cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) return null;
+
+      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as AgentSpec;
+      if (input.description !== undefined) spec.description = input.description;
+      if (input.mcpServers !== undefined) spec.mcpServers = input.mcpServers;
+
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      const updated = await api.replaceNamespacedConfigMap({ name: input.id, namespace, body: cm });
+      return parseAgent(updated);
+    },
+
+    async delete(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm || cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) return;
+      await api.deleteNamespacedConfigMap({ name: id, namespace });
     },
   };
 }
 
-export function createK8sInstancesContext(
+// ---- Instances ----
+
+/**
+ * Create a system-scoped instances service that bypasses owner filtering.
+ * Used by background processes (channel managers) that need to look up any
+ * instance by name without per-user scoping. Only supports read + wake;
+ * mutations are not allowed from system context.
+ */
+export function createSystemInstancesContext(
   namespace: string,
   api: k8s.CoreV1Api,
-  templates: TemplatesService,
-  channels: ChannelManager[],
 ): InstancesService {
   return {
     async list() {
@@ -170,23 +307,24 @@ export function createK8sInstancesContext(
       ]);
       const podMap = new Map<string, k8s.V1Pod>();
       for (const pod of pods.items ?? []) {
-        const name = pod.metadata?.labels?.[LABEL_INSTANCE_REF];
-        if (name) podMap.set(name, pod);
+        const ref = pod.metadata?.labels?.[LABEL_INSTANCE_REF];
+        if (ref) podMap.set(ref, pod);
       }
       return (configMaps.items ?? []).map((cm) => {
         const inst = parseInstance(cm);
-        const pod = podMap.get(inst.name);
+        const pod = podMap.get(cm.metadata!.name!);
         return enrichWithPodStatus(inst, pod);
       });
     },
 
-    async get(name) {
+    async get(id) {
       try {
-        const cm = await api.readNamespacedConfigMap({ name, namespace });
+        const cm = await api.readNamespacedConfigMap({ name: id, namespace });
+        if (cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_INSTANCE) return null;
         const inst = parseInstance(cm);
         let pod: k8s.V1Pod | undefined;
         try {
-          pod = await api.readNamespacedPod({ name: `${name}-0`, namespace });
+          pod = await api.readNamespacedPod({ name: `${id}-0`, namespace });
         } catch {}
         return enrichWithPodStatus(inst, pod);
       } catch (err) {
@@ -195,16 +333,79 @@ export function createK8sInstancesContext(
       }
     },
 
+    async wake(id) {
+      try {
+        await wakeInstance(api, namespace, id);
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+      const reread = await api.readNamespacedConfigMap({ name: id, namespace });
+      return parseInstance(reread);
+    },
+
+    async create() { throw new Error("createSystemInstancesContext: create not supported"); },
+    async update() { throw new Error("createSystemInstancesContext: update not supported"); },
+    async delete() { throw new Error("createSystemInstancesContext: delete not supported"); },
+    async connectSlack() { throw new Error("createSystemInstancesContext: connectSlack not supported"); },
+    async disconnectSlack() { throw new Error("createSystemInstancesContext: disconnectSlack not supported"); },
+  };
+}
+
+export function createK8sInstancesContext(
+  namespace: string,
+  api: k8s.CoreV1Api,
+  owner: string,
+  channels: ChannelManager[],
+): InstancesService {
+  return {
+    async list() {
+      const [configMaps, pods] = await Promise.all([
+        api.listNamespacedConfigMap({
+          namespace,
+          labelSelector: `${LABEL_TYPE}=${LABEL_INSTANCE},${LABEL_OWNER}=${owner}`,
+        }),
+        api.listNamespacedPod({
+          namespace,
+          labelSelector: LABEL_INSTANCE_REF,
+        }),
+      ]);
+      const podMap = new Map<string, k8s.V1Pod>();
+      for (const pod of pods.items ?? []) {
+        const ref = pod.metadata?.labels?.[LABEL_INSTANCE_REF];
+        if (ref) podMap.set(ref, pod);
+      }
+      return (configMaps.items ?? []).map((cm) => {
+        const inst = parseInstance(cm);
+        const pod = podMap.get(cm.metadata!.name!);
+        return enrichWithPodStatus(inst, pod);
+      });
+    },
+
+    async get(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return null;
+      const inst = parseInstance(cm);
+      let pod: k8s.V1Pod | undefined;
+      try {
+        pod = await api.readNamespacedPod({ name: `${id}-0`, namespace });
+      } catch {}
+      return enrichWithPodStatus(inst, pod);
+    },
+
     async create(input: CreateInstanceInput) {
-      const tmpl = await templates.get(input.templateName);
-      if (!tmpl) {
-        throw new Error(`Template "${input.templateName}" not found`);
+      // Verify agent exists and is owned by user
+      const agentCm = await readOwned(api, namespace, input.agentId, owner);
+      if (!agentCm || agentCm.metadata?.labels?.[LABEL_TYPE] !== LABEL_AGENT) {
+        throw new Error(`Agent "${input.agentId}" not found`);
       }
 
-      const spec: InstanceSpec = {
+      const k8sName = generateK8sName("inst");
+      const spec = {
+        name: input.name,
         version: SPEC_VERSION,
-        templateName: input.templateName,
-        desiredState: "running",
+        agentId: input.agentId,
+        desiredState: "running" as const,
         env: input.env,
         secretRef: input.secretRef,
         description: input.description,
@@ -212,11 +413,12 @@ export function createK8sInstancesContext(
       };
       const cm: k8s.V1ConfigMap = {
         metadata: {
-          name: input.name,
+          name: k8sName,
           namespace,
           labels: {
             [LABEL_TYPE]: LABEL_INSTANCE,
-            [LABEL_TEMPLATE_REF]: input.templateName,
+            [LABEL_AGENT_REF]: input.agentId,
+            [LABEL_OWNER]: owner,
           },
           annotations: {
             "humr.ai/last-activity": new Date().toISOString(),
@@ -224,24 +426,13 @@ export function createK8sInstancesContext(
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
       };
-      const created = await api.createNamespacedConfigMap({
-        namespace,
-        body: cm,
-      });
+      const created = await api.createNamespacedConfigMap({ namespace, body: cm });
       return parseInstance(created);
     },
 
     async update(input: UpdateInstanceInput) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({
-          name: input.name,
-          namespace,
-        });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+      const cm = await readOwned(api, namespace, input.id, owner);
+      if (!cm) return null;
 
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
       if (input.env !== undefined) spec.env = input.env;
@@ -249,67 +440,58 @@ export function createK8sInstancesContext(
       if (input.enabledMcpServers !== undefined) spec.enabledMcpServers = input.enabledMcpServers;
 
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await api.replaceNamespacedConfigMap({
-        name: input.name,
-        namespace,
-        body: cm,
-      });
+      const updated = await api.replaceNamespacedConfigMap({ name: input.id, namespace, body: cm });
       return parseInstance(updated);
     },
 
-    async wake(name) {
+    async wake(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return null;
       try {
-        await wakeInstance(api, namespace, name);
+        await wakeInstance(api, namespace, id);
       } catch (err) {
         if (is404(err)) return null;
         throw err;
       }
-      const cm = await api.readNamespacedConfigMap({ name, namespace });
-      return parseInstance(cm);
+      const reread = await api.readNamespacedConfigMap({ name: id, namespace });
+      return parseInstance(reread);
     },
 
-    async connectSlack(name: string, botToken: string) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({ name, namespace });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+    async connectSlack(id, botToken) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return null;
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
       const slackChannel = { type: ChannelType.Slack, botToken };
       spec.channels = [...(spec.channels ?? []).filter(c => c.type !== ChannelType.Slack), slackChannel];
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+      const updated = await api.replaceNamespacedConfigMap({ name: id, namespace, body: cm });
       const mgr = channels.find(m => m.type === slackChannel.type);
-      if (mgr) await mgr.start(name, slackChannel);
+      if (mgr) await mgr.start(id, slackChannel);
       return parseInstance(updated);
     },
 
-    async disconnectSlack(name: string) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({ name, namespace });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+    async disconnectSlack(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return null;
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
       spec.channels = (spec.channels ?? []).filter(c => c.type !== ChannelType.Slack);
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
-      await Promise.all(channels.map(m => m.stop(name)));
+      const updated = await api.replaceNamespacedConfigMap({ name: id, namespace, body: cm });
+      await Promise.all(channels.map(m => m.stop(id)));
       return parseInstance(updated);
     },
 
-    async delete(name) {
-      await Promise.all(channels.map(m => m.stop(name)));
-      await api.deleteNamespacedConfigMap({ name, namespace });
+    async delete(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return;
+
+      await Promise.all(channels.map(m => m.stop(id)));
+      await api.deleteNamespacedConfigMap({ name: id, namespace });
 
       try {
         const pvcs = await api.listNamespacedPersistentVolumeClaim({
           namespace,
-          labelSelector: `${LABEL_INSTANCE_REF}=${name}`,
+          labelSelector: `${LABEL_INSTANCE_REF}=${id}`,
         });
         await Promise.all(
           (pvcs.items ?? []).map((pvc) =>
@@ -320,22 +502,13 @@ export function createK8sInstancesContext(
           ),
         );
       } catch {
-        // PVC cleanup is best-effort; controller may not have labeled them yet
+        // PVC cleanup is best-effort
       }
     },
   };
 }
 
-function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
-  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
-  const statusYaml = cm.data?.[STATUS_KEY];
-  let status: ScheduleStatus | undefined;
-  if (statusYaml) {
-    status = yaml.load(statusYaml) as ScheduleStatus;
-  }
-  const instanceName = cm.metadata!.labels![LABEL_INSTANCE_REF];
-  return { name: cm.metadata!.name!, instanceName, spec, status };
-}
+// ---- Schedules ----
 
 function minutesToCron(minutes: number): string {
   if (minutes === 1) return "* * * * *";
@@ -349,51 +522,48 @@ function validateCron(expr: string): void {
 export function createK8sSchedulesContext(
   namespace: string,
   api: k8s.CoreV1Api,
-  instances: InstancesService,
+  owner: string,
 ): SchedulesService {
   return {
-    async list(instanceName) {
+    async list(instanceId) {
       const res = await api.listNamespacedConfigMap({
         namespace,
-        labelSelector: `${LABEL_TYPE}=${LABEL_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceName}`,
+        labelSelector: `${LABEL_TYPE}=${LABEL_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceId},${LABEL_OWNER}=${owner}`,
       });
       return (res.items ?? []).map(parseSchedule);
     },
 
-    async get(name) {
-      try {
-        const cm = await api.readNamespacedConfigMap({ name, namespace });
-        return parseSchedule(cm);
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+    async get(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return null;
+      return parseSchedule(cm);
     },
 
     async createCron(input: CreateCronScheduleInput) {
       validateCron(input.cron);
 
-      const inst = await instances.get(input.instanceName);
-      if (!inst) {
-        throw new Error(`Instance "${input.instanceName}" not found`);
-      }
+      const instCm = await readOwned(api, namespace, input.instanceId, owner);
+      if (!instCm) throw new Error(`Instance "${input.instanceId}" not found`);
+      const agentRef = instCm.metadata!.labels![LABEL_AGENT_REF];
 
-      const cmName = `${input.instanceName}-${input.name}`;
-      const spec: ScheduleSpec = {
+      const k8sName = generateK8sName("sched");
+      const spec = {
+        name: input.name,
         version: SPEC_VERSION,
-        type: "cron",
+        type: "cron" as const,
         cron: input.cron,
         task: input.task,
         enabled: true,
       };
       const cm: k8s.V1ConfigMap = {
         metadata: {
-          name: cmName,
+          name: k8sName,
           namespace,
           labels: {
             [LABEL_TYPE]: LABEL_SCHEDULE,
-            [LABEL_INSTANCE_REF]: input.instanceName,
-            [LABEL_TEMPLATE_REF]: inst.spec.templateName,
+            [LABEL_INSTANCE_REF]: input.instanceId,
+            [LABEL_AGENT_REF]: agentRef,
+            [LABEL_OWNER]: owner,
           },
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
@@ -403,27 +573,28 @@ export function createK8sSchedulesContext(
     },
 
     async createHeartbeat(input: CreateHeartbeatScheduleInput) {
-      const inst = await instances.get(input.instanceName);
-      if (!inst) {
-        throw new Error(`Instance "${input.instanceName}" not found`);
-      }
+      const instCm = await readOwned(api, namespace, input.instanceId, owner);
+      if (!instCm) throw new Error(`Instance "${input.instanceId}" not found`);
+      const agentRef = instCm.metadata!.labels![LABEL_AGENT_REF];
 
-      const cmName = `${input.instanceName}-${input.name}`;
-      const spec: ScheduleSpec = {
+      const k8sName = generateK8sName("sched");
+      const spec = {
+        name: input.name,
         version: SPEC_VERSION,
-        type: "heartbeat",
+        type: "heartbeat" as const,
         cron: minutesToCron(input.intervalMinutes),
         task: "",
         enabled: true,
       };
       const cm: k8s.V1ConfigMap = {
         metadata: {
-          name: cmName,
+          name: k8sName,
           namespace,
           labels: {
             [LABEL_TYPE]: LABEL_SCHEDULE,
-            [LABEL_INSTANCE_REF]: input.instanceName,
-            [LABEL_TEMPLATE_REF]: inst.spec.templateName,
+            [LABEL_INSTANCE_REF]: input.instanceId,
+            [LABEL_AGENT_REF]: agentRef,
+            [LABEL_OWNER]: owner,
           },
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
@@ -432,22 +603,19 @@ export function createK8sSchedulesContext(
       return parseSchedule(created);
     },
 
-    async delete(name) {
-      await api.deleteNamespacedConfigMap({ name, namespace });
+    async delete(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return;
+      await api.deleteNamespacedConfigMap({ name: id, namespace });
     },
 
-    async toggle(name) {
-      let cm: k8s.V1ConfigMap;
-      try {
-        cm = await api.readNamespacedConfigMap({ name, namespace });
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
-      }
+    async toggle(id) {
+      const cm = await readOwned(api, namespace, id, owner);
+      if (!cm) return null;
       const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
       spec.enabled = !spec.enabled;
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+      const updated = await api.replaceNamespacedConfigMap({ name: id, namespace, body: cm });
       return parseSchedule(updated);
     },
 
@@ -457,43 +625,32 @@ export function createK8sSchedulesContext(
   };
 }
 
+// ---- Utilities ----
+
 export function podBaseUrl(instanceId: string, namespace: string): string {
   return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
 }
 
 export async function patchPodAnnotation(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  instanceId: string,
-  key: string,
-  value: string,
+  api: k8s.CoreV1Api, namespace: string, instanceId: string, key: string, value: string,
 ): Promise<void> {
   await api.patchNamespacedPod({
-    name: `${instanceId}-0`,
-    namespace,
+    name: `${instanceId}-0`, namespace,
     body: { metadata: { annotations: { [key]: value } } },
   });
 }
 
 export async function removePodAnnotation(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  instanceId: string,
-  key: string,
+  api: k8s.CoreV1Api, namespace: string, instanceId: string, key: string,
 ): Promise<void> {
   await api.patchNamespacedPod({
-    name: `${instanceId}-0`,
-    namespace,
+    name: `${instanceId}-0`, namespace,
     body: { metadata: { annotations: { [key]: null } } },
   });
 }
 
 export async function patchConfigMapAnnotation(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  name: string,
-  key: string,
-  value: string,
+  api: k8s.CoreV1Api, namespace: string, name: string, key: string, value: string,
 ): Promise<void> {
   const cm = await api.readNamespacedConfigMap({ name, namespace });
   if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
@@ -520,6 +677,14 @@ export async function wakeInstance(
   cm.metadata!.annotations["humr.ai/last-activity"] = new Date().toISOString();
   await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
   return true;
+}
+
+/** Verify instance ownership. Returns true if owned by user. */
+export async function verifyInstanceOwner(
+  api: k8s.CoreV1Api, namespace: string, instanceId: string, owner: string,
+): Promise<boolean> {
+  const cm = await readOwned(api, namespace, instanceId, owner);
+  return cm !== null;
 }
 
 export { createApi };

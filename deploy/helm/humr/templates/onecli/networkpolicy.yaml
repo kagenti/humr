@@ -1,0 +1,86 @@
+{{- if .Values.onecli.networkPolicy.enabled }}
+{{- /*
+  Egress restriction for the OneCLI pod.
+
+  The OneCLI gateway acts as an HTTPS proxy for agent pods. Without this
+  policy, an agent can ask the proxy to forward requests to any in-cluster
+  destination — Kubernetes API, kubelet, other pods, cloud metadata —
+  effectively turning the proxy into an SSRF gadget.
+
+  This policy allows only:
+    - DNS to kube-system (kube-dns / coredns)
+    - In-cluster Postgres and Keycloak (by component label)
+    - The public internet (0.0.0.0/0 with cluster CIDRs and link-local excepted)
+
+  Note: this does NOT block loopback (127.0.0.1) traffic — the gateway and
+  the admin web run in the same container and share a network namespace, so
+  the kernel never offers loopback packets to the CNI. That hole needs an
+  upstream fix in the OneCLI gateway (reject private/loopback destinations).
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "humr.onecli.fullname" . }}-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: onecli
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: onecli
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS — kube-dns / coredns pods only (not all of kube-system).
+    # The `k8s-app: kube-dns` label is the standard used by both kube-dns and
+    # CoreDNS across k3s, kubeadm, EKS, GKE, AKS.
+    # NB: namespaceSelector and podSelector are in the SAME peer entry (no `-`
+    # before podSelector) so they AND. Listing them as separate peers would OR.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    {{- if .Values.postgres.enabled }}
+    # In-cluster shared Postgres
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    {{- if .Values.keycloak.enabled }}
+    # In-cluster Keycloak (OAuth JWKS / token / userinfo)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: keycloak
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.keycloak.port }}
+    {{- end }}
+
+    # Public internet — everything except private/special-use ranges
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range .Values.onecli.networkPolicy.blockedCIDRs }}
+              - {{ . | quote }}
+              {{- end }}
+{{- end }}

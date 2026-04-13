@@ -26,7 +26,7 @@ import { SchedulesPanel } from "../panels/SchedulesPanel.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
-  const templates = useStore((s) => s.templates);
+  const agents = useStore((s) => s.agents);
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
@@ -65,10 +65,10 @@ export function ChatView() {
   const selectedMcpServers = useMemo(
     () =>
       resolveAcpMcpServers(
-        templates,
-        instances.find((i) => i.name === selectedInstance),
+        agents,
+        instances.find((i) => i.id === selectedInstance),
       ),
-    [templates, instances, selectedInstance],
+    [agents, instances, selectedInstance],
   );
 
   useEffect(() => {
@@ -108,17 +108,17 @@ export function ChatView() {
   // Wake instance if hibernated on entry
   useEffect(() => {
     if (!selectedInstance) return;
-    const inst = instances.find(i => i.name === selectedInstance);
+    const inst = instances.find(i => i.id === selectedInstance);
     const state = inst ? instanceState(inst) : "unknown";
     if (state === "hibernated") {
-      platform.instances.wake.mutate({ name: selectedInstance }).catch(() => {});
+      platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);
 
   // Sessions — show spinner, skip connect if pod not ready, retry until loaded
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
-    const inst = useStore.getState().instances.find(x => x.name === selectedInstance);
+    const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
     if (!inst?.status?.podReady) return false;
     try {
       const { connection, ws } = await openConnection(
@@ -460,7 +460,7 @@ export function ChatView() {
           )}
           <div className={`${sessionId ? "" : "ml-auto"} flex items-center gap-2`}>
             {(() => {
-              const inst = instances.find(i => i.name === selectedInstance);
+              const inst = instances.find(i => i.id === selectedInstance);
               const state = inst ? instanceState(inst) : "unknown";
               const label = busy ? "Busy" : stateLabel[state];
               const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];

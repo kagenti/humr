@@ -1,5 +1,5 @@
 export { appRouter, type AppRouter } from "./router.js";
-export type { ApiContext } from "./context.js";
+export type { ApiContext, UserIdentity } from "./context.js";
 
 export { ChannelType, type EnvVar } from "./modules/shared.js";
 
@@ -7,9 +7,20 @@ export { SPEC_VERSION } from "./modules/templates/types.js";
 export type {
   Template,
   TemplateSpec,
-  CreateTemplateInput,
   TemplatesService,
+  Mount,
+  Resources,
+  SecurityContext,
+  MCPServerConfig,
 } from "./modules/templates/types.js";
+
+export type {
+  Agent,
+  AgentSpec,
+  AgentsService,
+  CreateAgentInput,
+  UpdateAgentInput,
+} from "./modules/agents/types.js";
 
 export type {
   Instance,

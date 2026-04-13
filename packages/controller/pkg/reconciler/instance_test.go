@@ -16,7 +16,7 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/config"
 )
 
-func setupReconciler(t *testing.T, templates map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
+func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
 	cfg := &config.Config{
@@ -27,18 +27,18 @@ func setupReconciler(t *testing.T, templates map[string]*corev1.ConfigMap, objec
 		GatewayPort:      10255,
 		WebPort:          10254,
 	}
-	getter := &fakeGetter{cms: templates}
-	r := NewInstanceReconciler(client, cfg, NewTemplateResolver(getter))
+	getter := &fakeGetter{cms: agents}
+	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
 	return r, client
 }
 
-func templateCM() *corev1.ConfigMap {
+func agentCM() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "code-guardian", Namespace: "test-agents",
-			Labels: map[string]string{"humr.ai/type": "agent-template"},
+			Labels: map[string]string{"humr.ai/type": "agent"},
 		},
-		Data: map[string]string{"spec.yaml": fixtureTemplateYAML},
+		Data: map[string]string{"spec.yaml": fixtureAgentYAML},
 	}
 }
 
@@ -47,12 +47,12 @@ func instanceCM(desiredState string) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-instance", Namespace: "test-agents", UID: "uid-1",
 			Labels: map[string]string{
-				"humr.ai/type":     "agent-instance",
-				"humr.ai/template": "code-guardian",
+				"humr.ai/type":  "agent-instance",
+				"humr.ai/agent": "code-guardian",
 			},
 		},
 		Data: map[string]string{
-			"spec.yaml": fmt.Sprintf("version: humr.ai/v1\ndesiredState: %s\ntemplateName: code-guardian\n", desiredState),
+			"spec.yaml": fmt.Sprintf("version: humr.ai/v1\ndesiredState: %s\nagentId: code-guardian\n", desiredState),
 		},
 	}
 }
@@ -60,7 +60,7 @@ func instanceCM(desiredState string) *corev1.ConfigMap {
 func TestReconcile_CreateResources(t *testing.T) {
 	cm := instanceCM("running")
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": templateCM()},
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
 		cm,
 	)
 
@@ -95,7 +95,7 @@ func TestReconcile_CreateResources(t *testing.T) {
 func TestReconcile_Hibernate(t *testing.T) {
 	cm := instanceCM("hibernated")
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": templateCM()},
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
 		cm,
 	)
 
@@ -116,7 +116,7 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
 	}
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": templateCM()},
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
 		cm, existingSS,
 	)
 
@@ -127,9 +127,9 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 }
 
-func TestReconcile_TemplateNotFound(t *testing.T) {
+func TestReconcile_AgentNotFound(t *testing.T) {
 	cm := instanceCM("running")
-	cm.Labels["humr.ai/template"] = "missing"
+	cm.Labels["humr.ai/agent"] = "missing"
 	r, client := setupReconciler(t,
 		map[string]*corev1.ConfigMap{},
 		cm,
@@ -145,7 +145,7 @@ func TestReconcile_TemplateNotFound(t *testing.T) {
 func TestReconcile_Idempotent(t *testing.T) {
 	cm := instanceCM("running")
 	r, _ := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": templateCM()},
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
 		cm,
 	)
 
@@ -167,7 +167,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 		},
 	}
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": templateCM()},
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
 		cm, pvc,
 	)
 

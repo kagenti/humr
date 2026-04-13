@@ -1,10 +1,18 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./App.css";
-import App from "./App";
+import { initAuth } from "./auth.js";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+async function main() {
+  const user = await initAuth();
+  if (!user) return; // Redirecting to Keycloak, don't render
+
+  const { default: App } = await import("./App.js");
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+main();

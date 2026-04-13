@@ -3,13 +3,15 @@ import { useStore } from "./store.js";
 import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
 import { ConnectorsView } from "./views/ConnectorsView.js";
-import { Shell as ShellIcon, Sun, Moon, Monitor } from "lucide-react";
+import { Shell as ShellIcon, Sun, Moon, Monitor, LogOut, ExternalLink } from "lucide-react";
+import { getUser, logout, getAuthConfig } from "./auth.js";
 import { DialogOverlay } from "./components/DialogOverlay.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
   const fetchTemplates = useStore((s) => s.fetchTemplates);
+  const fetchAgents = useStore((s) => s.fetchAgents);
   const fetchInstances = useStore((s) => s.fetchInstances);
 
   // Apply theme on mount + listen for system preference changes
@@ -60,10 +62,11 @@ export default function App() {
 
   useEffect(() => {
     fetchTemplates();
+    fetchAgents();
     fetchInstances();
     const i = setInterval(fetchInstances, 5000);
     return () => clearInterval(i);
-  }, [fetchTemplates, fetchInstances]);
+  }, [fetchTemplates, fetchAgents, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)
   if (view === "chat") return <><ChatView /><DialogOverlay /></>;
@@ -96,6 +99,7 @@ function Nav() {
   const setView = useStore((s) => s.setView);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const user = getUser();
 
   return (
     <nav className="sticky top-0 z-50 flex items-center gap-6 border-b border-border-light bg-surface/80 backdrop-blur-sm px-[5%] h-12">
@@ -118,6 +122,18 @@ function Nav() {
             </button>
           );
         })}
+        {getAuthConfig()?.onecliUrl && (
+          <a
+            href={getAuthConfig()!.onecliUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"
+            title="Open OneCLI dashboard"
+          >
+            OneCLI
+            <ExternalLink size={12} />
+          </a>
+        )}
       </div>
 
       {/* Theme toggle */}
@@ -132,6 +148,22 @@ function Nav() {
             <Icon size={14} />
           </button>
         ))}
+      </div>
+
+      {/* User / logout */}
+      <div className="flex items-center gap-2">
+        {user && (
+          <span className="text-[13px] text-text-secondary">
+            {user.profile.preferred_username ?? user.profile.sub}
+          </span>
+        )}
+        <button
+          onClick={() => logout()}
+          title="Log out"
+          className="h-7 w-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors"
+        >
+          <LogOut size={14} />
+        </button>
       </div>
     </nav>
   );

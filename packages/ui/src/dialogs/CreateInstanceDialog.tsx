@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { MCPServerConfig } from "../types.js";
 
-export function CreateInstanceDialog({ templateName, mcpServers, onSubmit, onCancel }: {
-  templateName: string;
+export function CreateInstanceDialog({ agentName, mcpServers, onSubmit, onCancel }: {
+  agentName: string;
   mcpServers?: Record<string, MCPServerConfig> | null;
   onSubmit: (name: string, enabled?: string[]) => void;
   onCancel: () => void;
@@ -23,7 +23,7 @@ export function CreateInstanceDialog({ templateName, mcpServers, onSubmit, onCan
       >
         <div>
           <h2 className="text-[20px] font-bold text-text">New Instance</h2>
-          <p className="text-[12px] text-text-muted mt-1">Template: <span className="font-semibold text-text-secondary">{templateName}</span></p>
+          <p className="text-[12px] text-text-muted mt-1">Agent: <span className="font-semibold text-text-secondary">{agentName}</span></p>
         </div>
 
         <label className="flex flex-col gap-1.5">
