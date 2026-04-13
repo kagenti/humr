@@ -34,7 +34,7 @@ const onecli = createOnecliClient({
 });
 
 const { api } = createApi(config.namespace);
-await runMigrations(config.databaseUrl);
+await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
 const systemInstances = composeSystemInstances(api, config.namespace, db);
