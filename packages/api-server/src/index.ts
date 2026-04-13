@@ -4,18 +4,10 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
 import {
   createApi,
-  listTemplates, getTemplate, readTemplateSpec,
-  listAgents, getAgent, createAgent, updateAgentSpec, deleteAgent,
-  listInstances, getInstance, createInstance, updateInstanceSpec, readInstanceSpec, deleteInstance, wakeInstance,
-  listSchedules, getSchedule, createSchedule, deleteSchedule, toggleSchedule,
   verifyOwner, podBaseUrl,
-  readAgentRef,
   patchPodAnnotation, removePodAnnotation, patchConfigMapAnnotation,
 } from "./modules/agents/infrastructure/k8s.js";
-import { createTemplatesService } from "./modules/agents/services/TemplatesService.js";
-import { createAgentsService } from "./modules/agents/services/AgentsService.js";
-import { createInstancesService } from "./modules/agents/services/InstancesService.js";
-import { createSchedulesService } from "./modules/agents/services/SchedulesService.js";
+import { composeAgentsModule, composeSystemInstances } from "./modules/agents/index.js";
 import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
 import { createAcpRelay } from "./acp-relay.js";
@@ -42,16 +34,7 @@ const onecli = createOnecliClient({
 
 const { api } = createApi(config.namespace);
 
-const systemInstances = createInstancesService({
-  list: listInstances(api, config.namespace),
-  get: getInstance(api, config.namespace),
-  create: createInstance(api, config.namespace, ""),
-  update: updateInstanceSpec(api, config.namespace, ""),
-  delete: deleteInstance(api, config.namespace, ""),
-  wake: wakeInstance(api, config.namespace),
-  readSpec: readInstanceSpec(api, config.namespace, ""),
-  getAgent: getAgent(api, config.namespace, ""),
-});
+const systemInstances = composeSystemInstances(api, config.namespace);
 
 const channelManager = createChannelManager({
   slackWorker: config.slackAppToken
@@ -105,36 +88,7 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
 
-  const templates = createTemplatesService({
-    list: listTemplates(api, config.namespace),
-    get: getTemplate(api, config.namespace),
-  });
-  const agents = createAgentsService({
-    list: listAgents(api, config.namespace, user.sub),
-    get: getAgent(api, config.namespace, user.sub),
-    create: createAgent(api, config.namespace, user.sub),
-    update: updateAgentSpec(api, config.namespace, user.sub),
-    delete: deleteAgent(api, config.namespace, user.sub),
-    readTemplateSpec: readTemplateSpec(api, config.namespace),
-  });
-  const instances = createInstancesService({
-    list: listInstances(api, config.namespace, user.sub),
-    get: getInstance(api, config.namespace, user.sub),
-    create: createInstance(api, config.namespace, user.sub),
-    update: updateInstanceSpec(api, config.namespace, user.sub),
-    delete: deleteInstance(api, config.namespace, user.sub),
-    wake: wakeInstance(api, config.namespace),
-    readSpec: readInstanceSpec(api, config.namespace, user.sub),
-    getAgent: getAgent(api, config.namespace, user.sub),
-  });
-  const schedules = createSchedulesService({
-    list: listSchedules(api, config.namespace, user.sub),
-    get: getSchedule(api, config.namespace, user.sub),
-    create: createSchedule(api, config.namespace, user.sub),
-    delete: deleteSchedule(api, config.namespace, user.sub),
-    toggle: toggleSchedule(api, config.namespace, user.sub),
-    readAgentRef: readAgentRef(api, config.namespace, user.sub),
-  });
+  const { templates, agents, instances, schedules } = composeAgentsModule(api, config.namespace, user.sub);
 
   return fetchRequestHandler({
     endpoint: "/api/trpc",
