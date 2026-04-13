@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { t } from "../trpc.js";
-import type { Instance } from "../modules/instances.js";
+import { t } from "../../../trpc.js";
+import type { Instance } from "../domain/types.js";
 
 const k8sName = z
   .string()

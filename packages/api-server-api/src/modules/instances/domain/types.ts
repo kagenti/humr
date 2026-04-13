@@ -1,8 +1,6 @@
-import type { EnvVar } from "./templates.js";
+import { type EnvVar, ChannelType } from "../../../shared/domain/types.js";
 
-export enum ChannelType {
-  Slack = "slack",
-}
+export { ChannelType };
 
 export interface Channel {
   type: ChannelType;
@@ -52,15 +50,4 @@ export interface UpdateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   enabledMcpServers?: string[];
-}
-
-export interface InstancesContext {
-  list: () => Promise<Instance[]>;
-  get: (name: string) => Promise<Instance | null>;
-  create: (input: CreateInstanceInput) => Promise<Instance>;
-  update: (input: UpdateInstanceInput) => Promise<Instance | null>;
-  delete: (name: string) => Promise<void>;
-  wake: (name: string) => Promise<Instance | null>;
-  connectSlack: (name: string, botToken: string) => Promise<Instance | null>;
-  disconnectSlack: (name: string) => Promise<Instance | null>;
 }

@@ -4,7 +4,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/api-server/package.json packages/api-server/
 COPY packages/api-server-api/package.json packages/api-server-api/
 
