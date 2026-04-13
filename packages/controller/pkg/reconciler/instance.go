@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
@@ -100,18 +101,20 @@ func (r *InstanceReconciler) setError(ctx context.Context, name, msg string) err
 }
 
 func (r *InstanceReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet) error {
-	existing, err := r.client.AppsV1().StatefulSets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.AppsV1().StatefulSets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		existing.Spec.Replicas = desired.Spec.Replicas
+		existing.Spec.Template = desired.Spec.Template
+		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
-	}
-	if err != nil {
-		return err
-	}
-	existing.Spec.Replicas = desired.Spec.Replicas
-	existing.Spec.Template = desired.Spec.Template
-	_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	})
 }
 
 func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.Service) error {

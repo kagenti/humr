@@ -218,6 +218,9 @@ export function createK8sInstancesContext(
             [LABEL_TYPE]: LABEL_INSTANCE,
             [LABEL_TEMPLATE_REF]: input.templateName,
           },
+          annotations: {
+            "humr.ai/last-activity": new Date().toISOString(),
+          },
         },
         data: { [SPEC_KEY]: yaml.dump(spec) },
       };
@@ -255,22 +258,14 @@ export function createK8sInstancesContext(
     },
 
     async wake(name) {
-      let cm: k8s.V1ConfigMap;
       try {
-        cm = await api.readNamespacedConfigMap({ name, namespace });
+        await wakeInstance(api, namespace, name);
       } catch (err) {
         if (is404(err)) return null;
         throw err;
       }
-      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-      spec.desiredState = "running";
-      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await api.replaceNamespacedConfigMap({
-        name,
-        namespace,
-        body: cm,
-      });
-      return parseInstance(updated);
+      const cm = await api.readNamespacedConfigMap({ name, namespace });
+      return parseInstance(cm);
     },
 
     async connectSlack(name: string, botToken: string) {
@@ -491,6 +486,40 @@ export async function removePodAnnotation(
     namespace,
     body: { metadata: { annotations: { [key]: null } } },
   });
+}
+
+export async function patchConfigMapAnnotation(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  name: string,
+  key: string,
+  value: string,
+): Promise<void> {
+  const cm = await api.readNamespacedConfigMap({ name, namespace });
+  if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+  cm.metadata!.annotations[key] = value;
+  await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+}
+
+/**
+ * Wake a hibernated instance by patching desiredState to "running".
+ * Returns true if the instance was hibernated and is now waking, false if already running.
+ */
+export async function wakeInstance(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  name: string,
+): Promise<boolean> {
+  const cm = await api.readNamespacedConfigMap({ name, namespace });
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
+  if (spec.desiredState !== "hibernated") return false;
+
+  spec.desiredState = "running";
+  cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+  if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+  cm.metadata!.annotations["humr.ai/last-activity"] = new Date().toISOString();
+  await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
+  return true;
 }
 
 export { createApi };

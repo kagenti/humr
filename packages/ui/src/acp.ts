@@ -6,10 +6,14 @@ import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 
 export type UpdateHandler = (update: any) => void;
 
+const WS_CONNECT_TIMEOUT_MS = 120_000;
+
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
+    const timer = setTimeout(() => { ws.close(); reject(new Error("WebSocket connect timeout")); }, WS_CONNECT_TIMEOUT_MS);
     ws.onopen = () => {
+      clearTimeout(timer);
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
           ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));

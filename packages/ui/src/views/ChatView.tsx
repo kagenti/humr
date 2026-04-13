@@ -11,8 +11,10 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { createInstanceTrpc } from "../instance-trpc.js";
+import { platform } from "../platform.js";
 import { resolveAcpMcpServers } from "../types.js";
 import type { Message, ToolChip as ToolChipT } from "../types.js";
+import { instanceState, stateLabel, badgeColors, dotColors } from "../components/StatusIndicator.js";
 import { ArrowLeft, Plus, Send as SendIcon } from "lucide-react";
 import { Markdown } from "../components/Markdown.js";
 import { ToolChip } from "../components/ToolChip.js";
@@ -103,10 +105,21 @@ export function ChatView() {
     return () => clearInterval(i);
   }, [instanceTrpc, setFileTree, setOpenFile]);
 
-  // Sessions
-  const fetchSessions = useCallback(async () => {
+  // Wake instance if hibernated on entry
+  useEffect(() => {
     if (!selectedInstance) return;
-    setLoadingSessions(true);
+    const inst = instances.find(i => i.name === selectedInstance);
+    const state = inst ? instanceState(inst) : "unknown";
+    if (state === "hibernated") {
+      platform.instances.wake.mutate({ name: selectedInstance }).catch(() => {});
+    }
+  }, [selectedInstance, instances]);
+
+  // Sessions — show spinner, skip connect if pod not ready, retry until loaded
+  const fetchSessions = useCallback(async () => {
+    if (!selectedInstance) return false;
+    const inst = useStore.getState().instances.find(x => x.name === selectedInstance);
+    if (!inst?.status?.podReady) return false;
     try {
       const { connection, ws } = await openConnection(
         selectedInstance,
@@ -119,12 +132,26 @@ export function ChatView() {
       const r = await connection.listSessions({ cwd: "." });
       setSessions(r.sessions ?? []);
       ws.close();
-    } catch {}
-    setLoadingSessions(false);
-  }, [selectedInstance, setLoadingSessions, setSessions]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [selectedInstance, setSessions]);
   useEffect(() => {
-    if (selectedInstance) fetchSessions();
-  }, [selectedInstance, fetchSessions]);
+    if (!selectedInstance) return;
+    setLoadingSessions(true);
+    let stopped = false;
+    const attempt = () => {
+      if (stopped) return;
+      fetchSessions().then((ok) => {
+        if (stopped) return;
+        if (ok) { setLoadingSessions(false); return; }
+        setTimeout(attempt, 3000);
+      });
+    };
+    attempt();
+    return () => { stopped = true; };
+  }, [selectedInstance, fetchSessions, setLoadingSessions]);
 
   const resumeSession = useCallback(
     async (sid: string) => {
@@ -363,15 +390,21 @@ export function ChatView() {
       );
       addLog("done", { stopReason: r.stopReason });
     } catch (err: any) {
-      addLog("error", { message: err?.message });
+      const errMsg = err?.message ?? String(err);
+      addLog("error", { message: errMsg });
       setMessages((p) =>
-        p.map((m) => (m.id === aId ? { ...m, streaming: false } : m)),
+        p.map((m) =>
+          m.id === aId
+            ? { ...m, streaming: false, parts: [{ kind: "text" as const, text: errMsg }] }
+            : m,
+        ),
       );
       connectionRef.current?.ws.close();
       connectionRef.current = null;
       activeSessionIdRef.current = null;
     } finally {
       setBusy(false);
+      fetchSessions();
       textareaRef.current?.focus();
     }
   }, [
@@ -384,6 +417,7 @@ export function ChatView() {
     setBusy,
     setMessages,
     setSessionId,
+    fetchSessions,
   ]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -425,10 +459,19 @@ export function ChatView() {
             </button>
           )}
           <div className={`${sessionId ? "" : "ml-auto"} flex items-center gap-2`}>
-            <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${busy ? "bg-warning-light text-warning border-warning" : "bg-success-light text-success border-success"}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${busy ? "bg-warning anim-pulse" : "bg-success"}`} />
-              {busy ? "Running" : "Ready"}
-            </span>
+            {(() => {
+              const inst = instances.find(i => i.name === selectedInstance);
+              const state = inst ? instanceState(inst) : "unknown";
+              const label = busy ? "Busy" : stateLabel[state];
+              const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];
+              const dot = busy ? "bg-warning anim-pulse" : dotColors[state];
+              return (
+                <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${color}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                  {label}
+                </span>
+              );
+            })()}
           </div>
         </header>
 

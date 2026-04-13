@@ -20,6 +20,7 @@ var testConfig = &config.Config{
 	GatewayHost:      "humr-onecli",
 	GatewayPort:      10255,
 	WebPort:          10254,
+	CACertInitImage:  "busybox:stable",
 }
 
 var testTemplate = &types.TemplateSpec{
@@ -128,13 +129,10 @@ func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 2)
 
-	// First: platform CA cert fetcher (uses agent image — shared layers, no extra pull)
+	// First: platform CA cert fetcher (busybox — no dependency on agent image)
 	caIC := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "fetch-ca-cert", caIC.Name)
-	assert.Equal(t, testTemplate.Image, caIC.Image)
-	require.Len(t, caIC.Env, 1)
-	assert.Equal(t, "ONECLI_ACCESS_TOKEN", caIC.Env[0].Name)
-	assert.Equal(t, "humr-template-my-template-token", caIC.Env[0].ValueFrom.SecretKeyRef.Name)
+	assert.Equal(t, "busybox:stable", caIC.Image)
 	require.Len(t, caIC.VolumeMounts, 1)
 	assert.Equal(t, "/etc/humr/ca", caIC.VolumeMounts[0].MountPath)
 
@@ -211,15 +209,18 @@ func TestBuildNetworkPolicy(t *testing.T) {
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["humr.ai/instance"])
 	require.Len(t, np.OwnerReferences, 1)
 
-	// Egress rules: gateway + DNS
+	// Egress rules: OneCLI + DNS
 	require.Len(t, np.Spec.Egress, 2)
 
-	// Gateway rule targets OneCLI pods in the release namespace
-	gwRule := np.Spec.Egress[0]
-	require.Len(t, gwRule.To, 1)
-	assert.Equal(t, "onecli", gwRule.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	require.NotNil(t, gwRule.To[0].NamespaceSelector, "gateway egress rule must include namespaceSelector for cross-namespace access")
-	assert.Equal(t, "default", gwRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	// OneCLI rule targets OneCLI pods in the release namespace (gateway + web ports)
+	onecliRule := np.Spec.Egress[0]
+	require.Len(t, onecliRule.To, 1)
+	assert.Equal(t, "onecli", onecliRule.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
+	require.NotNil(t, onecliRule.To[0].NamespaceSelector, "OneCLI egress rule must include namespaceSelector for cross-namespace access")
+	assert.Equal(t, "default", onecliRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	require.Len(t, onecliRule.Ports, 2, "should allow both gateway and web ports")
+	assert.Equal(t, int32(10255), onecliRule.Ports[0].Port.IntVal)
+	assert.Equal(t, int32(10254), onecliRule.Ports[1].Port.IntVal)
 
 	// Ingress: allow ACP port
 	require.Len(t, np.Spec.Ingress, 1)

@@ -21,6 +21,11 @@ data:
         persist: false
     init: |
       #!/bin/bash
+      # Seed workspace from image on first boot
+      if [ ! -f /workspace/.initialized ]; then
+        cp -rn /app/working-dir/. /workspace/ 2>/dev/null || true
+        touch /workspace/.initialized
+      fi
       if [ -f /workspace/requirements.txt ]; then
         pip install -r /workspace/requirements.txt
       fi

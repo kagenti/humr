@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -17,7 +18,10 @@ type Config struct {
 	WebPort          int    // OneCLI web API port (for container-config endpoint)
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	AgentImagePullPolicy string // ImagePullPolicy for agent pods (default: IfNotPresent)
+	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
+	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
+	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
+	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -43,7 +47,10 @@ func LoadFromEnv() (*Config, error) {
 		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}
+	cfg.CACertInitImage = envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable")
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
+	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
+	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	return cfg, nil
 }
 
@@ -69,6 +76,15 @@ func envOrDefaultInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return def
+}
+
+func envOrDefaultDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return def

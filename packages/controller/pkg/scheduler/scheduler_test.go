@@ -94,24 +94,65 @@ func TestRemoveSchedule_NonExistent(t *testing.T) {
 	s.RemoveSchedule("nope") // should not panic
 }
 
-func TestFire_WritesExecAndStatus(t *testing.T) {
-	scheduleCm := scheduleCM("my-schedule", "my-instance", true)
-	client := fake.NewSimpleClientset(scheduleCm)
+func TestFire_RunningInstance(t *testing.T) {
+	instanceCm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-instance", Namespace: "test-agents",
+			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+		},
+		Data: map[string]string{
+			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
+		},
+	}
+	client := fake.NewSimpleClientset(instanceCm)
 	s := New(client, testCfg)
-	s.Start()
-	defer s.Stop()
-
-	// Register the schedule so fire can look up next run
-	s.SyncSchedule(scheduleCm)
 
 	spec := &types.ScheduleSpec{Type: "heartbeat", Cron: "*/5 * * * *", Task: "check repo", Enabled: true}
 	err := s.fire(context.Background(), "my-instance", "my-schedule", spec)
 	require.NoError(t, err)
 
-	// Note: exec actions can't be verified with fake client (RESTClient is nil in tests).
-	// The real exec path is tested via integration/e2e.
+	// Verify instance is still running (not touched by fire)
+	instance, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	assert.Contains(t, instance.Data["spec.yaml"], "desiredState: running")
+}
 
-	// Verify schedule status updated
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-schedule", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "lastResult: success")
+func TestWakeIfHibernated_WakesInstance(t *testing.T) {
+	instanceCm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-instance", Namespace: "test-agents",
+			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+		},
+		Data: map[string]string{
+			"spec.yaml": "version: humr.ai/v1\ndesiredState: hibernated\n",
+		},
+	}
+	client := fake.NewSimpleClientset(instanceCm)
+	s := New(client, testCfg)
+
+	woke, err := s.wakeIfHibernated(context.Background(), "my-instance")
+	require.NoError(t, err)
+	assert.True(t, woke)
+
+	// Verify instance is now running
+	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	assert.Contains(t, updated.Data["spec.yaml"], "desiredState: running")
+	assert.Contains(t, updated.Annotations, "humr.ai/last-activity")
+}
+
+func TestWakeIfHibernated_SkipsRunning(t *testing.T) {
+	instanceCm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-instance", Namespace: "test-agents",
+			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+		},
+		Data: map[string]string{
+			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
+		},
+	}
+	client := fake.NewSimpleClientset(instanceCm)
+	s := New(client, testCfg)
+
+	woke, err := s.wakeIfHibernated(context.Background(), "my-instance")
+	require.NoError(t, err)
+	assert.False(t, woke)
 }
