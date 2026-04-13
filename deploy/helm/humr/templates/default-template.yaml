@@ -10,7 +10,7 @@ metadata:
 data:
   spec.yaml: |
     version: humr.ai/v1
-    image: {{ .Values.defaultTemplate.image }}
+    image: "{{ .Values.defaultTemplate.image.repository }}:{{ .Values.defaultTemplate.image.tag | default .Chart.AppVersion }}"
     description: {{ .Values.defaultTemplate.description | quote }}
     mounts:
       - path: /workspace

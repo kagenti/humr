@@ -1,0 +1,7 @@
+.git
+*.swp
+*.swo
+*~
+.DS_Store
+values-test.yaml
+values-local.yaml

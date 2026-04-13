@@ -62,8 +62,10 @@ ingress:
 
 # -- UI (nginx serving static SPA, reverse-proxies /api to API server)
 ui:
-  image: humr-ui:latest
-  imagePullPolicy: Never
+  image:
+    repository: ghcr.io/kagenti/humr/ui
+    tag: ""  # defaults to appVersion
+    pullPolicy: IfNotPresent
   port: 8080
   resources:
     requests:
@@ -75,8 +77,10 @@ ui:
 
 # -- API Server
 apiServer:
-  image: humr-api-server:latest
-  imagePullPolicy: Never
+  image:
+    repository: ghcr.io/kagenti/humr/api-server
+    tag: ""
+    pullPolicy: IfNotPresent
   port: 4000
   # -- Slack app-level token (xapp-...) for Socket Mode. Leave empty to disable Slack integration.
   slackAppToken: ""
@@ -90,10 +94,12 @@ apiServer:
 
 # -- Controller (Go reconciler + scheduler)
 controller:
-  image: humr-controller:latest
-  imagePullPolicy: Never
+  image:
+    repository: ghcr.io/kagenti/humr/controller
+    tag: ""
+    pullPolicy: IfNotPresent
   caCertInitImage: busybox:stable
-  agentImagePullPolicy: Never
+  agentImagePullPolicy: IfNotPresent
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
   idleTimeout: "1h"
@@ -111,7 +117,10 @@ controller:
 defaultTemplate:
   enabled: true
   name: code-guardian
-  image: "humr-example-agent:latest"
+  image:
+    repository: ghcr.io/kagenti/humr/example-agent
+    tag: ""
+    pullPolicy: IfNotPresent
   description: "Persistent agent for repo monitoring"
   resources:
     requests:

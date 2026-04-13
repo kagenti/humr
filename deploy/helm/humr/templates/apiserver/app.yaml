@@ -42,8 +42,8 @@ spec:
       serviceAccountName: {{ include "humr.apiserver.serviceAccountName" . }}
       containers:
         - name: apiserver
-          image: {{ .Values.apiServer.image }}
-          imagePullPolicy: {{ .Values.apiServer.imagePullPolicy | default "IfNotPresent" }}
+          image: "{{ .Values.apiServer.image.repository }}:{{ .Values.apiServer.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.apiServer.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - containerPort: {{ .Values.apiServer.port }}
               name: http

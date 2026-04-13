@@ -1,0 +1,26 @@
+# Local dev: images built with docker and loaded into k3s directly.
+# Used via: helm install -f values-local.yaml
+ui:
+  image:
+    repository: humr-ui
+    tag: latest
+    pullPolicy: Never
+
+apiServer:
+  image:
+    repository: humr-api-server
+    tag: latest
+    pullPolicy: Never
+
+controller:
+  image:
+    repository: humr-controller
+    tag: latest
+    pullPolicy: Never
+  agentImagePullPolicy: Never
+
+defaultTemplate:
+  image:
+    repository: humr-example-agent
+    tag: latest
+    pullPolicy: Never
