@@ -1,33 +1,16 @@
 # -- Shell environment --
 
-["humr:shell"]
-description = 'Print shell activation script. Usage: eval "$(mise run humr:shell)"'
-dir = "{{cwd}}"
+["cluster:kubeconfig"]
+description = 'Print the KUBECONFIG path for the cluster. Usage: export KUBECONFIG="$(mise run cluster:kubeconfig)"'
 quiet = true
-run = """
-cat <<EOF
-deactivate () {
-  export PS1="\\${__OLD_PS1:-}"
-  [[ -n "\\${__OLD_KUBECONFIG:-}" ]] && export KUBECONFIG="\\$__OLD_KUBECONFIG" || unset KUBECONFIG
-  unset __OLD_PS1
-  unset __OLD_KUBECONFIG
-  unset -f deactivate
-  echo "humr-k3s environment deactivated."
-}
-
-while [[ -n "\\${__OLD_PS1:-}" ]]; do
-  deactivate;
-done
-
-echo "Activating humr-k3s environment..."
-
-export __OLD_PS1="\\${PS1:-}"
-export __OLD_KUBECONFIG="\\${KUBECONFIG:-}"
-
-export KUBECONFIG="\\${HOME}/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
-export PS1="(humr-k3s) \\${__OLD_PS1}"
-EOF
-"""
+run = '''
+#!/usr/bin/env bash
+if [ -n "${IS_SANDBOX:-}" ]; then
+  echo "/etc/rancher/k3s/k3s.yaml"
+else
+  echo "$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+fi
+'''
 
 # -- Image builds (docker only, no k3s interaction) --
 
@@ -58,14 +41,16 @@ docker build -t humr-example-agent:latest packages/example-agent
 
 # -- Cluster lifecycle (k3s via lima) --
 #
-# Both install and upgrade share the same flow:
-#   ensure VM → cert-manager → build images → load into k3s → helm install/upgrade
+# When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
 #
-# install: creates VM if needed, uses helm install
-# upgrade: assumes VM exists, uses helm upgrade
+# Both install and upgrade share the same flow:
+#   ensure VM/k3s → cert-manager → build images → load into k3s → helm install/upgrade
+#
+# install: provisions VM/k3s if needed, uses helm install
+# upgrade: assumes VM/k3s exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set key=val"
+description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val"
 depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
 raw = true
@@ -77,36 +62,39 @@ LIMA_INSTANCE="humr-k3s"
 LIMA_TEMPLATE="deploy/lima-k3s.yaml"
 HELM_VALUES=""
 HELM_EXTRA_ARGS=()
-NEXT_IS_SET_VALUE=false
 for arg in "$@"; do
-  if $NEXT_IS_SET_VALUE; then
-    HELM_EXTRA_ARGS+=("$arg")
-    NEXT_IS_SET_VALUE=false
-    continue
-  fi
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
     --lima-template=*) LIMA_TEMPLATE="${arg#--lima-template=}" ;;
     --helm-values=*) HELM_VALUES="${arg#--helm-values=}" ;;
-    --set) HELM_EXTRA_ARGS+=("--set"); NEXT_IS_SET_VALUE=true ;;
     --set=*) HELM_EXTRA_ARGS+=("$arg") ;;
   esac
 done
-KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 
-# 1. Ensure k3s VM is running
-if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
-  echo "Creating k3s VM ($LIMA_INSTANCE)..."
-  limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
+# 1. Provision cluster and set KUBECONFIG
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  if [ ! -d /var/lib/rancher/k3s ]; then
+    echo "Provisioning k3s on host (sandbox mode)..."
+    for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
+      yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
+    done
+  fi
+  echo "Waiting for k3s to be ready..."
+  timeout 120 bash -c "until [ -f $KUBECONFIG ]; do sleep 2; done"
+else
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
+    echo "Creating k3s VM ($LIMA_INSTANCE)..."
+    limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
+  fi
+  STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
+  if [ "$STATUS" != "Running" ]; then
+    echo "Starting k3s VM..."
+    limactl start "$LIMA_INSTANCE"
+  fi
+  echo "Waiting for k3s to be ready..."
 fi
-
-STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
-if [ "$STATUS" != "Running" ]; then
-  echo "Starting k3s VM..."
-  limactl start $LIMA_INSTANCE
-fi
-
-echo "Waiting for k3s to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
 
 # 2. Install cert-manager
@@ -121,29 +109,22 @@ fi
 
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
-for img in humr-controller:latest humr-api-server:latest humr-ui:latest humr-example-agent:latest; do
-  tar="/tmp/${img%%:*}.tar"
-  docker save "$img" -o "$tar"
+tar="/tmp/humr-images.tar"
+docker save -o "$tar" humr-controller:latest humr-api-server:latest humr-ui:latest humr-example-agent:latest
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s ctr images import "$tar"
+else
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
-  rm -f "$tar"
-done
+fi
+rm -f "$tar"
 
 # 4. Helm install or upgrade
-HELM_VALUES_FLAG=""
-if [ -n "$HELM_VALUES" ]; then
-  HELM_VALUES_FLAG="-f $HELM_VALUES"
-fi
 # Dev-cluster defaults (overridable via --set)
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
-if helm --kubeconfig="$KUBECONFIG" status humr >/dev/null 2>&1; then
-  echo "Upgrading Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" upgrade humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 10m $HELM_VALUES_FLAG "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
-else
-  echo "Installing Humr chart..."
-  helm --kubeconfig="$KUBECONFIG" install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 10m $HELM_VALUES_FLAG "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
-fi
+echo "Installing/upgrading Humr chart..."
+helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 10m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 echo "Restarting pods..."
@@ -169,14 +150,19 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-LIMA_INSTANCE="humr-k3s"
-KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
-
 echo "Loading into k3s..."
 tar="/tmp/humr-ui.tar"
 docker save humr-ui:latest -o "$tar"
-limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="humr-k3s"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
 rm -f "$tar"
 
 echo "Restarting UI pod..."
@@ -194,14 +180,19 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-LIMA_INSTANCE="humr-k3s"
-KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
-
 echo "Loading into k3s..."
 tar="/tmp/humr-example-agent.tar"
 docker save humr-example-agent:latest -o "$tar"
-limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="humr-k3s"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
 rm -f "$tar"
 
 echo "Restarting agent pods..."
@@ -215,16 +206,28 @@ description = "Run kubectl against the humr-k3s cluster. Usage: mise run cluster
 raw = true
 run = '''
 #!/usr/bin/env bash
-KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+fi
 exec kubectl --kubeconfig="$KUBECONFIG" "$@"
 '''
 
 ["cluster:shell"]
-description = "Open a shell inside the k3s VM"
+description = "Open a shell inside the k3s VM (or run command directly in sandbox mode)"
 raw = true
 run = '''
 #!/usr/bin/env bash
-exec limactl shell humr-k3s "$@"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  if [ $# -eq 0 ]; then
+    exec bash
+  else
+    exec "$@"
+  fi
+else
+  exec limactl shell humr-k3s "$@"
+fi
 '''
 
 ["cluster:stop"]
@@ -232,7 +235,11 @@ description = "Stop the k3s VM (preserves data)"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-limactl stop humr-k3s
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo systemctl stop k3s
+else
+  limactl stop humr-k3s
+fi
 '''
 
 ["cluster:uninstall"]
@@ -241,7 +248,11 @@ dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+fi
 helm --kubeconfig="$KUBECONFIG" uninstall humr || true
 kubectl --kubeconfig="$KUBECONFIG" delete pvc --all 2>/dev/null || true
 kubectl --kubeconfig="$KUBECONFIG" delete ns humr-agents --ignore-not-found 2>/dev/null || true
@@ -265,15 +276,25 @@ for arg in "$@"; do
 done
 
 if [ "$FORCE" != "true" ]; then
-  echo "This will delete the k3s VM ($LIMA_INSTANCE) and all cluster data."
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    echo "This will uninstall k3s and delete all cluster data."
+  else
+    echo "This will delete the k3s VM ($LIMA_INSTANCE) and all cluster data."
+  fi
   read -p "Continue? [y/N] " -r
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Cancelled."
     exit 0
   fi
 fi
-limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
-echo "k3s cluster ($LIMA_INSTANCE) deleted."
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
+  echo "k3s uninstalled from host."
+else
+  limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
+  echo "k3s cluster ($LIMA_INSTANCE) deleted."
+fi
 '''
 
 ["cluster:status"]
@@ -282,11 +303,20 @@ raw = true
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+fi
 
 STATUS_CMD="
-echo '=== Lima VM ==='
-limactl list
+if [ -n \"${IS_SANDBOX:-}\" ]; then
+  echo '=== k3s service ==='
+  sudo systemctl is-active k3s || true
+else
+  echo '=== Lima VM ==='
+  limactl list
+fi
 echo ''
 echo '=== Nodes ==='
 kubectl --kubeconfig='$KUBECONFIG' get nodes 2>/dev/null || echo 'Cluster not reachable'
@@ -319,6 +349,10 @@ description = "Show OneCLI pod logs"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+fi
 kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=onecli --all-containers --tail=50
 '''

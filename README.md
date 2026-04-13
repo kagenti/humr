@@ -14,10 +14,10 @@ Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini C
 ## Quick Start
 
 ```sh
-mise run setup              # install deps, configure git hooks
+mise install                # install deps, configure git hooks
 mise run cluster:install    # create local k3s cluster + deploy Humr
 mise run cluster:status     # check pods
-eval "$(mise run humr:shell)" # activate cluster env
+export KUBECONFIG="$(mise run cluster:kubeconfig)" # activate cluster env
 ```
 
 Open **`humr.localhost:4444`** in your browser, create an instance from a template, and start chatting.
@@ -54,6 +54,8 @@ mise run test               # run tests
 mise run ui:run             # start UI dev server
 mise run cluster:upgrade    # redeploy after changes
 ```
+
+Humr detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.
 
 ## Architecture
 
