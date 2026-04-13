@@ -56,6 +56,7 @@ Summarize what you found to the user in a brief status:
 - How many modules exist and what they are
 - Adoption state (how aligned the project is)
 - Any relevant discarded decisions that may affect planning
+- If vocabulary exists: list the bounded contexts and key terms already defined — these are the project's established language and must be respected
 
 ## Phase 3 — Discovery Interview
 
@@ -69,6 +70,11 @@ Start with the big picture:
 - Who are the actors? (users, systems, external services)
 
 ### Round 2 — Domain Exploration
+
+If ubiquitous language already exists (`tseng/vocabulary.md`), ground this round in it:
+- Reference existing terms when they relate to the feature — ask whether the feature uses these concepts as already defined, or needs to extend/refine them.
+- When the user introduces a new noun or verb, check if it overlaps with or contradicts an existing term. If it does, resolve the tension explicitly: is this a new concept, a synonym, or a refinement?
+- When the user uses a different word for an existing term, flag it: "In the existing vocabulary, this is called X — should we stick with that or is this intentionally different?"
 
 Dig into the domain:
 - What are the core **nouns** (entities, value objects) involved?
@@ -243,5 +249,5 @@ The issue body should be the specification from Phase 5, formatted for GitHub re
 - **Challenge layer placement.** If the user describes business logic as "a service that does X" — ask whether X is actually a domain concern. If they describe orchestration as domain — redirect it to application layer.
 - **No implementation details.** The specification is a contract between the architect (you) and the implementer. It defines boundaries, not code.
 - **Respect existing adoption state.** If the project has discarded certain architecture rules, don't plan features that depend on those rules without flagging the tension.
-- **Ubiquitous language matters.** Use the same words the domain uses. If the user says "customer" don't write "user" in the spec. If different contexts use different words for the same real-world thing, that's a feature, not a bug — capture both.
+- **Ubiquitous language matters.** Use the same words the domain uses. If the user says "customer" don't write "user" in the spec. If different contexts use different words for the same real-world thing, that's a feature, not a bug — capture both. When existing vocabulary is present, treat it as the baseline — use established terms throughout the interview and specification rather than inventing new ones for concepts already named.
 - **Start big, split later.** Prefer fewer, larger modules over many small ones. Only propose a new module when the bounded context criteria are clearly met.

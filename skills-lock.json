@@ -16,6 +16,11 @@
       "sourceType": "github",
       "computedHash": "9455bc004c16b9fbda7a2f158f19480716a56986dca17c0f8389b81ea10967c6"
     },
+    "build-it": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "762c968bc45ec7bfc37777c6e41354e6bc7f56a43cfa03b76f3ebdd805090cff"
+    },
     "cleanup-commits": {
       "source": "apocohq/skills",
       "sourceType": "github",
@@ -79,7 +84,7 @@
     "spec": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",
-      "computedHash": "69f5b8d2b641e4c572010ce76318e968f0ebabf3828f8f459cdcbcd24a3b171c"
+      "computedHash": "f014b5f744e8e1eb7c2e281297652ff5dea76694910b703801952626a5a7293b"
     },
     "things-morning-organizer": {
       "source": "apocohq/skills",
