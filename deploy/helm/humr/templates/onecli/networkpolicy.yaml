@@ -8,7 +8,7 @@
   effectively turning the proxy into an SSRF gadget.
 
   This policy allows only:
-    - DNS to kube-system (kube-dns / coredns)
+    - DNS (port 53, any destination — platform-agnostic)
     - In-cluster Postgres and Keycloak (by component label)
     - The public internet (0.0.0.0/0 with cluster CIDRs and link-local excepted)
 
@@ -33,19 +33,10 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS — kube-dns / coredns pods only (not all of kube-system).
-    # The `k8s-app: kube-dns` label is the standard used by both kube-dns and
-    # CoreDNS across k3s, kubeadm, EKS, GKE, AKS.
-    # NB: namespaceSelector and podSelector are in the SAME peer entry (no `-`
-    # before podSelector) so they AND. Listing them as separate peers would OR.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
+    # DNS — allow port 53 to any destination. Restricting by
+    # namespace/label is fragile across platforms (kube-system on vanilla k8s,
+    # openshift-dns on OCP) and DNS is not an SSRF vector.
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
@@ -92,10 +83,6 @@ spec:
         - protocol: TCP
           port: {{ .Values.keycloak.port }}
         {{- end }}
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
     {{- end }}
 
     # Public internet — everything except private/special-use ranges
