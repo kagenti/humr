@@ -19,6 +19,7 @@ This directory contains ADRs for the Humr project.
 | [011](011-skills-claude-marketplace.md) | Skills via Claude plugin marketplace | @pilartomas |
 | [012](012-runtime-lifetime.md) | Runtime lifetime — single-use Jobs | @JanPokorny |
 | [013](013-ui-approach.md) | UI approach — chat-primary, dashboard for inspection | @PetrBulanek |
+| [016](016-messenger-integration.md) | Messenger integration handled by API Server | @tomkis |
 
 ## Drafts
 

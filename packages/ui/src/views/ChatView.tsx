@@ -191,23 +191,23 @@ export function ChatView() {
             };
 
             if (u.sessionUpdate === "user_message_chunk" && u.content.type === "text") {
-              const txt = u.content.text as string;
-              if (/<[a-z-]+>/.test(txt) && /<\/[a-z-]+>/.test(txt)) return;
+              const txt = (u.content.text as string).replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
+              if (!txt) return;
               const mid = u.messageId ?? crypto.randomUUID();
               const ex = mm.get(mid);
               if (ex) {
                 const l = ex.parts[ex.parts.length - 1];
-                l?.kind === "text" ? (l.text += u.content.text) : ex.parts.push({ kind: "text", text: u.content.text });
+                l?.kind === "text" ? (l.text += txt) : ex.parts.push({ kind: "text", text: txt });
               } else {
-                mm.set(mid, { id: mid, role: "user", parts: [{ kind: "text", text: u.content.text }], streaming: false });
+                mm.set(mid, { id: mid, role: "user", parts: [{ kind: "text", text: txt }], streaming: false });
                 mo.push(mid);
               }
             } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
-              const txt = u.content.text as string;
-              if (/<[a-z-]+>/.test(txt) && /<\/[a-z-]+>/.test(txt)) return;
+              const txt = (u.content.text as string).replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
+              if (!txt) return;
               const target = currentAssistant();
               const l = target.parts[target.parts.length - 1];
-              l?.kind === "text" ? (l.text += u.content.text) : target.parts.push({ kind: "text", text: u.content.text });
+              l?.kind === "text" ? (l.text += txt) : target.parts.push({ kind: "text", text: txt });
             } else if (u.sessionUpdate === "tool_call") {
               const target = currentAssistant();
               const content = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);

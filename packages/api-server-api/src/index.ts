@@ -1,13 +1,22 @@
 export { appRouter, type AppRouter } from "./router.js";
 export type { ApiContext } from "./context.js";
+export {
+  ChannelType,
+} from "./modules/instances.js";
 export type {
   Instance,
   InstanceSpec,
   InstanceStatus,
   InstancesContext,
+  Channel,
+  SlackChannel,
+  ChannelConfig,
   CreateInstanceInput,
   UpdateInstanceInput,
 } from "./modules/instances.js";
+export type {
+  ChannelsContext,
+} from "./modules/channels.js";
 export type {
   Template,
   TemplateSpec,
