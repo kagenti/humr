@@ -75,6 +75,29 @@ spec:
           port: {{ .Values.keycloak.port }}
     {{- end }}
 
+    {{- if .Values.onecli.networkPolicy.serviceCIDR }}
+    # Explicit allow for the cluster service CIDR.
+    # Some CNIs (e.g. OVN-Kubernetes) evaluate egress policy before DNAT, so
+    # podSelector rules above won't match traffic destined for service ClusterIPs.
+    # This ipBlock rule ensures connectivity to in-cluster services via their VIPs.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.onecli.networkPolicy.serviceCIDR }}
+      ports:
+        {{- if .Values.postgres.enabled }}
+        - protocol: TCP
+          port: 5432
+        {{- end }}
+        {{- if .Values.keycloak.enabled }}
+        - protocol: TCP
+          port: {{ .Values.keycloak.port }}
+        {{- end }}
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+
     # Public internet — everything except private/special-use ranges
     - to:
         - ipBlock:
