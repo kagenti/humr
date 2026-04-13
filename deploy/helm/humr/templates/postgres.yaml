@@ -62,6 +62,7 @@ spec:
         app.kubernetes.io/component: postgres
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- include "humr.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}

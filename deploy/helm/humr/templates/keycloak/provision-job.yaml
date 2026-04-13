@@ -19,6 +19,7 @@ spec:
         {{- include "humr.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak-provision
     spec:
+      {{- include "humr.imagePullSecrets" . | nindent 6 }}
       restartPolicy: OnFailure
       initContainers:
         - name: config-cli
@@ -64,7 +65,7 @@ spec:
                keycloak-config-cli cannot modify realm-management authorizationSettings
                reliably, so we use the Admin REST API after realm import. */}}
         - name: token-exchange-setup
-          image: alpine:3.21
+          image: {{ .Values.keycloak.provisionImage }}
           env:
             - name: KC_URL
               value: "http://{{ $appName }}:{{ .Values.keycloak.port }}"
