@@ -1,4 +1,4 @@
-export interface FilesContext {
+export interface FilesService {
   buildTree: () => { path: string; type: "file" | "dir" }[];
   readFileSafe: (
     rel: string,

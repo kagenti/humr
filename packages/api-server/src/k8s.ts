@@ -5,18 +5,18 @@ import {
   ChannelType,
   type Template,
   type TemplateSpec,
-  type TemplatesContext,
+  type TemplatesService,
   type CreateTemplateInput,
   type Instance,
   type InstanceSpec,
   type InstanceStatus,
-  type InstancesContext,
+  type InstancesService,
   type CreateInstanceInput,
   type UpdateInstanceInput,
   type Schedule,
   type ScheduleSpec,
   type ScheduleStatus,
-  type SchedulesContext,
+  type SchedulesService,
   type CreateCronScheduleInput,
   type CreateHeartbeatScheduleInput,
 } from "api-server-api";
@@ -101,7 +101,7 @@ function createApi(namespace: string) {
 export function createK8sTemplatesContext(
   namespace: string,
   api: k8s.CoreV1Api,
-): TemplatesContext {
+): TemplatesService {
   return {
     async list() {
       const res = await api.listNamespacedConfigMap({
@@ -153,9 +153,9 @@ export function createK8sTemplatesContext(
 export function createK8sInstancesContext(
   namespace: string,
   api: k8s.CoreV1Api,
-  templates: TemplatesContext,
+  templates: TemplatesService,
   channels: ChannelManager[],
-): InstancesContext {
+): InstancesService {
   return {
     async list() {
       const [configMaps, pods] = await Promise.all([
@@ -349,8 +349,8 @@ function validateCron(expr: string): void {
 export function createK8sSchedulesContext(
   namespace: string,
   api: k8s.CoreV1Api,
-  instances: InstancesContext,
-): SchedulesContext {
+  instances: InstancesService,
+): SchedulesService {
   return {
     async list(instanceName) {
       const res = await api.listNamespacedConfigMap({

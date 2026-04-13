@@ -2,7 +2,7 @@ import { WebSocket } from "ws";
 import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type { InstancesContext } from "api-server-api";
+import type { InstancesService } from "api-server-api";
 import { podBaseUrl } from "./k8s.js";
 
 const TIMEOUT_MS = 120_000;
@@ -39,7 +39,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function ensureRunning(
-  instances: InstancesContext,
+  instances: InstancesService,
   name: string,
 ): Promise<void> {
   const inst = await instances.get(name);

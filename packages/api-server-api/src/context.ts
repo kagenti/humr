@@ -1,11 +1,11 @@
-import type { ChannelsContext } from "./modules/channels/services/port.js";
-import type { InstancesContext } from "./modules/instances/services/port.js";
-import type { SchedulesContext } from "./modules/schedules/services/port.js";
-import type { TemplatesContext } from "./modules/templates/services/port.js";
+import type { ChannelsService } from "./modules/channels/types.js";
+import type { InstancesService } from "./modules/instances/types.js";
+import type { SchedulesService } from "./modules/schedules/types.js";
+import type { TemplatesService } from "./modules/templates/types.js";
 
 export interface ApiContext {
-  templates: TemplatesContext;
-  instances: InstancesContext;
-  schedules: SchedulesContext;
-  channels: ChannelsContext;
+  templates: TemplatesService;
+  instances: InstancesService;
+  schedules: SchedulesService;
+  channels: ChannelsService;
 }

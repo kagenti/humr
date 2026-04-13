@@ -5,7 +5,7 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
-import type { FilesContext } from "agent-runtime-api";
+import type { FilesService } from "agent-runtime-api";
 
 const EXCLUDE = new Set([".git", ".claude", "node_modules", ".DS_Store"]);
 
@@ -36,7 +36,7 @@ function safePath(workingDir: string, rel: string): string | null {
   return resolved;
 }
 
-export function createFilesContext(workingDir: string): FilesContext {
+export function createFilesService(workingDir: string): FilesService {
   return {
     buildTree: () => buildTree(workingDir),
     readFileSafe: (rel) => {

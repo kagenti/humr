@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { t } from "../../../trpc.js";
+import { t } from "../../trpc.js";
 
 export const filesRouter = t.router({
   tree: t.procedure.query(({ ctx }) => ({

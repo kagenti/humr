@@ -1,4 +1,4 @@
-import { type EnvVar, ChannelType } from "../../../shared/domain/types.js";
+import { type EnvVar, ChannelType } from "../shared.js";
 
 export { ChannelType };
 
@@ -50,4 +50,15 @@ export interface UpdateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   enabledMcpServers?: string[];
+}
+
+export interface InstancesService {
+  list: () => Promise<Instance[]>;
+  get: (name: string) => Promise<Instance | null>;
+  create: (input: CreateInstanceInput) => Promise<Instance>;
+  update: (input: UpdateInstanceInput) => Promise<Instance | null>;
+  delete: (name: string) => Promise<void>;
+  wake: (name: string) => Promise<Instance | null>;
+  connectSlack: (name: string, botToken: string) => Promise<Instance | null>;
+  disconnectSlack: (name: string) => Promise<Instance | null>;
 }

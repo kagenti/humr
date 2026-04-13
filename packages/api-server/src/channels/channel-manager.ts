@@ -1,7 +1,7 @@
-import type { ChannelConfig, ChannelType, InstancesContext } from "api-server-api";
+import type { ChannelConfig, ChannelType, InstancesService } from "api-server-api";
 
 export interface ChannelManagerOptions {
-  instances: () => InstancesContext;
+  instances: () => InstancesService;
 }
 
 export interface ChannelManager {

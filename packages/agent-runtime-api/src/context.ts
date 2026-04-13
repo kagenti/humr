@@ -1,5 +1,5 @@
-import type { FilesContext } from "./modules/files/domain/types.js";
+import type { FilesService } from "./modules/files/types.js";
 
 export interface AgentRuntimeContext {
-  files: FilesContext;
+  files: FilesService;
 }
