@@ -76,6 +76,11 @@
       "sourceType": "github",
       "computedHash": "4a13f78be642cb5ded6abcc095b0d6bf59145697ffb11d518ff46f652bd0b0a3"
     },
+    "spec": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "69f5b8d2b641e4c572010ce76318e968f0ebabf3828f8f459cdcbcd24a3b171c"
+    },
     "things-morning-organizer": {
       "source": "apocohq/skills",
       "sourceType": "github",
