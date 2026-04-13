@@ -126,10 +126,13 @@ keycloak:
   controllerClientId: humr-controller
   controllerClientSecret: ""
 
-  # -- Test user bootstrapped via realm import
+  # -- Test user bootstrapped via realm import.
+  # DISABLED by default — production deployments must not ship a known credential.
+  # Local dev (values-local.yaml) and e2e tests (values-test.yaml) enable it.
   testUser:
-    username: dev
-    password: dev
+    enabled: false
+    username: ""
+    password: ""
 
   # -- Database connection (empty host = use shared local postgres)
   db:

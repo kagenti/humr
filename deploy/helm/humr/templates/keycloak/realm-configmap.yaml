@@ -137,6 +137,7 @@ data:
         }
       ],
       "users": [
+        {{- if .Values.keycloak.testUser.enabled }}
         {
           "username": {{ .Values.keycloak.testUser.username | quote }},
           "enabled": true,
@@ -152,6 +153,7 @@ data:
             }
           ]
         }
+        {{- end }}
       ]
     }
 {{- end }}

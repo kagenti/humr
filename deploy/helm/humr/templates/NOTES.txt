@@ -14,7 +14,9 @@ Components:
   - Keycloak:   {{ include "humr.keycloak.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.keycloak.port }}
     - Admin:    {{ include "humr.url.keycloak" . }} (user: {{ .Values.keycloak.admin.user }})
     - Realm:    {{ .Values.keycloak.realm }}
+    {{- if .Values.keycloak.testUser.enabled }}
     - Test user: {{ .Values.keycloak.testUser.username }} / {{ .Values.keycloak.testUser.password }}
+    {{- end }}
 {{- end }}
 
 Agent namespace: {{ .Values.agentNamespace }}

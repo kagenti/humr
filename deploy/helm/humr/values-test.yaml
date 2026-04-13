@@ -19,6 +19,11 @@ onecli:
       memory: 512Mi
 
 keycloak:
+  # E2E tests log in as dev/dev — never enabled in production.
+  testUser:
+    enabled: true
+    username: dev
+    password: dev
   resources:
     requests:
       cpu: 100m

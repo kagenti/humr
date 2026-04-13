@@ -24,3 +24,10 @@ defaultTemplate:
     repository: humr-example-agent
     tag: latest
     pullPolicy: Never
+
+# Bootstrap a known dev/dev user for local cluster — never enabled in production.
+keycloak:
+  testUser:
+    enabled: true
+    username: dev
+    password: dev
