@@ -83,6 +83,12 @@ onecli:
   # public internet (0.0.0.0/0 with private/special-use ranges excepted).
   networkPolicy:
     enabled: true
+    # -- Cluster service CIDR. Set this when your CNI evaluates egress
+    # NetworkPolicy before DNAT (e.g. OVN-Kubernetes on OpenShift). Without
+    # this, podSelector-based allow rules won't match traffic sent to service
+    # ClusterIPs, and blockedCIDRs will block them.
+    # Common values: "10.43.0.0/16" (k3s), "172.30.0.0/16" (OpenShift)
+    serviceCIDR: ""
     # Private and special-use IPv4 ranges blocked from gateway egress.
     # Covers all RFC1918, CGNAT, link-local (cloud metadata), loopback, and
     # IETF reserved space — so it's correct on any cluster regardless of which
@@ -114,7 +120,7 @@ keycloak:
   enabled: true
   image: quay.io/keycloak/keycloak:26.5.4
   configCliImage: adorsys/keycloak-config-cli:latest-26.5.4
-  provisionImage: alpine:3.21
+  provisionImage: curlimages/curl:8.12.1
   port: 8080
 
   # -- Admin credentials (for Keycloak admin console)

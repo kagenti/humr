@@ -86,7 +86,9 @@ spec:
           args:
             - |
               set -ex
-              apk add --no-cache curl jq >/dev/null
+              curl -fsSL -o /tmp/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
+              chmod +x /tmp/jq
+              export PATH="/tmp:$PATH"
 
               # Get admin token
               TOKEN=$(curl -f -s -X POST "$KC_URL/realms/master/protocol/openid-connect/token" \
