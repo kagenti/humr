@@ -1,7 +1,6 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs } from "@slack/bolt";
-import { ChannelType, type ChannelConfig, type SlackChannel } from "api-server-api";
-import type { ChannelManager, ChannelManagerOptions } from "./channel-manager.js";
-import { sendPrompt, ensureRunning } from "../acp-client.js";
+import { ChannelType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
+import { sendPrompt, ensureRunning } from "../../../acp-client.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -32,7 +31,18 @@ async function getContextMessages(
     .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
 }
 
-export function createSlackChannelManager(namespace: string, appToken: string, options: ChannelManagerOptions): ChannelManager {
+export interface SlackWorker {
+  type: ChannelType.Slack;
+  start(instanceName: string, channel: ChannelConfig): Promise<void>;
+  stop(instanceName: string): Promise<void>;
+  stopAll(): Promise<void>;
+}
+
+export function createSlackWorker(
+  namespace: string,
+  appToken: string,
+  instances: () => InstancesService,
+): SlackWorker {
   const bots = new Map<string, BoltApp>();
 
   return {
@@ -73,7 +83,7 @@ export function createSlackChannelManager(namespace: string, appToken: string, o
         const prompt = parts.join("\n\n");
 
         try {
-          await ensureRunning(options.instances(), instanceName);
+          await ensureRunning(instances(), instanceName);
           const response = await sendPrompt(namespace, instanceName, prompt);
           await app.client.chat.postMessage({
             channel: event.channel,
@@ -98,9 +108,7 @@ export function createSlackChannelManager(namespace: string, appToken: string, o
 
       await app.start();
       bots.set(instanceName, app);
-      process.stderr.write(
-        `Slack bot started for instance "${instanceName}"\n`,
-      );
+      process.stderr.write(`Slack bot started for instance "${instanceName}"\n`);
     },
 
     async stop(instanceName: string) {
@@ -108,9 +116,7 @@ export function createSlackChannelManager(namespace: string, appToken: string, o
       if (!app) return;
       await app.stop();
       bots.delete(instanceName);
-      process.stderr.write(
-        `Slack bot stopped for instance "${instanceName}"\n`,
-      );
+      process.stderr.write(`Slack bot stopped for instance "${instanceName}"\n`);
     },
 
     async stopAll() {

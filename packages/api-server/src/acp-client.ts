@@ -3,7 +3,7 @@ import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type { InstancesService } from "api-server-api";
-import { podBaseUrl } from "./k8s.js";
+import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
 const WAKE_POLL_INTERVAL_MS = 2_000;

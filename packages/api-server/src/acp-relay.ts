@@ -2,7 +2,11 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type * as k8s from "@kubernetes/client-node";
-import { podBaseUrl, patchConfigMapAnnotation, wakeInstance } from "./k8s.js";
+import {
+  podBaseUrl,
+  patchConfigMapAnnotation,
+  wakeInstance,
+} from "./modules/agents/infrastructure/k8s.js";
 
 const LAST_ACTIVITY_KEY = "humr.ai/last-activity";
 const ACTIVE_SESSION_KEY = "humr.ai/active-session";
@@ -51,6 +55,8 @@ function connectUpstream(url: string): Promise<WebSocket> {
 
 export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
   const wss = new WebSocketServer({ noServer: true });
+  const patchCmAnnotation = patchConfigMapAnnotation(api, namespace);
+  const wake = wakeInstance(api, namespace);
 
   function handleUpgrade(
     req: IncomingMessage,
@@ -63,7 +69,7 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
       // Mark session active immediately to prevent idle hibernation during connect
-      patchConfigMapAnnotation(api, namespace, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+      patchCmAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
       // Buffer client messages until upstream is connected
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
@@ -73,15 +79,15 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
 
       connectUpstream(upstreamUrl)
         .catch(async () => {
-          const woke = await wakeInstance(api, namespace, instanceId);
-          if (woke) {
+          const woken = await wake(instanceId);
+          if (woken) {
             const ready = await waitForPodReady(api, namespace, instanceId);
             if (!ready) throw new Error("pod did not become ready after wake");
           }
           return connectUpstream(upstreamUrl);
         })
         .then((upstream) => {
-          patchConfigMapAnnotation(api, namespace, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+          patchCmAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
           // Flush buffered messages
           for (const msg of pending) {
@@ -125,7 +131,7 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
           });
 
           client.on("close", () => {
-            patchConfigMapAnnotation(api, namespace, instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
+            patchCmAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.close();
             }
