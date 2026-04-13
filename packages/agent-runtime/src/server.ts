@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter, type AgentRuntimeContext } from "agent-runtime-api";
-import { createFilesContext } from "./modules/files.js";
+import { createFilesService } from "./modules/files.js";
 import { config } from "./modules/config.js";
 import { spawnAcpSession } from "./acp-bridge.js";
 import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
@@ -18,7 +18,7 @@ const workingDir = config.HUMR_DEV
   : config.WORKSPACE_DIR;
 
 const createContext = (): AgentRuntimeContext => ({
-  files: createFilesContext(workingDir),
+  files: createFilesService(workingDir),
 });
 
 const CORS = {
