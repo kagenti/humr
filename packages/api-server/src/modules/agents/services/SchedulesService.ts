@@ -2,6 +2,7 @@ import type {
   SchedulesService,
   CreateCronScheduleInput,
   CreateHeartbeatScheduleInput,
+  CreateImprovementScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/SchedulesRepository.js";
@@ -47,11 +48,29 @@ export function createSchedulesService(deps: {
       return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);
     },
 
+    async createImprovement(input: CreateImprovementScheduleInput) {
+      validateCron(input.cron);
+      const agentRef = await deps.repo.readAgentRef(input.instanceId, deps.owner);
+      if (!agentRef) throw new Error(`Instance "${input.instanceId}" not found`);
+
+      const spec = {
+        name: input.name,
+        version: SPEC_VERSION,
+        type: "improvement" as const,
+        cron: input.cron,
+        task: input.task,
+        enabled: true,
+      };
+      return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);
+    },
+
     delete: (id) => deps.repo.delete(id, deps.owner),
     toggle: (id) => deps.repo.toggle(id, deps.owner),
 
     config() {
       return { defaultHeartbeatIntervalMinutes: DEFAULT_HEARTBEAT_INTERVAL_MINUTES };
     },
+
+    getImprovementState: (instanceId) => deps.repo.getImprovementState(instanceId),
   };
 }

@@ -28,11 +28,17 @@ const (
 	wakeTimeout      = 2 * time.Minute
 )
 
+type scheduleEntry struct {
+	entryID cron.EntryID
+	cron    string
+	enabled bool
+}
+
 type Scheduler struct {
 	client    kubernetes.Interface
 	config    *config.Config
 	cron      *cron.Cron
-	schedules map[string]cron.EntryID
+	schedules map[string]scheduleEntry
 	restCfg   *restclient.Config // nil in tests
 }
 
@@ -41,7 +47,7 @@ func New(client kubernetes.Interface, cfg *config.Config) *Scheduler {
 		client:    client,
 		config:    cfg,
 		cron:      cron.New(),
-		schedules: make(map[string]cron.EntryID),
+		schedules: make(map[string]scheduleEntry),
 	}
 }
 
@@ -66,9 +72,14 @@ func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 		return fmt.Errorf("schedule %s: %w", name, err)
 	}
 
-	// Remove existing entry if present
-	if entryID, exists := s.schedules[name]; exists {
-		s.cron.Remove(entryID)
+	// If the schedule is unchanged (same cron + same enabled state), no-op.
+	// The reconciler calls SyncSchedule on every tick; without this check we'd
+	// re-register the cron entry and emit a log line on every tick.
+	if existing, exists := s.schedules[name]; exists {
+		if existing.cron == spec.Cron && existing.enabled == spec.Enabled {
+			return nil
+		}
+		s.cron.Remove(existing.entryID)
 		delete(s.schedules, name)
 	}
 
@@ -83,12 +94,15 @@ func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 		// Always write schedule status, even on failure
 		now := time.Now().UTC().Format(time.RFC3339)
 		nextRun := ""
-		if eid, exists := s.schedules[name]; exists {
-			entry := s.cron.Entry(eid)
+		if existing, exists := s.schedules[name]; exists {
+			entry := s.cron.Entry(existing.entryID)
 			if !entry.Next.IsZero() {
 				nextRun = entry.Next.UTC().Format(time.RFC3339)
 			}
 		}
+		// `lastResult` reflects trigger delivery (did the controller hand off the
+		// trigger file?). For improvement schedules, the session outcome is tracked
+		// separately via improvementState (see API server + agent-runtime).
 		result := "success"
 		if fireErr != nil {
 			result = fireErr.Error()
@@ -101,14 +115,14 @@ func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 	if err != nil {
 		return fmt.Errorf("schedule %s: invalid cron %q: %w", name, spec.Cron, err)
 	}
-	s.schedules[name] = entryID
+	s.schedules[name] = scheduleEntry{entryID: entryID, cron: spec.Cron, enabled: spec.Enabled}
 	slog.Info("cron registered", "schedule", name, "cron", spec.Cron)
 	return nil
 }
 
 func (s *Scheduler) RemoveSchedule(name string) {
-	if entryID, exists := s.schedules[name]; exists {
-		s.cron.Remove(entryID)
+	if existing, exists := s.schedules[name]; exists {
+		s.cron.Remove(existing.entryID)
 		delete(s.schedules, name)
 	}
 }

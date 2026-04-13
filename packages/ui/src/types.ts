@@ -83,15 +83,30 @@ export interface InstanceView {
   enabledMcpServers: string[];
 }
 
+export type ImprovementRuntimeState =
+  | "idle"
+  | "running"
+  | "completed"
+  | "timed-out"
+  | "skipped"
+  | "failed";
+
+export interface ImprovementState {
+  state: ImprovementRuntimeState;
+  finishedAt?: string;
+  detail?: string;
+}
+
 export interface Schedule {
   id: string;
   name: string;
   instanceId: string;
-  type: "heartbeat" | "cron";
+  type: "heartbeat" | "cron" | "improvement";
   cron: string;
   task: string | null;
   enabled: boolean;
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
+  improvementState: ImprovementState | null;
 }
 
 export interface McpFormEntry {

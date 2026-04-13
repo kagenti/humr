@@ -40,6 +40,9 @@ export type {
   ScheduleConfig,
   CreateCronScheduleInput,
   CreateHeartbeatScheduleInput,
+  CreateImprovementScheduleInput,
+  ImprovementState,
+  ImprovementRuntimeState,
   SchedulesService,
 } from "./modules/schedules/types.js";
 

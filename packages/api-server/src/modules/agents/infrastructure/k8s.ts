@@ -21,6 +21,9 @@ export interface K8sClient {
 
   listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
   deletePVC(name: string): Promise<void>;
+
+  /** Build the in-cluster base URL for an instance's agent pod. */
+  podUrl(instanceId: string): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,12 +92,12 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
     async deletePVC(name) {
       await api.deleteNamespacedPersistentVolumeClaim({ name, namespace });
     },
+
+    podUrl(instanceId) {
+      return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
+    },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
 
 export function podBaseUrl(instanceId: string, namespace: string): string {
   return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;

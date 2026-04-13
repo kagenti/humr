@@ -1,6 +1,6 @@
 export interface ScheduleSpec {
   version: string;
-  type: "heartbeat" | "cron";
+  type: "heartbeat" | "cron" | "improvement";
   cron: string;
   task?: string;
   enabled: boolean;
@@ -10,6 +10,23 @@ export interface ScheduleStatus {
   lastRun?: string;
   nextRun?: string;
   lastResult?: string;
+}
+
+/** Improvement-specific runtime state, computed from the agent pod at read time.
+ * Not persisted in the schedule ConfigMap — populated by the API server for
+ * improvement-type schedules. */
+export type ImprovementRuntimeState =
+  | "idle"
+  | "running"
+  | "completed"
+  | "timed-out"
+  | "skipped"
+  | "failed";
+
+export interface ImprovementState {
+  state: ImprovementRuntimeState;
+  finishedAt?: string;
+  detail?: string;
 }
 
 export interface Schedule {
@@ -33,6 +50,13 @@ export interface CreateHeartbeatScheduleInput {
   intervalMinutes: number;
 }
 
+export interface CreateImprovementScheduleInput {
+  name: string;
+  instanceId: string;
+  cron: string;
+  task: string;
+}
+
 export interface ScheduleConfig {
   defaultHeartbeatIntervalMinutes: number;
 }
@@ -42,7 +66,11 @@ export interface SchedulesService {
   get: (id: string) => Promise<Schedule | null>;
   createCron: (input: CreateCronScheduleInput) => Promise<Schedule>;
   createHeartbeat: (input: CreateHeartbeatScheduleInput) => Promise<Schedule>;
+  createImprovement: (input: CreateImprovementScheduleInput) => Promise<Schedule>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
   config: () => ScheduleConfig;
+  /** Fetch the current improvement runtime state from the agent pod.
+   * Returns `{ state: "idle" }` if the pod is unreachable or has no state yet. */
+  getImprovementState: (instanceId: string) => Promise<ImprovementState>;
 }

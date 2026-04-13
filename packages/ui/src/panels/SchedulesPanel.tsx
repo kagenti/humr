@@ -14,7 +14,7 @@ export function SchedulesPanel() {
 
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({ type: "cron" as "cron" | "heartbeat", name: "", cron: "", task: "", mins: 5 });
+  const [f, setF] = useState({ type: "cron" as "cron" | "heartbeat" | "improvement", name: "", cron: "", task: "", mins: 5 });
 
   const poll = useCallback(() => fetchSchedules(), [fetchSchedules]);
   useEffect(() => { poll(); const i = setInterval(poll, 5000); return () => clearInterval(i); }, [poll]);
@@ -23,6 +23,7 @@ export function SchedulesPanel() {
     if (!inst) return; setBusy(true);
     try {
       if (f.type === "cron") await platform.schedules.createCron.mutate({ name: f.name, instanceId: inst, cron: f.cron, task: f.task });
+      else if (f.type === "improvement") await platform.schedules.createImprovement.mutate({ name: f.name, instanceId: inst, cron: f.cron, task: f.task });
       else await platform.schedules.createHeartbeat.mutate({ name: f.name, instanceId: inst, intervalMinutes: f.mins });
       setShow(false); fetchSchedules();
     } catch (e) { showAlert(e instanceof Error ? e.message : "Failed", "Schedule Error"); }
@@ -30,6 +31,21 @@ export function SchedulesPanel() {
   };
 
   const inp = "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
+
+  const badgeClass = (type: string) => {
+    if (type === "cron") return "bg-info-light text-info border-info";
+    if (type === "improvement") return "bg-warning-light text-warning border-warning";
+    return "bg-success-light text-success border-success";
+  };
+
+  const improvementStateClass = (state: string) => {
+    if (state === "running") return "bg-info-light text-info border-info animate-pulse";
+    if (state === "completed") return "bg-success-light text-success border-success";
+    if (state === "timed-out") return "bg-warning-light text-warning border-warning";
+    if (state === "skipped") return "bg-bg text-text-muted border-border-light";
+    if (state === "failed") return "bg-danger-light text-danger border-danger";
+    return "bg-bg text-text-muted border-border-light";
+  };
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
@@ -46,7 +62,7 @@ export function SchedulesPanel() {
       {show && (
         <div className="flex flex-col gap-3 border-b-2 border-border-light bg-surface-raised p-4 anim-scale-in">
           <div className="flex gap-1.5">
-            {(["cron", "heartbeat"] as const).map(t => (
+            {(["cron", "heartbeat", "improvement"] as const).map(t => (
               <button
                 key={t}
                 className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-3 py-0.5 capitalize ${f.type === t ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light"}`}
@@ -62,6 +78,16 @@ export function SchedulesPanel() {
             <textarea className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[50px]" placeholder="Task prompt" value={f.task} onChange={e => setF(p => ({ ...p, task: e.target.value }))} rows={2} />
           </>}
           {f.type === "heartbeat" && <input className={`${inp} font-mono`} type="number" min={1} placeholder="Minutes" value={f.mins} onChange={e => setF(p => ({ ...p, mins: parseInt(e.target.value) || 1 }))} />}
+          {f.type === "improvement" && <>
+            <input className={`${inp} font-mono`} placeholder="Cron expression (improvement runs are long — use e.g. 0 */1 * * * or daily)" value={f.cron} onChange={e => setF(p => ({ ...p, cron: e.target.value }))} />
+            <textarea
+              className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[120px]"
+              placeholder={"Improvement goal — describe what to improve, how to measure it, and when to stop.\n\nExample:\nClone https://github.com/example/demo\nOptimize src/process.ts for throughput.\nTest: npx tsx src/bench.ts --validate\nScore: npx tsx src/bench.ts → ops/sec: <number>, higher is better.\nBudget: 8 iterations. Stop if stale for 3 rounds."}
+              value={f.task}
+              onChange={e => setF(p => ({ ...p, task: e.target.value }))}
+              rows={6}
+            />
+          </>}
           <div className="flex justify-end gap-2">
             <button className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors" onClick={() => setShow(false)}>Cancel</button>
             <button
@@ -80,7 +106,15 @@ export function SchedulesPanel() {
       {schedules.map(s => (
         <div key={s.id} className="flex flex-col gap-1.5 border-b border-border-light px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 ${s.type === "cron" ? "bg-info-light text-info border-info" : "bg-success-light text-success border-success"}`}>{s.type}</span>
+            <span className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 ${badgeClass(s.type)}`}>{s.type}</span>
+            {s.type === "improvement" && s.improvementState && s.improvementState.state !== "idle" && (
+              <span
+                className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 ${improvementStateClass(s.improvementState.state)}`}
+                title={s.improvementState.detail ?? undefined}
+              >
+                {s.improvementState.state}
+              </span>
+            )}
             <span className="text-[13px] font-semibold text-text flex-1 truncate">{s.name}</span>
             <span className="text-[11px] font-mono text-text-muted">{s.cron}</span>
             <button

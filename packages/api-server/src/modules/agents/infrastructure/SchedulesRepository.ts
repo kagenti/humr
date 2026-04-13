@@ -1,4 +1,4 @@
-import type { Schedule, ScheduleSpec } from "api-server-api";
+import type { Schedule, ScheduleSpec, ImprovementState } from "api-server-api";
 import yaml from "js-yaml";
 import type { K8sClient } from "./k8s.js";
 import {
@@ -16,6 +16,7 @@ export interface SchedulesRepository {
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   readAgentRef(instanceId: string, owner: string): Promise<string | null>;
+  getImprovementState(instanceId: string): Promise<ImprovementState>;
 }
 
 export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
@@ -65,6 +66,30 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
       const cm = await getOwned(instanceId, owner);
       if (!cm) return null;
       return cm.metadata!.labels![LABEL_AGENT_REF] ?? null;
+    },
+
+    async getImprovementState(instanceId) {
+      const url = `http://${k8s.podUrl(instanceId)}/api/trpc/improvement.status`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return { state: "idle" };
+        const body = (await res.json()) as {
+          result?: { data?: { running: boolean; last: { state: string; finishedAt: string; detail?: string } | null } };
+        };
+        const data = body.result?.data;
+        if (!data) return { state: "idle" };
+        if (data.running) return { state: "running" };
+        if (data.last) {
+          return {
+            state: data.last.state as ImprovementState["state"],
+            finishedAt: data.last.finishedAt,
+            detail: data.last.detail,
+          };
+        }
+        return { state: "idle" };
+      } catch {
+        return { state: "idle" };
+      }
     },
   };
 }
