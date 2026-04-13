@@ -23,7 +23,7 @@ var testConfig = &config.Config{
 	CACertInitImage:  "busybox:stable",
 }
 
-var testTemplate = &types.TemplateSpec{
+var testAgent = &types.AgentSpec{
 	Image: "ghcr.io/myorg/agent:latest",
 	Mounts: []types.Mount{
 		{Path: "/workspace", Persist: true},
@@ -60,7 +60,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -96,7 +96,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	// ONECLI_ACCESS_TOKEN comes from Secret via secretKeyRef
 	tokenEnv := c.Env[0]
 	assert.Equal(t, "ONECLI_ACCESS_TOKEN", tokenEnv.Name)
-	assert.Equal(t, "humr-template-my-template-token", tokenEnv.ValueFrom.SecretKeyRef.Name)
+	assert.Equal(t, "humr-agent-my-agent-token", tokenEnv.ValueFrom.SecretKeyRef.Name)
 	assert.Equal(t, "access-token", tokenEnv.ValueFrom.SecretKeyRef.Key)
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
@@ -120,13 +120,13 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 func TestBuildStatefulSet_Hibernated(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
 func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 2)
 
 	// First: platform CA cert fetcher (busybox — no dependency on agent image)
@@ -139,14 +139,14 @@ func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	// Second: user-defined init
 	ic := ss.Spec.Template.Spec.InitContainers[1]
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", ic.Image)
-	assert.Equal(t, []string{"sh", "-c", testTemplate.Init}, ic.Command)
+	assert.Equal(t, []string{"sh", "-c", testAgent.Init}, ic.Command)
 }
 
 func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
-	tmpl := *testTemplate
-	tmpl.Init = ""
+	agent := *testAgent
+	agent.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &tmpl, testConfig, "aoc_test_token", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM)
 	// CA cert init container is always present
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1)
 	assert.Equal(t, "fetch-ca-cert", ss.Spec.Template.Spec.InitContainers[0].Name)
@@ -154,7 +154,7 @@ func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 
 func TestBuildStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
 
 	// 2 PVCs (workspace, home-agent)
 	assert.Len(t, ss.Spec.VolumeClaimTemplates, 2)
@@ -183,7 +183,7 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testTemplate, testConfig, "my-template", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 

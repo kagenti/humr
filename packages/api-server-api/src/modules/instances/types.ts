@@ -15,7 +15,7 @@ export type ChannelConfig = SlackChannel;
 
 export interface InstanceSpec {
   version: string;
-  templateName: string;
+  agentId: string;
   desiredState: "running" | "hibernated";
   env?: EnvVar[];
   secretRef?: string;
@@ -31,6 +31,7 @@ export interface InstanceStatus {
 }
 
 export interface Instance {
+  id: string;
   name: string;
   spec: InstanceSpec;
   status?: InstanceStatus;
@@ -38,7 +39,7 @@ export interface Instance {
 
 export interface CreateInstanceInput {
   name: string;
-  templateName: string;
+  agentId: string;
   env?: EnvVar[];
   secretRef?: string;
   description?: string;
@@ -46,7 +47,7 @@ export interface CreateInstanceInput {
 }
 
 export interface UpdateInstanceInput {
-  name: string;
+  id: string;
   env?: EnvVar[];
   secretRef?: string;
   enabledMcpServers?: string[];
@@ -54,11 +55,11 @@ export interface UpdateInstanceInput {
 
 export interface InstancesService {
   list: () => Promise<Instance[]>;
-  get: (name: string) => Promise<Instance | null>;
+  get: (id: string) => Promise<Instance | null>;
   create: (input: CreateInstanceInput) => Promise<Instance>;
   update: (input: UpdateInstanceInput) => Promise<Instance | null>;
-  delete: (name: string) => Promise<void>;
-  wake: (name: string) => Promise<Instance | null>;
-  connectSlack: (name: string, botToken: string) => Promise<Instance | null>;
-  disconnectSlack: (name: string) => Promise<Instance | null>;
+  delete: (id: string) => Promise<void>;
+  wake: (id: string) => Promise<Instance | null>;
+  connectSlack: (id: string, botToken: string) => Promise<Instance | null>;
+  disconnectSlack: (id: string) => Promise<Instance | null>;
 }

@@ -3,11 +3,14 @@
  *
  * Handles: discovery → dynamic client registration → PKCE → token exchange → store in OneCLI.
  * Follows the MCP Authorization spec (OAuth 2.1 with PKCE + dynamic client registration).
+ *
+ * All OneCLI operations are per-user via Keycloak token exchange.
  */
 
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { loadConfig } from "./config.js";
+import type { OnecliClient } from "./onecli.js";
+import type { UserIdentity } from "api-server-api";
 
 // --- In-memory state store (PoC — not persistent across restarts) ---
 
@@ -19,6 +22,8 @@ interface OAuthPending {
   codeVerifier: string;
   redirectUri: string;
   hostPattern: string;
+  userJwt: string;
+  userSub: string;
   createdAt: number;
 }
 
@@ -42,19 +47,7 @@ function generateCodeChallenge(verifier: string): string {
   return crypto.createHash("sha256").update(verifier).digest("base64url");
 }
 
-// --- OneCLI client ---
-
-const { onecliBaseUrl } = loadConfig();
-let onecliApiKey: string | null = null;
-
-async function ensureOnecliApiKey(): Promise<string> {
-  if (onecliApiKey) return onecliApiKey;
-  const res = await fetch(`${onecliBaseUrl}/api/user/api-key`);
-  if (!res.ok) throw new Error(`OneCLI not ready: ${res.status}`);
-  const data = (await res.json()) as { apiKey: string };
-  onecliApiKey = data.apiKey;
-  return onecliApiKey;
-}
+// --- OneCLI helpers ---
 
 /** Prefix for secrets managed by Humr MCP connectors. */
 const MCP_SECRET_PREFIX = "__humr_mcp:";
@@ -82,20 +75,23 @@ interface OnecliSecret {
   createdAt: string;
 }
 
-async function listOnecliSecrets(): Promise<OnecliSecret[]> {
-  const apiKey = await ensureOnecliApiKey();
-  const res = await fetch(`${onecliBaseUrl}/api/secrets`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+async function listOnecliSecrets(
+  oc: OnecliClient,
+  userJwt: string,
+  userSub: string,
+): Promise<OnecliSecret[]> {
+  const res = await oc.onecliFetch(userJwt, userSub, "/api/secrets");
   if (!res.ok) throw new Error(`OneCLI list secrets failed: ${res.status}`);
   return res.json() as Promise<OnecliSecret[]>;
 }
 
 /** List MCP connections managed by Humr (filtered by name prefix). */
-export async function listMcpConnections(): Promise<
-  { hostname: string; connectedAt: string; expired: boolean }[]
-> {
-  const secrets = await listOnecliSecrets();
+export async function listMcpConnections(
+  oc: OnecliClient,
+  userJwt: string,
+  userSub: string,
+): Promise<{ hostname: string; connectedAt: string; expired: boolean }[]> {
+  const secrets = await listOnecliSecrets(oc, userJwt, userSub);
   const now = Math.floor(Date.now() / 1000);
   return secrets
     .filter((s) => s.name.startsWith(MCP_SECRET_PREFIX))
@@ -111,29 +107,27 @@ export async function listMcpConnections(): Promise<
 }
 
 async function upsertOnecliSecret(
+  oc: OnecliClient,
+  userJwt: string,
+  userSub: string,
   hostPattern: string,
   value: string,
   expiresAt?: number,
 ): Promise<void> {
-  const apiKey = await ensureOnecliApiKey();
   const name = mcpSecretName(hostPattern);
 
   // Delete existing secret with same name if present (upsert)
-  const existing = await listOnecliSecrets();
+  const existing = await listOnecliSecrets(oc, userJwt, userSub);
   const old = existing.find((s) => s.name === name);
   if (old) {
-    await fetch(`${onecliBaseUrl}/api/secrets/${old.id}`, {
+    await oc.onecliFetch(userJwt, userSub, `/api/secrets/${old.id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${apiKey}` },
     });
   }
 
-  const res = await fetch(`${onecliBaseUrl}/api/secrets`, {
+  const res = await oc.onecliFetch(userJwt, userSub, "/api/secrets", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name,
       type: "generic",
@@ -154,8 +148,15 @@ async function upsertOnecliSecret(
 
 // --- OAuth routes ---
 
-export function createOAuthRoutes(uiBaseUrl: string) {
-  const oauth = new Hono();
+export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
+  const oauth = new Hono<{ Variables: { user: UserIdentity } }>();
+
+  /** Extract the Bearer token from the Authorization header. */
+  function getUserJwt(c: { req: { header: (name: string) => string | undefined } }): string {
+    const authHeader = c.req.header("authorization");
+    if (!authHeader?.startsWith("Bearer ")) throw new Error("missing authorization header");
+    return authHeader.slice(7);
+  }
 
   /**
    * GET /api/mcp/connections
@@ -164,7 +165,9 @@ export function createOAuthRoutes(uiBaseUrl: string) {
    */
   oauth.get("/api/mcp/connections", async (c) => {
     try {
-      const connections = await listMcpConnections();
+      const user = c.get("user");
+      const jwt = getUserJwt(c);
+      const connections = await listMcpConnections(oc, jwt, user.sub);
       return c.json(connections);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -180,13 +183,13 @@ export function createOAuthRoutes(uiBaseUrl: string) {
   oauth.delete("/api/mcp/connections/:hostname", async (c) => {
     const hostname = c.req.param("hostname");
     try {
-      const apiKey = await ensureOnecliApiKey();
-      const secrets = await listOnecliSecrets();
+      const user = c.get("user");
+      const jwt = getUserJwt(c);
+      const secrets = await listOnecliSecrets(oc, jwt, user.sub);
       const secret = secrets.find((s) => s.name === mcpSecretName(hostname));
       if (!secret) return c.json({ error: "Not found" }, 404);
-      const res = await fetch(`${onecliBaseUrl}/api/secrets/${secret.id}`, {
+      const res = await oc.onecliFetch(jwt, user.sub, `/api/secrets/${secret.id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!res.ok) throw new Error(`OneCLI delete failed: ${res.status}`);
       return c.json({ ok: true });
@@ -204,6 +207,8 @@ export function createOAuthRoutes(uiBaseUrl: string) {
    * returns { authUrl } for the UI to redirect to.
    */
   oauth.post("/api/oauth/start", async (c) => {
+    const user = c.get("user");
+    const jwt = getUserJwt(c);
     const body = await c.req.json<{ mcpServerUrl: string }>();
     const mcpUrl = new URL(body.mcpServerUrl);
     const origin = mcpUrl.origin;
@@ -269,7 +274,7 @@ export function createOAuthRoutes(uiBaseUrl: string) {
     const codeChallenge = generateCodeChallenge(codeVerifier);
     const state = crypto.randomBytes(16).toString("hex");
 
-    // 4. Store pending flow
+    // 4. Store pending flow (includes user identity for callback)
     pendingFlows.set(state, {
       mcpOrigin: origin,
       tokenEndpoint: meta.token_endpoint,
@@ -278,6 +283,8 @@ export function createOAuthRoutes(uiBaseUrl: string) {
       codeVerifier,
       redirectUri,
       hostPattern,
+      userJwt: jwt,
+      userSub: user.sub,
       createdAt: Date.now(),
     });
 
@@ -358,6 +365,9 @@ export function createOAuthRoutes(uiBaseUrl: string) {
         ? Math.floor(Date.now() / 1000) + tokenData.expires_in
         : undefined;
       await upsertOnecliSecret(
+        oc,
+        pending.userJwt,
+        pending.userSub,
         pending.hostPattern,
         tokenData.access_token,
         expiresAt,

@@ -33,24 +33,15 @@ export interface TemplateSpec {
   env?: EnvVar[];
   resources?: Resources;
   securityContext?: SecurityContext;
-  mcpServers?: Record<string, MCPServerConfig>;
 }
 
 export interface Template {
+  id: string;
   name: string;
   spec: TemplateSpec;
 }
 
-export interface CreateTemplateInput {
-  name: string;
-  image: string;
-  description?: string;
-  mcpServers?: Record<string, MCPServerConfig>;
-}
-
 export interface TemplatesService {
   list: () => Promise<Template[]>;
-  get: (name: string) => Promise<Template | null>;
-  create: (input: CreateTemplateInput) => Promise<Template>;
-  delete: (name: string) => Promise<void>;
+  get: (id: string) => Promise<Template | null>;
 }

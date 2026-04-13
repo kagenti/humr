@@ -14,7 +14,7 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.TemplateSpec, cfg *config.Config, templateName string, ownerCM *corev1.ConfigMap) *appsv1.StatefulSet {
+func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
@@ -25,7 +25,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 	// OneCLI expects the access token as the password (with "x" as dummy username).
 	proxyAddr := fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	caCertPath := "/etc/humr/ca/ca.crt"
-	tokenSecretName := TemplateTokenSecretName(templateName)
+	tokenSecretName := AgentTokenSecretName(agentName)
 
 	// Merge env: platform + template + instance (last wins in K8s)
 	// ONECLI_ACCESS_TOKEN must come before HTTPS_PROXY so $(ONECLI_ACCESS_TOKEN) resolves.
@@ -47,7 +47,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "HOME", Value: "/home/agent"},
 	}
-	for _, e := range tmpl.Env {
+	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 	for _, e := range instance.Env {
@@ -69,7 +69,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 	var volumeMounts []corev1.VolumeMount
 	var pvcs []corev1.PersistentVolumeClaim
 
-	for _, m := range tmpl.Mounts {
+	for _, m := range agentSpec.Mounts {
 		volName := types.SanitizeMountName(m.Path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name: volName, MountPath: m.Path,
@@ -108,11 +108,11 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 
 	// Resources
 	resourceReqs := corev1.ResourceRequirements{}
-	if tmpl.Resources.Requests != nil {
-		resourceReqs.Requests = toResourceList(tmpl.Resources.Requests)
+	if agentSpec.Resources.Requests != nil {
+		resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
 	}
-	if tmpl.Resources.Limits != nil {
-		resourceReqs.Limits = toResourceList(tmpl.Resources.Limits)
+	if agentSpec.Resources.Limits != nil {
+		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
 	// Init containers: CA cert fetch (platform) + optional user init
@@ -121,8 +121,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, tmpl *types.Tem
 	// API (/api/container-config). Uses busybox (wget + awk) to avoid any
 	// dependency on the agent image contents.
 	caCertScript := fmt.Sprintf(
-		`until wget -qO /tmp/config.json "%s/api/container-config" 2>/dev/null; do sleep 2; done
-awk -F'"caCertificate":"' 'NF>1{sub(/".*$/,"",$2); gsub(/\\n/,"\n",$2); print $2}' /tmp/config.json > /etc/humr/ca/ca.crt`,
+		`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
 		cfg.WebURL())
 
 	initContainers := []corev1.Container{{
@@ -134,21 +133,21 @@ awk -F'"caCertificate":"' 'NF>1{sub(/".*$/,"",$2); gsub(/\\n/,"\n",$2); print $2
 			Name: "ca-cert", MountPath: "/etc/humr/ca",
 		}},
 	}}
-	if tmpl.Init != "" {
+	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
-			Image:           tmpl.Image,
+			Image:           agentSpec.Image,
 			ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
-			Command:         []string{"sh", "-c", tmpl.Init},
+			Command:         []string{"sh", "-c", agentSpec.Init},
 			VolumeMounts:    volumeMounts,
 		})
 	}
 
 	// Pod security context
 	var podSec *corev1.PodSecurityContext
-	if tmpl.SecurityContext != nil {
+	if agentSpec.SecurityContext != nil {
 		podSec = &corev1.PodSecurityContext{
-			RunAsNonRoot: tmpl.SecurityContext.RunAsNonRoot,
+			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
 		}
 	}
 
@@ -174,7 +173,7 @@ awk -F'"caCertificate":"' 'NF>1{sub(/".*$/,"",$2); gsub(/\\n/,"\n",$2); print $2
 					InitContainers: initContainers,
 					Containers: []corev1.Container{{
 						Name:            "agent",
-						Image:           tmpl.Image,
+						Image:           agentSpec.Image,
 						ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
 						Ports:           []corev1.ContainerPort{{
 							Name: "acp", ContainerPort: 8080,

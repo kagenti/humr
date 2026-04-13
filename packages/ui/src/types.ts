@@ -55,15 +55,25 @@ export interface MCPServerConfig {
 }
 
 export interface TemplateView {
+  id: string;
   name: string;
+  image: string;
+  description?: string;
+}
+
+export interface AgentView {
+  id: string;
+  name: string;
+  templateId: string | null;
   image: string;
   description?: string;
   mcpServers?: Record<string, MCPServerConfig> | null;
 }
 
 export interface InstanceView {
+  id: string;
   name: string;
-  templateName: string;
+  agentId: string;
   description?: string;
   desiredState: "running" | "hibernated";
   enabledMcpServers?: string[] | null;
@@ -72,8 +82,9 @@ export interface InstanceView {
 }
 
 export interface Schedule {
+  id: string;
   name: string;
-  instanceName: string;
+  instanceId: string;
   type: "heartbeat" | "cron";
   cron: string;
   task: string | null;
@@ -96,18 +107,18 @@ export interface McpConnection {
   expired: boolean;
 }
 
-/** Resolve enabled MCP servers from template config + instance enabled list. */
+/** Resolve enabled MCP servers from agent config + instance enabled list. */
 export function resolveAcpMcpServers(
-  templates: TemplateView[],
+  agents: AgentView[],
   instance?: InstanceView | null,
 ): McpServer[] {
   if (!instance) return [];
-  const tmpl = templates.find((t) => t.name === instance.templateName);
-  if (!tmpl?.mcpServers) return [];
+  const agent = agents.find((a) => a.id === instance.agentId);
+  if (!agent?.mcpServers) return [];
   const enabled = instance.enabledMcpServers;
   const entries = enabled
-    ? Object.entries(tmpl.mcpServers).filter(([name]) => enabled.includes(name))
-    : Object.entries(tmpl.mcpServers);
+    ? Object.entries(agent.mcpServers).filter(([name]) => enabled.includes(name))
+    : Object.entries(agent.mcpServers);
   return entries.map(([name, s]): McpServer => {
     if (s.type === "http") {
       return { type: "http", name, url: s.url!, headers: [] };

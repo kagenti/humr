@@ -10,10 +10,11 @@ import (
 
 const SpecVersion = "humr.ai/v1"
 
-// --- Template ---
+// --- Agent ---
 
-type TemplateSpec struct {
+type AgentSpec struct {
 	Version         string                      `yaml:"version"`
+	Name            string                      `yaml:"name,omitempty"`
 	Image           string                      `yaml:"image"`
 	Description     string                      `yaml:"description,omitempty"`
 	Mounts          []Mount                     `yaml:"mounts,omitempty"`
@@ -59,7 +60,7 @@ type MCPServerConfig struct {
 type InstanceSpec struct {
 	Version            string   `yaml:"version"`
 	DesiredState       string   `yaml:"desiredState"`
-	TemplateName       string   `yaml:"templateName,omitempty"`
+	AgentName          string   `yaml:"agentId,omitempty"`
 	Env                []EnvVar `yaml:"env,omitempty"`
 	SecretRef          string   `yaml:"secretRef,omitempty"`
 	Description        string   `yaml:"description,omitempty"`
@@ -92,24 +93,24 @@ type ScheduleStatus struct {
 
 // --- Parsing + Validation ---
 
-func ParseTemplateSpec(data string) (*TemplateSpec, error) {
-	var spec TemplateSpec
+func ParseAgentSpec(data string) (*AgentSpec, error) {
+	var spec AgentSpec
 	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
-		return nil, fmt.Errorf("parsing template spec: %w", err)
+		return nil, fmt.Errorf("parsing agent spec: %w", err)
 	}
 	if err := validateVersion(spec.Version); err != nil {
-		return nil, fmt.Errorf("template spec: %w", err)
+		return nil, fmt.Errorf("agent spec: %w", err)
 	}
 	if spec.Image == "" {
-		return nil, fmt.Errorf("template spec: image is required")
+		return nil, fmt.Errorf("agent spec: image is required")
 	}
 	for _, m := range spec.Mounts {
 		if !strings.HasPrefix(m.Path, "/") {
-			return nil, fmt.Errorf("template spec: mount path %q must be absolute", m.Path)
+			return nil, fmt.Errorf("agent spec: mount path %q must be absolute", m.Path)
 		}
 	}
 	if err := validateMCPServers(spec.MCPServers); err != nil {
-		return nil, fmt.Errorf("template spec: %w", err)
+		return nil, fmt.Errorf("agent spec: %w", err)
 	}
 	return &spec, nil
 }

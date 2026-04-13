@@ -3,6 +3,7 @@ import {
 } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
+import { getAccessToken } from "./auth.js";
 
 export type UpdateHandler = (update: any) => void;
 
@@ -43,16 +44,17 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   });
 }
 
-export function wsUrl(instanceId: string): string {
+async function wsUrl(instanceId: string): Promise<string> {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/api/instances/${instanceId}/acp`;
+  const token = await getAccessToken();
+  return `${proto}//${location.host}/api/instances/${instanceId}/acp?token=${encodeURIComponent(token)}`;
 }
 
 export async function openConnection(
   instanceId: string,
   onUpdate: UpdateHandler,
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(wsUrl(instanceId));
+  const { stream, ws } = await wsStream(await wsUrl(instanceId));
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {

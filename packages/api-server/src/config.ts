@@ -6,6 +6,15 @@ const configSchema = z.object({
   slackAppToken: z.string().nullable().default(null),
   uiBaseUrl: z.url().default("http://humr.localhost:4444"),
   onecliBaseUrl: z.url().default("http://humr-onecli:10254"),
+  onecliExternalUrl: z.string().default(""),
+  onecliAudience: z.string().default("onecli"),
+  keycloakUrl: z.url().default("http://humr-keycloak:8080"),
+  keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
+  keycloakRealm: z.string().default("humr"),
+  keycloakClientId: z.string().default("humr-ui"),
+  keycloakApiAudience: z.string().default("humr-api"),
+  keycloakApiClientId: z.string().default("humr-api"),
+  keycloakApiClientSecret: z.string().default(""),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -17,5 +26,14 @@ export function loadConfig(): Config {
     slackAppToken: process.env.SLACK_APP_TOKEN,
     uiBaseUrl: process.env.UI_BASE_URL,
     onecliBaseUrl: process.env.ONECLI_WEB_URL,
+    onecliExternalUrl: process.env.ONECLI_EXTERNAL_URL,
+    onecliAudience: process.env.ONECLI_AUDIENCE,
+    keycloakUrl: process.env.KEYCLOAK_URL,
+    keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,
+    keycloakRealm: process.env.KEYCLOAK_REALM,
+    keycloakClientId: process.env.KEYCLOAK_CLIENT_ID,
+    keycloakApiAudience: process.env.KEYCLOAK_API_AUDIENCE,
+    keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
+    keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
   });
 }

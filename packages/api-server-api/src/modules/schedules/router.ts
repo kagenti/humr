@@ -3,16 +3,11 @@ import { z } from "zod";
 import { t } from "../../trpc.js";
 import type { Schedule } from "./types.js";
 
-const k8sName = z
-  .string()
-  .min(1)
-  .max(253)
-  .regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/);
-
 function toView(sched: Schedule) {
   return {
+    id: sched.id,
     name: sched.name,
-    instanceName: sched.instanceName,
+    instanceId: sched.instanceId,
     type: sched.spec.type,
     cron: sched.spec.cron,
     task: sched.spec.task ?? null,
@@ -23,24 +18,24 @@ function toView(sched: Schedule) {
 
 export const schedulesRouter = t.router({
   list: t.procedure
-    .input(z.object({ instanceName: k8sName }))
+    .input(z.object({ instanceId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const schedules = await ctx.schedules.list(input.instanceName);
+      const schedules = await ctx.schedules.list(input.instanceId);
       return schedules.map(toView);
     }),
 
   get: t.procedure
-    .input(z.object({ name: k8sName }))
+    .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const sched = await ctx.schedules.get(input.name);
+      const sched = await ctx.schedules.get(input.id);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),
 
   createCron: t.procedure
     .input(z.object({
-      name: k8sName,
-      instanceName: k8sName,
+      name: z.string().min(1),
+      instanceId: z.string().min(1),
       cron: z.string().min(1),
       task: z.string().min(1),
     }))
@@ -51,8 +46,8 @@ export const schedulesRouter = t.router({
 
   createHeartbeat: t.procedure
     .input(z.object({
-      name: k8sName,
-      instanceName: k8sName,
+      name: z.string().min(1),
+      instanceId: z.string().min(1),
       intervalMinutes: z.number().int().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -61,13 +56,13 @@ export const schedulesRouter = t.router({
     }),
 
   delete: t.procedure
-    .input(z.object({ name: k8sName }))
-    .mutation(({ ctx, input }) => ctx.schedules.delete(input.name)),
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(({ ctx, input }) => ctx.schedules.delete(input.id)),
 
   toggle: t.procedure
-    .input(z.object({ name: k8sName }))
+    .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const sched = await ctx.schedules.toggle(input.name);
+      const sched = await ctx.schedules.toggle(input.id);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),

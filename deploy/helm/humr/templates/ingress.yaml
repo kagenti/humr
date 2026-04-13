@@ -1,4 +1,10 @@
 {{- if .Values.ingress.enabled }}
+{{- $domains := list .Values.domain }}
+{{- range .Values.ingress.aliasDomains }}
+{{- if . }}
+{{- $domains = append $domains . }}
+{{- end }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -14,65 +20,53 @@ spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
   {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   rules:
-    - host: onecli.localtest.me
+    {{- range $domain := $domains }}
+    - host: {{ printf "onecli.%s" $domain }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "humr.onecli.fullname" . }}
+                name: {{ include "humr.onecli.fullname" $ }}
                 port:
                   name: web
-    - host: onecli.localhost
+    - host: {{ printf "humr.%s" $domain }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "humr.onecli.fullname" . }}
-                port:
-                  name: web
-    - host: humr.localtest.me
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ printf "%s-ui" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+                name: {{ printf "%s-ui" (include "humr.fullname" $) | trunc 63 | trimSuffix "-" }}
                 port:
                   name: http
-    - host: humr.localhost
+    {{- if $.Values.keycloak.enabled }}
+    - host: {{ printf "keycloak.%s" $domain }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ printf "%s-ui" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+                name: {{ include "humr.keycloak.fullname" $ }}
                 port:
                   name: http
-    - host: humr-api.localtest.me
+    {{- end }}
+    - host: {{ printf "humr-api.%s" $domain }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+                name: {{ printf "%s-apiserver" (include "humr.fullname" $) | trunc 63 | trimSuffix "-" }}
                 port:
                   name: http
-    - host: humr-api.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-                port:
-                  name: http
+    {{- end }}
 {{- end }}

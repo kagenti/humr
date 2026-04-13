@@ -11,15 +11,19 @@ import (
 
 func TestLoadFromEnv_AllSet(t *testing.T) {
 	setEnv(t, map[string]string{
-		"HUMR_AGENT_NAMESPACE":  "test-agents",
+		"HUMR_AGENT_NAMESPACE":   "test-agents",
 		"HUMR_RELEASE_NAMESPACE": "custom-ns",
-		"HUMR_RELEASE_NAME":     "my-release",
-		"ONECLI_URL":            "http://onecli:10254",
-		"ONECLI_API_KEY":        "oc_test_key",
-		"ONECLI_GATEWAY_HOST":   "my-release-onecli",
-		"ONECLI_GATEWAY_PORT":   "9999",
-		"HUMR_LEASE_NAME":       "custom-lease",
-		"POD_NAME":              "controller-0",
+		"HUMR_RELEASE_NAME":      "my-release",
+		"ONECLI_URL":             "http://onecli:10254",
+		"KEYCLOAK_URL":           "http://keycloak:8080",
+		"KEYCLOAK_REALM":         "test",
+		"KEYCLOAK_CLIENT_ID":     "test-controller",
+		"KEYCLOAK_CLIENT_SECRET": "test-secret",
+		"ONECLI_AUDIENCE":        "onecli-test",
+		"ONECLI_GATEWAY_HOST":    "my-release-onecli",
+		"ONECLI_GATEWAY_PORT":    "9999",
+		"HUMR_LEASE_NAME":        "custom-lease",
+		"POD_NAME":               "controller-0",
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -27,7 +31,10 @@ func TestLoadFromEnv_AllSet(t *testing.T) {
 	assert.Equal(t, "custom-ns", cfg.ReleaseNamespace)
 	assert.Equal(t, "my-release", cfg.ReleaseName)
 	assert.Equal(t, "http://onecli:10254", cfg.OneCLIURL)
-	assert.Equal(t, "oc_test_key", cfg.OneCLIAPIKey)
+	assert.Equal(t, "http://keycloak:8080/realms/test/protocol/openid-connect/token", cfg.KeycloakTokenURL)
+	assert.Equal(t, "test-controller", cfg.KeycloakClientID)
+	assert.Equal(t, "test-secret", cfg.KeycloakClientSecret)
+	assert.Equal(t, "onecli-test", cfg.OneCLIAudience)
 	assert.Equal(t, "my-release-onecli", cfg.GatewayHost)
 	assert.Equal(t, 9999, cfg.GatewayPort)
 	assert.Equal(t, 10254, cfg.WebPort)
@@ -97,7 +104,9 @@ func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()
 	for _, key := range []string{
 		"HUMR_AGENT_NAMESPACE", "HUMR_RELEASE_NAMESPACE", "HUMR_RELEASE_NAME",
-		"ONECLI_URL", "ONECLI_API_KEY",
+		"ONECLI_URL", "ONECLI_AUDIENCE",
+		"KEYCLOAK_URL", "KEYCLOAK_REALM", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET",
+		"KEYCLOAK_TOKEN_URL",
 		"ONECLI_GATEWAY_HOST", "ONECLI_GATEWAY_PORT",
 		"HUMR_LEASE_NAME", "POD_NAME", "HUMR_IDLE_TIMEOUT",
 	} {

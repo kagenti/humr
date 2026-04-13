@@ -43,13 +43,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	var onecliClient onecli.Client
-	if cfg.OneCLIURL != "" {
-		onecliClient = onecli.NewHTTPClient(cfg.OneCLIURL, cfg.OneCLIAPIKey)
-		slog.Info("OneCLI client configured", "url", cfg.OneCLIURL)
+	var onecliFactory onecli.Factory
+	if cfg.OneCLIURL != "" && cfg.KeycloakTokenURL != "" {
+		onecliFactory = onecli.NewTokenExchangeFactory(onecli.TokenExchangeConfig{
+			OneCLIBaseURL:    cfg.OneCLIURL,
+			KeycloakTokenURL: cfg.KeycloakTokenURL,
+			ClientID:         cfg.KeycloakClientID,
+			ClientSecret:     cfg.KeycloakClientSecret,
+			OneCLIAudience:   cfg.OneCLIAudience,
+		})
+		slog.Info("OneCLI token exchange factory configured", "url", cfg.OneCLIURL)
 	} else {
-		slog.Warn("OneCLI not configured (ONECLI_URL not set), using noop client")
-		onecliClient = &onecli.NoopClient{}
+		slog.Warn("OneCLI not configured, using noop factory")
+		onecliFactory = &onecli.NoopFactory{}
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -71,7 +77,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, restCfg, cfg, onecliClient)
+				run(ctx, client, restCfg, cfg, onecliFactory)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -80,7 +86,7 @@ func main() {
 	})
 }
 
-func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config, cfg *config.Config, onecliClient onecli.Client) {
+func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config, cfg *config.Config, onecliFactory onecli.Factory) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -91,9 +97,9 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	)
 
 	cmInformer := factory.Core().V1().ConfigMaps()
-	templateResolver := reconciler.NewTemplateResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	templateReconciler := reconciler.NewTemplateReconciler(client, cfg, onecliClient)
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, templateResolver)
+	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
+	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()
@@ -128,8 +134,8 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 			}
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
-			case "agent-template":
-				templateReconciler.Delete(ctx, cm.Name)
+			case "agent":
+				agentReconciler.Delete(ctx, cm.Name, cm.Labels["humr.ai/owner"])
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":
@@ -162,9 +168,9 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
-			case "agent-template":
-				if err := templateReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile template", "name", name, "error", err)
+			case "agent":
+				if err := agentReconciler.Reconcile(ctx, cm); err != nil {
+					slog.Error("reconcile agent", "name", name, "error", err)
 					queue.AddRateLimited(key)
 					return
 				}

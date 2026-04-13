@@ -52,10 +52,37 @@ spec:
               value: {{ .Values.agentNamespace | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            - name: UI_BASE_URL
+              value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.apiServer.slackAppToken }}
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
             {{- end }}
+            {{- if .Values.keycloak.enabled }}
+            - name: KEYCLOAK_URL
+              value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
+            - name: KEYCLOAK_EXTERNAL_URL
+              value: {{ include "humr.url.keycloak" . | quote }}
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.clientId | quote }}
+            - name: KEYCLOAK_API_AUDIENCE
+              value: {{ .Values.keycloak.apiAudience | quote }}
+            - name: KEYCLOAK_API_CLIENT_ID
+              value: {{ .Values.keycloak.apiClientId | quote }}
+            - name: KEYCLOAK_API_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.keycloak.secrets.fullname" . }}
+                  key: HUMR_API_CLIENT_SECRET
+            - name: ONECLI_AUDIENCE
+              value: {{ .Values.onecli.oauth.audience | quote }}
+            {{- end }}
+            - name: ONECLI_WEB_URL
+              value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
+            - name: ONECLI_EXTERNAL_URL
+              value: {{ include "humr.url.onecli" . | quote }}
           readinessProbe:
             tcpSocket:
               port: http
