@@ -6,6 +6,13 @@ port: "4444"
 # -- URL scheme (http for local dev, https for production)
 scheme: http
 
+# -- Pull secrets for all pods managed by this chart.
+# Agent pods (managed by the controller) also inherit these secrets.
+# Example:
+#   imagePullSecrets:
+#     - name: my-registry-secret
+imagePullSecrets: []
+
 # -- Target namespace for agent workloads (instances, templates, schedules)
 agentNamespace: humr-agents
 
@@ -107,6 +114,7 @@ keycloak:
   enabled: true
   image: quay.io/keycloak/keycloak:26.5.4
   configCliImage: adorsys/keycloak-config-cli:latest-26.5.4
+  provisionImage: alpine:3.21
   port: 8080
 
   # -- Admin credentials (for Keycloak admin console)
@@ -205,6 +213,9 @@ controller:
     pullPolicy: IfNotPresent
   caCertInitImage: busybox:stable
   agentImagePullPolicy: IfNotPresent
+  # -- Pull secrets for agent pods (in agentNamespace, separate from chart-level imagePullSecrets).
+  # The referenced secrets must exist in agentNamespace.
+  agentImagePullSecrets: []
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
   idleTimeout: "1h"

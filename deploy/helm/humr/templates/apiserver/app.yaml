@@ -39,6 +39,7 @@ spec:
         {{- include "humr.labels" . | nindent 8 }}
         app.kubernetes.io/component: apiserver
     spec:
+      {{- include "humr.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "humr.apiserver.serviceAccountName" . }}
       containers:
         - name: apiserver

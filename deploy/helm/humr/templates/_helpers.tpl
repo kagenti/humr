@@ -45,6 +45,28 @@ Chart label
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/*
+imagePullSecrets — renders the imagePullSecrets list if non-empty.
+*/}}
+{{- define "humr.imagePullSecrets" -}}
+{{- with .Values.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
+nameList — comma-separated .name values from a list of objects.
+Usage: {{ include "humr.nameList" .Values.someList }}
+*/}}
+{{- define "humr.nameList" -}}
+{{- $names := list }}
+{{- range . }}
+{{- $names = append $names .name }}
+{{- end }}
+{{- join "," $names }}
+{{- end }}
+
 {{/* ---- Public URLs (derived from domain + port + scheme) ---- */}}
 
 {{/*

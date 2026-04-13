@@ -63,6 +63,7 @@ spec:
         {{- include "humr.labels" . | nindent 8 }}
         app.kubernetes.io/component: onecli
     spec:
+      {{- include "humr.imagePullSecrets" . | nindent 6 }}
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}

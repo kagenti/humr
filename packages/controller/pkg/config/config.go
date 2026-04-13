@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type Config struct {
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
 	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
+	AgentImagePullSecrets     []string      // Pull secret names for agent pods (comma-separated via env)
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
 	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
@@ -55,6 +57,13 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.CACertInitImage = envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable")
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
+	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
+		for _, s := range strings.Split(v, ",") {
+			if name := strings.TrimSpace(s); name != "" {
+				cfg.AgentImagePullSecrets = append(cfg.AgentImagePullSecrets, name)
+			}
+		}
+	}
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	return cfg, nil

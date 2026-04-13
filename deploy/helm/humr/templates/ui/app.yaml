@@ -84,6 +84,7 @@ spec:
       annotations:
         checksum/nginx-config: {{ toYaml .Values.ui | sha256sum }}
     spec:
+      {{- include "humr.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: ui
           image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag | default .Chart.AppVersion }}"

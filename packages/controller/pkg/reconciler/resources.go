@@ -143,6 +143,12 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		})
 	}
 
+	// Image pull secrets
+	var pullSecrets []corev1.LocalObjectReference
+	for _, name := range cfg.AgentImagePullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
+	}
+
 	// Pod security context
 	var podSec *corev1.PodSecurityContext
 	if agentSpec.SecurityContext != nil {
@@ -169,8 +175,9 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					SecurityContext: podSec,
-					InitContainers: initContainers,
+					ImagePullSecrets:              pullSecrets,
+					SecurityContext:               podSec,
+					InitContainers:                initContainers,
 					Containers: []corev1.Container{{
 						Name:            "agent",
 						Image:           agentSpec.Image,
