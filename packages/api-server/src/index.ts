@@ -13,9 +13,10 @@ const config = loadConfig();
 
 const { api } = createApi(config.namespace);
 const managers: ChannelManager[] = [];
-if (config.slackAppToken) managers.push(createSlackChannelManager(config.namespace, config.slackAppToken));
+let instances: ReturnType<typeof createK8sInstancesContext>;
+if (config.slackAppToken) managers.push(createSlackChannelManager(config.namespace, config.slackAppToken, { instances: () => instances }));
 const templates = createK8sTemplatesContext(config.namespace, api);
-const instances = createK8sInstancesContext(config.namespace, api, templates, managers);
+instances = createK8sInstancesContext(config.namespace, api, templates, managers);
 const schedules = createK8sSchedulesContext(config.namespace, api, instances);
 
 const app = new Hono();

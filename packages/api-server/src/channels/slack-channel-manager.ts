@@ -1,7 +1,7 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs } from "@slack/bolt";
 import { ChannelType, type ChannelConfig, type SlackChannel } from "api-server-api";
-import type { ChannelManager } from "./channel-manager.js";
-import { sendPrompt } from "../acp-client.js";
+import type { ChannelManager, ChannelManagerOptions } from "./channel-manager.js";
+import { sendPrompt, ensureRunning } from "../acp-client.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -32,7 +32,7 @@ async function getContextMessages(
     .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
 }
 
-export function createSlackChannelManager(namespace: string, appToken: string): ChannelManager {
+export function createSlackChannelManager(namespace: string, appToken: string, options: ChannelManagerOptions): ChannelManager {
   const bots = new Map<string, BoltApp>();
 
   return {
@@ -73,6 +73,7 @@ export function createSlackChannelManager(namespace: string, appToken: string): 
         const prompt = parts.join("\n\n");
 
         try {
+          await ensureRunning(options.instances(), instanceName);
           const response = await sendPrompt(namespace, instanceName, prompt);
           await app.client.chat.postMessage({
             channel: event.channel,
