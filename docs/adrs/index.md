@@ -19,6 +19,7 @@ This directory contains ADRs for the Humr project.
 | [011](011-skills-claude-marketplace.md) | Skills via Claude plugin marketplace | @pilartomas |
 | [012](012-runtime-lifetime.md) | Runtime lifetime — single-use Jobs | @JanPokorny |
 | [013](013-ui-approach.md) | UI approach — chat-primary, dashboard for inspection | @PetrBulanek |
+| [016](016-messenger-integration.md) | Messenger integration handled by API Server | @tomkis |
 
 ## Drafts
 
@@ -27,4 +28,3 @@ This directory contains ADRs for the Humr project.
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 | [DRAFT](DRAFT-integration-testing.md) | E2E integration testing against dedicated k3s cluster | @tomkis |
 | [DRAFT](DRAFT-multi-user-auth.md) | Multi-user auth via Keycloak + OneCLI fork with token exchange | @tomkis |
-| [DRAFT](DRAFT-messenger-integration.md) | Messenger integration handled by API Server | @tomkis |
