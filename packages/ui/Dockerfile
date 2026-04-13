@@ -17,7 +17,7 @@ COPY packages/ui/ packages/ui/
 
 RUN pnpm --filter humr-ui build
 
-FROM nginx:1-alpine
+FROM nginxinc/nginx-unprivileged:1-alpine
 
 COPY --from=build /app/packages/ui/dist /usr/share/nginx/html
 
