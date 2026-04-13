@@ -28,9 +28,35 @@ These are three views of the same thing. A module maps 1:1 to a bounded context.
 
 **Modules are defined by business boundaries, not technical concerns.** `identity/`, `billing/`, `orders/` are valid modules. `database/`, `middleware/`, `utils/` are not.
 
-## Module Structure
+## Module Definition vs Module Implementation
 
-Each module lives under `src/modules/` and contains the full three-layer stack:
+A module exists in two forms depending on the package:
+
+- **Module definition** (contract package) — Defines *what* the module exposes: types, service interface, and a tRPC router that delegates to the service interface. Flat structure, no layers.
+- **Module implementation** (server package) — Implements *how* the module works: business logic organized into the three architectural layers (routers/services/domain).
+
+### Contract Package — Module Definition
+
+Each module in the contract package is flat:
+
+```
+packages/api-contract/src/
+  modules/
+    identity/
+      types.ts          # Zod schemas, input/output types, service interface
+      router.ts         # tRPC router accepting a service implementation
+    billing/
+      types.ts
+      router.ts
+```
+
+The router accepts a service implementation and delegates all calls to it — no business logic. The service interface defines the contract: method signatures the server must implement.
+
+The naming convention for service interfaces is flexible (e.g., `*Service`, `*Context`, or any other pattern). What matters is consistency within the project — file names, interface names, and variable names should all agree.
+
+### Server Package — Module Implementation
+
+Each module in the server package contains the full three-layer stack:
 
 ```
 packages/server/src/
@@ -54,6 +80,8 @@ packages/server/src/
         events/
       index.ts
 ```
+
+The server package implements the service interfaces defined in the contract package. The three-layer structure (see [slice-composition.md](slice-composition.md)) applies here, where actual business logic lives.
 
 ### Intra-Module Rules
 

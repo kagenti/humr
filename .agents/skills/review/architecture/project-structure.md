@@ -30,7 +30,11 @@ project-root/
 │       ├── package.json
 │       ├── tsconfig.json         # Extends ../../tsconfig.base.json
 │       └── src/
-│           └── index.ts          # Exports AppRouter type
+│           ├── modules/          # Flat module structure (no layers)
+│           │   └── <module>/     # e.g., identity/, billing/, orders/
+│           │       ├── types.ts  # Types + service interface
+│           │       └── router.ts # tRPC router delegating to services
+│           └── index.ts          # Exports AppRouter type + re-exports
 └── tseng/
     ├── index.md                  # Entry point — progressive disclosure to other files
     ├── project-structure.md      # Auto-generated project metadata
@@ -60,7 +64,16 @@ Each client package consumes an API via a typed tRPC client. The UI framework is
 
 ### API contract package
 
-A workspace package that exports the `AppRouter` type and API type definitions for the client to consume. This enables end-to-end type safety without coupling the client directly to server internals. The naming and scope of this package is flexible — it may only re-export types, or it may also contain the router definitions themselves.
+A workspace package that defines the API contract: router types, router implementations, and service interfaces. The client consumes the `AppRouter` type for end-to-end type safety. The naming and scope of this package is flexible.
+
+Contract packages have a **flat module structure** — no layers. Each module contains:
+
+- **Types + service interface** — Zod schemas, input/output types, and the service interface that defines the contract between the router and its implementation.
+- **Router** — tRPC router that accepts a service implementation and delegates all calls to it. Contains no business logic.
+
+The service interface naming convention is not prescribed (e.g., `*Service`, `*Context`, or any other pattern). What matters is that the project is consistent — file names, interface names, and variable names should all agree within a project.
+
+The server package then implements the service interfaces defined in the contract package. This keeps the contract decoupled from business logic — the contract says *what* operations exist, the server says *how* they work.
 
 ### Other packages
 

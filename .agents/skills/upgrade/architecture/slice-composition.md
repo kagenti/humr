@@ -2,7 +2,9 @@
 
 The architecture follows a strict three-layer model inspired by Domain-Driven Design (DDD). Each layer has a clear responsibility and dependencies only flow inward — toward the domain.
 
-These layers exist **within each module**. The server is organized into modules, where each module is a vertical slice representing a bounded context (see [modules.md](modules.md)). The layers below live inside every module:
+These layers exist **within each module in server packages** — where actual business logic lives. The server is organized into modules, where each module is a vertical slice representing a bounded context (see [modules.md](modules.md)). The layers below live inside every server-side module.
+
+**Note:** API contract packages do not use this layered structure. Contract packages have a flat module structure (types + router) that defines *what* the API exposes. The three-layer stack described here defines *how* the server implements it. See [modules.md](modules.md) for the distinction between module definition and module implementation.
 
 ```
   External input
