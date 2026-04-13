@@ -51,6 +51,11 @@ apiServer:
       memory: 256Mi
 
 controller:
+  # values-local.yaml sets Never so dev-loop :latest images are picked up
+  # without accidental registry pulls. e2e tests create agents with arbitrary
+  # images (e.g. alpine:latest) that aren't preloaded, so fall back to
+  # IfNotPresent so k3s can pull them on demand.
+  agentImagePullPolicy: IfNotPresent
   resources:
     requests:
       cpu: 50m

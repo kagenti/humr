@@ -50,7 +50,7 @@ docker build -t humr-example-agent:latest packages/example-agent
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val"
+description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
 raw = true
@@ -62,12 +62,18 @@ LIMA_INSTANCE="humr-k3s"
 LIMA_TEMPLATE="deploy/lima-k3s.yaml"
 HELM_VALUES=""
 HELM_EXTRA_ARGS=()
+# --no-restart skips the post-install `rollout restart`. That restart only
+# exists to pull fresh :latest images on repeat local-dev runs; a first-time
+# install (e.g. CI e2e) doesn't need it and paying the second cold-start is
+# pure waste.
+RESTART=1
 for arg in "$@"; do
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
     --lima-template=*) LIMA_TEMPLATE="${arg#--lima-template=}" ;;
     --helm-values=*) HELM_VALUES="${arg#--helm-values=}" ;;
     --set=*) HELM_EXTRA_ARGS+=("$arg") ;;
+    --no-restart) RESTART=0 ;;
   esac
 done
 
@@ -123,26 +129,30 @@ rm -f "$tar"
 # Dev-cluster defaults (overridable via --set)
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
+# In no-restart mode, make helm block until Deployments + the post-install
+# provision Job are all Ready, so the caller can run tests immediately.
+HELM_WAIT=()
+if [ "$RESTART" = "0" ]; then
+  HELM_WAIT=(--wait --wait-for-jobs)
+fi
+
 echo "Installing/upgrading Humr chart..."
-helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 10m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
+helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 10m "${HELM_WAIT[@]}" ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 
-# 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
-echo "Restarting pods..."
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui humr-onecli humr-keycloak
-# Wait for Keycloak first — humr-onecli's wait-for-keycloak init container blocks on it.
-# Keycloak cold-start is slow under CI memory limits (seen ~3m on GitHub runners).
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-keycloak --timeout=300s
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-onecli --timeout=180s
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-controller --timeout=60s
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s
-
-# Wait for the Keycloak provision Job (post-install hook: realm import via
-# keycloak-config-cli + token-exchange permissions via Admin API). Without
-# this, tests that log in as the dev user can race the realm import and hit
-# "Invalid user credentials".
-echo "Waiting for humr-keycloak-provision Job to complete..."
-kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=complete job/humr-keycloak-provision --timeout=300s
+# 5. Restart pods to pick up new local images (dev only — :latest tags don't
+#    trigger rollout on helm upgrade). CI/e2e uses --no-restart: a fresh
+#    install already has the right images and --wait above guarantees readiness.
+if [ "$RESTART" = "1" ]; then
+  echo "Restarting pods..."
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui humr-onecli humr-keycloak
+  # Wait for Keycloak first — humr-onecli's wait-for-keycloak init container blocks on it.
+  # Keycloak cold-start is slow under memory limits (seen ~3m on GitHub runners).
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-keycloak --timeout=300s
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-onecli --timeout=180s
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-controller --timeout=60s
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s
+fi
 
 echo ""
 echo "=== Cluster ready ==="

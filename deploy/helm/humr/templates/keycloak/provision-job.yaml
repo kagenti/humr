@@ -10,10 +10,7 @@ metadata:
     app.kubernetes.io/component: keycloak-provision
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    # before-hook-creation (not hook-succeeded) so the completed Job is
-    # preserved as a durable "provisioning finished" marker that callers
-    # (e.g. e2e tests) can `kubectl wait` on without racing the realm import.
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
     helm.sh/hook-weight: "5"
 spec:
   template:
