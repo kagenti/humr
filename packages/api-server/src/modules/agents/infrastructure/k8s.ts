@@ -4,9 +4,9 @@ import crypto from "node:crypto";
 import type {
   Template, TemplateSpec,
   Agent, AgentSpec,
-  Instance, InstanceSpec, InstanceStatus,
   Schedule, ScheduleSpec, ScheduleStatus,
 } from "api-server-api";
+import type { InfraInstance } from "../domain/instance-assembly.js";
 
 const LABEL_TYPE = "humr.ai/type";
 const LABEL_TEMPLATE = "agent-template";
@@ -65,19 +65,35 @@ function parseAgent(cm: k8s.V1ConfigMap): Agent {
   };
 }
 
-function parseInstance(cm: k8s.V1ConfigMap): Instance {
-  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
+interface RawInstanceSpec {
+  name?: string;
+  agentId: string;
+  desiredState: "running" | "hibernated";
+  description?: string;
+  enabledMcpServers?: string[];
+}
+
+function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
+  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as RawInstanceSpec;
   const statusYaml = cm.data?.[STATUS_KEY];
-  let status: InstanceStatus | undefined;
+  let currentState: InfraInstance["currentState"];
+  let error: string | undefined;
   if (statusYaml) {
     const raw = yaml.load(statusYaml) as { currentState?: string; error?: string };
-    status = {
-      currentState: (raw.currentState as InstanceStatus["currentState"]) ?? spec.desiredState,
-      error: raw.error || undefined,
-      podReady: false,
-    };
+    currentState = raw.currentState as InfraInstance["currentState"];
+    error = raw.error || undefined;
   }
-  return { id: cm.metadata!.name!, name: displayName(cm), spec, status };
+  return {
+    id: cm.metadata!.name!,
+    name: spec.name ?? cm.metadata!.name!,
+    agentId: spec.agentId,
+    description: spec.description,
+    desiredState: spec.desiredState,
+    currentState,
+    error,
+    podReady: pod ? isPodReady(pod) : false,
+    enabledMcpServers: spec.enabledMcpServers,
+  };
 }
 
 function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
@@ -99,14 +115,6 @@ function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
 function isPodReady(pod: k8s.V1Pod): boolean {
   const cond = pod.status?.conditions?.find((c) => c.type === "Ready");
   return cond?.status === "True";
-}
-
-function enrichWithPodStatus(inst: Instance, pod?: k8s.V1Pod): Instance {
-  const podReady = pod ? isPodReady(pod) : false;
-  const status: InstanceStatus = inst.status
-    ? { ...inst.status, podReady }
-    : { currentState: inst.spec.desiredState === "running" ? "running" : "hibernated", podReady };
-  return { ...inst, status };
 }
 
 // ---- Templates ----
@@ -220,7 +228,7 @@ export function deleteAgent(api: k8s.CoreV1Api, namespace: string, owner: string
 // ---- Instances ----
 
 export function listInstances(api: k8s.CoreV1Api, namespace: string, owner?: string) {
-  return async (): Promise<Instance[]> => {
+  return async (): Promise<InfraInstance[]> => {
     const ownerSelector = owner ? `,${LABEL_OWNER}=${owner}` : "";
     const [configMaps, pods] = await Promise.all([
       api.listNamespacedConfigMap({
@@ -237,30 +245,23 @@ export function listInstances(api: k8s.CoreV1Api, namespace: string, owner?: str
       const ref = pod.metadata?.labels?.[LABEL_INSTANCE_REF];
       if (ref) podMap.set(ref, pod);
     }
-    return (configMaps.items ?? []).map((cm) => {
-      const inst = parseInstance(cm);
-      return enrichWithPodStatus(inst, podMap.get(cm.metadata!.name!));
-    });
+    return (configMaps.items ?? []).map((cm) =>
+      parseInfraInstance(cm, podMap.get(cm.metadata!.name!)),
+    );
   };
 }
 
 export function getInstance(api: k8s.CoreV1Api, namespace: string, owner?: string) {
-  return async (id: string): Promise<Instance | null> => {
+  return async (id: string): Promise<InfraInstance | null> => {
     try {
-      if (owner) {
-        const cm = await readOwned(api, namespace, id, owner);
-        if (!cm) return null;
-        const inst = parseInstance(cm);
-        let pod: k8s.V1Pod | undefined;
-        try { pod = await api.readNamespacedPod({ name: `${id}-0`, namespace }); } catch {}
-        return enrichWithPodStatus(inst, pod);
-      }
-      const cm = await api.readNamespacedConfigMap({ name: id, namespace });
-      if (cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_INSTANCE) return null;
-      const inst = parseInstance(cm);
+      const cm = owner
+        ? await readOwned(api, namespace, id, owner)
+        : await api.readNamespacedConfigMap({ name: id, namespace });
+      if (!cm) return null;
+      if (!owner && cm.metadata?.labels?.[LABEL_TYPE] !== LABEL_INSTANCE) return null;
       let pod: k8s.V1Pod | undefined;
       try { pod = await api.readNamespacedPod({ name: `${id}-0`, namespace }); } catch {}
-      return enrichWithPodStatus(inst, pod);
+      return parseInfraInstance(cm, pod);
     } catch (err) {
       if (is404(err)) return null;
       throw err;
@@ -269,7 +270,7 @@ export function getInstance(api: k8s.CoreV1Api, namespace: string, owner?: strin
 }
 
 export function createInstance(api: k8s.CoreV1Api, namespace: string, owner: string) {
-  return async (agentId: string, spec: Record<string, unknown>): Promise<Instance> => {
+  return async (agentId: string, spec: Record<string, unknown>): Promise<InfraInstance> => {
     const k8sName = generateK8sName("inst");
     const cm: k8s.V1ConfigMap = {
       metadata: {
@@ -287,32 +288,23 @@ export function createInstance(api: k8s.CoreV1Api, namespace: string, owner: str
       data: { [SPEC_KEY]: yaml.dump(spec) },
     };
     const created = await api.createNamespacedConfigMap({ namespace, body: cm });
-    return parseInstance(created);
+    return parseInfraInstance(created);
   };
 }
 
 export function updateInstanceSpec(api: k8s.CoreV1Api, namespace: string, owner: string) {
-  return async (id: string, patch: { env?: unknown; secretRef?: unknown; enabledMcpServers?: unknown; channels?: unknown }): Promise<Instance | null> => {
+  return async (id: string, patch: { env?: unknown; secretRef?: unknown; enabledMcpServers?: unknown }): Promise<InfraInstance | null> => {
     const cm = await readOwned(api, namespace, id, owner);
     if (!cm) return null;
 
-    const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-    if (patch.env !== undefined) spec.env = patch.env as InstanceSpec["env"];
-    if (patch.secretRef !== undefined) spec.secretRef = patch.secretRef as InstanceSpec["secretRef"];
-    if (patch.enabledMcpServers !== undefined) spec.enabledMcpServers = patch.enabledMcpServers as InstanceSpec["enabledMcpServers"];
-    if (patch.channels !== undefined) spec.channels = patch.channels as InstanceSpec["channels"];
+    const raw = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<string, unknown>;
+    if (patch.env !== undefined) raw.env = patch.env;
+    if (patch.secretRef !== undefined) raw.secretRef = patch.secretRef;
+    if (patch.enabledMcpServers !== undefined) raw.enabledMcpServers = patch.enabledMcpServers;
 
-    cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+    cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(raw) };
     const updated = await api.replaceNamespacedConfigMap({ name: id, namespace, body: cm });
-    return parseInstance(updated);
-  };
-}
-
-export function readInstanceSpec(api: k8s.CoreV1Api, namespace: string, owner: string) {
-  return async (id: string): Promise<InstanceSpec | null> => {
-    const cm = await readOwned(api, namespace, id, owner);
-    if (!cm) return null;
-    return yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
+    return parseInfraInstance(updated);
   };
 }
 
@@ -340,19 +332,19 @@ export function deleteInstance(api: k8s.CoreV1Api, namespace: string, owner: str
 }
 
 export function wakeInstance(api: k8s.CoreV1Api, namespace: string) {
-  return async (id: string): Promise<Instance | null> => {
+  return async (id: string): Promise<InfraInstance | null> => {
     try {
       const cm = await api.readNamespacedConfigMap({ name: id, namespace });
-      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-      if (spec.desiredState !== "hibernated") return parseInstance(cm);
+      const raw = yaml.load(cm.data?.[SPEC_KEY] ?? "") as RawInstanceSpec;
+      if (raw.desiredState !== "hibernated") return parseInfraInstance(cm);
 
-      spec.desiredState = "running";
-      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
+      raw.desiredState = "running";
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(raw) };
       if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
       cm.metadata!.annotations["humr.ai/last-activity"] = new Date().toISOString();
       await api.replaceNamespacedConfigMap({ name: cm.metadata!.name!, namespace, body: cm });
       const reread = await api.readNamespacedConfigMap({ name: id, namespace });
-      return parseInstance(reread);
+      return parseInfraInstance(reread);
     } catch (err) {
       if (is404(err)) return null;
       throw err;

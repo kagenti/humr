@@ -203,6 +203,14 @@ apiServer:
   port: 4000
   # -- Slack app-level token (xapp-...) for Socket Mode. Leave empty to disable Slack integration.
   slackAppToken: ""
+
+  # -- Database connection (empty host = use shared local postgres)
+  db:
+    host: ""
+    port: 5432
+    user: humr
+    password: ""
+    database: humr
   resources:
     requests:
       cpu: 100m

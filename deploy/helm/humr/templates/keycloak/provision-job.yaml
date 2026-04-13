@@ -86,7 +86,8 @@ spec:
           args:
             - |
               set -ex
-              curl -fsSL -o /tmp/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
+              ARCH=$(uname -m); case "$ARCH" in aarch64) ARCH=arm64;; x86_64) ARCH=amd64;; esac
+              curl -fsSL -o /tmp/jq "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$ARCH"
               chmod +x /tmp/jq
               export PATH="/tmp:$PATH"
 

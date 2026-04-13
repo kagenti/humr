@@ -33,7 +33,7 @@ export function createChannelManager(deps: {
 
     bootstrap(instances: Instance[]) {
       for (const inst of instances) {
-        for (const channel of inst.spec.channels ?? []) {
+        for (const channel of inst.channels) {
           const worker = workers.find(w => w.type === channel.type);
           if (worker) worker.start(inst.id, channel);
         }

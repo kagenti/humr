@@ -7,5 +7,5 @@ export default defineConfig({
   platform: "node",
   splitting: false,
   clean: true,
-  noExternal: ["api-server-api"],
+  noExternal: ["api-server-api", "db", "drizzle-orm", "postgres"],
 });

@@ -158,6 +158,35 @@ OneCLI PostgreSQL DSN
 {{- end }}
 
 {{/*
+API Server database host — uses external host if set, otherwise shared postgres
+*/}}
+{{- define "humr.apiserver.db.host" -}}
+{{- if .Values.apiServer.db.host }}
+{{- .Values.apiServer.db.host }}
+{{- else }}
+{{- include "humr.postgres.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+API Server database password secret name — uses shared postgres secret when db.password is empty
+*/}}
+{{- define "humr.apiserver.db.password.secretName" -}}
+{{- if .Values.apiServer.db.password }}
+{{- printf "%s-apiserver-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- include "humr.postgres.secrets.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+API Server PostgreSQL DSN
+*/}}
+{{- define "humr.apiserver.postgres.dsn" -}}
+{{- printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.apiServer.db.user (include "humr.apiserver.db.host" .) (int .Values.apiServer.db.port) .Values.apiServer.db.database }}
+{{- end }}
+
+{{/*
 Keycloak OIDC issuer URL (external, for iss claim matching in JWTs)
 */}}
 {{- define "humr.keycloak.issuer" -}}

@@ -1,5 +1,5 @@
-import type { InstanceSpec } from "api-server-api";
+import type { Instance } from "api-server-api";
 
-export function canWake(spec: InstanceSpec): boolean {
-  return spec.desiredState === "hibernated";
+export function canWake(instance: Instance): boolean {
+  return instance.state === "hibernated";
 }

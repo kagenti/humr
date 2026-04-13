@@ -49,6 +49,13 @@ spec:
             - containerPort: {{ .Values.apiServer.port }}
               name: http
           env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.apiserver.db.password.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: {{ include "humr.apiserver.postgres.dsn" . | quote }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
             - name: PORT

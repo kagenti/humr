@@ -70,15 +70,17 @@ export interface AgentView {
   mcpServers?: Record<string, MCPServerConfig> | null;
 }
 
+export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
+
 export interface InstanceView {
   id: string;
   name: string;
   agentId: string;
   description?: string;
-  desiredState: "running" | "hibernated";
-  enabledMcpServers?: string[] | null;
-  connectedChannels: string[];
-  status: { currentState: string; error?: string; podReady: boolean } | null;
+  state: InstanceState;
+  error?: string;
+  channels: { type: string; botToken: string }[];
+  enabledMcpServers: string[];
 }
 
 export interface Schedule {

@@ -24,8 +24,7 @@ export type {
 
 export type {
   Instance,
-  InstanceSpec,
-  InstanceStatus,
+  InstanceState,
   Channel,
   SlackChannel,
   ChannelConfig,

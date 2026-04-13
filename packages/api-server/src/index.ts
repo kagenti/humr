@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
+import { createDb, runMigrations } from "db";
 import {
   createApi,
   verifyOwner, podBaseUrl,
@@ -33,8 +34,10 @@ const onecli = createOnecliClient({
 });
 
 const { api } = createApi(config.namespace);
+await runMigrations(config.databaseUrl, config.migrationsPath);
+const { db, sql } = createDb(config.databaseUrl);
 
-const systemInstances = composeSystemInstances(api, config.namespace);
+const systemInstances = composeSystemInstances(api, config.namespace, db);
 
 const channelManager = createChannelManager({
   slackWorker: config.slackAppToken
@@ -88,7 +91,7 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
 
-  const { templates, agents, instances, schedules } = composeAgentsModule(api, config.namespace, user.sub);
+  const { templates, agents, instances, schedules } = composeAgentsModule(api, config.namespace, user.sub, db);
 
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -118,6 +121,7 @@ systemInstances.list().then((all) => {
 async function shutdown() {
   process.stderr.write("shutting down...\n");
   await channelManager.stopAll();
+  await sql.end();
   server.close();
   process.exit(0);
 }

@@ -119,7 +119,7 @@ export function ChatView() {
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
     const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
-    if (!inst?.status?.podReady) return false;
+    if (inst?.state !== "running") return false;
     try {
       const { connection, ws } = await openConnection(
         selectedInstance,
@@ -461,7 +461,7 @@ export function ChatView() {
           <div className={`${sessionId ? "" : "ml-auto"} flex items-center gap-2`}>
             {(() => {
               const inst = instances.find(i => i.id === selectedInstance);
-              const state = inst ? instanceState(inst) : "unknown";
+              const state = inst ? instanceState(inst) : ("starting" as const);
               const label = busy ? "Busy" : stateLabel[state];
               const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];
               const dot = busy ? "bg-warning anim-pulse" : dotColors[state];
