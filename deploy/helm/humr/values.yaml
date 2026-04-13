@@ -1,6 +1,9 @@
 # -- Target namespace for agent workloads (instances, templates, schedules)
 agentNamespace: humr-agents
 
+# -- Whether to create the agent namespace (disable if it already exists or is managed externally)
+createAgentNamespace: true
+
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
