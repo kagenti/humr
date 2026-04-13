@@ -7,11 +7,13 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/api-server/package.json packages/api-server/
 COPY packages/api-server-api/package.json packages/api-server-api/
+COPY packages/db/package.json packages/db/
 
 RUN pnpm install --frozen-lockfile --filter api-server...
 
 COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/api-server/ packages/api-server/
+COPY packages/db/ packages/db/
 
 RUN pnpm --filter api-server build
 
