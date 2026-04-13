@@ -7,6 +7,5 @@ export default defineConfig({
   platform: "node",
   splitting: false,
   clean: true,
-  noExternal: ["api-server-api", "db"],
-  external: ["drizzle-orm", "drizzle-orm/postgres-js", "drizzle-orm/postgres-js/migrator", "postgres"],
+  noExternal: ["api-server-api", "db", "drizzle-orm", "postgres"],
 });
