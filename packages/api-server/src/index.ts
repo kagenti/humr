@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
+import { appRouter } from "api-server-api/router";
+import type { ApiContext, UserIdentity } from "api-server-api";
 import { createDb, runMigrations } from "db";
 import {
   createApi, createK8sClient, podBaseUrl,

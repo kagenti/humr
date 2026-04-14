@@ -1,4 +1,4 @@
-export { appRouter, type AppRouter } from "./router.js";
+export type { AppRouter } from "./router.js";
 export type { ApiContext, UserIdentity } from "./context.js";
 
 export { ChannelType, type EnvVar } from "./modules/shared.js";
