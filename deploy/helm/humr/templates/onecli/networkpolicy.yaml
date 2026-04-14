@@ -33,14 +33,20 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS — allow port 53 to any destination. Restricting by
-    # namespace/label is fragile across platforms (kube-system on vanilla k8s,
-    # openshift-dns on OCP) and DNS is not an SSRF vector.
+    # DNS — allow ports 53 and 5353 to any destination. Port 53 is the
+    # standard service port; 5353 is the target port used by OpenShift DNS
+    # pods (CoreDNS). OVN-Kubernetes evaluates egress policy after DNAT,
+    # so the policy sees the post-DNAT target port (5353), not the service
+    # port (53). Both are needed for cross-platform compatibility.
     - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
 
     {{- if .Values.postgres.enabled }}
     # In-cluster shared Postgres
