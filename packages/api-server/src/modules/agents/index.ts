@@ -1,3 +1,3 @@
-export { type SlackConnected, isSlackConnected } from "./domain/events/SlackConnected.js";
-export { type SlackDisconnected, isSlackDisconnected } from "./domain/events/SlackDisconnected.js";
 export { composeAgentsModule, composeSystemInstances } from "./compose.js";
+export { startK8sCleanupSaga } from "./sagas/k8s-cleanup.js";
+export { startChannelCleanupSaga } from "./sagas/channel-cleanup.js";

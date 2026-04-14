@@ -1,18 +1,65 @@
-type Handler = (event: { type: string }) => void;
+import { Subject, type Observable } from "rxjs";
+import { filter } from "rxjs/operators";
 
-const handlers = new Map<string, Set<Handler>>();
+// ---------------------------------------------------------------------------
+// Domain events — write-side only
+// ---------------------------------------------------------------------------
 
-export function emit(event: { type: string }): void {
-  const set = handlers.get(event.type);
-  if (set) for (const fn of set) fn(event);
+export type InstanceCreated = {
+  type: "InstanceCreated";
+  instanceId: string;
+  agentId: string;
+};
+
+export type InstanceUpdated = {
+  type: "InstanceUpdated";
+  instanceId: string;
+};
+
+export type InstanceDeleted = {
+  type: "InstanceDeleted";
+  instanceId: string;
+};
+
+export type InstanceWoken = {
+  type: "InstanceWoken";
+  instanceId: string;
+};
+
+export type SlackConnected = {
+  type: "SlackConnected";
+  instanceId: string;
+  botToken: string;
+};
+
+export type SlackDisconnected = {
+  type: "SlackDisconnected";
+  instanceId: string;
+};
+
+export type DomainEvent =
+  | InstanceCreated
+  | InstanceUpdated
+  | InstanceDeleted
+  | InstanceWoken
+  | SlackConnected
+  | SlackDisconnected;
+
+// ---------------------------------------------------------------------------
+// Event bus
+// ---------------------------------------------------------------------------
+
+const bus$ = new Subject<DomainEvent>();
+
+export function emit(event: DomainEvent): void {
+  bus$.next(event);
 }
 
-export function on(type: string, handler: Handler): () => void {
-  let set = handlers.get(type);
-  if (!set) {
-    set = new Set();
-    handlers.set(type, set);
-  }
-  set.add(handler);
-  return () => { set.delete(handler); };
+export function events$(): Observable<DomainEvent> {
+  return bus$.asObservable();
+}
+
+export function ofType<T extends DomainEvent>(type: T["type"]) {
+  return (source: Observable<DomainEvent>): Observable<T> =>
+    source.pipe(filter((e): e is T => e.type === type));
 }

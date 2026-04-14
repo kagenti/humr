@@ -16,8 +16,6 @@ import {
 } from "../infrastructure/configmap-mappers.js";
 import { type InfraInstance, assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit } from "../../../events.js";
-import type { SlackConnected } from "../domain/events/SlackConnected.js";
-import type { SlackDisconnected } from "../domain/events/SlackDisconnected.js";
 
 export function createInstancesService(deps: {
   k8s: K8sClient;
@@ -26,9 +24,7 @@ export function createInstancesService(deps: {
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByInstance: (instanceId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (instanceId: string, channel: ChannelConfig) => Promise<void>;
-  deleteChannelsByInstance: (instanceId: string) => Promise<void>;
   deleteChannelByType: (instanceId: string, type: ChannelType) => Promise<void>;
-  allChannelInstanceIds: () => Promise<string[]>;
   deleteChannelsByInstanceIds: (instanceIds: string[]) => Promise<void>;
 }): InstancesService {
   const ownerSelector = deps.owner ? `,${LABEL_OWNER}=${deps.owner}` : "";
@@ -58,6 +54,8 @@ export function createInstancesService(deps: {
   }
 
   return {
+    // ---- Queries (direct reads, no events) ----
+
     async list() {
       const [infraInstances, channelMap] = await Promise.all([
         listInfra(),
@@ -65,7 +63,6 @@ export function createInstancesService(deps: {
       ]);
 
       const infraIds = new Set(infraInstances.map((i) => i.id));
-
       const psqlInstanceIds = [...channelMap.keys()];
       const orphans = findOrphanedInstanceIds(infraIds, psqlInstanceIds);
       if (orphans.length > 0) {
@@ -83,14 +80,11 @@ export function createInstancesService(deps: {
         getInfra(id),
         deps.listChannelsByInstance(id),
       ]);
-      if (!infra) {
-        if (channels.length > 0) {
-          await deps.deleteChannelsByInstance(id);
-        }
-        return null;
-      }
+      if (!infra) return null;
       return assembleInstance(infra, channels);
     },
+
+    // ---- Commands (emit domain events) ----
 
     async create(input: CreateInstanceInput) {
       const agent = await deps.getAgent(input.agentId);
@@ -108,7 +102,10 @@ export function createInstancesService(deps: {
       };
       const body = buildInstanceConfigMap(input.agentId, spec, deps.owner ?? "");
       const created = await deps.k8s.createConfigMap(body);
-      return assembleInstance(parseInfraInstance(created), []);
+      const instance = assembleInstance(parseInfraInstance(created), []);
+
+      emit({ type: "InstanceCreated", instanceId: instance.id, agentId: input.agentId });
+      return instance;
     },
 
     async update(input: UpdateInstanceInput) {
@@ -123,7 +120,10 @@ export function createInstancesService(deps: {
       });
       const updated = await deps.k8s.replaceConfigMap(input.id, cm);
       const channels = await deps.listChannelsByInstance(input.id);
-      return assembleInstance(parseInfraInstance(updated), channels);
+      const instance = assembleInstance(parseInfraInstance(updated), channels);
+
+      emit({ type: "InstanceUpdated", instanceId: input.id });
+      return instance;
     },
 
     async wake(id) {
@@ -132,7 +132,6 @@ export function createInstancesService(deps: {
 
       const raw = specYaml(cm) as { desiredState?: string } | null;
       if (raw?.desiredState !== "hibernated") {
-        // Already running or starting — return current state
         const pod = await deps.k8s.getPod(`${id}-0`);
         const infra = parseInfraInstance(cm, pod ?? undefined);
         const channels = await deps.listChannelsByInstance(id);
@@ -146,7 +145,10 @@ export function createInstancesService(deps: {
       const pod = await deps.k8s.getPod(`${id}-0`);
       const infra = parseInfraInstance(reread, pod ?? undefined);
       const channels = await deps.listChannelsByInstance(id);
-      return assembleInstance(infra, channels);
+      const instance = assembleInstance(infra, channels);
+
+      emit({ type: "InstanceWoken", instanceId: id });
+      return instance;
     },
 
     async connectSlack(id, botToken) {
@@ -155,8 +157,7 @@ export function createInstancesService(deps: {
 
       const channel = { type: ChannelType.Slack, botToken } as ChannelConfig;
       await deps.upsertChannel(id, channel);
-      const connected: SlackConnected = { type: "SlackConnected", instanceId: id, botToken };
-      emit(connected);
+      emit({ type: "SlackConnected", instanceId: id, botToken });
 
       const channels = await deps.listChannelsByInstance(id);
       return assembleInstance(infra, channels);
@@ -167,23 +168,19 @@ export function createInstancesService(deps: {
       if (!infra) return null;
 
       await deps.deleteChannelByType(id, ChannelType.Slack);
-      const disconnected: SlackDisconnected = { type: "SlackDisconnected", instanceId: id };
-      emit(disconnected);
+      emit({ type: "SlackDisconnected", instanceId: id });
 
       const channels = await deps.listChannelsByInstance(id);
       return assembleInstance(infra, channels);
     },
 
     async delete(id) {
-      const disconnected: SlackDisconnected = { type: "SlackDisconnected", instanceId: id };
-      emit(disconnected);
       const cm = await deps.k8s.getConfigMap(id);
       if (cm && (deps.owner ? isOwnedBy(cm, deps.owner) : true)) {
         await deps.k8s.deleteConfigMap(id);
-        const pvcs = await deps.k8s.listPVCs(`${LABEL_INSTANCE_REF}=${id}`);
-        await Promise.all(pvcs.map((pvc) => deps.k8s.deletePVC(pvc.metadata!.name!)));
+        // PVC cleanup and channel cleanup handled by sagas reacting to InstanceDeleted
+        emit({ type: "InstanceDeleted", instanceId: id });
       }
-      await deps.deleteChannelsByInstance(id);
     },
   };
 }

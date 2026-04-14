@@ -4,8 +4,8 @@ import type { TemplatesService, AgentsService, InstancesService, SchedulesServic
 import { createK8sClient, type K8sClient } from "./infrastructure/k8s.js";
 import {
   listChannelsByOwner, listChannelsByInstance,
-  upsertChannel, deleteChannelsByInstance, deleteChannelByType,
-  allChannelInstanceIds, deleteChannelsByInstanceIds,
+  upsertChannel, deleteChannelByType,
+  deleteChannelsByInstanceIds,
 } from "./infrastructure/channels-repository.js";
 import { createTemplatesService, readTemplateSpec } from "./services/TemplatesService.js";
 import { createAgentsService } from "./services/AgentsService.js";
@@ -34,9 +34,7 @@ function composeWithClient(k8s: K8sClient, owner: string, db: Db): {
       listChannelsByOwner: listChannelsByOwner(db, owner),
       listChannelsByInstance: listChannelsByInstance(db, owner),
       upsertChannel: upsertChannel(db, owner),
-      deleteChannelsByInstance: deleteChannelsByInstance(db),
       deleteChannelByType: deleteChannelByType(db, owner),
-      allChannelInstanceIds: allChannelInstanceIds(db),
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
     }),
     schedules: createSchedulesService({ k8s, owner }),
@@ -68,9 +66,7 @@ export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db
     listChannelsByOwner: listChannelsByOwner(db, ""),
     listChannelsByInstance: listChannelsByInstance(db, ""),
     upsertChannel: upsertChannel(db, ""),
-    deleteChannelsByInstance: deleteChannelsByInstance(db),
     deleteChannelByType: deleteChannelByType(db, ""),
-    allChannelInstanceIds: allChannelInstanceIds(db),
     deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
   });
 }

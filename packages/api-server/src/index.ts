@@ -8,7 +8,8 @@ import {
   type K8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
 import { isOwnedBy } from "./modules/agents/infrastructure/configmap-mappers.js";
-import { composeAgentsModule, composeSystemInstances } from "./modules/agents/index.js";
+import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
+import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
 import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
 import { createAcpRelay } from "./acp-relay.js";
@@ -37,6 +38,10 @@ const { api } = createApi(config.namespace);
 const k8sClient = createK8sClient(api, config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
+
+// Start sagas — react to domain events for side effects
+const k8sCleanupSub = startK8sCleanupSaga(k8sClient);
+const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
 
 const systemInstances = composeSystemInstances(api, config.namespace, db);
 
@@ -124,6 +129,8 @@ systemInstances.list().then((all) => {
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
+  k8sCleanupSub.unsubscribe();
+  channelCleanupSub.unsubscribe();
   await channelManager.stopAll();
   await sql.end();
   server.close();
