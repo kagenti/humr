@@ -92,6 +92,10 @@ spec:
               value: "true"
             - name: KC_PROXY_HEADERS
               value: "xforwarded"
+            {{- if eq .Values.scheme "https" }}
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health/ready
