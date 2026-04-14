@@ -238,6 +238,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
 	dnsPort := intstr.FromInt32(53)
+	dnsTargetPort := intstr.FromInt32(5353)
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -274,10 +275,15 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 					},
 				},
 				{
-					// DNS
+					// DNS — allow both port 53 (service port) and 5353 (target port).
+					// OVN-Kubernetes evaluates egress policy after DNAT, so the policy
+					// sees the post-DNAT target port. OpenShift DNS pods run CoreDNS
+					// on 5353 behind a Service that maps 53→5353.
 					Ports: []networkingv1.NetworkPolicyPort{
 						{Protocol: &tcp, Port: &dnsPort},
 						{Protocol: &udp, Port: &dnsPort},
+						{Protocol: &tcp, Port: &dnsTargetPort},
+						{Protocol: &udp, Port: &dnsTargetPort},
 					},
 				},
 			},
