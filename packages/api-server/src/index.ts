@@ -9,6 +9,7 @@ import {
 import { createInstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
+import { upsertSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
 import { createAcpRelay } from "./acp-relay.js";
@@ -45,9 +46,11 @@ const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
 
 const systemInstances = composeSystemInstances(api, config.namespace, db);
 
+const persistSession = upsertSession(db);
+
 const channelManager = createChannelManager({
   slackWorker: config.slackAppToken
-    ? createSlackWorker(config.namespace, config.slackAppToken, () => systemInstances)
+    ? createSlackWorker(config.namespace, config.slackAppToken, () => systemInstances, persistSession)
     : undefined,
 });
 
@@ -99,7 +102,7 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
 
-  const { templates, agents, instances, schedules } = composeAgentsModule(api, config.namespace, user.sub, db);
+  const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db);
 
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -110,6 +113,7 @@ app.all("/api/trpc/*", (c) => {
       agents,
       instances,
       schedules,
+      sessions,
       channels: { available: channelManager.availableChannels() },
       user,
     }),

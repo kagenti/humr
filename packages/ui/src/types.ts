@@ -36,8 +36,13 @@ export interface LogEntry {
   payload: object;
 }
 
+export type SessionType = "regular" | "channel_slack";
+
 export interface SessionInfo {
   sessionId: string;
+  instanceId: string;
+  type: SessionType;
+  createdAt: string;
   title?: string | null;
   updatedAt?: string | null;
 }

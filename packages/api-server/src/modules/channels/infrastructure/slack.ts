@@ -42,6 +42,7 @@ export function createSlackWorker(
   namespace: string,
   appToken: string,
   instances: () => InstancesService,
+  persistSession?: (sessionId: string, instanceId: string, type?: string) => Promise<void>,
 ): SlackWorker {
   const bots = new Map<string, BoltApp>();
 
@@ -84,7 +85,11 @@ export function createSlackWorker(
 
         try {
           await ensureRunning(instances(), instanceName);
-          const response = await sendPrompt(namespace, instanceName, prompt);
+          const response = await sendPrompt(namespace, instanceName, prompt, {
+            onSessionCreated: persistSession
+              ? (sid) => persistSession(sid, instanceName, "channel_slack")
+              : undefined,
+          });
           await app.client.chat.postMessage({
             channel: event.channel,
             thread_ts: event.ts,

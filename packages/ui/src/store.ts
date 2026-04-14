@@ -93,6 +93,8 @@ export interface HumrStore {
   goBack: () => void;
 
   // Session/chat actions
+  includeChannelSessions: boolean;
+  setIncludeChannelSessions: (v: boolean) => void;
   setSessionId: (id: string | null) => void;
   setSessions: (sessions: SessionInfo[]) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
@@ -308,6 +310,8 @@ export const useStore = create<HumrStore>((set, get) => ({
   },
 
   // Session/chat actions
+  includeChannelSessions: false,
+  setIncludeChannelSessions: (v) => set({ includeChannelSessions: v }),
   setSessionId: (id) => set({ sessionId: id }),
   setSessions: (sessions) => set({ sessions }),
   setMessages: (updater) =>

@@ -44,3 +44,9 @@ export type {
 } from "./modules/schedules/types.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
+
+export type {
+  SessionType,
+  SessionView,
+  SessionsService as SessionsApiService,
+} from "./modules/sessions/types.js";

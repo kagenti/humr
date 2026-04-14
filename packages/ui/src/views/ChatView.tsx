@@ -115,28 +115,19 @@ export function ChatView() {
     }
   }, [selectedInstance, instances]);
 
-  // Sessions — show spinner, skip connect if pod not ready, retry until loaded
+  const includeChannelSessions = useStore((s) => s.includeChannelSessions);
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
     const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
     if (inst?.state !== "running") return false;
     try {
-      const { connection, ws } = await openConnection(
-        selectedInstance,
-        () => {},
-      );
-      await connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-      });
-      const r = await connection.listSessions({ cwd: "." });
-      setSessions(r.sessions ?? []);
-      ws.close();
+      const list = await platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions });
+      setSessions(list);
       return true;
     } catch {
       return false;
     }
-  }, [selectedInstance, setSessions]);
+  }, [selectedInstance, includeChannelSessions, setSessions]);
   useEffect(() => {
     if (!selectedInstance) return;
     setLoadingSessions(true);
@@ -379,6 +370,7 @@ export function ChatView() {
           setSessionId(s.sessionId);
           activeSessionIdRef.current = s.sessionId;
           addLog("session", { sessionId: s.sessionId });
+          platform.sessions.create.mutate({ sessionId: s.sessionId, instanceId: selectedInstance }).catch(() => {});
         }
       }
       const r = await conn.prompt({

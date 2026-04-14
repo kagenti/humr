@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, uniqueIndex, timestamp } from "drizzle-orm/pg-core";
 
 export const channels = pgTable("channels", {
   instanceId: text("instance_id").notNull(),
@@ -8,3 +8,10 @@ export const channels = pgTable("channels", {
 }, (table) => [
   uniqueIndex("channels_instance_type_idx").on(table.instanceId, table.type),
 ]);
+
+export const sessions = pgTable("sessions", {
+  sessionId: text("session_id").primaryKey(),
+  instanceId: text("instance_id").notNull(),
+  type: text("type").notNull().default("regular"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

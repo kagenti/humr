@@ -58,10 +58,57 @@ export async function ensureRunning(
   throw new Error(`Instance "${name}" pod not ready within ${WAKE_TIMEOUT_MS / 1000}s`);
 }
 
+export interface AcpSessionInfo {
+  sessionId: string;
+  title?: string | null;
+  updatedAt?: string | null;
+}
+
+export async function listSessions(
+  namespace: string,
+  instanceName: string,
+): Promise<AcpSessionInfo[]> {
+  const url = `ws://${podBaseUrl(instanceName, namespace)}/api/acp`;
+  let stream: Stream;
+  let ws: WebSocket;
+  try {
+    ({ stream, ws } = await wsStream(url));
+  } catch {
+    return [];
+  }
+
+  const connection = new ClientSideConnection(
+    () => ({
+      async requestPermission() { return { outcome: { outcome: "selected" as const, optionId: "" } }; },
+      async sessionUpdate() {},
+      async writeTextFile() { return {}; },
+      async readTextFile() { return { content: "" }; },
+    }),
+    stream,
+  );
+
+  try {
+    await connection.initialize({
+      protocolVersion: 1,
+      clientCapabilities: {},
+      clientInfo: { name: "humr-sessions", version: "1.0.0" },
+    });
+    const r = await connection.listSessions({ cwd: "." });
+    return (r.sessions ?? []) as AcpSessionInfo[];
+  } catch {
+    return [];
+  } finally {
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  }
+}
+
 export async function sendPrompt(
   namespace: string,
   instanceName: string,
   prompt: string,
+  options?: { onSessionCreated?: (sessionId: string) => Promise<void> },
 ): Promise<string> {
   const url = `ws://${podBaseUrl(instanceName, namespace)}/api/acp`;
   const { stream, ws } = await wsStream(url);
@@ -108,6 +155,8 @@ export async function sendPrompt(
       cwd: ".",
       mcpServers: [],
     });
+
+    await options?.onSessionCreated?.(sessionId);
 
     await connection.prompt({
       sessionId,
