@@ -141,6 +141,9 @@ keycloak:
   realm: humr
   clientId: humr-ui
   apiAudience: humr-api
+  # -- Realm role required to access the API. Users without this role get 403.
+  # Leave empty to allow all authenticated users.
+  requiredRole: ""
   # -- Confidential client for API server (token exchange with OneCLI)
   apiClientId: humr-api
   apiClientSecret: ""

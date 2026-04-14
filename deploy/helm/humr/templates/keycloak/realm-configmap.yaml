@@ -136,6 +136,16 @@ data:
           ]
         }
       ],
+      {{- if .Values.keycloak.requiredRole }}
+      "roles": {
+        "realm": [
+          {
+            "name": {{ .Values.keycloak.requiredRole | quote }},
+            "description": "Grants access to the Humr platform"
+          }
+        ]
+      },
+      {{- end }}
       "users": [
         {{- if .Values.keycloak.testUser.enabled }}
         {
@@ -152,6 +162,9 @@ data:
               "temporary": false
             }
           ]
+          {{- if .Values.keycloak.requiredRole }}
+          ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
+          {{- end }}
         }
         {{- end }}
       ]
