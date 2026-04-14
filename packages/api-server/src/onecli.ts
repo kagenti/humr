@@ -110,7 +110,6 @@ export function createOnecliClient(config: TokenExchangeConfig) {
   async function syncUser(userJwt: string, userSub: string): Promise<void> {
     const token = await exchangeToken(userJwt, userSub);
     const res = await fetch(`${config.onecliBaseUrl}/api/auth/sync`, {
-      method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
