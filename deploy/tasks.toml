@@ -12,6 +12,36 @@ else
 fi
 '''
 
+["cluster:env"]
+description = 'Open a subshell with env for local cluster'
+quiet = true
+raw = true
+run = '''                                                                                                                                                                                                                                                                                                                                                                                              
+#!/usr/bin/env bash
+
+export KUBECONFIG="$(mise run cluster:kubeconfig)"
+
+CALLER=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
+CALLER="${CALLER:-$SHELL}"
+case "$(basename "$CALLER")" in
+  bash) exec bash --rcfile <(echo 'source ~/.bashrc; PS1="(humr) $PS1"') ;;
+  zsh)
+    ZDOTDIR=$(mktemp -d)
+    cat > "$ZDOTDIR/.zshrc" <<'ZRC'
+[[ -f ~/.zshenv ]] && source ~/.zshenv
+[[ -f ~/.zshrc ]]  && source ~/.zshrc
+PS1="(humr) $PS1"
+command rm -rf "$ZDOTDIR"
+ZRC
+    export ZDOTDIR
+    exec zsh
+    ;;
+  fish) exec fish -C 'functions -c fish_prompt _orig_fish_prompt; function fish_prompt; echo -n "(humr) "; _orig_fish_prompt; end' ;;
+  *)    exec "$CALLER" ;;
+esac
+'''
+
+
 # -- Image builds (docker only, no k3s interaction) --
 
 ["image:controller"]
