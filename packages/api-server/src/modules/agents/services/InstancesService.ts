@@ -9,11 +9,11 @@ import { SPEC_VERSION, ChannelType } from "api-server-api";
 import type { K8sClient } from "../infrastructure/k8s.js";
 import {
   LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF,
-} from "../domain/labels.js";
+} from "../infrastructure/labels.js";
 import {
   parseInfraInstance, isOwnedBy, hasType, specYaml,
   buildInstanceConfigMap, patchSpecField, setDesiredState,
-} from "../domain/configmap-mappers.js";
+} from "../infrastructure/configmap-mappers.js";
 import { type InfraInstance, assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit } from "../../../events.js";
 import type { SlackConnected } from "../domain/events/SlackConnected.js";

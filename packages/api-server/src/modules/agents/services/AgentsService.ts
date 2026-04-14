@@ -7,11 +7,11 @@ import type {
 import type { K8sClient } from "../infrastructure/k8s.js";
 import {
   LABEL_TYPE, TYPE_AGENT, LABEL_OWNER,
-} from "../domain/labels.js";
+} from "../infrastructure/labels.js";
 import {
   parseAgent, isOwnedBy, hasType,
   buildAgentConfigMap, patchSpecField,
-} from "../domain/configmap-mappers.js";
+} from "../infrastructure/configmap-mappers.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
 export function createAgentsService(deps: {

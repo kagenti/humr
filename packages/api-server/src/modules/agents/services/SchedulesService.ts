@@ -11,11 +11,11 @@ import type { K8sClient } from "../infrastructure/k8s.js";
 import {
   LABEL_TYPE, TYPE_SCHEDULE, LABEL_OWNER, LABEL_INSTANCE_REF, LABEL_AGENT_REF,
   SPEC_KEY,
-} from "../domain/labels.js";
+} from "../infrastructure/labels.js";
 import {
   parseSchedule, isOwnedBy,
   buildScheduleConfigMap,
-} from "../domain/configmap-mappers.js";
+} from "../infrastructure/configmap-mappers.js";
 import { validateCron, minutesToCron } from "../domain/cron.js";
 import { DEFAULT_HEARTBEAT_INTERVAL_MINUTES } from "../domain/defaults.js";
 

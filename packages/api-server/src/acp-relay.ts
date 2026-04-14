@@ -3,8 +3,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
-import { setDesiredState, parseInfraInstance, isPodReady } from "./modules/agents/domain/configmap-mappers.js";
-import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/domain/labels.js";
+import { setDesiredState, parseInfraInstance, isPodReady } from "./modules/agents/infrastructure/configmap-mappers.js";
+import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
 
 const DEBOUNCE_MS = 30_000;
 const WAKE_POLL_MS = 1_000;

@@ -7,7 +7,7 @@ import {
   createApi, createK8sClient, podBaseUrl,
   type K8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
-import { isOwnedBy } from "./modules/agents/domain/configmap-mappers.js";
+import { isOwnedBy } from "./modules/agents/infrastructure/configmap-mappers.js";
 import { composeAgentsModule, composeSystemInstances } from "./modules/agents/index.js";
 import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";

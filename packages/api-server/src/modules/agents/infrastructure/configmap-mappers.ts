@@ -13,7 +13,7 @@ import type {
   Agent, AgentSpec,
   Schedule, ScheduleSpec, ScheduleStatus,
 } from "api-server-api";
-import type { InfraInstance } from "./instance-assembly.js";
+import type { InfraInstance } from "../domain/instance-assembly.js";
 import {
   LABEL_TYPE, LABEL_OWNER, LABEL_TEMPLATE_REF, LABEL_AGENT_REF,
   LABEL_INSTANCE_REF,

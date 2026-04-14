@@ -2,8 +2,8 @@ import type { TemplatesService, TemplateSpec } from "api-server-api";
 import type { K8sClient } from "../infrastructure/k8s.js";
 import {
   LABEL_TYPE, TYPE_TEMPLATE, LABEL_OWNER, SPEC_KEY,
-} from "../domain/labels.js";
-import { parseTemplate, hasType } from "../domain/configmap-mappers.js";
+} from "../infrastructure/labels.js";
+import { parseTemplate, hasType } from "../infrastructure/configmap-mappers.js";
 import yaml from "js-yaml";
 
 export function createTemplatesService(deps: {
