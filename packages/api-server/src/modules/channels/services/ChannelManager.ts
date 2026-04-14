@@ -1,7 +1,6 @@
 import { ChannelType, type Instance } from "api-server-api";
-import { on } from "../../../events.js";
-import { isSlackConnected, type SlackConnected } from "../../agents/index.js";
-import { isSlackDisconnected, type SlackDisconnected } from "../../agents/index.js";
+import type { Subscription } from "rxjs";
+import { events$, ofType, EventType, type SlackConnected, type SlackDisconnected } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 
 export interface ChannelManager {
@@ -14,17 +13,28 @@ export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
 }): ChannelManager {
   const workers = [deps.slackWorker].filter(Boolean) as SlackWorker[];
+  const subscriptions: Subscription[] = [];
 
-  on("SlackConnected", (event) => {
-    if (!isSlackConnected(event)) return;
-    const worker = deps.slackWorker;
-    if (worker) worker.start(event.instanceId, { type: ChannelType.Slack, botToken: event.botToken });
-  });
+  subscriptions.push(
+    events$().pipe(ofType<SlackConnected>(EventType.SlackConnected)).subscribe((event) => {
+      if (deps.slackWorker) {
+        deps.slackWorker.start(event.instanceId, { type: ChannelType.Slack, botToken: event.botToken });
+      }
+    }),
+  );
 
-  on("SlackDisconnected", (event) => {
-    if (!isSlackDisconnected(event)) return;
-    for (const w of workers) w.stop(event.instanceId);
-  });
+  subscriptions.push(
+    events$().pipe(ofType<SlackDisconnected>(EventType.SlackDisconnected)).subscribe((event) => {
+      for (const w of workers) w.stop(event.instanceId);
+    }),
+  );
+
+  // Also disconnect Slack bots when an instance is deleted
+  subscriptions.push(
+    events$().pipe(ofType(EventType.InstanceDeleted)).subscribe((event) => {
+      for (const w of workers) w.stop(event.instanceId);
+    }),
+  );
 
   return {
     availableChannels() {
@@ -41,6 +51,7 @@ export function createChannelManager(deps: {
     },
 
     async stopAll() {
+      for (const sub of subscriptions) sub.unsubscribe();
       await Promise.all(workers.map(w => w.stopAll()));
     },
   };

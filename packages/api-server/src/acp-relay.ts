@@ -1,15 +1,10 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import type * as k8s from "@kubernetes/client-node";
-import {
-  podBaseUrl,
-  patchConfigMapAnnotation,
-  wakeInstance,
-} from "./modules/agents/infrastructure/k8s.js";
+import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
+import type { InstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
+import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
 
-const LAST_ACTIVITY_KEY = "humr.ai/last-activity";
-const ACTIVE_SESSION_KEY = "humr.ai/active-session";
 const DEBOUNCE_MS = 30_000;
 const WAKE_POLL_MS = 1_000;
 const WAKE_TIMEOUT_MS = 120_000;
@@ -25,18 +20,12 @@ function shouldUpdateActivity(instanceId: string): boolean {
 }
 
 async function waitForPodReady(
-  api: k8s.CoreV1Api,
-  namespace: string,
+  repo: InstancesRepository,
   instanceId: string,
 ): Promise<boolean> {
-  const podName = `${instanceId}-0`;
   const deadline = Date.now() + WAKE_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    try {
-      const pod = await api.readNamespacedPod({ name: podName, namespace });
-      const ready = pod.status?.conditions?.find((c) => c.type === "Ready");
-      if (ready?.status === "True") return true;
-    } catch {}
+    if (await repo.isPodReady(instanceId)) return true;
     await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
   }
   return false;
@@ -53,10 +42,8 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
-export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
+export function createAcpRelay(namespace: string, repo: InstancesRepository) {
   const wss = new WebSocketServer({ noServer: true });
-  const patchCmAnnotation = patchConfigMapAnnotation(api, namespace);
-  const wake = wakeInstance(api, namespace);
 
   function handleUpgrade(
     req: IncomingMessage,
@@ -64,14 +51,11 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
     head: Buffer,
     instanceId: string,
   ) {
-    // Accept the client WebSocket upgrade immediately so it doesn't time out
     wss.handleUpgrade(req, socket, head, (client) => {
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
-      // Mark session active immediately to prevent idle hibernation during connect
-      patchCmAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-      // Buffer client messages until upstream is connected
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
         pending.push({ data: data as Buffer, isBinary });
@@ -79,17 +63,16 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
 
       connectUpstream(upstreamUrl)
         .catch(async () => {
-          const woken = await wake(instanceId);
+          const woken = await repo.wakeIfHibernated(instanceId);
           if (woken) {
-            const ready = await waitForPodReady(api, namespace, instanceId);
+            const ready = await waitForPodReady(repo, instanceId);
             if (!ready) throw new Error("pod did not become ready after wake");
           }
           return connectUpstream(upstreamUrl);
         })
         .then((upstream) => {
-          patchCmAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-          // Flush buffered messages
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(msg.data, { binary: msg.isBinary });
@@ -97,14 +80,13 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
           }
           pending.length = 0;
 
-          // Replace buffer handler with direct relay
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(data, { binary: isBinary });
 
               if (shouldUpdateActivity(instanceId)) {
-                patchCmAnnotation(
+                repo.patchAnnotation(
                   instanceId,
                   LAST_ACTIVITY_KEY, new Date().toISOString(),
                 ).catch(() => {});
@@ -131,7 +113,7 @@ export function createAcpRelay(namespace: string, api: k8s.CoreV1Api) {
           });
 
           client.on("close", () => {
-            patchCmAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
+            repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.close();
             }

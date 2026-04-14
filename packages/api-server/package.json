@@ -16,11 +16,12 @@
     "@slack/bolt": "^4.7.0",
     "@trpc/server": "^11.16.0",
     "api-server-api": "workspace:*",
-    "db": "workspace:*",
     "cron-parser": "^5.5.0",
+    "db": "workspace:*",
     "hono": "^4.7.11",
     "jose": "^6.0.11",
     "js-yaml": "^4.1.0",
+    "rxjs": "^7.8.2",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },

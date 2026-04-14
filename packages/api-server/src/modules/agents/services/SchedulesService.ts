@@ -1,28 +1,24 @@
 import type {
-  Schedule,
   SchedulesService,
   CreateCronScheduleInput,
   CreateHeartbeatScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
+import type { SchedulesRepository } from "../infrastructure/SchedulesRepository.js";
 import { validateCron, minutesToCron } from "../domain/cron.js";
 import { DEFAULT_HEARTBEAT_INTERVAL_MINUTES } from "../domain/defaults.js";
 
 export function createSchedulesService(deps: {
-  list: (instanceId: string) => Promise<Schedule[]>;
-  get: (id: string) => Promise<Schedule | null>;
-  create: (instanceId: string, agentRef: string, spec: Record<string, unknown>) => Promise<Schedule>;
-  delete: (id: string) => Promise<void>;
-  toggle: (id: string) => Promise<Schedule | null>;
-  readAgentRef: (instanceId: string) => Promise<string | null>;
+  repo: SchedulesRepository;
+  owner: string;
 }): SchedulesService {
   return {
-    list: deps.list,
-    get: deps.get,
+    list: (instanceId) => deps.repo.list(instanceId, deps.owner),
+    get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: CreateCronScheduleInput) {
       validateCron(input.cron);
-      const agentRef = await deps.readAgentRef(input.instanceId);
+      const agentRef = await deps.repo.readAgentRef(input.instanceId, deps.owner);
       if (!agentRef) throw new Error(`Instance "${input.instanceId}" not found`);
 
       const spec = {
@@ -33,11 +29,11 @@ export function createSchedulesService(deps: {
         task: input.task,
         enabled: true,
       };
-      return deps.create(input.instanceId, agentRef, spec);
+      return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);
     },
 
     async createHeartbeat(input: CreateHeartbeatScheduleInput) {
-      const agentRef = await deps.readAgentRef(input.instanceId);
+      const agentRef = await deps.repo.readAgentRef(input.instanceId, deps.owner);
       if (!agentRef) throw new Error(`Instance "${input.instanceId}" not found`);
 
       const spec = {
@@ -48,11 +44,11 @@ export function createSchedulesService(deps: {
         task: "",
         enabled: true,
       };
-      return deps.create(input.instanceId, agentRef, spec);
+      return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);
     },
 
-    delete: deps.delete,
-    toggle: deps.toggle,
+    delete: (id) => deps.repo.delete(id, deps.owner),
+    toggle: (id) => deps.repo.toggle(id, deps.owner),
 
     config() {
       return { defaultHeartbeatIntervalMinutes: DEFAULT_HEARTBEAT_INTERVAL_MINUTES };

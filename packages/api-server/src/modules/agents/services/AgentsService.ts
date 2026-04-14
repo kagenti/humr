@@ -1,23 +1,20 @@
 import type {
-  Agent,
   AgentsService,
   CreateAgentInput,
   UpdateAgentInput,
   TemplateSpec,
 } from "api-server-api";
+import type { AgentsRepository } from "../infrastructure/AgentsRepository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
 export function createAgentsService(deps: {
-  list: () => Promise<Agent[]>;
-  get: (id: string) => Promise<Agent | null>;
-  create: (spec: Record<string, unknown>, templateId?: string) => Promise<Agent>;
-  update: (id: string, patch: { description?: string; mcpServers?: Record<string, unknown> }) => Promise<Agent | null>;
-  delete: (id: string) => Promise<void>;
+  repo: AgentsRepository;
+  owner: string;
   readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 }): AgentsService {
   return {
-    list: deps.list,
-    get: deps.get,
+    list: () => deps.repo.list(deps.owner),
+    get: (id) => deps.repo.get(id, deps.owner),
 
     async create(input: CreateAgentInput) {
       if (input.templateId) {
@@ -27,23 +24,23 @@ export function createAgentsService(deps: {
           description: input.description,
           mcpServers: input.mcpServers,
         });
-        return deps.create(spec, input.templateId);
+        return deps.repo.create(spec, deps.owner, input.templateId);
       }
       const spec = assembleSpecFromImage(input.name, {
         image: input.image,
         description: input.description,
         mcpServers: input.mcpServers,
       });
-      return deps.create(spec);
+      return deps.repo.create(spec, deps.owner);
     },
 
     async update(input: UpdateAgentInput) {
-      return deps.update(input.id, {
+      return deps.repo.updateSpec(input.id, deps.owner, {
         description: input.description,
         mcpServers: input.mcpServers,
       });
     },
 
-    delete: deps.delete,
+    delete: (id) => deps.repo.delete(id, deps.owner),
   };
 }
