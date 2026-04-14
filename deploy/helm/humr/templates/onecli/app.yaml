@@ -147,6 +147,15 @@ spec:
             - name: AUTH_MODE
               value: "local"
             {{- end }}
+            {{- if .Values.onecli.github.clientId }}
+            - name: GITHUB_CLIENT_ID
+              value: {{ .Values.onecli.github.clientId | quote }}
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.onecli.secrets.fullname" . }}
+                  key: GITHUB_CLIENT_SECRET
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: gateway
