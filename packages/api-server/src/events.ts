@@ -5,35 +5,44 @@ import { filter } from "rxjs/operators";
 // Domain events — write-side only
 // ---------------------------------------------------------------------------
 
+export enum EventType {
+  InstanceCreated = "InstanceCreated",
+  InstanceUpdated = "InstanceUpdated",
+  InstanceDeleted = "InstanceDeleted",
+  InstanceWoken = "InstanceWoken",
+  SlackConnected = "SlackConnected",
+  SlackDisconnected = "SlackDisconnected",
+}
+
 export type InstanceCreated = {
-  type: "InstanceCreated";
+  type: EventType.InstanceCreated;
   instanceId: string;
   agentId: string;
 };
 
 export type InstanceUpdated = {
-  type: "InstanceUpdated";
+  type: EventType.InstanceUpdated;
   instanceId: string;
 };
 
 export type InstanceDeleted = {
-  type: "InstanceDeleted";
+  type: EventType.InstanceDeleted;
   instanceId: string;
 };
 
 export type InstanceWoken = {
-  type: "InstanceWoken";
+  type: EventType.InstanceWoken;
   instanceId: string;
 };
 
 export type SlackConnected = {
-  type: "SlackConnected";
+  type: EventType.SlackConnected;
   instanceId: string;
   botToken: string;
 };
 
 export type SlackDisconnected = {
-  type: "SlackDisconnected";
+  type: EventType.SlackDisconnected;
   instanceId: string;
 };
 

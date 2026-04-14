@@ -3,13 +3,13 @@
  */
 import type { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";
-import { events$, ofType, type InstanceDeleted } from "../../../events.js";
+import { events$, ofType, EventType, type InstanceDeleted } from "../../../events.js";
 
 export function startChannelCleanupSaga(
   deleteChannelsByInstance: (instanceId: string) => Promise<void>,
 ): Subscription {
   return events$().pipe(
-    ofType<InstanceDeleted>("InstanceDeleted"),
+    ofType<InstanceDeleted>(EventType.InstanceDeleted),
     mergeMap(async (event) => {
       try {
         await deleteChannelsByInstance(event.instanceId);

@@ -1,6 +1,6 @@
 import { ChannelType, type Instance } from "api-server-api";
 import type { Subscription } from "rxjs";
-import { events$, ofType, type SlackConnected, type SlackDisconnected } from "../../../events.js";
+import { events$, ofType, EventType, type SlackConnected, type SlackDisconnected } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 
 export interface ChannelManager {
@@ -16,7 +16,7 @@ export function createChannelManager(deps: {
   const subscriptions: Subscription[] = [];
 
   subscriptions.push(
-    events$().pipe(ofType<SlackConnected>("SlackConnected")).subscribe((event) => {
+    events$().pipe(ofType<SlackConnected>(EventType.SlackConnected)).subscribe((event) => {
       if (deps.slackWorker) {
         deps.slackWorker.start(event.instanceId, { type: ChannelType.Slack, botToken: event.botToken });
       }
@@ -24,14 +24,14 @@ export function createChannelManager(deps: {
   );
 
   subscriptions.push(
-    events$().pipe(ofType<SlackDisconnected>("SlackDisconnected")).subscribe((event) => {
+    events$().pipe(ofType<SlackDisconnected>(EventType.SlackDisconnected)).subscribe((event) => {
       for (const w of workers) w.stop(event.instanceId);
     }),
   );
 
   // Also disconnect Slack bots when an instance is deleted
   subscriptions.push(
-    events$().pipe(ofType("InstanceDeleted")).subscribe((event) => {
+    events$().pipe(ofType(EventType.InstanceDeleted)).subscribe((event) => {
       for (const w of workers) w.stop(event.instanceId);
     }),
   );

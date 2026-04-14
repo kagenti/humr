@@ -5,9 +5,8 @@ import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
 import { createDb, runMigrations } from "db";
 import {
   createApi, createK8sClient, podBaseUrl,
-  type K8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
-import { isOwnedBy } from "./modules/agents/infrastructure/configmap-mappers.js";
+import { createInstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
 import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
@@ -36,6 +35,7 @@ const onecli = createOnecliClient({
 
 const { api } = createApi(config.namespace);
 const k8sClient = createK8sClient(api, config.namespace);
+const instancesRepo = createInstancesRepository(k8sClient);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
@@ -67,8 +67,7 @@ app.use("/api/*", auth.middleware);
 app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
 
 async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
-  const cm = await k8sClient.getConfigMap(instanceId);
-  return cm !== null && isOwnedBy(cm, owner);
+  return instancesRepo.isOwnedBy(instanceId, owner);
 }
 
 app.all("/api/instances/:id/trpc/*", async (c) => {
@@ -121,7 +120,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(config.namespace, k8sClient);
+const acpRelay = createAcpRelay(config.namespace, instancesRepo);
 
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);
@@ -174,4 +173,4 @@ server.on("upgrade", async (req, socket, head) => {
 });
 
 export { createK8sClient, podBaseUrl, createApi };
-export type { K8sClient };
+export type { K8sClient } from "./modules/agents/infrastructure/k8s.js";

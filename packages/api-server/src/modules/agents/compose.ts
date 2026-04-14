@@ -1,34 +1,44 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { TemplatesService, AgentsService, InstancesService, SchedulesService } from "api-server-api";
-import { createK8sClient, type K8sClient } from "./infrastructure/k8s.js";
+import { createK8sClient } from "./infrastructure/k8s.js";
+import { createTemplatesRepository } from "./infrastructure/TemplatesRepository.js";
+import { createAgentsRepository } from "./infrastructure/AgentsRepository.js";
+import { createInstancesRepository } from "./infrastructure/InstancesRepository.js";
+import { createSchedulesRepository } from "./infrastructure/SchedulesRepository.js";
 import {
   listChannelsByOwner, listChannelsByInstance,
   upsertChannel, deleteChannelByType,
   deleteChannelsByInstanceIds,
 } from "./infrastructure/channels-repository.js";
-import { createTemplatesService, readTemplateSpec } from "./services/TemplatesService.js";
+import { createTemplatesService } from "./services/TemplatesService.js";
 import { createAgentsService } from "./services/AgentsService.js";
 import { createInstancesService } from "./services/InstancesService.js";
 import { createSchedulesService } from "./services/SchedulesService.js";
 
-function composeWithClient(k8s: K8sClient, owner: string, db: Db): {
+export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
   templates: TemplatesService;
   agents: AgentsService;
   instances: InstancesService;
   schedules: SchedulesService;
 } {
+  const k8s = createK8sClient(api, namespace);
+  const templatesRepo = createTemplatesRepository(k8s);
+  const agentsRepo = createAgentsRepository(k8s);
+  const instancesRepo = createInstancesRepository(k8s);
+  const schedulesRepo = createSchedulesRepository(k8s);
+
   const agents = createAgentsService({
-    k8s,
+    repo: agentsRepo,
     owner,
-    readTemplateSpec: readTemplateSpec({ k8s }),
+    readTemplateSpec: (id) => templatesRepo.readSpec(id),
   });
 
   return {
-    templates: createTemplatesService({ k8s }),
+    templates: createTemplatesService({ repo: templatesRepo }),
     agents,
     instances: createInstancesService({
-      k8s,
+      repo: instancesRepo,
       owner,
       getAgent: (id) => agents.get(id),
       listChannelsByOwner: listChannelsByOwner(db, owner),
@@ -37,30 +47,24 @@ function composeWithClient(k8s: K8sClient, owner: string, db: Db): {
       deleteChannelByType: deleteChannelByType(db, owner),
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
     }),
-    schedules: createSchedulesService({ k8s, owner }),
+    schedules: createSchedulesService({ repo: schedulesRepo, owner }),
   };
-}
-
-export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
-  templates: TemplatesService;
-  agents: AgentsService;
-  instances: InstancesService;
-  schedules: SchedulesService;
-} {
-  return composeWithClient(createK8sClient(api, namespace), owner, db);
 }
 
 export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db: Db): InstancesService {
   const k8s = createK8sClient(api, namespace);
+  const templatesRepo = createTemplatesRepository(k8s);
+  const agentsRepo = createAgentsRepository(k8s);
+  const instancesRepo = createInstancesRepository(k8s);
 
   const agents = createAgentsService({
-    k8s,
+    repo: agentsRepo,
     owner: "",
-    readTemplateSpec: readTemplateSpec({ k8s }),
+    readTemplateSpec: (id) => templatesRepo.readSpec(id),
   });
 
   return createInstancesService({
-    k8s,
+    repo: instancesRepo,
     owner: undefined,
     getAgent: (id) => agents.get(id),
     listChannelsByOwner: listChannelsByOwner(db, ""),

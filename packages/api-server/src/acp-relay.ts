@@ -1,9 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
-import { setDesiredState, parseInfraInstance, isPodReady } from "./modules/agents/infrastructure/configmap-mappers.js";
+import type { InstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
 
 const DEBOUNCE_MS = 30_000;
@@ -21,41 +20,15 @@ function shouldUpdateActivity(instanceId: string): boolean {
 }
 
 async function waitForPodReady(
-  k8s: K8sClient,
+  repo: InstancesRepository,
   instanceId: string,
 ): Promise<boolean> {
-  const podName = `${instanceId}-0`;
   const deadline = Date.now() + WAKE_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const pod = await k8s.getPod(podName);
-    if (pod && isPodReady(pod)) return true;
+    if (await repo.isPodReady(instanceId)) return true;
     await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
   }
   return false;
-}
-
-async function patchCmAnnotation(
-  k8s: K8sClient,
-  name: string,
-  key: string,
-  value: string,
-): Promise<void> {
-  const cm = await k8s.getConfigMap(name);
-  if (!cm) return;
-  if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
-  cm.metadata!.annotations[key] = value;
-  await k8s.replaceConfigMap(name, cm);
-}
-
-async function wakeIfHibernated(k8s: K8sClient, instanceId: string): Promise<boolean> {
-  const cm = await k8s.getConfigMap(instanceId);
-  if (!cm) return false;
-  const infra = parseInfraInstance(cm);
-  if (infra.desiredState !== "hibernated") return true;
-
-  const woken = setDesiredState(cm, "running");
-  await k8s.replaceConfigMap(cm.metadata!.name!, woken);
-  return true;
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
@@ -69,7 +42,7 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
-export function createAcpRelay(namespace: string, k8s: K8sClient) {
+export function createAcpRelay(namespace: string, repo: InstancesRepository) {
   const wss = new WebSocketServer({ noServer: true });
 
   function handleUpgrade(
@@ -78,14 +51,11 @@ export function createAcpRelay(namespace: string, k8s: K8sClient) {
     head: Buffer,
     instanceId: string,
   ) {
-    // Accept the client WebSocket upgrade immediately so it doesn't time out
     wss.handleUpgrade(req, socket, head, (client) => {
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
-      // Mark session active immediately to prevent idle hibernation during connect
-      patchCmAnnotation(k8s, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-      // Buffer client messages until upstream is connected
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
         pending.push({ data: data as Buffer, isBinary });
@@ -93,17 +63,16 @@ export function createAcpRelay(namespace: string, k8s: K8sClient) {
 
       connectUpstream(upstreamUrl)
         .catch(async () => {
-          const woken = await wakeIfHibernated(k8s, instanceId);
+          const woken = await repo.wakeIfHibernated(instanceId);
           if (woken) {
-            const ready = await waitForPodReady(k8s, instanceId);
+            const ready = await waitForPodReady(repo, instanceId);
             if (!ready) throw new Error("pod did not become ready after wake");
           }
           return connectUpstream(upstreamUrl);
         })
         .then((upstream) => {
-          patchCmAnnotation(k8s, instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-          // Flush buffered messages
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(msg.data, { binary: msg.isBinary });
@@ -111,15 +80,14 @@ export function createAcpRelay(namespace: string, k8s: K8sClient) {
           }
           pending.length = 0;
 
-          // Replace buffer handler with direct relay
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(data, { binary: isBinary });
 
               if (shouldUpdateActivity(instanceId)) {
-                patchCmAnnotation(
-                  k8s, instanceId,
+                repo.patchAnnotation(
+                  instanceId,
                   LAST_ACTIVITY_KEY, new Date().toISOString(),
                 ).catch(() => {});
               }
@@ -145,7 +113,7 @@ export function createAcpRelay(namespace: string, k8s: K8sClient) {
           });
 
           client.on("close", () => {
-            patchCmAnnotation(k8s, instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
+            repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.close();
             }
