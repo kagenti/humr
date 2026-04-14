@@ -1,6 +1,6 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
-import type { TemplatesService, AgentsService, InstancesService, SchedulesService } from "api-server-api";
+import type { TemplatesService, AgentsService, InstancesService, SchedulesService, SessionsApiService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import { createTemplatesRepository } from "./infrastructure/TemplatesRepository.js";
 import { createAgentsRepository } from "./infrastructure/AgentsRepository.js";
@@ -11,16 +11,19 @@ import {
   upsertChannel, deleteChannelByType,
   deleteChannelsByInstanceIds,
 } from "./infrastructure/channels-repository.js";
+import { listSessionsByInstance, upsertSession } from "./infrastructure/sessions-repository.js";
 import { createTemplatesService } from "./services/TemplatesService.js";
 import { createAgentsService } from "./services/AgentsService.js";
 import { createInstancesService } from "./services/InstancesService.js";
 import { createSchedulesService } from "./services/SchedulesService.js";
+import { createSessionsService } from "./services/SessionsService.js";
 
 export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
   templates: TemplatesService;
   agents: AgentsService;
   instances: InstancesService;
   schedules: SchedulesService;
+  sessions: SessionsApiService;
 } {
   const k8s = createK8sClient(api, namespace);
   const templatesRepo = createTemplatesRepository(k8s);
@@ -48,6 +51,11 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
     }),
     schedules: createSchedulesService({ repo: schedulesRepo, owner }),
+    sessions: createSessionsService({
+      listByInstance: listSessionsByInstance(db),
+      upsert: upsertSession(db),
+      namespace,
+    }),
   };
 }
 

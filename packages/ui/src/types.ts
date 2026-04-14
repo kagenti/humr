@@ -36,11 +36,8 @@ export interface LogEntry {
   payload: object;
 }
 
-export interface SessionInfo {
-  sessionId: string;
-  title?: string | null;
-  updatedAt?: string | null;
-}
+export { SessionType } from "api-server-api";
+export type { SessionView } from "api-server-api";
 
 export interface TreeEntry {
   path: string;

@@ -1,3 +1,4 @@
+import { SessionType } from "api-server-api";
 import { useStore } from "../store.js";
 import { RefreshCw } from "lucide-react";
 
@@ -5,6 +6,8 @@ export function SessionsSidebar({ onResumeSession, onRefresh }: { onResumeSessio
   const sessions = useStore(s => s.sessions);
   const sessionId = useStore(s => s.sessionId);
   const loading = useStore(s => s.loading.sessions);
+  const includeChannel = useStore(s => s.includeChannelSessions);
+  const setIncludeChannel = useStore(s => s.setIncludeChannelSessions);
 
   return (
     <>
@@ -18,6 +21,17 @@ export function SessionsSidebar({ onResumeSession, onRefresh }: { onResumeSessio
         </button>
         {loading && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden"><div className="h-full w-1/3 bg-accent rounded-full anim-slide" /></div>}
       </div>
+      <div className="px-4 py-2 border-b border-border-light">
+        <label className="flex items-center gap-2 cursor-pointer text-[11px] text-text-muted">
+          <input
+            type="checkbox"
+            checked={includeChannel}
+            onChange={(e) => setIncludeChannel(e.target.checked)}
+            className="accent-accent w-3 h-3"
+          />
+          Show channel sessions
+        </label>
+      </div>
       <div className="flex-1 overflow-y-auto">
         {!loading && sessions.length === 0 && <p className="px-4 py-5 text-[12px] text-text-muted">No sessions yet</p>}
         {sessions.map(s => (
@@ -26,10 +40,15 @@ export function SessionsSidebar({ onResumeSession, onRefresh }: { onResumeSessio
             onClick={() => onResumeSession(s.sessionId)}
             className={`flex flex-col gap-0.5 px-4 py-3 cursor-pointer border-b border-border-light transition-colors hover:bg-accent-light ${s.sessionId === sessionId ? "bg-accent-light border-l-[3px] border-l-accent" : ""}`}
           >
-            <span className={`text-[13px] truncate ${s.sessionId === sessionId ? "text-accent font-bold" : "text-text font-medium"}`}>
-              {s.title || s.sessionId.slice(0, 12)}
-            </span>
-            {s.updatedAt && <span className="text-[11px] text-text-muted">{new Date(s.updatedAt).toLocaleString()}</span>}
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[13px] truncate ${s.sessionId === sessionId ? "text-accent font-bold" : "text-text font-medium"}`}>
+                {s.title || s.sessionId.slice(0, 12)}
+              </span>
+              {s.type === SessionType.ChannelSlack && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">slack</span>
+              )}
+            </div>
+            <span className="text-[11px] text-text-muted">{new Date(s.updatedAt ?? s.createdAt).toLocaleString()}</span>
           </div>
         ))}
       </div>

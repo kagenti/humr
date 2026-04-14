@@ -3,6 +3,7 @@ import { agentsRouter } from "./modules/agents/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
 import { instancesRouter } from "./modules/instances/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
+import { sessionsRouter } from "./modules/sessions/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
 
 export const appRouter = t.router({
@@ -10,6 +11,7 @@ export const appRouter = t.router({
   agents: agentsRouter,
   instances: instancesRouter,
   schedules: schedulesRouter,
+  sessions: sessionsRouter,
   channels: channelsRouter,
 });
 

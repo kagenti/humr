@@ -8,6 +8,20 @@
       "when": 1776084226452,
       "tag": "0000_oval_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776155871626,
+      "tag": "0001_new_millenium_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776160297438,
+      "tag": "0002_flippant_wild_pack",
+      "breakpoints": true
     }
   ]
 }

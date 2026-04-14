@@ -1,6 +1,6 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs } from "@slack/bolt";
-import { ChannelType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
-import { sendPrompt, ensureRunning } from "../../../acp-client.js";
+import { ChannelType, SessionType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
+import { createAcpClient, ensureRunning } from "../../../acp-client.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -42,6 +42,8 @@ export function createSlackWorker(
   namespace: string,
   appToken: string,
   instances: () => InstancesService,
+  persistSession: (sessionId: string, instanceId: string, type: SessionType) => Promise<void>,
+
 ): SlackWorker {
   const bots = new Map<string, BoltApp>();
 
@@ -84,7 +86,12 @@ export function createSlackWorker(
 
         try {
           await ensureRunning(instances(), instanceName);
-          const response = await sendPrompt(namespace, instanceName, prompt);
+          const acp = createAcpClient({
+            namespace,
+            instanceName,
+            onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelSlack),
+          });
+          const response = await acp.sendPrompt(prompt);
           await app.client.chat.postMessage({
             channel: event.channel,
             thread_ts: event.ts,

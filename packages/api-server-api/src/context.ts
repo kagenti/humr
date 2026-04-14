@@ -2,6 +2,7 @@ import type { AgentsService } from "./modules/agents/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { InstancesService } from "./modules/instances/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
+import type { SessionsService } from "./modules/sessions/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
 
 export interface UserIdentity {
@@ -14,6 +15,7 @@ export interface ApiContext {
   agents: AgentsService;
   instances: InstancesService;
   schedules: SchedulesService;
+  sessions: SessionsService;
   channels: ChannelsService;
   user: UserIdentity;
 }
