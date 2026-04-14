@@ -10,6 +10,7 @@ The opinionated stack for TypeScript client-server projects.
 | Validation | [Zod](https://zod.dev/) | Schema declaration and input validation |
 | Language | TypeScript (strict mode) | Type safety across the entire stack |
 | Package management | pnpm (default) | Fast, disk-efficient package manager with native workspace support |
+| Events | [RxJS](https://rxjs.dev/) (recommended) | Reactive event bus for domain events and sagas |
 
 ## Why These Choices
 
@@ -32,6 +33,14 @@ The base `tsconfig.json` enables strict mode and additional checks:
 - `strict: true` (enables `strictNullChecks`, `noImplicitAny`, etc.)
 - `noEmit: true` (type-checking only; bundler handles emit)
 - Path aliases via `paths` for clean imports between layers
+
+### RxJS for Domain Events
+
+- Subject-based event bus with typed `emit()` and `events$()` streams.
+- `ofType<T>()` operator for type-safe event filtering in subscribers and sagas.
+- `mergeMap` / `switchMap` for async side effects in sagas.
+- Subscriptions provide clean teardown on shutdown.
+- Any reactive or EventEmitter-based approach works — RxJS is the recommended default.
 
 ## Server Runtime
 

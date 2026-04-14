@@ -11,16 +11,20 @@ project-root/
 ├── pnpm-workspace.yaml           # (if using pnpm)
 ├── packages/
 │   ├── <server-pkg>/             # One or more server packages (name is flexible)
-│   │   ├── package.json          # @trpc/server, zod
+│   │   ├── package.json          # @trpc/server, zod, rxjs
 │   │   ├── tsconfig.json         # Extends ../../tsconfig.base.json
 │   │   └── src/
+│   │       ├── events.ts         # Domain event bus (enum, union type, emit/subscribe)
 │   │       └── modules/          # See modules.md
 │   │           └── <module>/     # e.g., identity/, billing/, orders/
-│   │               ├── routers/  # Validation layer
-│   │               ├── services/ # Application layer
-│   │               ├── domain/   # Domain layer
-│   │               │   └── events/
-│   │               └── index.ts  # Public API
+│   │               ├── routers/        # Validation layer
+│   │               ├── services/       # Application layer
+│   │               ├── domain/         # Domain layer
+│   │               │   └── events/     # Domain events owned by this module
+│   │               ├── infrastructure/ # Infrastructure layer — repos, mappers, adapters
+│   │               ├── sagas/          # Process managers (optional)
+│   │               ├── compose.ts      # Composition root — wires infra to services
+│   │               └── index.ts        # Public API — exports only event types + guards
 │   ├── <client-pkg>/             # One or more client packages (name is flexible)
 │   │   ├── package.json          # @trpc/client (+ framework deps)
 │   │   ├── tsconfig.json         # Extends ../../tsconfig.base.json
@@ -51,9 +55,9 @@ Package names are **not enforced** — projects may use any naming convention (e
 
 ### Server packages
 
-Each server package contains an API and backend logic, organized into modules. Each module is a bounded context expressed as a vertical slice containing the three architectural layers (see [slice-composition.md](slice-composition.md) and [modules.md](modules.md)). A project may have one or more server packages.
+Each server package contains an API and backend logic, organized into modules. Each module is a bounded context expressed as a vertical slice containing the four architectural layers (see [slice-composition.md](slice-composition.md) and [modules.md](modules.md)). A project may have one or more server packages.
 
-**Required dependencies:** `@trpc/server`, `zod`
+**Required dependencies:** `@trpc/server`, `zod`, `rxjs`
 **Required dev dependencies:** `@types/node`
 
 ### Client packages
@@ -120,7 +124,7 @@ Each package is listed with a `role` (`server`, `client`, `contract`, or `other`
 <!-- package: scripts | role: other | path: packages/scripts | package_name: @myapp/scripts -->
 ```
 
-Valid values for `runtime` (server packages only): `hono` (default), `express`.
+Valid values for `runtime` (server packages only): `hono` (default), `express`, `standalone`.
 
 This file is the source of truth for other skills that need to locate packages.
 
@@ -140,6 +144,9 @@ See [project-structure.md](project-structure.md) for workspace layout, package m
 
 ## Adoption Progress
 See [adoption.md](adoption.md) for applied, discarded, and remaining architecture changes.
+
+## Ubiquitous Language
+See [vocabulary.md](vocabulary.md) for domain terms scoped by bounded context.
 
 ## Review History
 See [reviews/index.md](reviews/index.md) for the full history of architecture reviews. Each review is an immutable record that is locked once finalized.

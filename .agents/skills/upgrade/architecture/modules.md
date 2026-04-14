@@ -16,7 +16,7 @@ Each bounded context owns its own domain model. There is no single unified model
 
 ### Modules as Vertical Slices
 
-A module is the code-level expression of a bounded context. It is a vertical slice that contains all three architectural layers:
+A module is the code-level expression of a bounded context. It is a vertical slice that contains all four architectural layers:
 
 | Lens | What it answers |
 |------|----------------|
@@ -33,7 +33,7 @@ These are three views of the same thing. A module maps 1:1 to a bounded context.
 A module exists in two forms depending on the package:
 
 - **Module definition** (contract package) — Defines *what* the module exposes: types, service interface, and a tRPC router that delegates to the service interface. Flat structure, no layers.
-- **Module implementation** (server package) — Implements *how* the module works: business logic organized into the three architectural layers (routers/services/domain).
+- **Module implementation** (server package) — Implements *how* the module works: business logic organized into the four architectural layers (routers/services/domain/infrastructure).
 
 ### Contract Package — Module Definition
 
@@ -56,44 +56,62 @@ The naming convention for service interfaces is flexible (e.g., `*Service`, `*Co
 
 ### Server Package — Module Implementation
 
-Each module in the server package contains the full three-layer stack:
+Each module in the server package contains the full four-layer stack:
 
 ```
 packages/server/src/
   modules/
     identity/
-      routers/          # Validation layer — tRPC + Zod
-      services/         # Application layer — business services
-      domain/           # Domain layer — pure TypeScript
-        events/         # Domain events owned by this module
-      index.ts          # Public API — the module boundary
+      routers/            # Validation layer — tRPC + Zod
+      services/           # Application layer — business services
+      domain/             # Domain layer — pure TypeScript
+        events/           # Domain events owned by this module
+      infrastructure/     # Infrastructure layer — repositories, mappers, adapters
+      sagas/              # Process managers — event-driven side effects (optional)
+      compose.ts          # Composition root — wires infrastructure to services
+      index.ts            # Public API — the module boundary
     billing/
       routers/
       services/
       domain/
         events/
-      index.ts
-    orders/
-      routers/
-      services/
-      domain/
-        events/
+      infrastructure/
+      compose.ts
       index.ts
 ```
 
-The server package implements the service interfaces defined in the contract package. The three-layer structure (see [slice-composition.md](slice-composition.md)) applies here, where actual business logic lives.
+The server package implements the service interfaces defined in the contract package. The four-layer structure (see [slice-composition.md](slice-composition.md)) applies here, where actual business logic lives.
 
 ### Intra-Module Rules
 
 Within a module, the standard layer rules apply (see [slice-composition.md](slice-composition.md)):
 
 ```
-routers → services → domain
+routers → services → domain ← infrastructure
 ```
 
 - Routers delegate to services.
-- Services coordinate domain objects.
+- Services coordinate domain objects. They receive infrastructure (repositories, adapters) via dependency injection.
 - Domain has zero external dependencies.
+- Infrastructure implements port interfaces defined by inner layers.
+
+### Module Composition Root (`compose.ts`)
+
+Each module has a `compose.ts` that wires concrete infrastructure implementations to services. This is the **only place** where infrastructure implementations are directly referenced:
+
+```typescript
+// modules/orders/compose.ts
+export function composeOrdersModule(db: Database, owner: string) {
+  const repo = createOrdersRepository(db);
+
+  const orders = createOrdersService({ repo, owner });
+  const tracking = createTrackingService({ repo, owner });
+
+  return { orders, tracking };
+}
+```
+
+The composition root receives raw infrastructure dependencies (database connections, API clients) and returns fully wired services. See [infrastructure.md](infrastructure.md) for the factory pattern.
 
 ### Module Public API (`index.ts`)
 
@@ -102,7 +120,7 @@ Every module has an `index.ts` at its root. This is the **only** entry point oth
 - **Domain event types** (as TypeScript types)
 - **Domain event type guards** (for narrowing events in subscribers)
 
-Nothing else leaks out. The module's routers, services, entities, value objects, and aggregates are private.
+Nothing else leaks out. The module's routers, services, entities, value objects, aggregates, and infrastructure are private.
 
 ```typescript
 // modules/orders/index.ts
@@ -112,7 +130,7 @@ export { type OrderCancelled, isOrderCancelled } from './domain/events/OrderCanc
 
 ## Topics
 
-- **[Module Boundaries](module-boundaries.md)** — How bounded contexts stay loosely coupled. Domain events as the sole inter-module communication mechanism, event ownership, subscribing, dependency direction, and what cross-module imports are forbidden.
+- **[Module Boundaries](module-boundaries.md)** — How bounded contexts stay loosely coupled. Domain events as the sole inter-module communication mechanism, event bus, sagas, event ownership, subscribing, dependency direction, and what cross-module imports are forbidden.
 
 ## Identifying Bounded Contexts
 

@@ -1,10 +1,10 @@
 # Layered Architecture
 
-The architecture follows a strict three-layer model inspired by Domain-Driven Design (DDD). Each layer has a clear responsibility and dependencies only flow inward — toward the domain.
+The architecture follows a strict four-layer model inspired by Domain-Driven Design and Hexagonal Architecture (Ports & Adapters). Dependencies flow inward — toward the domain. Infrastructure sits outside the domain, implementing ports defined by inner layers.
 
 These layers exist **within each module in server packages** — where actual business logic lives. The server is organized into modules, where each module is a vertical slice representing a bounded context (see [modules.md](modules.md)). The layers below live inside every server-side module.
 
-**Note:** API contract packages do not use this layered structure. Contract packages have a flat module structure (types + router) that defines *what* the API exposes. The three-layer stack described here defines *how* the server implements it. See [modules.md](modules.md) for the distinction between module definition and module implementation.
+**Note:** API contract packages do not use this layered structure. Contract packages have a flat module structure (types + router) that defines *what* the API exposes. The four-layer stack described here defines *how* the server implements it. See [modules.md](modules.md) for the distinction between module definition and module implementation.
 
 ```
   External input
@@ -26,6 +26,12 @@ These layers exist **within each module in server packages** — where actual bu
 │  Domain Layer        │  Pure TypeScript — zero external deps
 │  (domain/)           │  Entities, value objects, aggregates, domain events
 └──────────────────────┘
+           ▲
+           │ implements ports
+┌──────────┴───────────┐
+│  Infrastructure Layer│  Adapters for external systems
+│  (infrastructure/)   │  Repositories, mappers, external service clients
+└──────────────────────┘
 ```
 
 ## Layer Rules
@@ -41,9 +47,10 @@ These layers exist **within each module in server packages** — where actual bu
 ### 2. Application Layer (`services/`)
 
 - Business services orchestrate use cases and coordinate domain objects.
-- Services are pure functions or classes that receive dependencies via injection.
+- Services receive dependencies (including infrastructure ports) via injection — see [infrastructure.md](infrastructure.md) for the factory pattern.
 - Translates between the outside world and the domain — mapping validated input into domain operations and domain results back into API responses.
 - Transaction boundaries and cross-cutting concerns (logging, auth checks) live here.
+- Services emit domain events when meaningful state changes occur.
 - Services never import from the validation layer.
 
 ### 3. Domain Layer (`domain/`)
@@ -52,22 +59,32 @@ These layers exist **within each module in server packages** — where actual bu
 - Contains domain entities, value objects, aggregates, and domain events.
 - All business rules and invariants are enforced here.
 - Domain logic is pure and deterministic — no side effects, no I/O, no framework imports.
+- Assembly functions compute domain state from raw data (e.g., combining infrastructure state with application state into a rich domain object).
 - Use `Result` types to represent domain errors as values, not thrown exceptions.
 - The domain layer never imports from any other layer.
 
+### 4. Infrastructure Layer (`infrastructure/`)
+
+- Implements ports (interfaces) that services depend on — repositories, external system adapters, clients.
+- Contains storage-specific logic: mappers that translate between domain objects and persistence formats.
+- **The domain and services define what they need (ports); infrastructure provides it (adapters).**
+- Infrastructure may import from the domain layer (to implement ports and map types) but never from routers or services.
+- See [infrastructure.md](infrastructure.md) for patterns: repositories, mappers, adapters.
+
 ## Dependency Rule
 
-Dependencies flow strictly inward:
+Dependencies flow strictly inward, with infrastructure implementing ports from inner layers:
 
 ```
-routers → services → domain
+routers → services → domain ← infrastructure
 ```
 
 - **routers** may import from services and domain.
-- **services** may import from domain only.
+- **services** may import from domain only. Services receive infrastructure via dependency injection (they depend on port interfaces, not concrete implementations).
 - **domain** imports from nothing outside itself.
+- **infrastructure** may import from domain (to implement port interfaces and map types).
 
-Violating this rule (e.g., a domain entity importing from a service, or a service importing a router) is always an error.
+Violating this rule (e.g., a domain entity importing from a service, or a service importing an infrastructure implementation directly) is always an error.
 
 ## Error Handling
 
