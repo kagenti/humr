@@ -4,10 +4,10 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter, type ApiContext, type UserIdentity } from "api-server-api";
 import { createDb, runMigrations } from "db";
 import {
-  createApi,
-  verifyOwner, podBaseUrl,
-  patchPodAnnotation, removePodAnnotation, patchConfigMapAnnotation,
+  createApi, createK8sClient, podBaseUrl,
+  type K8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
+import { isOwnedBy } from "./modules/agents/domain/configmap-mappers.js";
 import { composeAgentsModule, composeSystemInstances } from "./modules/agents/index.js";
 import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
@@ -34,6 +34,7 @@ const onecli = createOnecliClient({
 });
 
 const { api } = createApi(config.namespace);
+const k8sClient = createK8sClient(api, config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
@@ -60,12 +61,15 @@ app.use("/api/*", auth.middleware);
 
 app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
 
-const verify = verifyOwner(api, config.namespace);
+async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
+  const cm = await k8sClient.getConfigMap(instanceId);
+  return cm !== null && isOwnedBy(cm, owner);
+}
 
 app.all("/api/instances/:id/trpc/*", async (c) => {
   const user = c.get("user");
   const instanceId = c.req.param("id")!;
-  if (!await verify(instanceId, user.sub)) {
+  if (!await verifyOwner(instanceId, user.sub)) {
     return c.json({ error: "not found" }, 404);
   }
 
@@ -112,7 +116,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(config.namespace, api);
+const acpRelay = createAcpRelay(config.namespace, k8sClient);
 
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);
@@ -153,7 +157,7 @@ server.on("upgrade", async (req, socket, head) => {
   }
 
   const instanceId = decodeURIComponent(match[1]);
-  if (!await verify(instanceId, user.sub)) {
+  if (!await verifyOwner(instanceId, user.sub)) {
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
     return;
@@ -162,4 +166,5 @@ server.on("upgrade", async (req, socket, head) => {
   acpRelay.handleUpgrade(req, socket, head, instanceId);
 });
 
-export { patchPodAnnotation, removePodAnnotation, patchConfigMapAnnotation, podBaseUrl, createApi };
+export { createK8sClient, podBaseUrl, createApi };
+export type { K8sClient };

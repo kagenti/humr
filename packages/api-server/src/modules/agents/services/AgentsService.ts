@@ -1,23 +1,37 @@
 import type {
-  Agent,
   AgentsService,
   CreateAgentInput,
   UpdateAgentInput,
   TemplateSpec,
 } from "api-server-api";
+import type { K8sClient } from "../infrastructure/k8s.js";
+import {
+  LABEL_TYPE, TYPE_AGENT, LABEL_OWNER,
+} from "../domain/labels.js";
+import {
+  parseAgent, isOwnedBy, hasType,
+  buildAgentConfigMap, patchSpecField,
+} from "../domain/configmap-mappers.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
 export function createAgentsService(deps: {
-  list: () => Promise<Agent[]>;
-  get: (id: string) => Promise<Agent | null>;
-  create: (spec: Record<string, unknown>, templateId?: string) => Promise<Agent>;
-  update: (id: string, patch: { description?: string; mcpServers?: Record<string, unknown> }) => Promise<Agent | null>;
-  delete: (id: string) => Promise<void>;
+  k8s: K8sClient;
+  owner: string;
   readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 }): AgentsService {
   return {
-    list: deps.list,
-    get: deps.get,
+    async list() {
+      const cms = await deps.k8s.listConfigMaps(
+        `${LABEL_TYPE}=${TYPE_AGENT},${LABEL_OWNER}=${deps.owner}`,
+      );
+      return cms.map(parseAgent);
+    },
+
+    async get(id) {
+      const cm = await deps.k8s.getConfigMap(id);
+      if (!cm || !isOwnedBy(cm, deps.owner) || !hasType(cm, TYPE_AGENT)) return null;
+      return parseAgent(cm);
+    },
 
     async create(input: CreateAgentInput) {
       if (input.templateId) {
@@ -27,23 +41,36 @@ export function createAgentsService(deps: {
           description: input.description,
           mcpServers: input.mcpServers,
         });
-        return deps.create(spec, input.templateId);
+        const body = buildAgentConfigMap(spec, deps.owner, input.templateId);
+        const created = await deps.k8s.createConfigMap(body);
+        return parseAgent(created);
       }
       const spec = assembleSpecFromImage(input.name, {
         image: input.image,
         description: input.description,
         mcpServers: input.mcpServers,
       });
-      return deps.create(spec);
+      const body = buildAgentConfigMap(spec, deps.owner);
+      const created = await deps.k8s.createConfigMap(body);
+      return parseAgent(created);
     },
 
     async update(input: UpdateAgentInput) {
-      return deps.update(input.id, {
+      const cm = await deps.k8s.getConfigMap(input.id);
+      if (!cm || !isOwnedBy(cm, deps.owner) || !hasType(cm, TYPE_AGENT)) return null;
+
+      cm.data = patchSpecField(cm, {
         description: input.description,
         mcpServers: input.mcpServers,
       });
+      const updated = await deps.k8s.replaceConfigMap(input.id, cm);
+      return parseAgent(updated);
     },
 
-    delete: deps.delete,
+    async delete(id) {
+      const cm = await deps.k8s.getConfigMap(id);
+      if (!cm || !isOwnedBy(cm, deps.owner) || !hasType(cm, TYPE_AGENT)) return;
+      await deps.k8s.deleteConfigMap(id);
+    },
   };
 }
