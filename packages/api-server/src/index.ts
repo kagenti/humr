@@ -16,7 +16,7 @@ import { createChannelManager } from "./modules/channels/services/ChannelManager
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { loadConfig } from "./config.js";
-import { createAuth } from "./auth.js";
+import { createAuth, ForbiddenError } from "./auth.js";
 import { createOnecliClient } from "./onecli.js";
 
 const config = loadConfig();
@@ -25,6 +25,7 @@ const auth = createAuth({
   issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
   jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
   audience: config.keycloakApiAudience,
+  requiredRole: config.keycloakRequiredRole,
 });
 
 const onecli = createOnecliClient({
@@ -161,8 +162,9 @@ server.on("upgrade", async (req, socket, head) => {
   let user: UserIdentity;
   try {
     user = await auth.verify(token);
-  } catch {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+  } catch (err) {
+    const status = err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
+    socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
     socket.destroy();
     return;
   }

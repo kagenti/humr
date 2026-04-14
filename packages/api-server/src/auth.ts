@@ -2,6 +2,12 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { MiddlewareHandler } from "hono";
 import type { UserIdentity } from "api-server-api";
 
+export class ForbiddenError extends Error {
+  constructor(public readonly requiredRole: string) {
+    super(`Missing required role: ${requiredRole}`);
+  }
+}
+
 export interface AuthConfig {
   /** External issuer URL (matches token `iss` claim), e.g. http://keycloak.localhost:4444/realms/humr */
   issuerUrl: string;
@@ -9,6 +15,8 @@ export interface AuthConfig {
   jwksUrl: string;
   /** Expected audience in access tokens (e.g. "humr-api") */
   audience?: string;
+  /** Realm role required to access the API (e.g. "humr-access"). If unset, all authenticated users are allowed. */
+  requiredRole?: string;
 }
 
 const PUBLIC_PATHS = new Set([
@@ -26,6 +34,16 @@ export function createAuth(config: AuthConfig) {
       audience: config.audience,
       algorithms: ["RS256"],
     });
+
+    if (config.requiredRole) {
+      const realmAccess = (payload as Record<string, unknown>).realm_access as
+        | { roles?: string[] }
+        | undefined;
+      if (!realmAccess?.roles?.includes(config.requiredRole)) {
+        throw new ForbiddenError(config.requiredRole);
+      }
+    }
+
     return {
       sub: payload.sub!,
       preferredUsername:
@@ -46,7 +64,10 @@ export function createAuth(config: AuthConfig) {
       const user = await verify(authHeader.slice(7));
       c.set("user", user);
       return next();
-    } catch {
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "forbidden", message: "Access pending approval. Contact your administrator." }, 403);
+      }
       return c.json({ error: "unauthorized" }, 401);
     }
   };

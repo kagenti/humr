@@ -84,6 +84,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "humr.keycloak.secrets.fullname" . }}
                   key: HUMR_API_CLIENT_SECRET
+            {{- if .Values.keycloak.requiredRole }}
+            - name: KEYCLOAK_REQUIRED_ROLE
+              value: {{ .Values.keycloak.requiredRole | quote }}
+            {{- end }}
             - name: ONECLI_AUDIENCE
               value: {{ .Values.onecli.oauth.audience | quote }}
             {{- end }}
