@@ -74,19 +74,27 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
         const res = await fetch(url);
         if (!res.ok) return { state: "idle" };
         const body = (await res.json()) as {
-          result?: { data?: { running: boolean; last: { state: string; finishedAt: string; detail?: string } | null } };
+          result?: {
+            data?: {
+              running: boolean;
+              last: { state: string; finishedAt: string; detail?: string } | null;
+              lastSkipped: { schedule: string; at: string; reason: string } | null;
+            };
+          };
         };
         const data = body.result?.data;
         if (!data) return { state: "idle" };
-        if (data.running) return { state: "running" };
+        const lastSkipped = data.lastSkipped ?? undefined;
+        if (data.running) return { state: "running", lastSkipped };
         if (data.last) {
           return {
             state: data.last.state as ImprovementState["state"],
             finishedAt: data.last.finishedAt,
             detail: data.last.detail,
+            lastSkipped,
           };
         }
-        return { state: "idle" };
+        return { state: "idle", lastSkipped };
       } catch {
         return { state: "idle" };
       }

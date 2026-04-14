@@ -88,13 +88,19 @@ export type ImprovementRuntimeState =
   | "running"
   | "completed"
   | "timed-out"
-  | "skipped"
   | "failed";
+
+export interface ImprovementSkippedInfo {
+  at: string;
+  schedule: string;
+  reason: string;
+}
 
 export interface ImprovementState {
   state: ImprovementRuntimeState;
   finishedAt?: string;
   detail?: string;
+  lastSkipped?: ImprovementSkippedInfo;
 }
 
 export interface Schedule {

@@ -20,13 +20,21 @@ export type ImprovementRuntimeState =
   | "running"
   | "completed"
   | "timed-out"
-  | "skipped"
   | "failed";
+
+export interface ImprovementSkippedInfo {
+  at: string;
+  schedule: string;
+  reason: string;
+}
 
 export interface ImprovementState {
   state: ImprovementRuntimeState;
   finishedAt?: string;
   detail?: string;
+  /** Most recent skipped-trigger event, if any. Independent of `state` —
+   * a skip does not become the run state. */
+  lastSkipped?: ImprovementSkippedInfo;
 }
 
 export interface Schedule {

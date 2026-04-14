@@ -1,4 +1,4 @@
-export type ImprovementTerminalState = "completed" | "timed-out" | "skipped" | "failed";
+export type ImprovementTerminalState = "completed" | "timed-out" | "failed";
 export type ImprovementRuntimeState = "idle" | "running" | ImprovementTerminalState;
 
 export interface ImprovementLast {
@@ -8,11 +8,19 @@ export interface ImprovementLast {
   detail?: string;
 }
 
+export interface ImprovementSkipped {
+  schedule: string;
+  at: string;
+  reason: string;
+}
+
 export interface ImprovementStatus {
   /** Is a run currently active? (lock file exists) */
   running: boolean;
-  /** Last terminal outcome, if any. */
+  /** Last terminal outcome, if any. Never overwritten by skip events. */
   last: ImprovementLast | null;
+  /** Most recent skip event, if any. Transient info — overwriting is fine. */
+  lastSkipped: ImprovementSkipped | null;
 }
 
 export interface ImprovementService {

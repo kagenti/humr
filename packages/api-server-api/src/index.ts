@@ -43,6 +43,7 @@ export type {
   CreateImprovementScheduleInput,
   ImprovementState,
   ImprovementRuntimeState,
+  ImprovementSkippedInfo,
   SchedulesService,
 } from "./modules/schedules/types.js";
 

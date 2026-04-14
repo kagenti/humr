@@ -29,10 +29,13 @@ export interface TriggerWatcher {
 
 const IMPROVEMENT_LOCK = ".humr-improvement-lock";
 const IMPROVEMENT_LAST = ".humr-improvement-last.json";
+const IMPROVEMENT_SKIPPED = ".humr-improvement-skipped.json";
 const IMPROVEMENT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
-type ImprovementTerminalState = "completed" | "timed-out" | "skipped" | "failed";
+type ImprovementTerminalState = "completed" | "timed-out" | "failed";
 
+/** Write terminal outcome (completed/timed-out/failed) of an improvement run.
+ * Never called for skips — those go to writeImprovementSkipped. */
 function writeImprovementLast(
   workingDir: string,
   state: ImprovementTerminalState,
@@ -52,6 +55,29 @@ function writeImprovementLast(
     );
   } catch (err) {
     process.stderr.write(`[trigger] Failed to write ${IMPROVEMENT_LAST}: ${err}\n`);
+  }
+}
+
+/** Record the most recent skipped-trigger event. Overwriting is fine — skips
+ * are transient signals, not run outcomes. Kept separate from the `last` file
+ * so a skip never erases the last real run result. */
+function writeImprovementSkipped(
+  workingDir: string,
+  schedule: string,
+  reason: string,
+): void {
+  const path = join(workingDir, IMPROVEMENT_SKIPPED);
+  try {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        schedule,
+        at: new Date().toISOString(),
+        reason,
+      }),
+    );
+  } catch (err) {
+    process.stderr.write(`[trigger] Failed to write ${IMPROVEMENT_SKIPPED}: ${err}\n`);
   }
 }
 
@@ -128,7 +154,7 @@ async function processTriggerFile(filePath: string, options: TriggerWatcherOptio
     } catch (err: any) {
       if (err.code === "EEXIST") {
         process.stderr.write(`[trigger] Skipping improvement trigger — another run is active (${lockPath})\n`);
-        writeImprovementLast(options.workingDir, "skipped", trigger.schedule, "another run was active");
+        writeImprovementSkipped(options.workingDir, trigger.schedule, "another run was active");
         return;
       }
       throw err;

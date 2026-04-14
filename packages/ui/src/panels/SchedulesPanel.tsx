@@ -42,7 +42,6 @@ export function SchedulesPanel() {
     if (state === "running") return "bg-info-light text-info border-info animate-pulse";
     if (state === "completed") return "bg-success-light text-success border-success";
     if (state === "timed-out") return "bg-warning-light text-warning border-warning";
-    if (state === "skipped") return "bg-bg text-text-muted border-border-light";
     if (state === "failed") return "bg-danger-light text-danger border-danger";
     return "bg-bg text-text-muted border-border-light";
   };
@@ -134,7 +133,22 @@ export function SchedulesPanel() {
             <div className="flex gap-3 text-[11px] text-text-muted">
               {s.status.lastRun && <span>last: {s.status.lastRun}</span>}
               {s.status.nextRun && <span>next: {s.status.nextRun}</span>}
-              {s.status.lastResult && <span className={s.status.lastResult === "success" ? "text-success" : "text-danger"}>{s.status.lastResult}</span>}
+              {/* For improvement schedules the lastResult reflects trigger delivery only —
+                  the run outcome is already shown in the state badge, so hide this to
+                  avoid two conflicting signals. */}
+              {s.type !== "improvement" && s.status.lastResult && (
+                <span className={s.status.lastResult === "success" ? "text-success" : "text-danger"}>
+                  {s.status.lastResult}
+                </span>
+              )}
+              {s.type === "improvement" && s.improvementState?.lastSkipped && (
+                <span
+                  className="italic"
+                  title={`Last skip: ${s.improvementState.lastSkipped.reason}`}
+                >
+                  last skip: {s.improvementState.lastSkipped.at}
+                </span>
+              )}
             </div>
           )}
         </div>

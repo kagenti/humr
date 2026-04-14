@@ -6,6 +6,7 @@ export type {
   ImprovementService,
   ImprovementStatus,
   ImprovementLast,
+  ImprovementSkipped,
   ImprovementRuntimeState,
   ImprovementTerminalState,
 } from "./modules/improvement/types.js";
