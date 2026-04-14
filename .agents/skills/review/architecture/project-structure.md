@@ -17,7 +17,6 @@ project-root/
 │   │       ├── events.ts         # Domain event bus (enum, union type, emit/subscribe)
 │   │       └── modules/          # See modules.md
 │   │           └── <module>/     # e.g., identity/, billing/, orders/
-│   │               ├── routers/        # Validation layer
 │   │               ├── services/       # Application layer
 │   │               ├── domain/         # Domain layer
 │   │               │   └── events/     # Domain events owned by this module
@@ -55,7 +54,7 @@ Package names are **not enforced** — projects may use any naming convention (e
 
 ### Server packages
 
-Each server package contains an API and backend logic, organized into modules. Each module is a bounded context expressed as a vertical slice containing the four architectural layers (see [slice-composition.md](slice-composition.md) and [modules.md](modules.md)). A project may have one or more server packages.
+Each server package contains backend logic, organized into modules. Each module is a bounded context expressed as a vertical slice containing the three architectural layers — services, domain, infrastructure (see [slice-composition.md](slice-composition.md) and [modules.md](modules.md)). Validation (tRPC routers) lives in the contract package. A project may have one or more server packages.
 
 **Required dependencies:** `@trpc/server`, `zod`, `rxjs`
 **Required dev dependencies:** `@types/node`

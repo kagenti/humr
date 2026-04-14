@@ -1,6 +1,6 @@
 # Module Boundaries
 
-Bounded contexts must stay loosely coupled. No module may import another module's internals (services, entities, routers, infrastructure). The only cross-module imports allowed are event types and type guards from a module's `index.ts`.
+Bounded contexts must stay loosely coupled. No module may import another module's internals (services, entities, infrastructure). The only cross-module imports allowed are event types and type guards from a module's `index.ts`.
 
 Modules communicate exclusively through **domain events** — records of something meaningful that happened in the domain, named in past tense using business language: `OrderPlaced`, `UserRegistered`, `PaymentCompleted`.
 
@@ -157,5 +157,4 @@ shipping ──subscribes────┘
 - Importing a service from another module (`import { createUser } from '../identity/services/...'`)
 - Importing a domain entity from another module (`import { User } from '../identity/domain/...'`)
 - Importing a repository from another module (`import { UsersRepository } from '../identity/infrastructure/...'`)
-- Importing a router from another module
 - Any import that bypasses `index.ts`

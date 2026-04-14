@@ -11,6 +11,11 @@
       "sourceType": "github",
       "computedHash": "decfab99c54e4fffe6002161bb07c819935801ff283402640669a3f6007783e8"
     },
+    "arch-review": {
+      "source": "tomkis/typescript-engineering",
+      "sourceType": "github",
+      "computedHash": "c10392a6177aa629c31c69d790e25d4f4c07dcb84814ebd36702969025011181"
+    },
     "bootstrap": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",
