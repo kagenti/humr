@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import { sessions, eq } from "db";
+import { sessions, eq, desc } from "db";
 
 export function listSessionsByInstance(db: Db) {
   return async (instanceId: string) => {
@@ -7,7 +7,7 @@ export function listSessionsByInstance(db: Db) {
       .select()
       .from(sessions)
       .where(eq(sessions.instanceId, instanceId))
-      .orderBy(sessions.createdAt);
+      .orderBy(desc(sessions.createdAt));
   };
 }
 
