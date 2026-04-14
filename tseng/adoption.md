@@ -30,10 +30,34 @@
 - Client packages have @trpc/client — applied on 2026-04-13 (review #001)
 - Root tsconfig.base.json with strict settings — applied on 2026-04-13 (review #001)
 - Package tsconfigs extend root tsconfig.base.json — applied on 2026-04-13 (review #001)
+- RxJS for reactive event bus — applied on 2026-04-14 (review #002)
+- Infrastructure layer implements ports defined by inner layers — applied on 2026-04-14 (review #002)
+- Infrastructure imports from domain only, never services — applied on 2026-04-14 (review #002)
+- Repository pattern with interface ports — applied on 2026-04-14 (review #002)
+- Repository interfaces in infrastructure/ — applied on 2026-04-14 (review #002)
+- Concrete repository as factory function — applied on 2026-04-14 (review #002)
+- Pure mapper functions for infra↔domain translation — applied on 2026-04-14 (review #002)
+- Mappers colocated in infrastructure/ — applied on 2026-04-14 (review #002)
+- External system adapters implement port interfaces — applied on 2026-04-14 (review #002)
+- DI via factory functions, no container — applied on 2026-04-14 (review #002)
+- compose.ts per module wiring infra to services — applied on 2026-04-14 (review #002)
+- Composition root is only place with concrete implementations — applied on 2026-04-14 (review #002)
+- Module definition (contract) vs implementation (server) distinction — applied on 2026-04-14 (review #002)
+- Contract package flat module structure: types.ts + router.ts — applied on 2026-04-14 (review #002)
+- Contract router delegates to service, no business logic — applied on 2026-04-14 (review #002)
+- Server implements service interfaces from contract — applied on 2026-04-14 (review #002)
+- Central event registry (enum + union) in events.ts — applied on 2026-04-14 (review #002)
+- emit()/events$()/ofType<T>() event bus API — applied on 2026-04-14 (review #002)
+- Sagas in sagas/ directory — applied on 2026-04-14 (review #002)
+- Sagas return subscription handles — applied on 2026-04-14 (review #002)
+- Sagas receive deps via injection — applied on 2026-04-14 (review #002)
+- tseng/project-structure.md with package metadata — applied on 2026-04-14 (review #002)
+- Validation layer in contract package, not server — applied on 2026-04-14 (review #002)
+- Module structure: services/domain/infrastructure/sagas/compose.ts/index.ts — applied on 2026-04-14 (review #002)
 
 ## Discarded
-
-(none)
+- Server packages require rxjs as dependency — discarded on 2026-04-14 (review #002)
+  > Reason: agent-runtime does not need rxjs now
 
 ## Remaining
 - Domain errors as Result<T, E> values — Result type available in shared/domain/result.ts but not yet adopted in service ports (they return null for not-found)
