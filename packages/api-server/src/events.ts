@@ -6,6 +6,7 @@ import { filter } from "rxjs/operators";
 // ---------------------------------------------------------------------------
 
 export enum EventType {
+  UserAuthenticated = "UserAuthenticated",
   InstanceCreated = "InstanceCreated",
   InstanceUpdated = "InstanceUpdated",
   InstanceDeleted = "InstanceDeleted",
@@ -13,6 +14,12 @@ export enum EventType {
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
 }
+
+export type UserAuthenticated = {
+  type: EventType.UserAuthenticated;
+  userSub: string;
+  userJwt: string;
+};
 
 export type InstanceCreated = {
   type: EventType.InstanceCreated;
@@ -47,6 +54,7 @@ export type SlackDisconnected = {
 };
 
 export type DomainEvent =
+  | UserAuthenticated
   | InstanceCreated
   | InstanceUpdated
   | InstanceDeleted

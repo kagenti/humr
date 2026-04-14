@@ -106,7 +106,20 @@ export function createOnecliClient(config: TokenExchangeConfig) {
     });
   }
 
-  return { exchangeToken, getApiKey, onecliFetch };
+  /** Sync user account in OneCLI (creates if not exists). */
+  async function syncUser(userJwt: string, userSub: string): Promise<void> {
+    const token = await exchangeToken(userJwt, userSub);
+    const res = await fetch(`${config.onecliBaseUrl}/api/auth/sync`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`OneCLI sync failed: ${res.status} ${body}`);
+    }
+  }
+
+  return { exchangeToken, getApiKey, onecliFetch, syncUser };
 }
 
 export type OnecliClient = ReturnType<typeof createOnecliClient>;
