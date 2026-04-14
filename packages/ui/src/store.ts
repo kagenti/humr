@@ -4,7 +4,7 @@ import type {
   TemplateView,
   AgentView,
   InstanceView,
-  SessionInfo,
+  SessionView,
   Message,
   LogEntry,
   TreeEntry,
@@ -52,7 +52,7 @@ export interface HumrStore {
   agents: AgentView[];
   instances: InstanceView[];
   selectedInstance: string | null;
-  sessions: SessionInfo[];
+  sessions: SessionView[];
   messages: Message[];
   schedules: Schedule[];
   fileTree: TreeEntry[];
@@ -96,7 +96,7 @@ export interface HumrStore {
   includeChannelSessions: boolean;
   setIncludeChannelSessions: (v: boolean) => void;
   setSessionId: (id: string | null) => void;
-  setSessions: (sessions: SessionInfo[]) => void;
+  setSessions: (sessions: SessionView[]) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setBusy: (busy: boolean) => void;
   setLoadingSessions: (loading: boolean) => void;

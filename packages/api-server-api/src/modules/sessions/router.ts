@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
+import { SessionType } from "./types.js";
 
-const sessionType = z.enum(["regular", "channel_slack"]);
+const sessionType = z.enum([SessionType.Regular, SessionType.ChannelSlack]);
 
 export const sessionsRouter = t.router({
   list: t.procedure

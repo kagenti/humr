@@ -1,4 +1,9 @@
-export type SessionType = "regular" | "channel_slack";
+export const SessionType = {
+  Regular: "regular",
+  ChannelSlack: "channel_slack",
+} as const;
+
+export type SessionType = (typeof SessionType)[keyof typeof SessionType];
 
 export interface SessionView {
   sessionId: string;

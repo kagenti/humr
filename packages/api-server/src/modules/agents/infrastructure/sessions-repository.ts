@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import { sessions, eq, desc } from "db";
+import { SessionType } from "api-server-api";
 
 export function listSessionsByInstance(db: Db) {
   return async (instanceId: string) => {
@@ -12,7 +13,7 @@ export function listSessionsByInstance(db: Db) {
 }
 
 export function upsertSession(db: Db) {
-  return async (sessionId: string, instanceId: string, type: string = "regular") => {
+  return async (sessionId: string, instanceId: string, type: SessionType = SessionType.Regular) => {
     await db
       .insert(sessions)
       .values({ sessionId, instanceId, type })

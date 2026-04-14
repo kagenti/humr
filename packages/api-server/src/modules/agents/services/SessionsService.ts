@@ -1,16 +1,22 @@
-import type { SessionsService as SessionsApiService, SessionView, SessionType } from "api-server-api";
-import { listSessions, type AcpSessionInfo } from "../../../acp-client.js";
+import { SessionType, type SessionsApiService, type SessionView } from "api-server-api";
+import { createAcpClient, type AcpSessionInfo } from "../../../acp-client.js";
 
 export function createSessionsService(deps: {
   listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; createdAt: Date }[]>;
-  upsert: (sessionId: string, instanceId: string, type?: string) => Promise<void>;
+  upsert: (sessionId: string, instanceId: string, type?: SessionType) => Promise<void>;
   namespace: string;
 }): SessionsApiService {
   return {
     async list(instanceId: string, includeChannel?: boolean) {
+      const acp = createAcpClient({
+        namespace: deps.namespace,
+        instanceName: instanceId,
+        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionType.Regular),
+      });
+
       const [dbRows, acpSessions] = await Promise.all([
         deps.listByInstance(instanceId),
-        listSessions(deps.namespace, instanceId),
+        acp.listSessions(),
       ]);
 
       const acpMap = new Map<string, AcpSessionInfo>(
@@ -19,7 +25,7 @@ export function createSessionsService(deps: {
 
       const filtered = includeChannel
         ? dbRows
-        : dbRows.filter((r) => r.type === "regular");
+        : dbRows.filter((r) => r.type === SessionType.Regular);
 
       return filtered.map((row): SessionView => {
         const acp = acpMap.get(row.sessionId);

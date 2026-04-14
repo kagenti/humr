@@ -1,3 +1,4 @@
+import { SessionType } from "api-server-api";
 import { useStore } from "../store.js";
 import { RefreshCw } from "lucide-react";
 
@@ -43,7 +44,7 @@ export function SessionsSidebar({ onResumeSession, onRefresh }: { onResumeSessio
               <span className={`text-[13px] truncate ${s.sessionId === sessionId ? "text-accent font-bold" : "text-text font-medium"}`}>
                 {s.title || s.sessionId.slice(0, 12)}
               </span>
-              {s.type === "channel_slack" && (
+              {s.type === SessionType.ChannelSlack && (
                 <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">slack</span>
               )}
             </div>

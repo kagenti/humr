@@ -64,108 +64,113 @@ export interface AcpSessionInfo {
   updatedAt?: string | null;
 }
 
-export async function listSessions(
-  namespace: string,
-  instanceName: string,
-): Promise<AcpSessionInfo[]> {
-  const url = `ws://${podBaseUrl(instanceName, namespace)}/api/acp`;
-  let stream: Stream;
-  let ws: WebSocket;
-  try {
-    ({ stream, ws } = await wsStream(url));
-  } catch {
-    return [];
-  }
-
-  const connection = new ClientSideConnection(
-    () => ({
-      async requestPermission() { return { outcome: { outcome: "selected" as const, optionId: "" } }; },
-      async sessionUpdate() {},
-      async writeTextFile() { return {}; },
-      async readTextFile() { return { content: "" }; },
-    }),
-    stream,
-  );
-
-  try {
-    await connection.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {},
-      clientInfo: { name: "humr-sessions", version: "1.0.0" },
-    });
-    const r = await connection.listSessions({ cwd: "." });
-    return (r.sessions ?? []) as AcpSessionInfo[];
-  } catch {
-    return [];
-  } finally {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
-  }
+export interface AcpClient {
+  listSessions(): Promise<AcpSessionInfo[]>;
+  sendPrompt(prompt: string): Promise<string>;
 }
 
-export async function sendPrompt(
-  namespace: string,
-  instanceName: string,
-  prompt: string,
-  options?: { onSessionCreated?: (sessionId: string) => Promise<void> },
-): Promise<string> {
-  const url = `ws://${podBaseUrl(instanceName, namespace)}/api/acp`;
-  const { stream, ws } = await wsStream(url);
+export function createAcpClient(opts: {
+  namespace: string;
+  instanceName: string;
+  onSessionCreated: (sessionId: string) => Promise<void>;
+}): AcpClient {
+  const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
 
-  const responseChunks: string[] = [];
-  const connection = new ClientSideConnection(
-    () => ({
-      async requestPermission(params: any) {
-        return {
-          outcome: {
-            outcome: "selected" as const,
-            optionId: params.options[0].optionId,
-          },
-        };
-      },
-      async sessionUpdate(params: any) {
-        if (params.update?.sessionUpdate === "agent_message_chunk" && params.update.content?.type === "text") {
-          responseChunks.push(params.update.content.text);
+  return {
+    async listSessions(): Promise<AcpSessionInfo[]> {
+      let stream: Stream;
+      let ws: WebSocket;
+      try {
+        ({ stream, ws } = await wsStream(url));
+      } catch {
+        return [];
+      }
+
+      const connection = new ClientSideConnection(
+        () => ({
+          async requestPermission() { return { outcome: { outcome: "selected" as const, optionId: "" } }; },
+          async sessionUpdate() {},
+          async writeTextFile() { return {}; },
+          async readTextFile() { return { content: "" }; },
+        }),
+        stream,
+      );
+
+      try {
+        await connection.initialize({
+          protocolVersion: 1,
+          clientCapabilities: {},
+          clientInfo: { name: "humr-sessions", version: "1.0.0" },
+        });
+        const r = await connection.listSessions({ cwd: "." });
+        return (r.sessions ?? []) as AcpSessionInfo[];
+      } catch {
+        return [];
+      } finally {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
         }
-      },
-      async writeTextFile() { return {}; },
-      async readTextFile() { return { content: "" }; },
-    }),
-    stream,
-  );
+      }
+    },
 
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
-  const cleanup = () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
-    }
+    async sendPrompt(prompt: string): Promise<string> {
+      const { stream, ws } = await wsStream(url);
+
+      const responseChunks: string[] = [];
+      const connection = new ClientSideConnection(
+        () => ({
+          async requestPermission(params: any) {
+            return {
+              outcome: {
+                outcome: "selected" as const,
+                optionId: params.options[0].optionId,
+              },
+            };
+          },
+          async sessionUpdate(params: any) {
+            if (params.update?.sessionUpdate === "agent_message_chunk" && params.update.content?.type === "text") {
+              responseChunks.push(params.update.content.text);
+            }
+          },
+          async writeTextFile() { return {}; },
+          async readTextFile() { return { content: "" }; },
+        }),
+        stream,
+      );
+
+      const timeout = AbortSignal.timeout(TIMEOUT_MS);
+      const cleanup = () => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      };
+
+      try {
+        timeout.addEventListener("abort", cleanup, { once: true });
+
+        await connection.initialize({
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+          clientInfo: { name: "humr-acp", version: "1.0.0" },
+        });
+
+        const { sessionId } = await connection.newSession({
+          cwd: ".",
+          mcpServers: [],
+        });
+
+        await opts.onSessionCreated(sessionId);
+
+        await connection.prompt({
+          sessionId,
+          prompt: [{ type: "text", text: prompt }],
+        });
+
+        return responseChunks.join("");
+      } finally {
+        timeout.removeEventListener("abort", cleanup);
+        cleanup();
+      }
+    },
   };
-
-  try {
-    timeout.addEventListener("abort", cleanup, { once: true });
-
-    await connection.initialize({
-      protocolVersion: 1,
-      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-      clientInfo: { name: "humr-slack", version: "1.0.0" },
-    });
-
-    const { sessionId } = await connection.newSession({
-      cwd: ".",
-      mcpServers: [],
-    });
-
-    await options?.onSessionCreated?.(sessionId);
-
-    await connection.prompt({
-      sessionId,
-      prompt: [{ type: "text", text: prompt }],
-    });
-
-    return responseChunks.join("");
-  } finally {
-    timeout.removeEventListener("abort", cleanup);
-    cleanup();
-  }
 }

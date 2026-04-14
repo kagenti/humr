@@ -45,8 +45,8 @@ export type {
 
 export type { ChannelsService } from "./modules/channels/types.js";
 
+export { SessionType } from "./modules/sessions/types.js";
 export type {
-  SessionType,
   SessionView,
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
