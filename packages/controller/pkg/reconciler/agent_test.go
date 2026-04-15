@@ -54,20 +54,22 @@ func (f *fakeGetter) Get(name string) (*corev1.ConfigMap, error) {
 func TestResolveAgent(t *testing.T) {
 	getter := &fakeGetter{cms: map[string]*corev1.ConfigMap{
 		"code-guardian": {
-			ObjectMeta: metav1.ObjectMeta{Name: "code-guardian", Namespace: "test-agents"},
+			ObjectMeta: metav1.ObjectMeta{Name: "code-guardian", Namespace: "test-agents", UID: "agent-uid"},
 			Data:       map[string]string{"spec.yaml": fixtureAgentYAML},
 		},
 	}}
 	resolver := NewAgentResolver(getter)
-	spec, err := resolver.Resolve("code-guardian")
+	cm, spec, err := resolver.Resolve("code-guardian")
 	require.NoError(t, err)
+	assert.Equal(t, "code-guardian", cm.Name)
+	assert.EqualValues(t, "agent-uid", cm.UID)
 	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
 	assert.Len(t, spec.Mounts, 3)
 }
 
 func TestResolveAgent_NotFound(t *testing.T) {
 	resolver := NewAgentResolver(&fakeGetter{cms: map[string]*corev1.ConfigMap{}})
-	_, err := resolver.Resolve("missing")
+	_, _, err := resolver.Resolve("missing")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -80,7 +82,7 @@ func TestResolveAgent_NoSpecYAML(t *testing.T) {
 		},
 	}}
 	resolver := NewAgentResolver(getter)
-	_, err := resolver.Resolve("bad-agent")
+	_, _, err := resolver.Resolve("bad-agent")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no spec.yaml")
 }

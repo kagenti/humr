@@ -36,7 +36,7 @@ export function DialogOverlay() {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-[15px] font-bold text-text mb-1">{dialog.title}</h3>
-            <p className="text-[13px] text-text-secondary leading-relaxed">{dialog.message}</p>
+            <div className="text-[13px] text-text-secondary leading-relaxed">{dialog.message}</div>
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-1">

@@ -199,7 +199,24 @@ export function ListView() {
                         <Plus size={12} /> Instance
                       </button>
                       <button
-                        onClick={async () => { if (!await showConfirm(`Delete agent "${agent.name}"?`, "Delete Agent")) return; setDelAgent(agent.id); await deleteAgent(agent.id); setDelAgent(null); }}
+                        onClick={async () => {
+                          const n = insts.length;
+                          const msg = n === 0 ? (
+                            <>Delete agent <strong className="text-text">"{agent.name}"</strong>?</>
+                          ) : (
+                            <div className="space-y-2">
+                              <p>Delete agent <strong className="text-text">"{agent.name}"</strong>?</p>
+                              <p className="text-danger">
+                                This will also delete <strong>{n} {n === 1 ? "instance" : "instances"}</strong> and <strong>all their persistent data</strong>.
+                              </p>
+                              <p className="text-text-muted text-[12px]">This cannot be undone.</p>
+                            </div>
+                          );
+                          if (!await showConfirm(msg, "Delete Agent")) return;
+                          setDelAgent(agent.id);
+                          await deleteAgent(agent.id);
+                          setDelAgent(null);
+                        }}
                         disabled={delAgent === agent.id}
                         className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}

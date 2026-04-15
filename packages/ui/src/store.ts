@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ReactNode } from "react";
 import { platform } from "./platform.js";
 import type {
   TemplateView,
@@ -28,15 +29,15 @@ type Theme = "light" | "dark" | "system";
 export interface DialogState {
   type: "alert" | "confirm";
   title: string;
-  message: string;
+  message: ReactNode;
   resolve: (ok: boolean) => void;
 }
 
 export interface HumrStore {
   // Dialog
   dialog: DialogState | null;
-  showAlert: (message: string, title?: string) => Promise<void>;
-  showConfirm: (message: string, title?: string) => Promise<boolean>;
+  showAlert: (message: ReactNode, title?: string) => Promise<void>;
+  showConfirm: (message: ReactNode, title?: string) => Promise<boolean>;
   closeDialog: (ok: boolean) => void;
 
   // Theme

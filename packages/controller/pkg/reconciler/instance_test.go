@@ -35,7 +35,7 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 func agentCM() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "code-guardian", Namespace: "test-agents",
+			Name: "code-guardian", Namespace: "test-agents", UID: "agent-uid",
 			Labels: map[string]string{"humr.ai/type": "agent"},
 		},
 		Data: map[string]string{"spec.yaml": fixtureAgentYAML},
@@ -154,6 +154,59 @@ func TestReconcile_Idempotent(t *testing.T) {
 	// Second reconcile should not error
 	err = r.Reconcile(context.Background(), cm)
 	require.NoError(t, err)
+}
+
+func TestReconcile_SetsAgentOwnerReference(t *testing.T) {
+	cm := instanceCM("running")
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
+		cm,
+	)
+
+	require.NoError(t, r.Reconcile(context.Background(), cm))
+
+	updated, err := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, updated.OwnerReferences, 1)
+	ref := updated.OwnerReferences[0]
+	assert.Equal(t, "ConfigMap", ref.Kind)
+	assert.Equal(t, "code-guardian", ref.Name)
+	assert.EqualValues(t, "agent-uid", ref.UID)
+}
+
+func TestReconcile_OwnerReferenceIdempotent(t *testing.T) {
+	cm := instanceCM("running")
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
+		cm,
+	)
+
+	require.NoError(t, r.Reconcile(context.Background(), cm))
+	require.NoError(t, r.Reconcile(context.Background(), cm))
+
+	updated, err := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Len(t, updated.OwnerReferences, 1, "second reconcile must not duplicate owner reference")
+}
+
+func TestReconcile_PreservesExistingOwnerReferences(t *testing.T) {
+	cm := instanceCM("running")
+	cm.OwnerReferences = []metav1.OwnerReference{
+		{APIVersion: "v1", Kind: "ConfigMap", Name: "other-owner", UID: "other-uid"},
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
+		cm,
+	)
+
+	require.NoError(t, r.Reconcile(context.Background(), cm))
+
+	updated, err := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, updated.OwnerReferences, 2)
+	uids := []string{string(updated.OwnerReferences[0].UID), string(updated.OwnerReferences[1].UID)}
+	assert.Contains(t, uids, "other-uid")
+	assert.Contains(t, uids, "agent-uid")
 }
 
 func TestDelete_CleansPVCs(t *testing.T) {
