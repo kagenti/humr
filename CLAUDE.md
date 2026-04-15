@@ -10,7 +10,7 @@ pnpm workspaces + standalone Go module:
 - `packages/agent-runtime/` — ACP WebSocket server + trigger watcher inside agent pods
 - `packages/agent-runtime-api/` — tRPC router definitions for agent-runtime
 - `packages/humr-base/` — shared base image/utilities
-- `packages/example-agent/` — example agent configuration
+- `packages/code-guardian/` — code review agent configuration
 - `packages/controller/` — Go K8s reconciler + scheduler
 - `packages/ui/` — React chat interface (Vite)
 - `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
