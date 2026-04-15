@@ -124,6 +124,7 @@ jobs:
     needs: helm-package
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      - uses: azure/setup-kubectl@v4
       - name: Rollout restart
         run: kubectl rollout restart statefulset,deployment --namespace humr
       - name: Wait for rollout
