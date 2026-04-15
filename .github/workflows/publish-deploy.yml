@@ -1,4 +1,4 @@
-name: Images
+name: Publish & Deploy
 
 on:
   push:
@@ -117,3 +117,22 @@ jobs:
         run: helm package deploy/helm/humr --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
       - name: Push to OCI registry
         run: helm push humr-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/kagenti/humr/charts
+
+  deploy:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    needs: helm-package
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: azure/setup-helm@v4
+      - name: Deploy to cluster
+        run: |
+          helm upgrade --install humr oci://ghcr.io/kagenti/humr/charts/humr \
+            --version ${{ steps.version.outputs.version }} \
+            --namespace humr \
+            --create-namespace \
+            --wait \
+            --timeout 5m
