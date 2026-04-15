@@ -1,4 +1,14 @@
-# Humr — Demo
+# Humr — Pitch
+
+## Contents
+
+- [So you want to run an agent in production](#so-you-want-to-run-an-agent-in-production)
+- [Meet Humr](#meet-humr)
+- [The mental model](#the-mental-model)
+- [The 5-minute tour](#the-5-minute-tour)
+- [Party tricks](#party-tricks)
+- [What you build on top](#what-you-build-on-top)
+- [Try it](#try-it)
 
 ## So you want to run an agent in production
 
@@ -123,14 +133,6 @@ Four things that become possible once the floor is there.
 **3. The codebase guardian.** An agent that scans your repo on a schedule, detects drift in `README.md` / `CLAUDE.md` / architecture notes, posts proposed edits to your team channel. When a human responds, the agent opens a PR **under that person's GitHub identity** — not a shared bot account. Whoever approves authored it. Accountability is structural, same as Humr's credential story.
 
 **4. The agent you sell.** You're shipping an agent as a product — a support triage bot, a release-notes writer, a translator that lives in somebody else's Jira. Every customer gets their own isolated pod, their own credentials, their own schedule. The SaaS plumbing from Section 1 is already in the box.
-
-## The three rules Humr follows
-
-**1. Security is structural.** If safety depends on the agent behaving, it isn't safety. Credentials live outside the agent. The network is closed by default. The blast radius of a compromised harness is whatever you told OneCLI, not whatever you told the agent.
-
-**2. The harness is the unit of AI development.** Humr's job is to run it, not replace it. The platform is boring so the agent can be the interesting part.
-
-**3. Deployable, not privileged.** ConfigMaps, not CRDs. Namespace RBAC, not cluster-admin. A platform you can't install is a platform that doesn't matter.
 
 ## Try it
 
