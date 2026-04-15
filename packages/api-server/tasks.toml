@@ -5,7 +5,7 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-mise run cluster:install -- --vm-name=humr-k3s-test --lima-template=deploy/lima-k3s-test.yaml --helm-values=deploy/helm/humr/values-test.yaml --set domain=localtest.me --set port=5555 --no-restart
+mise run cluster:install -- --vm-name=humr-k3s-test --lima-template=deploy/lima-k3s-test.yaml --set domain=localtest.me --set port=5555 --no-restart
 
 mise exec -- pnpm --filter api-server exec vitest run
 '''
