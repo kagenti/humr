@@ -95,6 +95,14 @@ modules/orders/
     notification.ts
 ```
 
+Sagas that coordinate across multiple modules or don't belong to a single bounded context may live outside modules — for example in a dedicated `workers` package or a top-level `sagas/` directory:
+
+```
+packages/workers/src/
+  saga.ts
+  order-lifecycle.ts
+```
+
 ### Pattern
 
 A saga subscribes to one or more event types and performs side effects:

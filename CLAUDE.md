@@ -67,16 +67,12 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 
 Architecture Decision Records live in [`docs/adrs/`](docs/adrs/) — see [`docs/adrs/index.md`](docs/adrs/index.md) for the full list. Use the `/adr` skill to create and manage ADRs. Always check existing ADRs before proposing architectural changes.
 
-## Specs and Plans
-
-- Design spec: `docs/specs/2026-04-01-agent-platform-design.md`
-- Master plan: `docs/plans/2026-04-02-adk-platform-master.md`
-
 ## Commit Conventions
 
 - **Conventional Commits**: `type(scope): short summary` — types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `revert`, `style`, `perf`, `ci`, `build`.
 - **Scope**: Optional but encouraged (e.g., `feat(ui):`, `fix(hook):`, `docs(design):`).
 - **Body**: Optional concise bullet points for non-trivial changes.
+- **Trailer**: Configured via `.claude/settings.json` `attribution` — do not add manually.
 - **DCO**: Always use `git commit -s` to add `Signed-off-by` trailer.
 - **Branch naming**: `type/short-description` (e.g., `feat/session-history`, `fix/stale-timer`). Same type prefixes as commits.
 

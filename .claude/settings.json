@@ -5,6 +5,16 @@
   },
   "permissions": {
     "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git fetch*)",
+      "Bash(git branch*)",
+      "Bash(git checkout -b *)",
+      "Bash(git stash*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(ls:*)",
       "Bash(mise run cluster:kubectl *)",
       "Bash(mise run cluster:shell *)",
       "Bash(mise run cluster:install*)",
@@ -33,7 +43,7 @@
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
-    "practical-skills@apoco-plugins": true
+    "practical-skills@apoco-plugins": false
   },
   "extraKnownMarketplaces": {
     "apoco-plugins": {

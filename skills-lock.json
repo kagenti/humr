@@ -6,10 +6,15 @@
       "sourceType": "github",
       "computedHash": "76b6d1b28e701196a17bf9bca42ef36de38f0d7e495519d4e0f7fab363e38d8d"
     },
+    "adr": {
+      "source": "apocohq/skills",
+      "sourceType": "github",
+      "computedHash": "15ec58b74787c1369729bbdd8f971d4b45cbb077db8dd8e59822aae137c07425"
+    },
     "align-repo": {
       "source": "apocohq/skills",
       "sourceType": "github",
-      "computedHash": "decfab99c54e4fffe6002161bb07c819935801ff283402640669a3f6007783e8"
+      "computedHash": "17163b8a20e2cea00079f7ed5904a338b9c91e47d8a5ee5a9312845bed6e96e9"
     },
     "arch-review": {
       "source": "tomkis/typescript-engineering",
@@ -26,45 +31,10 @@
       "sourceType": "github",
       "computedHash": "762c968bc45ec7bfc37777c6e41354e6bc7f56a43cfa03b76f3ebdd805090cff"
     },
-    "cleanup-commits": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "ad4f370d5f3c2a68530eeee32b87b26ac55a5dbdf943ac68c89a8a961facb34c"
-    },
-    "design-first-engineering": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "4f98afdac2d1c975ca53b46765af4e475566ad2f3b07d96ad8e298d91f400b65"
-    },
-    "dir-tree-index": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "73028eace524e09e9f3d15dfb4dc35102544d7f6cc7ed17867976a1f56416252"
-    },
-    "gmail-multi-inbox": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "2b6b15c7ffa679ce4595327080025cdbf5cf9a38576c8d7f2460bfa3ab5925eb"
-    },
     "grill-me": {
       "source": "apocohq/skills",
       "sourceType": "github",
       "computedHash": "f8dd31def8f7daedcc038d060fba45d35e729c79ed6867f61b1e3596fc6a1e20"
-    },
-    "meeting-minutes": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "84856b14cfc7ce9e7bf7aee6246f7c90a5d0b91bc101765198d00a6de5b938e2"
-    },
-    "plan": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "547b376a1e38bbda2da7c7ee37dd4e02c5820260fa2adc0a5dd707b57139a757"
-    },
-    "process-transcript": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "1877bb29eb80d133859e70819c4f43e5de5f160d2877be58b4f8c45385327868"
     },
     "ralph-it": {
       "source": "apocohq/skills",
@@ -81,20 +51,10 @@
       "sourceType": "github",
       "computedHash": "0cbd00ca317e5b2d0c1953596a8fa99f68f0e9cb81318a6ca707db64a17333eb"
     },
-    "skill-creator": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "4a13f78be642cb5ded6abcc095b0d6bf59145697ffb11d518ff46f652bd0b0a3"
-    },
     "spec": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",
       "computedHash": "f014b5f744e8e1eb7c2e281297652ff5dea76694910b703801952626a5a7293b"
-    },
-    "things-morning-organizer": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "f9ebd3aa31f7f32edb4fe4447319506289a970f3695076c038f9e46b4aac21a1"
     },
     "upgrade": {
       "source": "tomkis/typescript-engineering",
