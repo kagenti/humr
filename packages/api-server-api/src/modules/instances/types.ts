@@ -24,6 +24,7 @@ export interface Instance {
   error?: string;
   channels: ChannelConfig[];
   enabledMcpServers: string[];
+  allowedUsers: string[];
 }
 
 export interface CreateInstanceInput {
@@ -33,6 +34,7 @@ export interface CreateInstanceInput {
   secretRef?: string;
   description?: string;
   enabledMcpServers?: string[];
+  allowedUsers?: string[];
 }
 
 export interface UpdateInstanceInput {
@@ -40,6 +42,7 @@ export interface UpdateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   enabledMcpServers?: string[];
+  allowedUsers?: string[];
 }
 
 export interface InstancesService {

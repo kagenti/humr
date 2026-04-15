@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, uniqueIndex, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, uniqueIndex, primaryKey, timestamp } from "drizzle-orm/pg-core";
 
 export const channels = pgTable("channels", {
   instanceId: text("instance_id").notNull(),
@@ -15,6 +15,14 @@ export const identityLinks = pgTable("identity_links", {
   refreshToken: text("refresh_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const allowedUsers = pgTable("allowed_users", {
+  instanceId: text("instance_id").notNull(),
+  owner: text("owner").notNull(),
+  keycloakSub: text("keycloak_sub").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.instanceId, table.keycloakSub] }),
+]);
 
 export const sessions = pgTable("sessions", {
   sessionId: text("session_id").primaryKey(),

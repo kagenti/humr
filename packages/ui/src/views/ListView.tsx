@@ -4,8 +4,9 @@ import type { InstanceView } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/StatusIndicator.js";
 import { AddAgentDialog } from "../dialogs/AddAgentDialog.js";
 import { CreateInstanceDialog } from "../dialogs/CreateInstanceDialog.js";
-import { RefreshCw, Plus, Trash2, MessageSquare, MessageSquareOff } from "lucide-react";
+import { RefreshCw, Plus, Trash2, MessageSquare, MessageSquareOff, Settings } from "lucide-react";
 import { ConnectSlackDialog } from "../dialogs/ConnectSlackDialog.js";
+import { InstanceSettingsDialog } from "../dialogs/InstanceSettingsDialog.js";
 
 export function ListView() {
   const templates = useStore(s => s.templates);
@@ -22,6 +23,7 @@ export function ListView() {
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
+  const updateInstance = useStore(s => s.updateInstance);
   const connectSlack = useStore(s => s.connectSlack);
   const disconnectSlack = useStore(s => s.disconnectSlack);
   const slackAvailable = useStore(s => !!s.availableChannels.slack);
@@ -32,6 +34,7 @@ export function ListView() {
   const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delAgent, setDelAgent] = useState<string | null>(null);
   const [showSlackDlg, setShowSlackDlg] = useState<string | null>(null);
+  const [showSettingsDlg, setShowSettingsDlg] = useState<string | null>(null);
 
   const byAgent = useMemo(() => {
     const m = new Map<string, InstanceView[]>();
@@ -164,6 +167,13 @@ export function ListView() {
                           <span className="text-[12px] font-mono text-text-muted">{inst.enabledMcpServers.length} MCP</span>
                         )}
 
+                        <button
+                          onClick={e => { e.stopPropagation(); setShowSettingsDlg(inst.id); }}
+                          className={`h-7 w-7 rounded-md border-2 flex items-center justify-center transition-colors ${inst.allowedUsers.length > 0 ? "border-accent text-accent hover:text-accent-hover" : "border-border-light text-text-muted hover:text-accent hover:border-accent"}`}
+                          title="Instance settings"
+                        >
+                          <Settings size={12} />
+                        </button>
                         {slackAvailable && (
                         <button
                           onClick={async e => {
@@ -220,6 +230,18 @@ export function ListView() {
           onCancel={() => setShowSlackDlg(null)}
         />
       )}
+      {showSettingsDlg && (() => {
+        const inst = instances.find(i => i.id === showSettingsDlg);
+        if (!inst) return null;
+        return (
+          <InstanceSettingsDialog
+            instanceName={inst.name}
+            allowedUsers={inst.allowedUsers}
+            onSubmit={async (allowedUsers) => { setShowSettingsDlg(null); await updateInstance(inst.id, { allowedUsers }); }}
+            onCancel={() => setShowSettingsDlg(null)}
+          />
+        );
+      })()}
     </>
   );
 }
