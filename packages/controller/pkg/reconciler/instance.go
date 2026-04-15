@@ -43,9 +43,16 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	if agentName == "" {
 		agentName = instanceSpec.AgentName
 	}
-	agentSpec, err := r.resolver.Resolve(agentName)
+	agentCM, agentSpec, err := r.resolver.Resolve(agentName)
 	if err != nil {
 		return r.setError(ctx, name, err.Error())
+	}
+
+	// Ensure the instance CM has an OwnerReference to its agent CM so that
+	// K8s garbage collection cascade-deletes orphaned instances when the
+	// agent is removed. Idempotent — skips if already set.
+	if err := r.ensureAgentOwnerReference(ctx, cm, agentCM); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("setting agent owner reference: %v", err))
 	}
 
 	// Build desired resources
@@ -68,6 +75,39 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		state = "running"
 	}
 	return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus(state, ""))
+}
+
+// ensureAgentOwnerReference adds a non-controller OwnerReference from the
+// instance CM to the agent CM if one is not already present. This lets K8s
+// garbage collection cascade-delete instances when their agent is removed.
+// It is safe to leave BlockOwnerDeletion=false and Controller=false — other
+// OwnerReferences on the instance CM (if any) are preserved.
+func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, instanceCM, agentCM *corev1.ConfigMap) error {
+	for _, ref := range instanceCM.OwnerReferences {
+		if ref.UID == agentCM.UID {
+			return nil
+		}
+	}
+	desired := metav1.OwnerReference{
+		APIVersion: "v1",
+		Kind:       "ConfigMap",
+		Name:       agentCM.Name,
+		UID:        agentCM.UID,
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, instanceCM.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		for _, ref := range current.OwnerReferences {
+			if ref.UID == agentCM.UID {
+				return nil
+			}
+		}
+		current.OwnerReferences = append(current.OwnerReferences, desired)
+		_, err = r.client.CoreV1().ConfigMaps(r.config.Namespace).Update(ctx, current, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {

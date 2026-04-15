@@ -28,16 +28,22 @@ func NewAgentResolver(getter AgentGetter) *AgentResolver {
 	return &AgentResolver{getter: getter}
 }
 
-func (r *AgentResolver) Resolve(name string) (*types.AgentSpec, error) {
+// Resolve returns the agent's ConfigMap (for owner-reference metadata) and
+// its parsed spec.
+func (r *AgentResolver) Resolve(name string) (*corev1.ConfigMap, *types.AgentSpec, error) {
 	cm, err := r.getter.Get(name)
 	if err != nil {
-		return nil, fmt.Errorf("agent %q not found: %w", name, err)
+		return nil, nil, fmt.Errorf("agent %q not found: %w", name, err)
 	}
 	specYAML, ok := cm.Data["spec.yaml"]
 	if !ok {
-		return nil, fmt.Errorf("agent %q has no spec.yaml", name)
+		return nil, nil, fmt.Errorf("agent %q has no spec.yaml", name)
 	}
-	return types.ParseAgentSpec(specYAML)
+	spec, err := types.ParseAgentSpec(specYAML)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cm, spec, nil
 }
 
 // AgentTokenSecretName returns the K8s Secret name that stores the OneCLI access token for an agent.
