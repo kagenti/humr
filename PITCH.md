@@ -43,7 +43,7 @@ Here's the mapping to the three problems:
 | The problem | Humr's answer |
 |---|---|
 | Credentials and bash | Every pod routes outbound traffic through a MITM proxy (OneCLI). The agent's env has a placeholder token. Real creds get injected at the HTTP layer. Network policy drops everything else. If the agent is compromised, there's nothing to steal. |
-| Can't leave your laptop | The pod runs on a schedule. Workspace persists on a PVC across hibernation. Triggers arrive as files in `/workspace/.triggers/` — the harness can't tell a cron fire from a human message. Slack is a first-class channel. |
+| Can't leave your laptop | Cron lives on the platform, not your laptop. Schedules fire as trigger files in `/workspace/.triggers/` — the harness can't tell a cron fire from a human message. Workspace persists on a PVC across hibernation; conversation history comes back on wake. Slack is a first-class channel. |
 | Can't become a product | Every instance is a ConfigMap. Multi-tenant by construction. Harness-agnostic and model-agnostic — anything that speaks ACP works. No CRDs, so no cluster-admin required. |
 
 **Humr has no opinions about your agent.** No memory format, no skill system, no prompt templates, no dashboards for tuning. Opinions belong in the product layer — that's where things like [humr-claw](https://github.com/kagenti/humr-claw) live. Humr is the platform. humr-claw is one app that runs on it. This document is about the platform.
@@ -58,7 +58,9 @@ Humr runs agents using three K8s primitives.
 
 **Pod** — what actually runs. Humr's controller turns each instance into a StatefulSet with `replicas: 1` and a PVC per persistent mount. StatefulSet means `demo-0` is *always* `demo-0` — same pod name, same PVC, same workspace, across restarts and hibernation. `replicas: 0` = hibernated, disk preserved. `replicas: 1` = running, disk remounted. That's the whole hibernate/wake story.
 
-**Pods are disposable; workspaces are not.** Anything outside `/workspace` and `/home/agent` is wiped on restart — installed packages, caches, transient edits. That's a feature: bad state can't survive a reboot, and you can recover from almost any pod-level failure by killing it. It's also the constraint: runtime `apt install` doesn't stick. Bake it into the template image, or `kubectl exec` in for a one-off knowing it'll vanish on next boot.
+**Pods are disposable; workspaces are not.** Anything outside `/workspace` and `/home/agent` is wiped on restart. That's a feature: bad state can't survive a reboot, and you can recover from almost any pod-level failure by killing it. The constraint: system-level changes (apt, `/etc` edits) don't stick. `$HOME`-scoped installs (`npm install -g`, `uv tool install`) do — that's what `/home/agent` persistence is for. Heavier stuff goes in the template image.
+
+**Each instance is its own.** Own process, own filesystem, own NetworkPolicy, own OneCLI token. Two instances in the same cluster can't see or reach each other. Isolation is the default, not a setting.
 
 None of this uses CRDs. Every Humr resource is a plain ConfigMap with a `humr.ai/type` label:
 
@@ -92,7 +94,7 @@ That booted a local k3s cluster and deployed the whole stack: OneCLI, Keycloak, 
 
 ## Party tricks
 
-Two one-liners you can run in your own cluster.
+Some demos of what's actually happening in your cluster.
 
 ### 1. The agent has no secrets
 
@@ -115,13 +117,41 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
 
 `BLOCKED`. The NetworkPolicy drops everything except the OneCLI proxy and DNS. Kernel-level, enforced by the CNI — not something the agent can talk its way past.
 
+### 3. The only working route is the proxy — and it knows who you are
+
 Put those two together: no credentials, no route out except the proxy. The chat still worked — OneCLI identified the agent, found the right secret, put it on the wire, forwarded. That's the security model. Not "we trust the agent." Structural.
+
+### 4. Pod killed, session restored
+
+Kill the pod:
+
+```sh
+mise run cluster:kubectl -- delete pod -n humr-agents <pod>
+```
+
+Kubernetes replaces it. New pod, same name, same PVC, same conversation history. Wait ~20 seconds and chat again — your earlier messages are still there.
+
+That's not resilience you configured. It's StatefulSet + per-instance PVC + DB-backed sessions acting in concert. Pod crashes, image rollouts, node evictions — all survived.
+
+### 5. Two agents can't see each other
+
+Create a second instance in the UI (call it `other`). From the first:
+
+```sh
+mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
+  node -e "require('net').connect(8080,'other-0.other.humr-agents.svc').setTimeout(3000)
+    .on('connect',()=>console.log('CONNECTED (unexpected)'))
+    .on('timeout',()=>console.log('BLOCKED: timeout'))
+    .on('error',e=>console.log('BLOCKED:',e.code))"
+```
+
+`BLOCKED`. The egress NetworkPolicy allows OneCLI and DNS — nothing else. Another instance, the Kubernetes API, Postgres, Keycloak — all unreachable from agent pods. Per-instance isolation without per-instance configuration.
 
 ## What you build on top
 
 Four things that become possible once the floor is there.
 
-**1. Personal AI employees.** Non-technical users "hire" opinionated templates — a trip planner, a family assistant, a meal planner — the way you'd hire a human. Conversation happens in Telegram or Slack, not a dashboard. Each hire runs permanently, remembers you across sessions, and acts proactively on a schedule. This is what [humr-claw](https://github.com/kagenti/humr-claw) is being built to do.
+**1. Personal AI employees.** Non-technical users "hire" opinionated templates — a trip planner, a family assistant, a meal planner — the way you'd hire a human. Conversation happens wherever they already are — Telegram, Slack, whatever — not a dashboard. Each hire runs permanently, remembers you across sessions, and acts proactively on a schedule. This is what [humr-claw](https://github.com/kagenti/humr-claw) is being built to do.
 
 **2. The morning team brief.** A scheduled agent that scans Slack and GitHub every morning and sends a team lead their situational awareness DM: who's unblocked, who's stuck, what's at risk. Read-only. Replaces a workflow that experienced PMs do manually — except this one runs at 7am whether you're online or not.
 
