@@ -212,7 +212,9 @@ apiServer:
     tag: ""
     pullPolicy: IfNotPresent
   port: 4000
-  # -- Slack app-level token (xapp-...) for Socket Mode. Leave empty to disable Slack integration.
+  # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
+  slackBotToken: ""
+  # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
 
   # -- Database connection (empty host = use shared local postgres)

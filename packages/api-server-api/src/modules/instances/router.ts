@@ -59,11 +59,11 @@ export const instancesRouter = t.router({
   connectSlack: t.procedure
     .input(z.object({
       id: z.string().min(1),
-      botToken: z.string().min(1),
+      slackChannelId: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Slack app token not configured" });
-      const inst = await ctx.instances.connectSlack(input.id, input.botToken);
+      const inst = await ctx.instances.connectSlack(input.id, input.slackChannelId);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return inst;
     }),

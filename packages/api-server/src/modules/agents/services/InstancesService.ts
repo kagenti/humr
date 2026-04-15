@@ -96,13 +96,13 @@ export function createInstancesService(deps: {
       return instance;
     },
 
-    async connectSlack(id, botToken) {
+    async connectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
 
-      const channel = { type: ChannelType.Slack, botToken } as ChannelConfig;
+      const channel = { type: ChannelType.Slack, slackChannelId } as ChannelConfig;
       await deps.upsertChannel(id, channel);
-      emit({ type: EventType.SlackConnected, instanceId: id, botToken });
+      emit({ type: EventType.SlackConnected, instanceId: id, slackChannelId });
 
       const channels = await deps.listChannelsByInstance(id);
       return assembleInstance(infra, channels);

@@ -2,14 +2,14 @@ import { useState } from "react";
 
 export function ConnectSlackDialog({ instanceName, onSubmit, onCancel }: {
   instanceName: string;
-  onSubmit: (botToken: string) => void;
+  onSubmit: (slackChannelId: string) => void;
   onCancel: () => void;
 }) {
-  const [botToken, setBotToken] = useState("");
+  const [slackChannelId, setSlackChannelId] = useState("");
 
   const submit = () => {
-    if (!botToken.trim()) return;
-    onSubmit(botToken.trim());
+    if (!slackChannelId.trim()) return;
+    onSubmit(slackChannelId.trim());
   };
 
   return (
@@ -25,13 +25,13 @@ export function ConnectSlackDialog({ instanceName, onSubmit, onCancel }: {
         </div>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Bot Token</span>
+          <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Channel ID</span>
           <input
             className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted font-mono"
-            value={botToken}
-            onChange={e => setBotToken(e.target.value)}
+            value={slackChannelId}
+            onChange={e => setSlackChannelId(e.target.value)}
             onKeyDown={e => e.key === "Enter" && submit()}
-            placeholder="xoxb-..."
+            placeholder="C0..."
             autoFocus
           />
         </label>
@@ -48,7 +48,7 @@ export function ConnectSlackDialog({ instanceName, onSubmit, onCancel }: {
             className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
             style={{ boxShadow: "var(--shadow-brutal-accent)" }}
             onClick={submit}
-            disabled={!botToken.trim()}
+            disabled={!slackChannelId.trim()}
           >
             Connect
           </button>

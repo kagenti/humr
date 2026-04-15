@@ -18,7 +18,7 @@ export function createChannelManager(deps: {
   subscriptions.push(
     events$().pipe(ofType<SlackConnected>(EventType.SlackConnected)).subscribe((event) => {
       if (deps.slackWorker) {
-        deps.slackWorker.start(event.instanceId, { type: ChannelType.Slack, botToken: event.botToken });
+        deps.slackWorker.start(event.instanceId, { type: ChannelType.Slack, slackChannelId: event.slackChannelId });
       }
     }),
   );
