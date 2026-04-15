@@ -33,18 +33,25 @@ OneCLI acts as a proxy — agents never see the secrets directly. Instead, OneCL
 
 ## Slack Integration
 
-Humr can connect agent instances to Slack — @mention the bot and the agent replies in-thread.
+Humr runs a single Slack app (Socket Mode) for the entire installation. Multiple instances can share a channel — the bot routes messages per thread.
 
-1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot token scopes: `app_mentions:read`, `channels:history`, `chat:write`, `reactions:write`.
-2. Generate an app-level token with the `connections:write` scope. Install (or upgrade) with it:
+1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `chat:write`, `reactions:write`, `commands`, `users:read`.
+2. Add slash command `/humr` pointing to your app.
+3. Generate an app-level token (`xapp-...`) with `connections:write` scope. Deploy with both tokens:
 
    ```sh
-   mise run cluster:install -- --set=apiServer.slackAppToken=xapp-1-...
+   mise run cluster:install -- \
+     --set=apiServer.slackBotToken=xoxb-... \
+     --set=apiServer.slackAppToken=xapp-...
    ```
 
-3. In the Humr UI, click the Slack icon on any instance and enter the **Bot Token** (`xoxb-...`) from your Slack app's OAuth page.
+4. In the Humr UI, click the Slack icon on any instance to connect it to a channel. Optionally configure an allowed-users list in instance settings.
 
-The app token is system-level (one per Humr deployment). The bot token is per-workspace and per-instance.
+**Identity linking** — users run `/humr login` in Slack to link their Slack account to Keycloak. Unlinked users are prompted automatically.
+
+**Routing** — single-instance channels auto-route. Multi-instance channels show a dropdown to pick the target instance; the choice persists for the thread.
+
+**Access control** — per-instance allowed-users list (empty = open to all channel members). Unauthorized users get an ephemeral rejection.
 
 ## Development
 

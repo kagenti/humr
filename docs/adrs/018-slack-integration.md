@@ -1,7 +1,7 @@
-# ADR-DRAFT: Slack integration — Socket Mode, channel-based routing, identity linking
+# ADR-018: Slack integration — Socket Mode, channel-based routing, identity linking
 
 **Date:** 2026-04-15
-**Status:** Draft
+**Status:** Accepted
 **Owner:** @tomkis
 
 ## Context
