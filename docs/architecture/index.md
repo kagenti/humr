@@ -7,7 +7,7 @@ pnpm workspaces with five packages:
 - `packages/agent-runtime-api/` — shared tRPC router and type definitions
 - `packages/ui/` — React chat interface (Vite, port 5173)
 - `packages/humr-base/` — Docker base image (Node 22 slim + Claude Code CLI + bundled runtime)
-- `packages/example-agent/` — example agent extending humr-base
+- `packages/code-guardian/` — code review agent extending humr-base
 
 ## Protocol
 

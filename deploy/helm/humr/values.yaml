@@ -259,7 +259,7 @@ defaultTemplate:
   enabled: true
   name: code-guardian
   image:
-    repository: ghcr.io/kagenti/humr/example-agent
+    repository: ghcr.io/kagenti/humr/code-guardian
     tag: ""
     pullPolicy: IfNotPresent
   description: "Persistent agent for repo monitoring"
