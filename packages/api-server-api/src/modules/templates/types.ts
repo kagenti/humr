@@ -17,13 +17,6 @@ export interface SecurityContext {
 
 export const SPEC_VERSION = "humr.ai/v1";
 
-export interface MCPServerConfig {
-  type: "stdio" | "http";
-  command?: string;
-  args?: string[];
-  url?: string;
-}
-
 export interface TemplateSpec {
   version: string;
   image: string;

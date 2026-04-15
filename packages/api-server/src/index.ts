@@ -23,6 +23,8 @@ import { createOAuthRoutes } from "./oauth.js";
 import { loadConfig } from "./config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import { createOnecliClient } from "./onecli.js";
+import { createOnecliSecretsPort } from "./modules/secrets/infrastructure/OnecliSecretsPort.js";
+import { createSecretsService } from "./modules/secrets/services/SecretsService.js";
 
 const config = loadConfig();
 
@@ -144,8 +146,12 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
 
 app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
+  const userJwt = c.req.header("authorization")!.slice(7);
 
   const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db);
+  const secrets = createSecretsService({
+    port: createOnecliSecretsPort(onecli, userJwt, user.sub),
+  });
 
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -157,6 +163,7 @@ app.all("/api/trpc/*", (c) => {
       instances,
       schedules,
       sessions,
+      secrets,
       channels: { available: channelManager.availableChannels() },
       user,
     }),

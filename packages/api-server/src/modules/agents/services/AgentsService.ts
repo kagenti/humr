@@ -22,14 +22,12 @@ export function createAgentsService(deps: {
         if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
         const spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
-          mcpServers: input.mcpServers,
         });
         return deps.repo.create(spec, deps.owner, input.templateId);
       }
       const spec = assembleSpecFromImage(input.name, {
         image: input.image,
         description: input.description,
-        mcpServers: input.mcpServers,
       });
       return deps.repo.create(spec, deps.owner);
     },
@@ -37,7 +35,6 @@ export function createAgentsService(deps: {
     async update(input: UpdateAgentInput) {
       return deps.repo.updateSpec(input.id, deps.owner, {
         description: input.description,
-        mcpServers: input.mcpServers,
       });
     },
 

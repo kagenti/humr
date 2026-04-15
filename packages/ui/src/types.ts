@@ -1,5 +1,3 @@
-import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-
 export type Role = "user" | "assistant";
 
 export interface ToolContent {
@@ -44,13 +42,6 @@ export interface TreeEntry {
   type: "file" | "dir";
 }
 
-export interface MCPServerConfig {
-  type: "stdio" | "http";
-  command?: string;
-  args?: string[];
-  url?: string;
-}
-
 export interface TemplateView {
   id: string;
   name: string;
@@ -64,7 +55,6 @@ export interface AgentView {
   templateId: string | null;
   image: string;
   description?: string;
-  mcpServers?: Record<string, MCPServerConfig> | null;
 }
 
 export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
@@ -77,7 +67,6 @@ export interface InstanceView {
   state: InstanceState;
   error?: string;
   channels: { type: string; slackChannelId: string }[];
-  enabledMcpServers: string[];
   allowedUsers: string[];
 }
 
@@ -92,37 +81,32 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-export interface McpFormEntry {
+export type SecretType = "anthropic" | "generic";
+export type SecretMode = "all" | "selective";
+export type AnthropicAuthMode = "api-key" | "oauth";
+
+/** Prefix used for MCP OAuth secrets stored in OneCLI. */
+export const MCP_SECRET_PREFIX = "__humr_mcp:";
+
+export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
+  return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);
+}
+
+export function mcpHostnameFromSecretName(name: string): string {
+  return name.startsWith(MCP_SECRET_PREFIX) ? name.slice(MCP_SECRET_PREFIX.length) : name;
+}
+
+export interface SecretView {
   id: string;
   name: string;
-  type: "stdio" | "http";
-  command: string;
-  args: string;
-  url: string;
+  type: SecretType;
+  hostPattern: string;
+  createdAt: string;
+  authMode?: AnthropicAuthMode;
 }
 
 export interface McpConnection {
   hostname: string;
   connectedAt: string;
   expired: boolean;
-}
-
-/** Resolve enabled MCP servers from agent config + instance enabled list. */
-export function resolveAcpMcpServers(
-  agents: AgentView[],
-  instance?: InstanceView | null,
-): McpServer[] {
-  if (!instance) return [];
-  const agent = agents.find((a) => a.id === instance.agentId);
-  if (!agent?.mcpServers) return [];
-  const enabled = instance.enabledMcpServers;
-  const entries = enabled
-    ? Object.entries(agent.mcpServers).filter(([name]) => enabled.includes(name))
-    : Object.entries(agent.mcpServers);
-  return entries.map(([name, s]): McpServer => {
-    if (s.type === "http") {
-      return { type: "http", name, url: s.url!, headers: [] };
-    }
-    return { command: s.command!, args: s.args ?? [], env: [], name };
-  });
 }

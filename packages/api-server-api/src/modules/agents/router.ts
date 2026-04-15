@@ -10,16 +10,8 @@ function toView(agent: Agent) {
     templateId: agent.templateId ?? null,
     image: agent.spec.image,
     description: agent.spec.description,
-    mcpServers: agent.spec.mcpServers ?? null,
   };
 }
-
-const mcpServerSchema = z.object({
-  type: z.enum(["stdio", "http"]),
-  command: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  url: z.string().optional(),
-});
 
 export const agentsRouter = t.router({
   list: t.procedure.query(async ({ ctx }) => {
@@ -41,7 +33,6 @@ export const agentsRouter = t.router({
       templateId: z.string().optional(),
       image: z.string().optional(),
       description: z.string().optional(),
-      mcpServers: z.record(z.string(), mcpServerSchema).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!input.templateId && !input.image) {
@@ -55,7 +46,6 @@ export const agentsRouter = t.router({
     .input(z.object({
       id: z.string().min(1),
       description: z.string().optional(),
-      mcpServers: z.record(z.string(), mcpServerSchema).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);

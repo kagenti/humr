@@ -7,8 +7,6 @@ const envVarSchema = z.object({
   value: z.string(),
 });
 
-const enabledMcpServersSchema = z.array(z.string()).optional();
-
 export const instancesRouter = t.router({
   list: t.procedure.query(({ ctx }) => ctx.instances.list()),
 
@@ -27,7 +25,6 @@ export const instancesRouter = t.router({
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       description: z.string().optional(),
-      enabledMcpServers: enabledMcpServersSchema,
       allowedUsers: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => ctx.instances.create(input)),
@@ -37,7 +34,6 @@ export const instancesRouter = t.router({
       id: z.string().min(1),
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
-      enabledMcpServers: enabledMcpServersSchema,
       allowedUsers: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {

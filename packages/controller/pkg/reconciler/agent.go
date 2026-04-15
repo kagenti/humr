@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,8 +14,6 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
-
-const mcpSecretPrefix = "__humr_mcp:"
 
 // AgentGetter abstracts how agents are looked up — informer lister in prod, map in tests.
 type AgentGetter interface {
@@ -60,8 +56,8 @@ func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config, factory
 	return &AgentReconciler{client: client, config: cfg, factory: factory}
 }
 
-// Reconcile registers the agent in OneCLI, stores the access token,
-// and syncs MCP server secrets to the agent.
+// Reconcile registers the agent in OneCLI and stores its access token.
+// Secret/MCP assignment is managed from the UI via the OneCLI agent-secrets API.
 func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
 	name := cm.Name
 	owner := cm.Labels["humr.ai/owner"]
@@ -83,17 +79,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 	}
 
 	// Ensure agent is registered in OneCLI (one-time).
-	agent, err := r.ensureAgent(ctx, cm, name, agentSpec, oc)
-	if err != nil {
+	if _, err := r.ensureAgent(ctx, cm, name, agentSpec, oc); err != nil {
 		return err
-	}
-
-	// Sync MCP secrets to agent (every reconcile).
-	if agent != nil && agentSpec != nil && len(agentSpec.MCPServers) > 0 {
-		if err := r.syncMCPSecrets(ctx, agent.ID, agentSpec, oc); err != nil {
-			slog.Error("failed to sync MCP secrets", "agent", name, "error", err)
-			// Non-fatal — agent still works, just without MCP credential injection.
-		}
 	}
 
 	return nil
@@ -109,13 +96,8 @@ func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap,
 	secretName := AgentTokenSecretName(name)
 	_, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err == nil {
-		// Already registered — look up the agent to get its ID for secret syncing.
-		agent, err := oc.CreateAgent(ctx, displayName, name, "selective")
-		if err != nil {
-			slog.Warn("cannot reach OneCLI for agent lookup, skipping MCP sync", "agent", name, "error", err)
-			return nil, nil
-		}
-		return agent, nil
+		// Already registered.
+		return nil, nil
 	}
 	if !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("checking token secret: %w", err)
@@ -154,74 +136,6 @@ func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap,
 	}
 	slog.Info("created agent token secret", "agent", name, "secret", secretName)
 	return agent, nil
-}
-
-// syncMCPSecrets ensures that OneCLI secrets matching the agent's HTTP MCP servers
-// are linked to the agent. This allows the gateway to inject auth tokens
-// for MCP server requests.
-func (r *AgentReconciler) syncMCPSecrets(ctx context.Context, agentID string, agentSpec *types.AgentSpec, oc onecli.Client) error {
-	// Collect hostnames from agent's HTTP MCP servers.
-	wantHosts := make(map[string]bool)
-	for _, s := range agentSpec.MCPServers {
-		if s.Type == "http" && s.URL != "" {
-			if u, err := url.Parse(s.URL); err == nil {
-				wantHosts[u.Hostname()] = true
-			}
-		}
-	}
-	if len(wantHosts) == 0 {
-		return nil
-	}
-
-	// List all OneCLI secrets, find __humr_mcp: ones matching wanted hosts.
-	allSecrets, err := oc.ListSecrets(ctx)
-	if err != nil {
-		return fmt.Errorf("listing secrets: %w", err)
-	}
-
-	var mcpSecretIDs []string
-	for _, s := range allSecrets {
-		if !strings.HasPrefix(s.Name, mcpSecretPrefix) {
-			continue
-		}
-		hostname := strings.TrimPrefix(s.Name, mcpSecretPrefix)
-		if wantHosts[hostname] {
-			mcpSecretIDs = append(mcpSecretIDs, s.ID)
-		}
-	}
-
-	if len(mcpSecretIDs) == 0 {
-		return nil
-	}
-
-	// Get current agent secrets, merge in MCP secret IDs.
-	current, err := oc.GetAgentSecrets(ctx, agentID)
-	if err != nil {
-		return fmt.Errorf("getting agent secrets: %w", err)
-	}
-
-	// Build merged set.
-	seen := make(map[string]bool, len(current))
-	for _, id := range current {
-		seen[id] = true
-	}
-	changed := false
-	for _, id := range mcpSecretIDs {
-		if !seen[id] {
-			current = append(current, id)
-			changed = true
-		}
-	}
-
-	if !changed {
-		return nil
-	}
-
-	if err := oc.SetAgentSecrets(ctx, agentID, current); err != nil {
-		return fmt.Errorf("setting agent secrets: %w", err)
-	}
-	slog.Info("synced MCP secrets to agent", "agentID", agentID, "mcpSecrets", len(mcpSecretIDs))
-	return nil
 }
 
 // Delete removes the OneCLI agent for the given owner.

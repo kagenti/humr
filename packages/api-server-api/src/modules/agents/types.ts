@@ -3,7 +3,6 @@ import type {
   Mount,
   Resources,
   SecurityContext,
-  MCPServerConfig,
 } from "../templates/types.js";
 
 export interface AgentSpec {
@@ -17,8 +16,6 @@ export interface AgentSpec {
   env?: EnvVar[];
   resources?: Resources;
   securityContext?: SecurityContext;
-  // User-configured:
-  mcpServers?: Record<string, MCPServerConfig>;
 }
 
 export interface Agent {
@@ -33,13 +30,11 @@ export interface CreateAgentInput {
   templateId?: string;
   image?: string;
   description?: string;
-  mcpServers?: Record<string, MCPServerConfig>;
 }
 
 export interface UpdateAgentInput {
   id: string;
   description?: string;
-  mcpServers?: Record<string, MCPServerConfig>;
 }
 
 export interface AgentsService {

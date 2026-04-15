@@ -73,7 +73,6 @@ export function createInstancesService(deps: {
         env: input.env,
         secretRef: input.secretRef,
         description: input.description,
-        enabledMcpServers: input.enabledMcpServers,
       };
       const infra = await deps.repo.create(input.agentId, spec, deps.owner ?? "");
       if (input.allowedUsers && input.allowedUsers.length > 0) {
@@ -89,7 +88,6 @@ export function createInstancesService(deps: {
       const infra = await deps.repo.updateSpec(input.id, deps.owner, {
         env: input.env,
         secretRef: input.secretRef,
-        enabledMcpServers: input.enabledMcpServers,
       });
       if (!infra) return null;
       if (input.allowedUsers !== undefined) {
