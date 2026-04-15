@@ -2,8 +2,6 @@
 
 Humr — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
-Always check [docs/architecture.md](docs/architecture.md) for full architecture details.
-
 ### Monorepo Structure
 
 pnpm workspaces + standalone Go module:

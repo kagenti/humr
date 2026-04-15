@@ -66,8 +66,6 @@ Humr detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioni
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md) for full details.
-
 - **Controller** (Go) — K8s reconciler + cron scheduler
 - **API Server** (TypeScript) — REST API + ACP WebSocket relay + serves UI
 - **Agent Runtime** (TypeScript) — ACP server inside each agent pod
