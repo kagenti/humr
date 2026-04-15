@@ -1,4 +1,5 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewareArgs } from "@slack/bolt";
+import crypto from "node:crypto";
 import { ChannelType, SessionType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
 import { createAcpClient, ensureRunning } from "../../../acp-client.js";
 import type { IdentityLinkService } from "../services/IdentityLinkService.js";
@@ -42,6 +43,7 @@ export interface SlackWorker {
 export interface SlackOAuthPending {
   slackUserId: string;
   channelId: string;
+  codeVerifier: string;
   createdAt: number;
 }
 
@@ -53,7 +55,7 @@ export function createSlackWorker(
   persistSession: (sessionId: string, instanceId: string, type: SessionType) => Promise<void>,
   identityLinks: IdentityLinkService,
   oauthConfig: {
-    keycloakUrl: string;
+    keycloakExternalUrl: string;
     keycloakRealm: string;
     keycloakClientId: string;
     callbackUrl: string;
@@ -111,14 +113,16 @@ export function createSlackWorker(
     return null;
   }
 
-  function buildLoginUrl(state: string): string {
-    const authEndpoint = `${oauthConfig.keycloakUrl}/realms/${oauthConfig.keycloakRealm}/protocol/openid-connect/auth`;
+  function buildLoginUrl(state: string, codeChallenge: string): string {
+    const authEndpoint = `${oauthConfig.keycloakExternalUrl}/realms/${oauthConfig.keycloakRealm}/protocol/openid-connect/auth`;
     const params = new URLSearchParams({
       response_type: "code",
       client_id: oauthConfig.keycloakClientId,
       redirect_uri: oauthConfig.callbackUrl,
       state,
       scope: "openid",
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
     });
     return `${authEndpoint}?${params}`;
   }
@@ -134,13 +138,16 @@ export function createSlackWorker(
       }
 
       const state = crypto.randomUUID();
+      const codeVerifier = crypto.randomBytes(32).toString("base64url");
+      const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
       pendingOAuthFlows.set(state, {
         slackUserId: command.user_id,
         channelId: command.channel_id,
+        codeVerifier,
         createdAt: Date.now(),
       });
 
-      const loginUrl = buildLoginUrl(state);
+      const loginUrl = buildLoginUrl(state, codeChallenge);
       await ack({
         response_type: "ephemeral",
         text: `<${loginUrl}|Click here to link your Keycloak account>`,
