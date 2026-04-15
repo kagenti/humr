@@ -1,6 +1,7 @@
-import { App, LogLevel, type SlackEventMiddlewareArgs } from "@slack/bolt";
+import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewareArgs } from "@slack/bolt";
 import { ChannelType, SessionType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
 import { createAcpClient, ensureRunning } from "../../../acp-client.js";
+import type { IdentityLinkService } from "../services/IdentityLinkService.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -38,12 +39,26 @@ export interface SlackWorker {
   stopAll(): Promise<void>;
 }
 
+export interface SlackOAuthPending {
+  slackUserId: string;
+  channelId: string;
+  createdAt: number;
+}
+
 export function createSlackWorker(
   namespace: string,
   botToken: string,
   appToken: string,
   instances: () => InstancesService,
   persistSession: (sessionId: string, instanceId: string, type: SessionType) => Promise<void>,
+  identityLinks: IdentityLinkService,
+  oauthConfig: {
+    keycloakUrl: string;
+    keycloakRealm: string;
+    keycloakClientId: string;
+    callbackUrl: string;
+  },
+  pendingOAuthFlows: Map<string, SlackOAuthPending>,
 ): SlackWorker {
   const channelMap = new Map<string, Set<string>>();
   const instanceChannels = new Map<string, Set<string>>();
@@ -52,12 +67,12 @@ export function createSlackWorker(
   let app: BoltApp | null = null;
 
   function registerMapping(slackChannelId: string, instanceName: string) {
-    let instances = channelMap.get(slackChannelId);
-    if (!instances) {
-      instances = new Set();
-      channelMap.set(slackChannelId, instances);
+    let ins = channelMap.get(slackChannelId);
+    if (!ins) {
+      ins = new Set();
+      channelMap.set(slackChannelId, ins);
     }
-    instances.add(instanceName);
+    ins.add(instanceName);
 
     let channels = instanceChannels.get(instanceName);
     if (!channels) {
@@ -71,10 +86,10 @@ export function createSlackWorker(
     const channels = instanceChannels.get(instanceName);
     if (!channels) return;
     for (const ch of channels) {
-      const instances = channelMap.get(ch);
-      if (instances) {
-        instances.delete(instanceName);
-        if (instances.size === 0) channelMap.delete(ch);
+      const ins = channelMap.get(ch);
+      if (ins) {
+        ins.delete(instanceName);
+        if (ins.size === 0) channelMap.delete(ch);
       }
     }
     instanceChannels.delete(instanceName);
@@ -90,48 +105,92 @@ export function createSlackWorker(
       if (routed) return routed;
     }
 
-    const instances = channelMap.get(channel);
-    if (!instances || instances.size === 0) return null;
-    if (instances.size === 1) return [...instances][0];
+    const ins = channelMap.get(channel);
+    if (!ins || ins.size === 0) return null;
+    if (ins.size === 1) return [...ins][0];
     return null;
   }
 
-  async function ensureApp(): Promise<BoltApp> {
-    if (app) return app;
-
-    app = new App({
-      token: botToken,
-      appToken,
-      socketMode: true,
-      logLevel: LogLevel.DEBUG,
+  function buildLoginUrl(state: string): string {
+    const authEndpoint = `${oauthConfig.keycloakUrl}/realms/${oauthConfig.keycloakRealm}/protocol/openid-connect/auth`;
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: oauthConfig.keycloakClientId,
+      redirect_uri: oauthConfig.callbackUrl,
+      state,
+      scope: "openid",
     });
+    return `${authEndpoint}?${params}`;
+  }
 
-    app.event("app_mention", handleAppMention);
+  async function handleCommand({ command, ack }: SlackCommandMiddlewareArgs) {
+    const subcommand = command.text.trim().toLowerCase();
 
-    app.error(async (error) => {
-      process.stderr.write(`[slack] Bolt error: ${error}\n`);
+    if (subcommand === "login") {
+      const existing = await identityLinks.resolve(command.user_id);
+      if (existing) {
+        await ack({ response_type: "ephemeral", text: "You are already linked. Use `/humr logout` to unlink first." });
+        return;
+      }
+
+      const state = crypto.randomUUID();
+      pendingOAuthFlows.set(state, {
+        slackUserId: command.user_id,
+        channelId: command.channel_id,
+        createdAt: Date.now(),
+      });
+
+      const loginUrl = buildLoginUrl(state);
+      await ack({
+        response_type: "ephemeral",
+        text: `<${loginUrl}|Click here to link your Keycloak account>`,
+      });
+      return;
+    }
+
+    if (subcommand === "logout") {
+      const existing = await identityLinks.resolve(command.user_id);
+      if (!existing) {
+        await ack({ response_type: "ephemeral", text: "You don't have a linked account." });
+        return;
+      }
+
+      await identityLinks.unlink(command.user_id);
+      await ack({ response_type: "ephemeral", text: "Account unlinked." });
+      return;
+    }
+
+    await ack({
+      response_type: "ephemeral",
+      text: "Usage: `/humr login` or `/humr logout`",
     });
-
-    await app.start();
-    process.stderr.write("Slack bot started (single app)\n");
-    return app;
   }
 
   async function handleAppMention({ event }: SlackEventMiddlewareArgs<"app_mention">) {
     if (!app) return;
 
+    const slackUserId = event.user;
+    if (!slackUserId) return;
+
+    const keycloakSub = await identityLinks.resolve(slackUserId);
+    if (!keycloakSub) {
+      await app.client.chat.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: "You need to link your account first. Use `/humr login` to get started.",
+      });
+      return;
+    }
+
     const threadTs = event.thread_ts ?? event.ts;
     const instanceName = resolveInstance(event.channel, event.thread_ts);
 
     if (!instanceName) {
-      const user = event.user;
-      if (!user) return;
-
-      const instances = channelMap.get(event.channel);
-      if (!instances || instances.size === 0) {
+      const ins = channelMap.get(event.channel);
+      if (!ins || ins.size === 0) {
         await app.client.chat.postEphemeral({
           channel: event.channel,
-          user,
+          user: slackUserId,
           text: "No instance connected to this channel.",
         });
         return;
@@ -139,8 +198,8 @@ export function createSlackWorker(
 
       await app.client.chat.postEphemeral({
         channel: event.channel,
-        user,
-        text: `Multiple instances connected to this channel (${[...instances].join(", ")}). Multi-instance routing coming soon.`,
+        user: slackUserId,
+        text: `Multiple instances connected to this channel (${[...ins].join(", ")}). Multi-instance routing coming soon.`,
       });
       return;
     }
@@ -192,6 +251,28 @@ export function createSlackWorker(
         text: `Error: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
+  }
+
+  async function ensureApp(): Promise<BoltApp> {
+    if (app) return app;
+
+    app = new App({
+      token: botToken,
+      appToken,
+      socketMode: true,
+      logLevel: LogLevel.DEBUG,
+    });
+
+    app.event("app_mention", handleAppMention);
+    app.command("/humr", handleCommand);
+
+    app.error(async (error) => {
+      process.stderr.write(`[slack] Bolt error: ${error}\n`);
+    });
+
+    await app.start();
+    process.stderr.write("Slack bot started (single app)\n");
+    return app;
   }
 
   return {
