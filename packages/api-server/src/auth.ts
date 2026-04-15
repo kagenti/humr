@@ -23,6 +23,7 @@ const PUBLIC_PATHS = new Set([
   "/api/health",
   "/api/auth/config",
   "/api/oauth/callback",
+  "/api/slack/oauth/callback",
 ]);
 
 export function createAuth(config: AuthConfig) {
