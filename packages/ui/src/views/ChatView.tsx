@@ -23,6 +23,7 @@ import { SessionsSidebar } from "../panels/SessionsSidebar.js";
 import { FilesPanel } from "../panels/FilesPanel.js";
 import { LogPanel } from "../panels/LogPanel.js";
 import { SchedulesPanel } from "../panels/SchedulesPanel.js";
+import { ChannelsPanel } from "../panels/ChannelsPanel.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -534,7 +535,7 @@ export function ChatView() {
       <ResizeHandle side="right" onResize={d => setRightW(w => { const v = Math.max(240, Math.min(600, w + d)); localStorage.setItem("humr-right-w", String(v)); return v; })} />
       <div style={{ width: rightW }} className="shrink-0 flex flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
         <div className="flex border-b border-border-light shrink-0">
-          {(["files", "log", "schedules"] as const).map(tab => (
+          {(["files", "log", "schedules", "channels"] as const).map(tab => (
             <button key={tab} onClick={() => setRightTab(tab)}
               className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
               {tab}
@@ -545,6 +546,7 @@ export function ChatView() {
           {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
           {rightTab === "log" && <LogPanel />}
           {rightTab === "schedules" && <SchedulesPanel />}
+          {rightTab === "channels" && <ChannelsPanel />}
         </div>
       </div>
     </div>

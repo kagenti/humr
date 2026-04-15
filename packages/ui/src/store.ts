@@ -60,7 +60,7 @@ export interface HumrStore {
   log: LogEntry[];
   busy: boolean;
   sessionId: string | null;
-  rightTab: "files" | "log" | "schedules";
+  rightTab: "files" | "log" | "schedules" | "channels";
 
   // Loading states
   loading: LoadingState;
@@ -109,7 +109,7 @@ export interface HumrStore {
   setOpenFile: (file: { path: string; content: string } | null) => void;
 
   // Right tab
-  setRightTab: (tab: "files" | "log" | "schedules") => void;
+  setRightTab: (tab: "files" | "log" | "schedules" | "channels") => void;
 
   // Schedules
   setSchedules: (schedules: Schedule[]) => void;
