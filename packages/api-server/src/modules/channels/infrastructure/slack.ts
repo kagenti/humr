@@ -211,6 +211,16 @@ export function createSlackWorker(
       return;
     }
 
+    const instance = await instances().get(instanceName);
+    if (instance && instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(keycloakSub)) {
+      await app.client.chat.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: "You don't have access to this instance. Contact the instance owner to be added to the allowed users list.",
+      });
+      return;
+    }
+
     threadRoutes.set(threadTs, instanceName);
 
     await app.client.reactions.add({

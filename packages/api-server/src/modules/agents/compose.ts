@@ -11,6 +11,10 @@ import {
   upsertChannel, deleteChannelByType,
   deleteChannelsByInstanceIds,
 } from "./infrastructure/channels-repository.js";
+import {
+  listAllowedUsersByOwner, listAllowedUsersByInstance,
+  setAllowedUsers, deleteAllowedUsersByInstanceIds,
+} from "./infrastructure/allowed-users-repository.js";
 import { listSessionsByInstance, upsertSession } from "./infrastructure/sessions-repository.js";
 import { createTemplatesService } from "./services/TemplatesService.js";
 import { createAgentsService } from "./services/AgentsService.js";
@@ -49,6 +53,10 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
       upsertChannel: upsertChannel(db, owner),
       deleteChannelByType: deleteChannelByType(db, owner),
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
+      listAllowedUsersByOwner: listAllowedUsersByOwner(db, owner),
+      listAllowedUsersByInstance: listAllowedUsersByInstance(db, owner),
+      setAllowedUsers: setAllowedUsers(db, owner),
+      deleteAllowedUsersByInstanceIds: deleteAllowedUsersByInstanceIds(db),
     }),
     schedules: createSchedulesService({ repo: schedulesRepo, owner }),
     sessions: createSessionsService({
@@ -80,5 +88,9 @@ export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db
     upsertChannel: upsertChannel(db, ""),
     deleteChannelByType: deleteChannelByType(db, ""),
     deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db),
+    listAllowedUsersByOwner: listAllowedUsersByOwner(db, ""),
+    listAllowedUsersByInstance: listAllowedUsersByInstance(db, ""),
+    setAllowedUsers: setAllowedUsers(db, ""),
+    deleteAllowedUsersByInstanceIds: deleteAllowedUsersByInstanceIds(db),
   });
 }
