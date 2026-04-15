@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { MiddlewareHandler } from "hono";
 import type { UserIdentity } from "api-server-api";
+import { emit, EventType } from "./events.js";
 
 export class ForbiddenError extends Error {
   constructor(public readonly requiredRole: string) {
@@ -62,8 +63,10 @@ export function createAuth(config: AuthConfig) {
     }
 
     try {
-      const user = await verify(authHeader.slice(7));
+      const jwt = authHeader.slice(7);
+      const user = await verify(jwt);
       c.set("user", user);
+      emit({ type: EventType.UserAuthenticated, userSub: user.sub, userJwt: jwt });
       return next();
     } catch (err) {
       if (err instanceof ForbiddenError) {

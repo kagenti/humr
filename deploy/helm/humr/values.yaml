@@ -40,7 +40,7 @@ postgres:
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
-  image: ghcr.io/kagenti/onecli:0.0.7
+  image: ghcr.io/kagenti/onecli:0.0.8
   replicas: 1
 
   # -- Database connection (empty host = use shared local postgres)
@@ -153,7 +153,7 @@ keycloak:
 
   # -- Test user bootstrapped via realm import.
   # DISABLED by default — production deployments must not ship a known credential.
-  # Local dev (values-local.yaml) and e2e tests (values-test.yaml) enable it.
+  # Local dev and e2e tests (via values-local.yaml) enable it.
   testUser:
     enabled: false
     username: ""

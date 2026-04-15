@@ -25,6 +25,7 @@ import { createAuth, ForbiddenError } from "./auth.js";
 import { createOnecliClient } from "./onecli.js";
 import { createOnecliSecretsPort } from "./modules/secrets/infrastructure/OnecliSecretsPort.js";
 import { createSecretsService } from "./modules/secrets/services/SecretsService.js";
+import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 
 const config = loadConfig();
 
@@ -52,6 +53,7 @@ const { db, sql } = createDb(config.databaseUrl);
 // Start sagas — react to domain events for side effects
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient);
 const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
+const onecliSyncSub = startOnecliSyncSaga(onecli);
 
 const systemInstances = composeSystemInstances(api, config.namespace, db);
 
@@ -184,6 +186,7 @@ async function shutdown() {
   process.stderr.write("shutting down...\n");
   k8sCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
+  onecliSyncSub.unsubscribe();
   await channelManager.stopAll();
   await sql.end();
   server.close();

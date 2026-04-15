@@ -1,4 +1,5 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { inject } from "vitest";
 import type { AppRouter } from "api-server-api";
 
 const API_URL = "http://humr-api.localtest.me:5555/api/trpc";
@@ -15,18 +16,15 @@ export function createClient(token?: string) {
   });
 }
 
-/** Default authenticated client — set token via setToken() before use. */
-let _token: string | undefined;
-
-export function setToken(token: string) {
-  _token = token;
-}
-
+/** Default authenticated client — token is injected from globalSetup. */
 export const client = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: API_URL,
-      headers: () => (_token ? { Authorization: `Bearer ${_token}` } : {}),
+      headers: () => {
+        const token = inject("authToken");
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      },
     }),
   ],
 });

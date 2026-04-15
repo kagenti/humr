@@ -25,6 +25,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Initial checkout required to resolve the local maximize-build-space action.
+      - uses: actions/checkout@v4
+
+      - name: Maximize build disk space
+        uses: ./.github/actions/maximize-build-space
+        with:
+          root-reserve-mb: 15360
+          temp-reserve-mb: 2048
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      # Re-checkout — maximize-build-space mounts an LVM volume at $GITHUB_WORKSPACE,
+      # replacing the earlier checkout contents.
       - uses: actions/checkout@v4
 
       - name: Enable KVM + install QEMU
