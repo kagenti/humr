@@ -32,13 +32,13 @@ A `/humr login` slash command initiates a Keycloak OAuth flow:
 
 All subsequent interactions require a linked identity. Unlinked users receive an ephemeral prompt to `/humr login` first.
 
-### 3. Channel-based access control
+### 3. Two-tier access control — channel + instance
 
-Instances are bound to Slack channels. Channel membership IS the access control — if a user is in the channel and has linked their identity, they can interact with any instance bound to that channel. No separate sharing mechanism.
+**Channel membership** is the coarse-grained gate — users must be in the channel and have linked their identity to see and read bot interactions.
 
-This collapses routing and access control into one concept:
-- Share an instance → invite someone to the channel
-- Revoke access → remove them from the channel
+**Per-instance allowed users** is the fine-grained gate — each instance can optionally declare a list of users who are allowed to interact with it. Users not on the list can still read the channel and see bot responses, but the bot ignores their messages (or replies with an ephemeral "no access" message).
+
+This gives instance owners control over who can trigger agent work while keeping the channel visible to the broader team for transparency. For example, an instance owner can restrict interaction to themselves and one collaborator, while the rest of the channel observes.
 
 ### 4. Instance selection per thread
 
@@ -69,7 +69,7 @@ Inherits from ADR-016: each thread is a new ACP session. Thread history is injec
 
 **Multiple Slack apps (one per instance).** Rejected: each app needs creation + OAuth install. Doesn't scale, workspace admins won't approve dozens of apps.
 
-**User allowlist in instance spec.** Rejected: duplicates access control that Slack channel membership already provides. Extra config to maintain with no benefit.
+**Channel membership as sole access control.** Considered but insufficient: teams want read-only observers in the channel while restricting who can actually trigger agent work. Two-tier model (channel + per-instance allowed users) covers both cases.
 
 **DM-based interaction with modal selector.** Rejected: DM threading gets messy with multiple instances. Channels provide natural scoping and team visibility.
 
@@ -80,6 +80,6 @@ Inherits from ADR-016: each thread is a new ACP session. Thread history is injec
 - Single Slack app per Humr installation — simple admin
 - Socket Mode means no public endpoints, but also means max 10 concurrent WebSocket connections per app (Slack limit) — sufficient for current scale
 - Identity linking is a one-time step per user; must handle token refresh/expiry
-- Channel-based access is coarse-grained — all-or-nothing per channel. Fine-grained permissions (read-only vs operator) would require an additional layer
+- Two-tier access: channel membership for visibility, per-instance allowed users for interaction rights
 - Instance-to-channel binding must be stored somewhere (instance ConfigMap spec or DB)
 - `external_select` requires an Options Load URL — with Socket Mode, this is handled over the same WebSocket
