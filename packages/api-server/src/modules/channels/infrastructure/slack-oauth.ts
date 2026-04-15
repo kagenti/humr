@@ -66,12 +66,13 @@ export function createSlackOAuthRoutes(deps: {
 
     const payload = JSON.parse(
       Buffer.from(tokenData.access_token.split(".")[1], "base64url").toString(),
-    ) as { sub: string };
+    ) as { sub: string; preferred_username?: string };
 
     await deps.identityLinks.link(
       pending.slackUserId,
       payload.sub,
       tokenData.refresh_token ?? null,
+      payload.preferred_username ?? null,
     );
 
     return c.html("<html><body><h2>Account linked!</h2><p>You can close this window and return to Slack.</p></body></html>");

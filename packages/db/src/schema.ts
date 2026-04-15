@@ -12,6 +12,7 @@ export const channels = pgTable("channels", {
 export const identityLinks = pgTable("identity_links", {
   slackUserId: text("slack_user_id").primaryKey(),
   keycloakSub: text("keycloak_sub").notNull(),
+  username: text("username"),
   refreshToken: text("refresh_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

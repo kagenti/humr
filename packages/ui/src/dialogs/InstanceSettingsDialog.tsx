@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { X, Plus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X } from "lucide-react";
+import { platform } from "../platform.js";
+
+interface LinkedUser {
+  keycloakSub: string;
+  username: string | null;
+}
 
 export function InstanceSettingsDialog({ instanceName, allowedUsers, onSubmit, onCancel }: {
   instanceName: string;
@@ -8,15 +14,19 @@ export function InstanceSettingsDialog({ instanceName, allowedUsers, onSubmit, o
   onCancel: () => void;
 }) {
   const [users, setUsers] = useState<string[]>(allowedUsers);
-  const [input, setInput] = useState("");
+  const [linkedUsers, setLinkedUsers] = useState<LinkedUser[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addUser = () => {
-    const v = input.trim();
-    if (!v || users.includes(v)) return;
-    setUsers([...users, v]);
-    setInput("");
-  };
+  useEffect(() => {
+    platform.channels.linkedUsers.query().then((list) => {
+      setLinkedUsers(list);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
+  const available = linkedUsers.filter(u => !users.includes(u.keycloakSub));
+  const displayName = (sub: string) => linkedUsers.find(u => u.keycloakSub === sub)?.username ?? sub;
+  const addUser = (sub: string) => setUsers([...users, sub]);
   const removeUser = (sub: string) => setUsers(users.filter(u => u !== sub));
 
   return (
@@ -36,32 +46,14 @@ export function InstanceSettingsDialog({ instanceName, allowedUsers, onSubmit, o
             <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Allowed Users</span>
             <span className="text-[11px] text-text-muted">{users.length === 0 ? "unrestricted" : `${users.length} user${users.length !== 1 ? "s" : ""}`}</span>
           </div>
-          <p className="text-[12px] text-text-muted -mt-1">Keycloak user IDs that can interact via Slack. Leave empty for unrestricted access.</p>
-
-          <div className="flex gap-2">
-            <input
-              className="flex-1 h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted font-mono"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addUser()}
-              placeholder="keycloak-sub-id"
-              autoFocus
-            />
-            <button
-              onClick={addUser}
-              disabled={!input.trim()}
-              className="btn-brutal h-10 w-10 shrink-0 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40"
-              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
+          <p className="text-[12px] text-text-muted -mt-1">Users who can interact via Slack. Leave empty for unrestricted access.</p>
 
           {users.length > 0 && (
             <div className="flex flex-col gap-1.5">
               {users.map(sub => (
-                <div key={sub} className="flex items-center gap-2 rounded-lg border-2 border-border-light bg-bg px-4 py-2">
-                  <span className="flex-1 text-[13px] font-mono text-text truncate">{sub}</span>
+                <div key={sub} className="flex items-center gap-2 rounded-lg border-2 border-accent bg-accent-light px-4 py-2">
+                  <span className="flex-1 text-[13px] font-semibold text-text truncate">{displayName(sub)}</span>
+                  <span className="text-[11px] font-mono text-text-muted truncate max-w-[160px]">{sub}</span>
                   <button
                     onClick={() => removeUser(sub)}
                     className="shrink-0 text-text-muted hover:text-danger transition-colors"
@@ -72,6 +64,26 @@ export function InstanceSettingsDialog({ instanceName, allowedUsers, onSubmit, o
               ))}
             </div>
           )}
+
+          {loading ? (
+            <p className="text-[12px] text-text-muted">Loading linked users...</p>
+          ) : available.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mt-1">Add user</span>
+              {available.map(u => (
+                <button
+                  key={u.keycloakSub}
+                  onClick={() => addUser(u.keycloakSub)}
+                  className="flex items-center gap-2 rounded-lg border-2 border-border-light bg-bg px-4 py-2 cursor-pointer transition-colors hover:border-accent text-left"
+                >
+                  <span className="flex-1 text-[13px] font-semibold text-text truncate">{u.username ?? u.keycloakSub}</span>
+                  {u.username && <span className="text-[11px] font-mono text-text-muted truncate max-w-[160px]">{u.keycloakSub}</span>}
+                </button>
+              ))}
+            </div>
+          ) : !loading && linkedUsers.length === 0 ? (
+            <p className="text-[12px] text-text-muted">No linked users found. Users must run <code className="font-mono text-[11px] bg-bg border border-border-light rounded px-1.5 py-0.5">/humr login</code> in Slack first.</p>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-3 pt-1">

@@ -16,7 +16,7 @@ import { createSlackOAuthRoutes } from "./modules/channels/infrastructure/slack-
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
 import { createIdentityLinkService } from "./modules/channels/services/IdentityLinkService.js";
 import {
-  findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
+  findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink, listAllIdentityLinks,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
@@ -59,6 +59,7 @@ const identityLinkService = createIdentityLinkService({
   findBySlackUser: findIdentityBySlackUser(db),
   upsert: upsertIdentityLink(db),
   delete: deleteIdentityLink(db),
+  listAll: listAllIdentityLinks(db),
 });
 
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
@@ -157,7 +158,13 @@ app.all("/api/trpc/*", (c) => {
       instances,
       schedules,
       sessions,
-      channels: { available: channelManager.availableChannels() },
+      channels: {
+        available: channelManager.availableChannels(),
+        linkedUsers: async () => {
+          const links = await identityLinkService.listAll();
+          return links.map((l) => ({ keycloakSub: l.keycloakSub, username: l.username }));
+        },
+      },
       user,
     }),
   });
