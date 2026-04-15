@@ -8,7 +8,6 @@
 - [The 5-minute tour](#the-5-minute-tour)
 - [Party tricks](#party-tricks)
 - [What you build on top](#what-you-build-on-top)
-- [Try it](#try-it)
 
 ## So you want to run an agent in production
 
@@ -93,7 +92,7 @@ That booted a local k3s cluster and deployed the whole stack: OneCLI, Keycloak, 
 
 ## Party tricks
 
-Three one-liners you can run in your own cluster.
+Two one-liners you can run in your own cluster.
 
 ### 1. The agent has no secrets
 
@@ -116,11 +115,7 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
 
 `BLOCKED`. The NetworkPolicy drops everything except the OneCLI proxy and DNS. Kernel-level, enforced by the CNI — not something the agent can talk its way past.
 
-### 3. The only working route is the proxy — and it knows who you are
-
-You've already seen this work. Every successful chat message went through: agent pod → OneCLI → real credential injected → Anthropic → back. The agent saw a placeholder; OneCLI saw a real token; Anthropic saw a real request. None of those three ever shared a secret with another.
-
-That's the security model. Not "we trust the agent." Structural.
+Put those two together: no credentials, no route out except the proxy. The chat still worked — OneCLI identified the agent, found the right secret, put it on the wire, forwarded. That's the security model. Not "we trust the agent." Structural.
 
 ## What you build on top
 
@@ -133,13 +128,3 @@ Four things that become possible once the floor is there.
 **3. The codebase guardian.** An agent that scans your repo on a schedule, detects drift in `README.md` / `CLAUDE.md` / architecture notes, posts proposed edits to your team channel. When a human responds, the agent opens a PR **under that person's GitHub identity** — not a shared bot account. Whoever approves authored it. Accountability is structural, same as Humr's credential story.
 
 **4. The agent you sell.** You're shipping an agent as a product — a support triage bot, a release-notes writer, a translator that lives in somebody else's Jira. Every customer gets their own isolated pod, their own credentials, their own schedule. The SaaS plumbing from Section 1 is already in the box.
-
-## Try it
-
-```sh
-git clone https://github.com/kagenti/humr && cd humr
-mise install
-mise run cluster:install
-```
-
-`dev` / `dev`. Open `http://humr.localhost:4444`. Make an agent. Deploy the chart to a real cluster when you're ready — same `values.yaml`, different storage class.
