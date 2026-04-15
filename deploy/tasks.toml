@@ -156,7 +156,10 @@ rm -f "$tar"
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
 echo "Installing/upgrading Humr chart..."
-helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --wait --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
+# No --wait: the keycloak-provision post-install hook imports the humr realm,
+# which OneCLI's wait-for-keycloak init container depends on. With --wait,
+# helm would block on OneCLI readiness before the hook ever runs → deadlock.
+helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
@@ -164,10 +167,12 @@ if [ "$NO_RESTART" = true ]; then
 else
   echo "Restarting pods..."
   kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui
-  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-controller --timeout=60s
-  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
-  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s
 fi
+
+# 6. Wait for all Humr deployments to become Available (replaces helm --wait,
+# but happens AFTER post-install hooks have run, so no deadlock).
+echo "Waiting for deployments to be ready..."
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
 
 echo ""
 echo "=== Cluster ready ==="

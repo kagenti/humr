@@ -74,6 +74,21 @@ spec:
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
+        {{- if .Values.keycloak.enabled }}
+        - name: wait-for-keycloak
+          image: {{ .Values.controller.caCertInitImage | default "busybox:stable" }}
+          command: ["sh", "-c"]
+          args:
+            # Wait for the humr realm — OneCLI gateway fetches JWKS at startup and
+            # crashes if the realm doesn't exist yet. The realm is imported by the
+            # keycloak-provision post-install hook; helm install must be invoked
+            # without --wait so that hook runs before OneCLI tries to start.
+            - |
+              until wget -qO- http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}/realms/{{ .Values.keycloak.realm }} >/dev/null 2>&1; do
+                echo "Waiting for Keycloak..."
+                sleep 2
+              done
+        {{- end }}
       containers:
         - name: onecli
           image: {{ .Values.onecli.image }}
