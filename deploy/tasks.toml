@@ -156,7 +156,7 @@ rm -f "$tar"
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
 echo "Installing/upgrading Humr chart..."
-helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --wait --timeout 10m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
+helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --wait --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
