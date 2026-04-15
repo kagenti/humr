@@ -60,7 +60,7 @@ export interface HumrStore {
   log: LogEntry[];
   busy: boolean;
   sessionId: string | null;
-  rightTab: "files" | "log" | "schedules";
+  rightTab: "files" | "log" | "schedules" | "channels";
 
   // Loading states
   loading: LoadingState;
@@ -87,7 +87,8 @@ export interface HumrStore {
     enabledMcpServers?: string[],
   ) => Promise<void>;
   deleteInstance: (id: string) => Promise<void>;
-  connectSlack: (id: string, botToken: string) => Promise<void>;
+  updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
+  connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;
   goBack: () => void;
@@ -108,7 +109,7 @@ export interface HumrStore {
   setOpenFile: (file: { path: string; content: string } | null) => void;
 
   // Right tab
-  setRightTab: (tab: "files" | "log" | "schedules") => void;
+  setRightTab: (tab: "files" | "log" | "schedules" | "channels") => void;
 
   // Schedules
   setSchedules: (schedules: Schedule[]) => void;
@@ -261,9 +262,18 @@ export const useStore = create<HumrStore>((set, get) => ({
     }
   },
 
-  connectSlack: async (id, botToken) => {
+  updateInstance: async (id, updates) => {
     try {
-      await platform.instances.connectSlack.mutate({ id, botToken });
+      await platform.instances.update.mutate({ id, ...updates });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to update instance");
+    }
+  },
+
+  connectSlack: async (id, slackChannelId) => {
+    try {
+      await platform.instances.connectSlack.mutate({ id, slackChannelId });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to connect Slack");

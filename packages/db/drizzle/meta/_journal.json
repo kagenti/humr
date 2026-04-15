@@ -22,6 +22,20 @@
       "when": 1776160297438,
       "tag": "0002_flippant_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776239075498,
+      "tag": "0003_identity_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776412800000,
+      "tag": "0004_allowed_users",
+      "breakpoints": true
     }
   ]
 }

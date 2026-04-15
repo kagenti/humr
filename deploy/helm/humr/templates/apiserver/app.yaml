@@ -62,6 +62,10 @@ spec:
               value: {{ .Values.apiServer.port | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
+            {{- if .Values.apiServer.slackBotToken }}
+            - name: SLACK_BOT_TOKEN
+              value: {{ .Values.apiServer.slackBotToken | quote }}
+            {{- end }}
             {{- if .Values.apiServer.slackAppToken }}
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}

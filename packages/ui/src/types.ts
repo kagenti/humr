@@ -76,8 +76,9 @@ export interface InstanceView {
   description?: string;
   state: InstanceState;
   error?: string;
-  channels: { type: string; botToken: string }[];
+  channels: { type: string; slackChannelId: string }[];
   enabledMcpServers: string[];
+  allowedUsers: string[];
 }
 
 export interface Schedule {

@@ -11,8 +11,13 @@ import { createInstancesRepository } from "./modules/agents/infrastructure/Insta
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
 import { upsertSession } from "./modules/agents/infrastructure/sessions-repository.js";
-import { createSlackWorker } from "./modules/channels/infrastructure/slack.js";
+import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
+import { createSlackOAuthRoutes } from "./modules/channels/infrastructure/slack-oauth.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
+import { createIdentityLinkService } from "./modules/channels/services/IdentityLinkService.js";
+import {
+  findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
+} from "./modules/channels/infrastructure/identity-links-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { loadConfig } from "./config.js";
@@ -50,9 +55,34 @@ const systemInstances = composeSystemInstances(api, config.namespace, db);
 
 const persistSession = upsertSession(db);
 
+const identityLinkService = createIdentityLinkService({
+  findBySlackUser: findIdentityBySlackUser(db),
+  upsert: upsertIdentityLink(db),
+  delete: deleteIdentityLink(db),
+});
+
+const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
+
+const slackOauthCallbackUrl = config.slackOauthCallbackUrl
+  ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+
 const channelManager = createChannelManager({
-  slackWorker: config.slackAppToken
-    ? createSlackWorker(config.namespace, config.slackAppToken, () => systemInstances, persistSession)
+  slackWorker: config.slackBotToken && config.slackAppToken
+    ? createSlackWorker(
+        config.namespace,
+        config.slackBotToken,
+        config.slackAppToken,
+        () => systemInstances,
+        persistSession,
+        identityLinkService,
+        {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: slackOauthCallbackUrl,
+        },
+        pendingSlackOAuthFlows,
+      )
     : undefined,
 });
 
@@ -70,6 +100,17 @@ app.get("/api/auth/config", (c) =>
 app.use("/api/*", auth.middleware);
 
 app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
+
+if (config.slackBotToken && config.slackAppToken) {
+  app.route("/", createSlackOAuthRoutes({
+    pendingFlows: pendingSlackOAuthFlows,
+    identityLinks: identityLinkService,
+    keycloakUrl: config.keycloakUrl,
+    keycloakRealm: config.keycloakRealm,
+    keycloakClientId: config.keycloakClientId,
+    callbackUrl: slackOauthCallbackUrl,
+  }));
+}
 
 async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
   return instancesRepo.isOwnedBy(instanceId, owner);

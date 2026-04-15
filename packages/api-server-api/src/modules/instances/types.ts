@@ -8,7 +8,7 @@ export interface Channel {
 
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
-  botToken: string;
+  slackChannelId: string;
 }
 
 export type ChannelConfig = SlackChannel;
@@ -24,6 +24,7 @@ export interface Instance {
   error?: string;
   channels: ChannelConfig[];
   enabledMcpServers: string[];
+  allowedUsers: string[];
 }
 
 export interface CreateInstanceInput {
@@ -33,6 +34,7 @@ export interface CreateInstanceInput {
   secretRef?: string;
   description?: string;
   enabledMcpServers?: string[];
+  allowedUsers?: string[];
 }
 
 export interface UpdateInstanceInput {
@@ -40,6 +42,7 @@ export interface UpdateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   enabledMcpServers?: string[];
+  allowedUsers?: string[];
 }
 
 export interface InstancesService {
@@ -49,6 +52,6 @@ export interface InstancesService {
   update: (input: UpdateInstanceInput) => Promise<Instance | null>;
   delete: (id: string) => Promise<void>;
   wake: (id: string) => Promise<Instance | null>;
-  connectSlack: (id: string, botToken: string) => Promise<Instance | null>;
+  connectSlack: (id: string, slackChannelId: string) => Promise<Instance | null>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
 }

@@ -28,6 +28,7 @@ export const instancesRouter = t.router({
       secretRef: z.string().optional(),
       description: z.string().optional(),
       enabledMcpServers: enabledMcpServersSchema,
+      allowedUsers: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => ctx.instances.create(input)),
 
@@ -37,6 +38,7 @@ export const instancesRouter = t.router({
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       enabledMcpServers: enabledMcpServersSchema,
+      allowedUsers: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.update(input);
@@ -59,11 +61,11 @@ export const instancesRouter = t.router({
   connectSlack: t.procedure
     .input(z.object({
       id: z.string().min(1),
-      botToken: z.string().min(1),
+      slackChannelId: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Slack app token not configured" });
-      const inst = await ctx.instances.connectSlack(input.id, input.botToken);
+      const inst = await ctx.instances.connectSlack(input.id, input.slackChannelId);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return inst;
     }),
