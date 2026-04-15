@@ -12,8 +12,9 @@ import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { createInstanceTrpc } from "../instance-trpc.js";
 import { platform } from "../platform.js";
-import { resolveAcpMcpServers } from "../types.js";
+import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import type { Message, ToolChip as ToolChipT } from "../types.js";
+import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "../components/StatusIndicator.js";
 import { ArrowLeft, Plus, Send as SendIcon } from "lucide-react";
 import { Markdown } from "../components/Markdown.js";
@@ -24,10 +25,10 @@ import { FilesPanel } from "../panels/FilesPanel.js";
 import { LogPanel } from "../panels/LogPanel.js";
 import { SchedulesPanel } from "../panels/SchedulesPanel.js";
 import { ChannelsPanel } from "../panels/ChannelsPanel.js";
+import { McpsPanel, type McpOption } from "../panels/McpsPanel.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
-  const agents = useStore((s) => s.agents);
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
@@ -46,6 +47,10 @@ export function ChatView() {
   const setOpenFile = useStore((s) => s.setOpenFile);
   const setRightTab = useStore((s) => s.setRightTab);
   const openFile = useStore((s) => s.openFile);
+  const secrets = useStore((s) => s.secrets);
+  const fetchSecrets = useStore((s) => s.fetchSecrets);
+  const agentAccess = useStore((s) => s.agentAccess);
+  const fetchAgentAccess = useStore((s) => s.fetchAgentAccess);
 
   const [input, setInput] = useState("");
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
@@ -63,14 +68,86 @@ export function ChatView() {
     () => (selectedInstance ? createInstanceTrpc(selectedInstance) : null),
     [selectedInstance],
   );
-  const selectedMcpServers = useMemo(
-    () =>
-      resolveAcpMcpServers(
-        agents,
-        instances.find((i) => i.id === selectedInstance),
-      ),
-    [agents, instances, selectedInstance],
+
+  // --- MCP picker state ---
+  // The agent whose credential access governs which MCPs are available.
+  const currentAgentId = useMemo(
+    () => instances.find((i) => i.id === selectedInstance)?.agentId,
+    [instances, selectedInstance],
   );
+  const access = currentAgentId ? agentAccess[currentAgentId] : undefined;
+
+  // Fetch data needed to build the picker
+  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
+  useEffect(() => {
+    if (currentAgentId && !agentAccess[currentAgentId]) {
+      fetchAgentAccess(currentAgentId);
+    }
+  }, [currentAgentId, agentAccess, fetchAgentAccess]);
+
+  // Compute available MCPs: in "all" mode — every MCP secret; in "selective"
+  // mode — only those explicitly assigned to the agent.
+  const mcpOptions = useMemo<McpOption[]>(() => {
+    const mcpSecrets = secrets.filter(isMcpSecret);
+    if (!access) return [];
+    if (access.mode === "all") {
+      return mcpSecrets.map((s) => ({
+        id: s.id,
+        hostname: mcpHostnameFromSecretName(s.name),
+        assigned: true,
+      }));
+    }
+    return mcpSecrets
+      .filter((s) => access.secretIds.includes(s.id))
+      .map((s) => ({
+        id: s.id,
+        hostname: mcpHostnameFromSecretName(s.name),
+        assigned: true,
+      }));
+  }, [secrets, access]);
+
+  // User's per-session enable/disable selection. Default: every available one.
+  const [enabledMcps, setEnabledMcps] = useState<Set<string>>(new Set());
+  const mcpInitializedRef = useRef(false);
+  useEffect(() => {
+    if (!mcpInitializedRef.current && mcpOptions.length > 0) {
+      setEnabledMcps(new Set(mcpOptions.map((o) => o.hostname)));
+      mcpInitializedRef.current = true;
+    }
+  }, [mcpOptions]);
+
+  const toggleMcp = useCallback(
+    (hostname: string) =>
+      setEnabledMcps((p) => {
+        const n = new Set(p);
+        n.has(hostname) ? n.delete(hostname) : n.add(hostname);
+        return n;
+      }),
+    [],
+  );
+  const selectAllMcps = useCallback(
+    () => setEnabledMcps(new Set(mcpOptions.map((o) => o.hostname))),
+    [mcpOptions],
+  );
+  const clearAllMcps = useCallback(() => setEnabledMcps(new Set()), []);
+
+  // Reset initialisation when the agent changes so defaults re-apply.
+  useEffect(() => {
+    mcpInitializedRef.current = false;
+    setEnabledMcps(new Set());
+  }, [currentAgentId]);
+
+  // Derive the ACP-shape payload for session creation/loading.
+  const selectedMcpServers = useMemo<McpServer[]>(() => {
+    return mcpOptions
+      .filter((o) => enabledMcps.has(o.hostname))
+      .map((o) => ({
+        type: "http",
+        name: o.hostname.split(".")[0],
+        url: `https://${o.hostname}/mcp`,
+        headers: [],
+      }));
+  }, [mcpOptions, enabledMcps]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -535,7 +612,7 @@ export function ChatView() {
       <ResizeHandle side="right" onResize={d => setRightW(w => { const v = Math.max(240, Math.min(600, w + d)); localStorage.setItem("humr-right-w", String(v)); return v; })} />
       <div style={{ width: rightW }} className="shrink-0 flex flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
         <div className="flex border-b border-border-light shrink-0">
-          {(["files", "log", "schedules", "channels"] as const).map(tab => (
+          {(["files", "log", "schedules", "channels", "mcps"] as const).map(tab => (
             <button key={tab} onClick={() => setRightTab(tab)}
               className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
               {tab}
@@ -547,6 +624,17 @@ export function ChatView() {
           {rightTab === "log" && <LogPanel />}
           {rightTab === "schedules" && <SchedulesPanel />}
           {rightTab === "channels" && <ChannelsPanel />}
+          {rightTab === "mcps" && (
+            <McpsPanel
+              options={mcpOptions}
+              enabled={enabledMcps}
+              onToggle={toggleMcp}
+              onSelectAll={selectAllMcps}
+              onClearAll={clearAllMcps}
+              hasActiveSession={!!sessionId}
+              accessMode={access?.mode ?? null}
+            />
+          )}
         </div>
       </div>
     </div>

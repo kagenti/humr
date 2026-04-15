@@ -1,18 +1,13 @@
 import { useState } from "react";
-import type { MCPServerConfig } from "../types.js";
 
-export function CreateInstanceDialog({ agentName, mcpServers, onSubmit, onCancel }: {
+export function CreateInstanceDialog({ agentName, onSubmit, onCancel }: {
   agentName: string;
-  mcpServers?: Record<string, MCPServerConfig> | null;
-  onSubmit: (name: string, enabled?: string[]) => void;
+  onSubmit: (name: string) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
-  const names = Object.keys(mcpServers ?? {});
-  const [enabled, setEnabled] = useState<Set<string>>(new Set(names));
-  const toggle = (s: string) => setEnabled(p => { const n = new Set(p); n.has(s) ? n.delete(s) : n.add(s); return n; });
 
-  const submit = () => { const t = name.trim(); if (!t) return; onSubmit(t, names.filter(n => enabled.has(n)).length ? names.filter(n => enabled.has(n)) : undefined); };
+  const submit = () => { const t = name.trim(); if (!t) return; onSubmit(t); };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
@@ -37,27 +32,6 @@ export function CreateInstanceDialog({ agentName, mcpServers, onSubmit, onCancel
             autoFocus
           />
         </label>
-
-        {names.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">MCP Servers</span>
-              <span className="text-[11px] font-mono text-text-muted">{enabled.size}/{names.length}</span>
-            </div>
-            {names.map(sn => (
-              <label
-                key={sn}
-                className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${enabled.has(sn) ? "border-accent bg-accent-light" : "border-border-light"}`}
-              >
-                <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={enabled.has(sn)} onChange={() => toggle(sn)} />
-                <span className="text-[13px] font-semibold text-text">{sn}</span>
-                <span className="ml-auto text-[11px] font-mono text-text-muted truncate max-w-[200px]">
-                  {mcpServers![sn].type === "http" ? mcpServers![sn].url : `${mcpServers![sn].command} ${(mcpServers![sn].args ?? []).join(" ")}`}
-                </span>
-              </label>
-            ))}
-          </div>
-        )}
 
         <div className="flex justify-end gap-3 pt-1">
           <button

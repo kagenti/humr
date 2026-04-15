@@ -11,7 +11,6 @@ export type {
   Mount,
   Resources,
   SecurityContext,
-  MCPServerConfig,
 } from "./modules/templates/types.js";
 
 export type {
@@ -42,6 +41,17 @@ export type {
   CreateHeartbeatScheduleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";
+
+export type {
+  SecretType,
+  SecretMode,
+  AnthropicAuthMode,
+  SecretView,
+  CreateSecretInput,
+  UpdateSecretInput,
+  AgentAccess,
+  SecretsService,
+} from "./modules/secrets/types.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
 

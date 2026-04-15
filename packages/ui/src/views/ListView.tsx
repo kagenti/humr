@@ -1,16 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
+import { isMcpSecret } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/StatusIndicator.js";
 import { AddAgentDialog } from "../dialogs/AddAgentDialog.js";
 import { CreateInstanceDialog } from "../dialogs/CreateInstanceDialog.js";
-import { RefreshCw, Plus, Trash2 } from "lucide-react";
+import { RefreshCw, Plus, Trash2, KeyRound } from "lucide-react";
+import { EditAgentSecretsDialog } from "../dialogs/EditAgentSecretsDialog.js";
 
 export function ListView() {
   const templates = useStore(s => s.templates);
   const agents = useStore(s => s.agents);
   const instances = useStore(s => s.instances);
-  const loading = useStore(s => s.loading);
   const fetchTemplates = useStore(s => s.fetchTemplates);
   const fetchAgents = useStore(s => s.fetchAgents);
   const fetchInstances = useStore(s => s.fetchInstances);
@@ -21,17 +22,53 @@ export function ListView() {
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
+  const secrets = useStore(s => s.secrets);
+  const fetchSecrets = useStore(s => s.fetchSecrets);
+  const agentAccess = useStore(s => s.agentAccess);
+  const fetchAgentAccess = useStore(s => s.fetchAgentAccess);
+
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [busyAgent, setBusyAgent] = useState(false);
   const [showInstDlg, setShowInstDlg] = useState<string | null>(null);
   const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delAgent, setDelAgent] = useState<string | null>(null);
+  const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
+
+  // Persisted across mount in the store — ensures skeleton doesn't reappear
+  // when the user navigates away and back while data is already loaded.
+  const loadedOnce = useStore(s => s.loadedOnce);
+  const initialLoaded = loadedOnce.agents && loadedOnce.instances;
 
   const byAgent = useMemo(() => {
     const m = new Map<string, InstanceView[]>();
     for (const i of instances) m.set(i.agentId, [...(m.get(i.agentId) ?? []), i]);
     return m;
   }, [instances]);
+
+  // Fetch secrets + per-agent access once we have the agent list
+  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
+  useEffect(() => {
+    for (const a of agents) {
+      if (!agentAccess[a.id]) fetchAgentAccess(a.id);
+    }
+  }, [agents, agentAccess, fetchAgentAccess]);
+
+  // Count by category for a given agent based on its access mode.
+  // "all" mode: counts = totals across all user secrets.
+  // "selective" mode: counts = only those in the agent's assigned list.
+  const countsFor = (agentId: string) => {
+    const access = agentAccess[agentId];
+    const pool = !access || access.mode === "all"
+      ? secrets
+      : secrets.filter(s => access.secretIds.includes(s.id));
+    let anthropic = 0, mcp = 0, generic = 0;
+    for (const s of pool) {
+      if (s.type === "anthropic") anthropic += 1;
+      else if (isMcpSecret(s)) mcp += 1;
+      else generic += 1;
+    }
+    return { mode: access?.mode, anthropic, mcp, generic };
+  };
 
   return (
     <>
@@ -58,8 +95,16 @@ export function ListView() {
           </div>
         </div>
 
-        {/* Empty state (only when not loading) */}
-        {!loading.agents && !loading.instances && agents.length === 0 && (
+        {/* Skeleton during initial load */}
+        {!initialLoaded && (
+          <div className="flex flex-col gap-6">
+            <div className="rounded-xl border-2 border-border-light bg-surface h-[120px] anim-pulse" />
+            <div className="rounded-xl border-2 border-border-light bg-surface h-[120px] anim-pulse" />
+          </div>
+        )}
+
+        {/* Empty state — only after initial load, only when no agents, and not mid-creation */}
+        {initialLoaded && !busyAgent && agents.length === 0 && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-8 py-16 text-center">
             <p className="text-[15px] text-text-secondary mb-4">No agents yet</p>
             <button
@@ -74,7 +119,7 @@ export function ListView() {
 
         {/* Agent cards */}
         <div className="flex flex-col gap-6">
-          {agents.map(agent => {
+          {initialLoaded && agents.map(agent => {
             const insts = byAgent.get(agent.id) ?? [];
             return (
               <div
@@ -99,15 +144,52 @@ export function ListView() {
                         {agent.description && (
                           <span className="text-[13px] text-text-secondary">{agent.description}</span>
                         )}
-                        {agent.mcpServers && Object.keys(agent.mcpServers).length > 0 && (
-                          <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
-                            {Object.keys(agent.mcpServers).length} MCP
-                          </span>
-                        )}
+                        {(() => {
+                          const c = countsFor(agent.id);
+                          if (c.mode === "all") {
+                            return (
+                              <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
+                                All credentials
+                              </span>
+                            );
+                          }
+                          const chips: React.ReactNode[] = [];
+                          if (c.anthropic > 0) {
+                            chips.push(
+                              <span key="a" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-warning bg-warning-light text-warning rounded-full px-2.5 py-0.5">
+                                Anthropic
+                              </span>,
+                            );
+                          }
+                          const otherSecrets = c.generic;
+                          if (otherSecrets > 0) {
+                            chips.push(
+                              <span key="s" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-border-light bg-surface-raised text-text-muted rounded-full px-2.5 py-0.5">
+                                {otherSecrets} secret{otherSecrets === 1 ? "" : "s"}
+                              </span>,
+                            );
+                          }
+                          if (c.mcp > 0) {
+                            chips.push(
+                              <span key="m" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
+                                {c.mcp} MCP
+                              </span>,
+                            );
+                          }
+                          return chips;
+                        })()}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setShowSecretsDlg(agent.id)}
+                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
+                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                        title="Manage agent connectors"
+                      >
+                        <KeyRound size={12} /> Connectors
+                      </button>
                       <button
                         onClick={() => setShowInstDlg(agent.id)}
                         disabled={busyInst === agent.id}
@@ -154,10 +236,6 @@ export function ListView() {
 
                         <span className="flex-1" />
 
-                        {inst.enabledMcpServers && inst.enabledMcpServers.length > 0 && (
-                          <span className="text-[12px] font-mono text-text-muted">{inst.enabledMcpServers.length} MCP</span>
-                        )}
-
                         <button
                           onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.id); }}
                           className="h-7 w-7 rounded-md border-2 border-border-light flex items-center justify-center text-text-muted hover:text-danger hover:border-danger transition-colors"
@@ -186,9 +264,15 @@ export function ListView() {
       {showInstDlg && (
         <CreateInstanceDialog
           agentName={agents.find(a => a.id === showInstDlg)?.name ?? showInstDlg}
-          mcpServers={agents.find(a => a.id === showInstDlg)?.mcpServers}
-          onSubmit={async (name, mcp) => { const aid = showInstDlg; setShowInstDlg(null); setBusyInst(aid); await createInstance(aid, name, mcp); setBusyInst(null); }}
+          onSubmit={async (name) => { const aid = showInstDlg; setShowInstDlg(null); setBusyInst(aid); await createInstance(aid, name); setBusyInst(null); }}
           onCancel={() => setShowInstDlg(null)}
+        />
+      )}
+      {showSecretsDlg && (
+        <EditAgentSecretsDialog
+          agentId={showSecretsDlg}
+          agentName={agents.find(a => a.id === showSecretsDlg)?.name ?? showSecretsDlg}
+          onClose={() => setShowSecretsDlg(null)}
         />
       )}
     </>

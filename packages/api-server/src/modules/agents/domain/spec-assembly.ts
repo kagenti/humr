@@ -1,12 +1,11 @@
 import type { TemplateSpec } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
 import { DEFAULT_TEMPLATE_SPEC } from "./defaults.js";
-import type { MCPServerConfig } from "api-server-api";
 
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
-  opts: { description?: string; mcpServers?: Record<string, MCPServerConfig> },
+  opts: { description?: string },
 ): Record<string, unknown> {
   return {
     name,
@@ -18,13 +17,12 @@ export function assembleSpecFromTemplate(
     env: tmplSpec.env,
     resources: tmplSpec.resources,
     securityContext: tmplSpec.securityContext,
-    mcpServers: opts.mcpServers,
   };
 }
 
 export function assembleSpecFromImage(
   name: string,
-  opts: { image?: string; description?: string; mcpServers?: Record<string, MCPServerConfig> },
+  opts: { image?: string; description?: string },
 ): Record<string, unknown> {
   return {
     name,
@@ -32,6 +30,5 @@ export function assembleSpecFromImage(
     image: opts.image,
     description: opts.description,
     ...DEFAULT_TEMPLATE_SPEC,
-    mcpServers: opts.mcpServers,
   };
 }

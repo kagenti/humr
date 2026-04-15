@@ -128,7 +128,7 @@ keycloak:
   enabled: true
   image: quay.io/keycloak/keycloak:26.5.4
   configCliImage: adorsys/keycloak-config-cli:latest-26.5.4
-  provisionImage: curlimages/curl:8.12.1
+  provisionImage: curlimages/curl:8.19.0
   port: 8080
 
   # -- Admin credentials (for Keycloak admin console)

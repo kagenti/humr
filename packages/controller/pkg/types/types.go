@@ -23,7 +23,6 @@ type AgentSpec struct {
 	Resources       ResourceSpec                `yaml:"resources,omitempty"`
 	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
 	SecretMode      string                      `yaml:"secretMode,omitempty"` // "all" or "selective" (default)
-	MCPServers      map[string]MCPServerConfig  `yaml:"mcpServers,omitempty"`
 }
 
 type Mount struct {
@@ -58,13 +57,12 @@ type MCPServerConfig struct {
 // --- Instance ---
 
 type InstanceSpec struct {
-	Version            string   `yaml:"version"`
-	DesiredState       string   `yaml:"desiredState"`
-	AgentName          string   `yaml:"agentId,omitempty"`
-	Env                []EnvVar `yaml:"env,omitempty"`
-	SecretRef          string   `yaml:"secretRef,omitempty"`
-	Description        string   `yaml:"description,omitempty"`
-	EnabledMCPServers  []string `yaml:"enabledMcpServers,omitempty"`
+	Version      string   `yaml:"version"`
+	DesiredState string   `yaml:"desiredState"`
+	AgentName    string   `yaml:"agentId,omitempty"`
+	Env          []EnvVar `yaml:"env,omitempty"`
+	SecretRef    string   `yaml:"secretRef,omitempty"`
+	Description  string   `yaml:"description,omitempty"`
 }
 
 type InstanceStatus struct {
@@ -108,9 +106,6 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 		if !strings.HasPrefix(m.Path, "/") {
 			return nil, fmt.Errorf("agent spec: mount path %q must be absolute", m.Path)
 		}
-	}
-	if err := validateMCPServers(spec.MCPServers); err != nil {
-		return nil, fmt.Errorf("agent spec: %w", err)
 	}
 	return &spec, nil
 }

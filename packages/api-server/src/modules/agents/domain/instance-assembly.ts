@@ -9,7 +9,6 @@ export interface InfraInstance {
   currentState?: "running" | "hibernated" | "error";
   error?: string;
   podReady: boolean;
-  enabledMcpServers?: string[];
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
@@ -33,7 +32,6 @@ export function assembleInstance(
     state: computeState(infra),
     error: infra.currentState === "error" ? infra.error : undefined,
     channels,
-    enabledMcpServers: infra.enabledMcpServers ?? [],
     allowedUsers,
   };
 }

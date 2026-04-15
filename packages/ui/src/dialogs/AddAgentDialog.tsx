@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import type { TemplateView, MCPServerConfig } from "../types.js";
-import { StatusIndicator } from "../components/StatusIndicator.js";
-import { authFetch } from "../auth.js";
+import type { TemplateView, SecretView, SecretMode } from "../types.js";
+import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
+import { Globe, Lock, Sparkles } from "lucide-react";
+import { platform } from "../platform.js";
+import { AuthModeBadge } from "../views/ConnectorsView.js";
 
 type Step = "pick" | "configure";
 
 export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors }: {
   templates: TemplateView[];
-  onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; mcpServers?: Record<string, MCPServerConfig> }) => void;
+  onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; secretMode?: SecretMode; secretIds?: string[]; autoCreateInstance?: boolean }) => void;
   onCancel: () => void;
   onGoToConnectors: () => void;
 }) {
@@ -18,15 +20,17 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
   // Configure step state
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const [conns, setConns] = useState<{ hostname: string; connectedAt: string; expired: boolean }[]>([]);
-  const [selConns, setSelConns] = useState<Set<string>>(new Set());
-  const [loadConns, setLoadConns] = useState(true);
+  const [secrets, setSecrets] = useState<SecretView[]>([]);
+  const [selSecrets, setSelSecrets] = useState<Set<string>>(new Set());
+  const [loadSecrets, setLoadSecrets] = useState(true);
+  const [secretMode, setSecretMode] = useState<SecretMode>("selective");
+  const [autoCreateInstance, setAutoCreateInstance] = useState(true);
 
   useEffect(() => {
-    authFetch("/api/mcp/connections").then(r => r.json()).then(d => { if (Array.isArray(d)) setConns(d); }).catch(() => {}).finally(() => setLoadConns(false));
+    platform.secrets.list.query().then(setSecrets).catch(() => {}).finally(() => setLoadSecrets(false));
   }, []);
 
-  const toggleConn = (h: string) => setSelConns(p => { const n = new Set(p); n.has(h) ? n.delete(h) : n.add(h); return n; });
+  const toggleSecret = (id: string) => setSelSecrets(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -39,24 +43,30 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
     const img = customImage.trim();
     if (!img) return;
     setSelectedTemplate(null);
+    setName("");
+    setDesc("");
     setStep("configure");
   };
 
   const submit = () => {
     const n = name.trim();
     if (!n) return;
-    const srv: Record<string, MCPServerConfig> = {};
-    for (const h of selConns) srv[h.split(".")[0]] = { type: "http", url: `https://${h}/mcp` };
     onSubmit({
       name: n,
       templateId: selectedTemplate?.id,
       image: selectedTemplate ? undefined : customImage.trim(),
       description: desc.trim() || undefined,
-      mcpServers: Object.keys(srv).length ? srv : undefined,
+      secretMode,
+      secretIds: secretMode === "selective" && selSecrets.size ? [...selSecrets] : undefined,
+      autoCreateInstance,
     });
   };
 
   const inp = "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+
+  const anthropicSecrets = secrets.filter(s => s.type === "anthropic");
+  const mcpSecrets = secrets.filter(s => isMcpSecret(s));
+  const genericSecrets = secrets.filter(s => s.type !== "anthropic" && !isMcpSecret(s));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
@@ -137,29 +147,105 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
               <input className={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" />
             </label>
 
-            {/* Connectors */}
+            {/* Credential Access */}
             <div className="flex flex-col gap-3">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Connectors</span>
-              {loadConns && <span className="text-[12px] text-text-muted">Loading...</span>}
-              {!loadConns && conns.length === 0 && (
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Credential Access</span>
+
+              {/* Mode toggle */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSecretMode("all")}
+                  className={`rounded-lg border-2 px-3 py-2.5 text-left transition-colors ${secretMode === "all" ? "border-accent bg-accent-light" : "border-border-light bg-bg hover:border-border"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <Globe size={12} className="text-text-secondary" />
+                    <span className="text-[12px] font-bold text-text">All credentials</span>
+                  </div>
+                  <span className="text-[11px] text-text-muted">Every secret, including new ones</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecretMode("selective")}
+                  className={`rounded-lg border-2 px-3 py-2.5 text-left transition-colors ${secretMode === "selective" ? "border-accent bg-accent-light" : "border-border-light bg-bg hover:border-border"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <Lock size={12} className="text-text-secondary" />
+                    <span className="text-[12px] font-bold text-text">Selective</span>
+                  </div>
+                  <span className="text-[11px] text-text-muted">Choose specific credentials</span>
+                </button>
+              </div>
+
+              {secretMode === "all" ? (
+                <p className="text-[12px] text-text-muted leading-relaxed">
+                  Agent will have access to all your current secrets, MCP connections, and any credentials you add later.
+                </p>
+              ) : null}
+
+              {loadSecrets && <span className="text-[12px] text-text-muted">Loading...</span>}
+              {!loadSecrets && secrets.length === 0 && (
                 <span className="text-[12px] text-text-muted">
-                  None — <button className="text-accent font-semibold hover:underline" onClick={onGoToConnectors}>connect a server</button>
+                  No credentials yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToConnectors}>add one</button>
                 </span>
               )}
-              {conns.map(c => (
-                <label
-                  key={c.hostname}
-                  className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selConns.has(c.hostname) ? "border-accent bg-accent-light" : "border-border-light"} ${c.expired ? "opacity-50" : ""}`}
-                >
-                  <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selConns.has(c.hostname)} onChange={() => toggleConn(c.hostname)} disabled={c.expired} />
-                  <StatusIndicator state={c.expired ? "error" : "ready"} />
-                  <span className="text-[13px] font-medium text-text">{c.hostname}</span>
-                  {c.expired && <span className="ml-auto text-[10px] font-bold text-danger border-2 border-danger bg-danger-light rounded-full px-2 py-0.5">Expired</span>}
-                </label>
-              ))}
+
+              {/* Selective list — only rendered in selective mode */}
+              {secretMode === "selective" && (
+                <>
+                  {/* Anthropic */}
+                  {anthropicSecrets.map(s => (
+                    <label
+                      key={s.id}
+                      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                    >
+                      <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                      <Sparkles size={14} className="text-warning" />
+                      <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
+                      <AuthModeBadge mode={s.authMode} />
+                    </label>
+                  ))}
+
+                  {/* MCP */}
+                  {mcpSecrets.map(s => (
+                    <label
+                      key={s.id}
+                      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                    >
+                      <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                      <Globe size={14} className="text-info" />
+                      <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 bg-info-light text-info border-info rounded-full px-2 py-0.5">MCP</span>
+                      <span className="text-[13px] font-medium text-text">{mcpHostnameFromSecretName(s.name)}</span>
+                    </label>
+                  ))}
+
+                  {/* Generic */}
+                  {genericSecrets.map(s => (
+                    <label
+                      key={s.id}
+                      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                    >
+                      <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                      <Lock size={14} className="text-text-secondary" />
+                      <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 bg-surface-raised text-text-muted border-border-light rounded-full px-2 py-0.5">Secret</span>
+                      <span className="text-[13px] font-medium text-text">{s.name}</span>
+                      <span className="ml-auto text-[11px] font-mono text-text-muted">{s.hostPattern}</span>
+                    </label>
+                  ))}
+                </>
+              )}
             </div>
 
-            <div className="flex justify-end gap-3 pt-1">
+            <div className="flex items-center gap-3 pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none mr-auto" title="Start a running instance of this agent right away">
+                <input
+                  type="checkbox"
+                  className="accent-[var(--color-accent)] w-4 h-4"
+                  checked={autoCreateInstance}
+                  onChange={(e) => setAutoCreateInstance(e.target.checked)}
+                />
+                <span className="text-[12px] font-semibold text-text-secondary">Create instance immediately</span>
+              </label>
               <button className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text" style={{ boxShadow: "var(--shadow-brutal-sm)" }} onClick={() => setStep("pick")}>
                 Back
               </button>

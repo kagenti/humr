@@ -124,7 +124,7 @@ function Nav() {
         })}
         {getAuthConfig()?.onecliUrl && (
           <a
-            href={getAuthConfig()!.onecliUrl}
+            href={`${getAuthConfig()!.onecliUrl}/connections`}
             target="_blank"
             rel="noopener noreferrer"
             className="px-3 py-1.5 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"

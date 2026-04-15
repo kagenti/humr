@@ -9,7 +9,8 @@ import type {
   LogEntry,
   TreeEntry,
   Schedule,
-  MCPServerConfig,
+  SecretView,
+  SecretMode,
 } from "./types.js";
 
 type View = "list" | "chat" | "connectors";
@@ -60,10 +61,14 @@ export interface HumrStore {
   log: LogEntry[];
   busy: boolean;
   sessionId: string | null;
-  rightTab: "files" | "log" | "schedules" | "channels";
+  rightTab: "files" | "log" | "schedules" | "channels" | "mcps";
 
   // Loading states
   loading: LoadingState;
+
+  // Persist-across-mount "we've fetched at least once" flags. Prevents the
+  // list-view skeleton from reappearing when the user navigates away and back.
+  loadedOnce: { agents: boolean; instances: boolean };
 
   // Template actions (read-only catalog)
   fetchTemplates: () => Promise<void>;
@@ -75,17 +80,19 @@ export interface HumrStore {
     templateId?: string;
     image?: string;
     description?: string;
-    mcpServers?: Record<string, MCPServerConfig>;
+    secretMode?: "all" | "selective";
+    secretIds?: string[];
+    autoCreateInstance?: boolean;
   }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
 
+  // Per-agent credential-access cache (mode + assigned secret ids)
+  agentAccess: Record<string, { mode: SecretMode; secretIds: string[] }>;
+  fetchAgentAccess: (agentId: string) => Promise<void>;
+
   // Instance actions
   fetchInstances: () => Promise<void>;
-  createInstance: (
-    agentId: string,
-    name: string,
-    enabledMcpServers?: string[],
-  ) => Promise<void>;
+  createInstance: (agentId: string, name: string) => Promise<void>;
   deleteInstance: (id: string) => Promise<void>;
   updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
@@ -109,7 +116,13 @@ export interface HumrStore {
   setOpenFile: (file: { path: string; content: string } | null) => void;
 
   // Right tab
-  setRightTab: (tab: "files" | "log" | "schedules" | "channels") => void;
+  setRightTab: (tab: "files" | "log" | "schedules" | "channels" | "mcps") => void;
+
+  // Secrets
+  secrets: SecretView[];
+  fetchSecrets: () => Promise<void>;
+  createSecret: (input: { type: "anthropic" | "generic"; name: string; value: string; hostPattern?: string }) => Promise<void>;
+  deleteSecret: (id: string) => Promise<void>;
 
   // Schedules
   setSchedules: (schedules: Schedule[]) => void;
@@ -191,6 +204,7 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Loading states
   loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
+  loadedOnce: { agents: false, instances: false },
 
   // Template actions (read-only catalog)
   fetchTemplates: async () => {
@@ -207,15 +221,46 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, agents: true } }));
     try {
       const list = await platform.agents.list.query();
-      set({ agents: list });
+      set((s) => ({ agents: list, loadedOnce: { ...s.loadedOnce, agents: true } }));
     } catch {}
     set((s) => ({ loading: { ...s.loading, agents: false } }));
   },
 
-  createAgent: async (input) => {
+  createAgent: async ({ secretMode, secretIds, autoCreateInstance, ...input }) => {
     try {
-      await platform.agents.create.mutate(input);
+      const agent = await platform.agents.create.mutate(input);
       await get().fetchAgents();
+
+      // Auto-create a first instance named after the agent, if requested
+      if (autoCreateInstance) {
+        try {
+          await platform.instances.create.mutate({ name: input.name, agentId: agent.id });
+          await get().fetchInstances();
+        } catch (err: any) {
+          get().showAlert(err?.message ?? "Agent created but failed to create instance");
+        }
+      }
+
+      // Only call setAgentAccess if the user deviates from the controller's default
+      // ("selective" + auto-assigned anthropic) — i.e. selective with an explicit
+      // list, or all-credentials mode.
+      const needsAccessUpdate =
+        secretMode === "all" || (secretMode === "selective" && secretIds?.length);
+      if (needsAccessUpdate) {
+        // Controller registers the OneCLI agent asynchronously — retry assignment
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            await platform.secrets.setAgentAccess.mutate({
+              agentName: agent.id,
+              mode: secretMode ?? "selective",
+              secretIds: secretIds ?? [],
+            });
+            return;
+          } catch {
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+        }
+      }
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create agent");
     }
@@ -231,6 +276,16 @@ export const useStore = create<HumrStore>((set, get) => ({
     }
   },
 
+  agentAccess: {},
+  fetchAgentAccess: async (agentId) => {
+    try {
+      const access = await platform.secrets.getAgentAccess.query({ agentName: agentId });
+      set((s) => ({ agentAccess: { ...s.agentAccess, [agentId]: access } }));
+    } catch {
+      // Agent might not be registered in OneCLI yet — silently skip.
+    }
+  },
+
   // Instance actions
   fetchInstances: async () => {
     set((s) => ({ loading: { ...s.loading, instances: true } }));
@@ -239,14 +294,18 @@ export const useStore = create<HumrStore>((set, get) => ({
         platform.instances.list.query(),
         platform.channels.available.query(),
       ]);
-      set({ instances: list, availableChannels });
+      set((s) => ({
+        instances: list,
+        availableChannels,
+        loadedOnce: { ...s.loadedOnce, instances: true },
+      }));
     } catch {}
     set((s) => ({ loading: { ...s.loading, instances: false } }));
   },
 
-  createInstance: async (agentId, name, enabledMcpServers) => {
+  createInstance: async (agentId, name) => {
     try {
-      await platform.instances.create.mutate({ name, agentId, enabledMcpServers });
+      await platform.instances.create.mutate({ name, agentId });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create instance");
@@ -346,6 +405,31 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Right tab
   setRightTab: (tab) => set({ rightTab: tab }),
+
+  // Secrets
+  secrets: [],
+  fetchSecrets: async () => {
+    try {
+      const list = await platform.secrets.list.query();
+      set({ secrets: list });
+    } catch {}
+  },
+  createSecret: async (input) => {
+    try {
+      await platform.secrets.create.mutate(input);
+      await get().fetchSecrets();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to create secret");
+    }
+  },
+  deleteSecret: async (id) => {
+    try {
+      await platform.secrets.delete.mutate({ id });
+      await get().fetchSecrets();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to delete secret");
+    }
+  },
 
   // Schedules
   setSchedules: (schedules) => set({ schedules }),
