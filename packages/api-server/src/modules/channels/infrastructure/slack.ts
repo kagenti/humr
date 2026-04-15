@@ -47,6 +47,15 @@ export interface SlackOAuthPending {
   createdAt: number;
 }
 
+interface PendingSelection {
+  text: string;
+  channel: string;
+  slackUserId: string;
+  keycloakSub: string;
+  threadTs: string;
+  eventTs: string;
+}
+
 export function createSlackWorker(
   namespace: string,
   botToken: string,
@@ -65,6 +74,7 @@ export function createSlackWorker(
   const channelMap = new Map<string, Set<string>>();
   const instanceChannels = new Map<string, Set<string>>();
   const threadRoutes = new Map<string, string>();
+  const pendingSelections = new Map<string, PendingSelection>();
 
   let app: BoltApp | null = null;
 
@@ -111,6 +121,64 @@ export function createSlackWorker(
     if (!ins || ins.size === 0) return null;
     if (ins.size === 1) return [...ins][0];
     return null;
+  }
+
+  async function relayToInstance(ctx: {
+    channel: string;
+    threadTs: string;
+    eventTs: string;
+    text: string;
+    hasThread: boolean;
+  }) {
+    if (!app) return;
+    const instanceName = threadRoutes.get(ctx.threadTs);
+    if (!instanceName) return;
+
+    await app.client.reactions.add({
+      channel: ctx.channel,
+      timestamp: ctx.eventTs,
+      name: "eyes",
+    });
+
+    const contextMessages = await getContextMessages(
+      app,
+      ctx.channel,
+      ctx.eventTs,
+      ctx.hasThread ? ctx.threadTs : undefined,
+    );
+
+    const parts: string[] = [];
+    if (contextMessages.length > 0) {
+      parts.push(`<context>\n${contextMessages.join("\n")}\n</context>`);
+    }
+    parts.push(ctx.text);
+    const prompt = parts.join("\n\n");
+
+    try {
+      await ensureRunning(instances(), instanceName);
+      const acp = createAcpClient({
+        namespace,
+        instanceName,
+        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelSlack),
+      });
+      const response = await acp.sendPrompt(prompt);
+      await app.client.chat.postMessage({
+        channel: ctx.channel,
+        thread_ts: ctx.threadTs,
+        text: response || "(no response)",
+        blocks: [
+          { type: "section", text: { type: "mrkdwn", text: response || "(no response)" } },
+          { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
+        ],
+      });
+    } catch (err) {
+      process.stderr.write(`[${instanceName}] ACP error: ${err}\n`);
+      await app.client.chat.postMessage({
+        channel: ctx.channel,
+        thread_ts: ctx.threadTs,
+        text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   function buildLoginUrl(state: string, codeChallenge: string): string {
@@ -203,10 +271,35 @@ export function createSlackWorker(
         return;
       }
 
+      const selectionId = crypto.randomUUID();
+      pendingSelections.set(selectionId, {
+        text: event.text,
+        channel: event.channel,
+        slackUserId,
+        keycloakSub,
+        threadTs,
+        eventTs: event.ts,
+      });
+
       await app.client.chat.postEphemeral({
         channel: event.channel,
         user: slackUserId,
-        text: `Multiple instances connected to this channel (${[...ins].join(", ")}). Multi-instance routing coming soon.`,
+        text: "Multiple instances are connected to this channel. Pick one:",
+        blocks: [
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: "Multiple instances are connected to this channel. Pick one:" },
+            accessory: {
+              type: "static_select",
+              action_id: `instance_select:${selectionId}`,
+              placeholder: { type: "plain_text", text: "Choose instance" },
+              options: [...ins].map((name) => ({
+                text: { type: "plain_text" as const, text: name },
+                value: name,
+              })),
+            },
+          },
+        ],
       });
       return;
     }
@@ -222,52 +315,42 @@ export function createSlackWorker(
     }
 
     threadRoutes.set(threadTs, instanceName);
+    await relayToInstance({ channel: event.channel, threadTs, eventTs: event.ts, text: event.text, hasThread: !!event.thread_ts });
+  }
 
-    await app.client.reactions.add({
-      channel: event.channel,
-      timestamp: event.ts,
-      name: "eyes",
+  async function handleInstanceSelect({ action, ack, body }: {
+    action: { action_id: string; selected_option?: { value: string } };
+    ack: () => Promise<void>;
+    body: { user: { id: string } };
+  }) {
+    await ack();
+    if (!app) return;
+
+    const selectionId = action.action_id.replace("instance_select:", "");
+    const pending = pendingSelections.get(selectionId);
+    pendingSelections.delete(selectionId);
+
+    if (!pending || !action.selected_option) return;
+
+    const instanceName = action.selected_option.value;
+    const instance = await instances().get(instanceName);
+    if (instance && instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(pending.keycloakSub)) {
+      await app.client.chat.postEphemeral({
+        channel: pending.channel,
+        user: body.user.id,
+        text: "You don't have access to this instance. Contact the instance owner to be added to the allowed users list.",
+      });
+      return;
+    }
+
+    threadRoutes.set(pending.threadTs, instanceName);
+    await relayToInstance({
+      channel: pending.channel,
+      threadTs: pending.threadTs,
+      eventTs: pending.eventTs,
+      text: pending.text,
+      hasThread: pending.threadTs !== pending.eventTs,
     });
-
-    const contextMessages = await getContextMessages(
-      app,
-      event.channel,
-      event.ts,
-      event.thread_ts,
-    );
-
-    const parts: string[] = [];
-    if (contextMessages.length > 0) {
-      parts.push(`<context>\n${contextMessages.join("\n")}\n</context>`);
-    }
-    parts.push(event.text);
-    const prompt = parts.join("\n\n");
-
-    try {
-      await ensureRunning(instances(), instanceName);
-      const acp = createAcpClient({
-        namespace,
-        instanceName,
-        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelSlack),
-      });
-      const response = await acp.sendPrompt(prompt);
-      await app.client.chat.postMessage({
-        channel: event.channel,
-        thread_ts: threadTs,
-        text: response || "(no response)",
-        blocks: [
-          { type: "section", text: { type: "mrkdwn", text: response || "(no response)" } },
-          { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
-        ],
-      });
-    } catch (err) {
-      process.stderr.write(`[${instanceName}] ACP error: ${err}\n`);
-      await app.client.chat.postMessage({
-        channel: event.channel,
-        thread_ts: threadTs,
-        text: `Error: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
   }
 
   async function ensureApp(): Promise<BoltApp> {
@@ -282,6 +365,7 @@ export function createSlackWorker(
 
     app.event("app_mention", handleAppMention);
     app.command("/humr", handleCommand);
+    app.action(/^instance_select:/, handleInstanceSelect as Parameters<BoltApp["action"]>[1]);
 
     app.error(async (error) => {
       process.stderr.write(`[slack] Bolt error: ${error}\n`);
@@ -311,6 +395,7 @@ export function createSlackWorker(
       channelMap.clear();
       instanceChannels.clear();
       threadRoutes.clear();
+      pendingSelections.clear();
       if (app) {
         await app.stop();
         app = null;
