@@ -216,7 +216,7 @@ export function ListView() {
       {showSlackDlg && (
         <ConnectSlackDialog
           instanceName={showSlackDlg}
-          onSubmit={async (botToken: string) => { const n = showSlackDlg; setShowSlackDlg(null); await connectSlack(n, botToken); }}
+          onSubmit={async (slackChannelId: string) => { const n = showSlackDlg; setShowSlackDlg(null); await connectSlack(n, slackChannelId); }}
           onCancel={() => setShowSlackDlg(null)}
         />
       )}

@@ -51,8 +51,8 @@ const systemInstances = composeSystemInstances(api, config.namespace, db);
 const persistSession = upsertSession(db);
 
 const channelManager = createChannelManager({
-  slackWorker: config.slackAppToken
-    ? createSlackWorker(config.namespace, config.slackAppToken, () => systemInstances, persistSession)
+  slackWorker: config.slackBotToken && config.slackAppToken
+    ? createSlackWorker(config.namespace, config.slackBotToken, config.slackAppToken, () => systemInstances, persistSession)
     : undefined,
 });
 
