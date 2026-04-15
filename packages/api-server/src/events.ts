@@ -38,7 +38,7 @@ export type InstanceWoken = {
 export type SlackConnected = {
   type: EventType.SlackConnected;
   instanceId: string;
-  botToken: string;
+  slackChannelId: string;
 };
 
 export type SlackDisconnected = {

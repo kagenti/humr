@@ -87,7 +87,7 @@ export interface HumrStore {
     enabledMcpServers?: string[],
   ) => Promise<void>;
   deleteInstance: (id: string) => Promise<void>;
-  connectSlack: (id: string, botToken: string) => Promise<void>;
+  connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;
   goBack: () => void;
@@ -261,9 +261,9 @@ export const useStore = create<HumrStore>((set, get) => ({
     }
   },
 
-  connectSlack: async (id, botToken) => {
+  connectSlack: async (id, slackChannelId) => {
     try {
-      await platform.instances.connectSlack.mutate({ id, botToken });
+      await platform.instances.connectSlack.mutate({ id, slackChannelId });
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to connect Slack");
