@@ -36,7 +36,11 @@ Humr signed up for that job.
 
 ## Meet Humr
 
-Humr is Kubernetes for agent harnesses. You bring the harness. Humr gives it an isolated pod, a credential gateway, a cron, a workspace that survives restarts, and a way to reach Slack. The harness doesn't know any of that is happening. It runs the same way it ran on your laptop. It just keeps running.
+Humr is Kubernetes for agent harnesses. You bring the harness. Humr gives it an isolated pod, a credential gateway, a cron, a workspace that survives restarts, and a way to reach Slack.
+
+**Isolated** is doing real work in that sentence. Each agent gets its own Linux process, its own filesystem, its own network, its own credentials. Not N agents sharing one runtime. Not N threads in a long-running Python process. Not N tabs in one browser. A real OS-level boundary per agent, by default, because that's what Kubernetes gives you when you use it honestly.
+
+The harness doesn't know any of that is happening. It runs the same way it ran on your laptop. It just keeps running.
 
 Here's the mapping to the three problems:
 
@@ -60,7 +64,7 @@ Humr runs agents using three K8s primitives.
 
 **Pods are disposable; workspaces are not.** Anything outside `/workspace` and `/home/agent` is wiped on restart. That's a feature: bad state can't survive a reboot, and you can recover from almost any pod-level failure by killing it. The constraint: system-level changes (apt, `/etc` edits) don't stick. `$HOME`-scoped installs (`npm install -g`, `uv tool install`) do — that's what `/home/agent` persistence is for. Heavier stuff goes in the template image.
 
-**Each instance is its own.** Own process, own filesystem, own NetworkPolicy, own OneCLI token. Two instances in the same cluster can't see or reach each other. Isolation is the default, not a setting.
+**Each instance is its own.** Two instances in the same cluster can't see each other — no shared memory, no shared disk, no shared network namespace. One agent's crash doesn't touch others. One agent's compromise doesn't leak beyond its own pod. One agent's `rm -rf` hurts only itself.
 
 None of this uses CRDs. Every Humr resource is a plain ConfigMap with a `humr.ai/type` label:
 
