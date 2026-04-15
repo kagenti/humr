@@ -28,6 +28,7 @@ export const instancesRouter = t.router({
       secretRef: z.string().optional(),
       description: z.string().optional(),
       enabledMcpServers: enabledMcpServersSchema,
+      allowedUsers: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => ctx.instances.create(input)),
 
@@ -37,6 +38,7 @@ export const instancesRouter = t.router({
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       enabledMcpServers: enabledMcpServersSchema,
+      allowedUsers: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.update(input);
