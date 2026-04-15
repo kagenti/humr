@@ -48,6 +48,7 @@ export function createSlackOAuthRoutes(deps: {
         code,
         redirect_uri: deps.callbackUrl,
         client_id: deps.keycloakClientId,
+        code_verifier: pending.codeVerifier,
       }),
     });
 

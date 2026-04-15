@@ -172,6 +172,36 @@ echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
+["cluster:build-apiserver"]
+description = "Build and load API server image into k3s, restart apiserver pod"
+depends = ["image:apiserver"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "Loading into k3s..."
+tar="/tmp/humr-api-server.tar"
+docker save humr-api-server:latest -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="humr-k3s"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting apiserver pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-apiserver
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
+
+echo "Done."
+'''
+
 ["cluster:build-ui"]
 description = "Build and load UI image into k3s, restart UI pod"
 depends = ["image:ui"]
