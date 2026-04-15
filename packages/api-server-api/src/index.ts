@@ -43,7 +43,7 @@ export type {
   SchedulesService,
 } from "./modules/schedules/types.js";
 
-export type { ChannelsService, LinkedUser } from "./modules/channels/types.js";
+export type { ChannelsService } from "./modules/channels/types.js";
 
 export { SessionType } from "./modules/sessions/types.js";
 export type {
