@@ -87,6 +87,7 @@ export interface HumrStore {
     enabledMcpServers?: string[],
   ) => Promise<void>;
   deleteInstance: (id: string) => Promise<void>;
+  updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;
@@ -258,6 +259,15 @@ export const useStore = create<HumrStore>((set, get) => ({
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to delete instance");
+    }
+  },
+
+  updateInstance: async (id, updates) => {
+    try {
+      await platform.instances.update.mutate({ id, ...updates });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to update instance");
     }
   },
 
