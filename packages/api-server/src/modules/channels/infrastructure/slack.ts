@@ -78,6 +78,10 @@ export function createSlackWorker(
       }
     }
     instanceChannels.delete(instanceName);
+
+    for (const [ts, name] of threadRoutes) {
+      if (name === instanceName) threadRoutes.delete(ts);
+    }
   }
 
   function resolveInstance(channel: string, threadTs?: string): string | null {
