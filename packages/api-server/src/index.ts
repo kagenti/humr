@@ -76,7 +76,7 @@ const channelManager = createChannelManager({
         persistSession,
         identityLinkService,
         {
-          keycloakUrl: config.keycloakUrl,
+          keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: slackOauthCallbackUrl,
