@@ -26,7 +26,6 @@ var testConfig = &config.Config{
 var testAgent = &types.AgentSpec{
 	Image: "ghcr.io/myorg/agent:latest",
 	Mounts: []types.Mount{
-		{Path: "/workspace", Persist: true},
 		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},
 	},
@@ -156,10 +155,9 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
 
-	// 2 PVCs (workspace, home-agent)
-	assert.Len(t, ss.Spec.VolumeClaimTemplates, 2)
-	assert.Equal(t, "workspace", ss.Spec.VolumeClaimTemplates[0].Name)
-	assert.Equal(t, "home-agent", ss.Spec.VolumeClaimTemplates[1].Name)
+	// 1 PVC (home-agent)
+	assert.Len(t, ss.Spec.VolumeClaimTemplates, 1)
+	assert.Equal(t, "home-agent", ss.Spec.VolumeClaimTemplates[0].Name)
 
 	// EmptyDir for /tmp + emptyDir for CA cert
 	volMap := make(map[string]corev1.Volume)
@@ -175,7 +173,6 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	for _, m := range c.VolumeMounts {
 		mountPaths[m.MountPath] = m.Name
 	}
-	assert.Equal(t, "workspace", mountPaths["/workspace"])
 	assert.Equal(t, "home-agent", mountPaths["/home/agent"])
 	assert.Equal(t, "tmp", mountPaths["/tmp"])
 	assert.Equal(t, "ca-cert", mountPaths["/etc/humr/ca"])

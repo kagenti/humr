@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import type { FilesService } from "agent-runtime-api";
 
-const EXCLUDE = new Set([".git", ".claude", "node_modules", ".DS_Store"]);
+const EXCLUDE = new Set([".git", ".npm", ".triggers", ".claude.json", ".initialized", "node_modules", ".DS_Store"]);
 
 function buildTree(
   dir: string,
@@ -15,7 +15,7 @@ function buildTree(
 ): { path: string; type: "file" | "dir" }[] {
   const entries: { path: string; type: "file" | "dir" }[] = [];
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
-    if (EXCLUDE.has(ent.name) || ent.name.startsWith(".")) continue;
+    if (EXCLUDE.has(ent.name)) continue;
     const rel = base ? `${base}/${ent.name}` : ent.name;
     if (ent.isDirectory()) {
       entries.push({ path: rel, type: "dir" });

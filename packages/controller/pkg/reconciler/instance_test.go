@@ -214,7 +214,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	// Pre-create PVCs that would have been created by the StatefulSet controller
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workspace-my-instance-0",
+			Name:      "home-agent-my-instance-0",
 			Namespace: "test-agents",
 			Labels:    map[string]string{"humr.ai/instance": "my-instance"},
 		},

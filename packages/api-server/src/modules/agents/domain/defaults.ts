@@ -1,6 +1,5 @@
 export const DEFAULT_TEMPLATE_SPEC = {
   mounts: [
-    { path: "/workspace", persist: true },
     { path: "/home/agent", persist: true },
     { path: "/tmp", persist: false },
   ],

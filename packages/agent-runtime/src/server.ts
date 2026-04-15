@@ -14,12 +14,15 @@ let triggerWatcher: TriggerWatcher | undefined;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
-const workingDir = config.HUMR_DEV
+const homeDir = config.HUMR_DEV
   ? join(__dir, "../working-dir")
-  : config.WORKSPACE_DIR;
+  : config.HOME_DIR;
+const workDir = config.HUMR_DEV
+  ? join(__dir, "../working-dir")
+  : config.WORK_DIR;
 
 const createContext = (): AgentRuntimeContext => ({
-  files: createFilesService(workingDir),
+  files: createFilesService(homeDir),
 });
 
 const CORS = {
@@ -66,7 +69,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/acp" });
 
 wss.on("connection", (ws) => {
-  const session = spawnAcpSession({ agentScript, workingDir, isDev: config.HUMR_DEV });
+  const session = spawnAcpSession({ agentScript, workingDir: workDir, isDev: config.HUMR_DEV });
 
   session.onMessage((line) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -100,7 +103,7 @@ wss.on("connection", (ws) => {
     try {
       const msg = JSON.parse(data.toString());
       if (msg.params?.cwd !== undefined) {
-        msg.params.cwd = workingDir;
+        msg.params.cwd = workDir;
       }
       session.send(msg);
     } catch {
@@ -119,7 +122,7 @@ server.listen(config.PORT, () => {
 
   triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,
-    workingDir,
+    workingDir: workDir,
     agentScript,
     isDev: config.HUMR_DEV,
   });

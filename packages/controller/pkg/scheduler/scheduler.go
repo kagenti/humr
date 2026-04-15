@@ -137,11 +137,11 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 		trigger["mcpServers"] = spec.MCPServers
 	}
 	triggerJSON, _ := json.Marshal(trigger)
-	filename := fmt.Sprintf("/workspace/.triggers/%d.json", time.Now().UnixMilli())
+	filename := fmt.Sprintf("/home/agent/.triggers/%d.json", time.Now().UnixMilli())
 	tmpFilename := filename + ".tmp"
 
 	podName := instanceName + "-0"
-	cmd := []string{"sh", "-c", fmt.Sprintf("mkdir -p /workspace/.triggers && cat > %s << 'TRIGGER_EOF'\n%s\nTRIGGER_EOF\nmv %s %s", tmpFilename, string(triggerJSON), tmpFilename, filename)}
+	cmd := []string{"sh", "-c", fmt.Sprintf("mkdir -p /home/agent/.triggers && cat > %s << 'TRIGGER_EOF'\n%s\nTRIGGER_EOF\nmv %s %s", tmpFilename, string(triggerJSON), tmpFilename, filename)}
 
 	if s.restCfg != nil {
 		req := s.client.CoreV1().RESTClient().Post().

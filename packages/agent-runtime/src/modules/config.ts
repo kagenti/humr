@@ -6,8 +6,9 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true"),
-  WORKSPACE_DIR: z.string().default("/workspace"),
-  TRIGGERS_DIR: z.string().default("/workspace/.triggers"),
+  HOME_DIR: z.string().default("/home/agent"),
+  WORK_DIR: z.string().default("/home/agent/work"),
+  TRIGGERS_DIR: z.string().default("/home/agent/.triggers"),
 });
 
 export const config = schema.parse(process.env);

@@ -4,20 +4,23 @@ import { ArrowLeft, ChevronRight, ChevronDown, Folder, FileText, Eye, Code } fro
 import { Markdown } from "../components/Markdown.js";
 import { HighlightedCode } from "../components/HighlightedCode.js";
 
+function isDotName(path: string): boolean {
+  return path.split("/").pop()!.startsWith(".");
+}
+
 export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void }) {
   const fileTree = useStore(s => s.fileTree);
   const openFile = useStore(s => s.openFile);
   const setOpenFile = useStore(s => s.setOpenFile);
   const [renderMd, setRenderMd] = useState(true);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Tracks user-explicit toggles only. Dot-dirs default to collapsed unless toggled open.
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
 
   // Sort tree: dirs before files at each level, children grouped under parents
   const sortedTree = [...fileTree].sort((a, b) => {
     const ap = a.path.split("/"), bp = b.path.split("/");
-    // Compare each path segment
     for (let i = 0; i < Math.min(ap.length, bp.length); i++) {
       if (ap[i] !== bp[i]) {
-        // At the same depth, dirs come before files
         const aIsDir = i < ap.length - 1 || a.type === "dir";
         const bIsDir = i < bp.length - 1 || b.type === "dir";
         if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
@@ -27,23 +30,28 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
     return ap.length - bp.length;
   });
 
+  const isDirCollapsed = useCallback((path: string) => {
+    const userToggled = toggled.has(path);
+    const defaultCollapsed = isDotName(path);
+    return userToggled ? !defaultCollapsed : defaultCollapsed;
+  }, [toggled]);
+
   const toggleDir = useCallback((path: string) => {
-    setCollapsed(prev => {
+    setToggled(prev => {
       const next = new Set(prev);
       next.has(path) ? next.delete(path) : next.add(path);
       return next;
     });
   }, []);
 
-  // Filter out entries whose parent dir is collapsed
   const isVisible = useCallback((path: string) => {
     const parts = path.split("/");
     for (let i = 1; i < parts.length; i++) {
       const parentPath = parts.slice(0, i).join("/");
-      if (collapsed.has(parentPath)) return false;
+      if (isDirCollapsed(parentPath)) return false;
     }
     return true;
-  }, [collapsed]);
+  }, [isDirCollapsed]);
 
   const isMd = openFile?.path.endsWith(".md") || openFile?.path.endsWith(".mdx");
 
@@ -77,16 +85,18 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
 
   return (
     <div className="flex-1 overflow-y-auto py-1">
+      <div className="px-3 py-1.5 text-[11px] font-mono text-text-muted border-b border-border-light">/home/agent</div>
       {sortedTree.length === 0 && <p className="px-4 py-5 text-[12px] text-text-muted">No files yet</p>}
       {sortedTree.filter(e => isVisible(e.path)).map(e => {
         const isDir = e.type === "dir";
-        const isCollapsed = collapsed.has(e.path);
+        const isCollapsed = isDir && isDirCollapsed(e.path);
         const depth = e.path.split("/").length - 1;
+        const isDot = isDotName(e.path);
         return (
           <div
             key={e.path}
             className={`flex items-center gap-1.5 py-[5px] text-[12px] cursor-pointer transition-colors ${isDir ? "text-text-secondary font-medium hover:bg-surface-raised" : "text-text-secondary hover:bg-accent-light hover:text-accent"}`}
-            style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
+            style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12, opacity: isDot ? 0.6 : 1 }}
             onClick={isDir ? () => toggleDir(e.path) : () => onOpenFile(e.path)}
           >
             {isDir ? (
