@@ -1,4 +1,4 @@
-name: Publish & Deploy
+name: Publish
 
 on:
   push:
@@ -118,16 +118,3 @@ jobs:
       - name: Push to OCI registry
         run: helm push humr-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/kagenti/humr/charts
 
-  deploy:
-    runs-on: arc-runner-set
-    timeout-minutes: 10
-    needs: helm-package
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: azure/setup-kubectl@v4
-      - name: Rollout restart
-        run: kubectl rollout restart statefulset,deployment --namespace humr
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status statefulset --namespace humr --timeout=5m
-          kubectl rollout status deployment --namespace humr --timeout=5m
