@@ -1,6 +1,6 @@
 # Operations Guide
 
-Operational reference for running and developing Humr.
+Operational reference for [Humr](../README.md), a Kubernetes platform for running background coding agents.
 
 ## Configuration
 

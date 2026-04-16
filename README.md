@@ -11,7 +11,7 @@
 
 Keep your coding agents running when you close the lid. Humr gives Claude Code, Codex, Gemini CLI — or any agent that speaks ACP — an isolated Kubernetes pod, a credential gateway, a scheduler, and a Slack channel.
 
-### What you get
+## What you get
 
 - **Zero-trust isolation** — Every agent runs in its own pod with its own filesystem, network, and credentials. No shared runtime, no lateral movement. A compromised agent has nothing to steal and nowhere to go.
 
@@ -63,4 +63,4 @@ Open **`humr.localhost:4444`** in your browser (login: `dev` / `dev`), create an
 - **[Operations guide](docs/operations.md)** — credential setup (OneCLI), Slack integration, development workflow, architecture overview
 - **[Pitch](PITCH.md)** — the full story: security model, 5-minute tour, party tricks, what you build on top
 - **[Motivation](MOTIVATION.md)** — why Humr exists, the three abstraction levels, design beliefs
-- **[Architecture decisions](docs/adrs/)** — 22 accepted ADRs covering isolation, credentials, scheduling, auth, and more
+- **[Architecture decisions](docs/adrs/)** — ADRs covering isolation, credentials, scheduling, auth, and more
