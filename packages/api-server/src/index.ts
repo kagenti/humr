@@ -103,9 +103,6 @@ app.get("/api/auth/config", (c) =>
   }),
 );
 
-// --- Internal endpoints (no JWT auth — secured by K8s NetworkPolicy) ---
-// Called by agent-runtime trigger-watcher to execute scheduled sessions.
-// Session lookup, creation, persistence, and ACP relay all happen here.
 app.post("/internal/trigger", async (c) => {
   const body = await c.req.json<{
     instanceId: string;
@@ -122,7 +119,6 @@ app.post("/internal/trigger", async (c) => {
   const sessionType = "schedule_cron";
   const { sessions } = composeAgentsModule(api, config.namespace, "_system", db);
 
-  // For continuous mode, look up existing session
   let resumeSessionId: string | undefined;
   if (mode === "continuous") {
     const found = await sessions.findByScheduleId(body.schedule);
@@ -144,6 +140,12 @@ app.post("/internal/trigger", async (c) => {
   return c.json(result);
 });
 
+app.route("/", createMcpRoutes({
+  channelManager,
+  instancesRepo: createInstancesRepository(k8sClient),
+  internalToken: config.mcpInternalToken,
+}));
+
 app.use("/api/*", auth.middleware);
 
 app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
@@ -162,12 +164,6 @@ if (config.slackBotToken && config.slackAppToken) {
 async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
   return instancesRepo.isOwnedBy(instanceId, owner);
 }
-
-app.route("/", createMcpRoutes({
-  channelManager,
-  instancesRepo: createInstancesRepository(k8sClient),
-  internalToken: config.mcpInternalToken,
-}));
 
 app.all("/api/instances/:id/trpc/*", async (c) => {
   const user = c.get("user");
