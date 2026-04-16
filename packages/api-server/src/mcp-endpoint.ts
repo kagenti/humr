@@ -8,12 +8,27 @@ import type { ChannelManager } from "./modules/channels/services/ChannelManager.
 import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "./modules/agents/infrastructure/labels.js";
 
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
+  instanceId: string;
+  lastActivity: number;
 }
 
 const sessions = new Map<string, McpSession>();
+
+const sweepInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of sessions) {
+    if (now - session.lastActivity > SESSION_TTL_MS) {
+      session.transport.close?.();
+      sessions.delete(id);
+    }
+  }
+}, 5 * 60_000);
+sweepInterval.unref();
 
 function createMcpSession(instanceId: string, channelManager: ChannelManager): McpSession {
   const server = new McpServer({
@@ -23,6 +38,7 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
 
   server.tool(
     "send_slack_message",
+    "Send a message to the Slack channel connected to this agent instance",
     { text: z.string() },
     async ({ text }) => {
       const result = await channelManager.postMessage(instanceId, text);
@@ -43,7 +59,7 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
     },
   });
 
-  const session: McpSession = { transport, server };
+  const session: McpSession = { transport, server, instanceId, lastActivity: Date.now() };
   return session;
 }
 
@@ -93,6 +109,10 @@ export function createMcpRoutes(deps: {
 
     if (sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId)!;
+      if (session.instanceId !== instanceId) {
+        return c.json({ error: "not found" }, 404);
+      }
+      session.lastActivity = Date.now();
       return session.transport.handleRequest(c.req.raw);
     }
 

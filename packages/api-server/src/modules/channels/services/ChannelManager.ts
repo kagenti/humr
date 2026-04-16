@@ -13,7 +13,8 @@ export interface ChannelManager {
 export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
 }): ChannelManager {
-  const workers = [deps.slackWorker].filter(Boolean) as SlackWorker[];
+  const { slackWorker } = deps;
+  const workers = [slackWorker].filter(Boolean) as SlackWorker[];
   const subscriptions: Subscription[] = [];
 
   subscriptions.push(
@@ -57,10 +58,10 @@ export function createChannelManager(deps: {
     },
 
     async postMessage(instanceName: string, text: string) {
-      if (workers.length === 0) {
+      if (!slackWorker) {
         return { error: "no channel workers configured" };
       }
-      return workers[0].postMessage(instanceName, text);
+      return slackWorker.postMessage(instanceName, text);
     },
   };
 }
