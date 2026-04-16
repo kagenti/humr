@@ -29,6 +29,7 @@ Thumbs.db
 
 # Helm
 deploy/helm/humr/charts/
+deploy/helm/humr/values-dev.yaml
 
 # Reference (vendored, not tracked)
 context/

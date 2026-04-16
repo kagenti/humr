@@ -1,0 +1,7 @@
+# Copy to values-dev.yaml (gitignored) for personal cluster overrides.
+# These are auto-loaded by `mise run cluster:install`.
+#
+# Example:
+# apiServer:
+#   slackBotToken: "xoxb-..."
+#   slackAppToken: "xapp-..."
