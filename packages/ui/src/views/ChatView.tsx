@@ -1,553 +1,171 @@
-import {
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-  useMemo,
-  type KeyboardEvent,
-} from "react";
-import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import { useStore } from "../store.js";
-import { openConnection } from "../acp.js";
-import { createInstanceTrpc } from "../instance-trpc.js";
-import { platform } from "../platform.js";
-import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
-import type { Message, ToolChip as ToolChipT } from "../types.js";
-import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "../components/StatusIndicator.js";
-import { ArrowLeft, Plus, Send as SendIcon } from "lucide-react";
+import { ArrowLeft, Send as SendIcon, Square, Settings2 } from "lucide-react";
 import { Markdown } from "../components/Markdown.js";
 import { ToolChip } from "../components/ToolChip.js";
 import { ResizeHandle } from "../components/ResizeHandle.js";
 import { SessionsSidebar } from "../panels/SessionsSidebar.js";
 import { FilesPanel } from "../panels/FilesPanel.js";
 import { LogPanel } from "../panels/LogPanel.js";
-import { SchedulesPanel } from "../panels/SchedulesPanel.js";
-import { ChannelsPanel } from "../panels/ChannelsPanel.js";
-import { McpsPanel, type McpOption } from "../panels/McpsPanel.js";
+import { ConfigurationPanel } from "../panels/ConfigurationPanel.js";
+import { SessionConfigBar } from "../components/SessionConfigPopover.js";
+import { useAcpSession } from "../hooks/useAcpSession.js";
+import { useMcpPicker } from "../hooks/useMcpPicker.js";
+import { useFileTree } from "../hooks/useFileTree.js";
+import { useAutoResize } from "../hooks/useAutoResize.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
-  const busy = useStore((s) => s.busy);
   const rightTab = useStore((s) => s.rightTab);
   const loadingSession = useStore((s) => s.loading.session);
   const goBack = useStore((s) => s.goBack);
-  const setSessionId = useStore((s) => s.setSessionId);
-  const setMessages = useStore((s) => s.setMessages);
-  const setSessions = useStore((s) => s.setSessions);
-  const setBusy = useStore((s) => s.setBusy);
-  const setLoadingSessions = useStore((s) => s.setLoadingSessions);
-  const setLoadingSession = useStore((s) => s.setLoadingSession);
-  const addLog = useStore((s) => s.addLog);
-  const setFileTree = useStore((s) => s.setFileTree);
-  const setOpenFile = useStore((s) => s.setOpenFile);
   const setRightTab = useStore((s) => s.setRightTab);
-  const openFile = useStore((s) => s.openFile);
-  const secrets = useStore((s) => s.secrets);
-  const fetchSecrets = useStore((s) => s.fetchSecrets);
-  const agentAccess = useStore((s) => s.agentAccess);
-  const fetchAgentAccess = useStore((s) => s.fetchAgentAccess);
+  const queuedMessage = useStore((s) => s.queuedMessage);
+  const setQueuedMessage = useStore((s) => s.setQueuedMessage);
+  const mobileScreen = useStore((s) => s.mobileScreen);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const showMobilePanel = useStore((s) => s.showMobilePanel);
+  const setShowMobilePanel = useStore((s) => s.setShowMobilePanel);
 
   const [input, setInput] = useState("");
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const connectionRef = useRef<{
-    connection: ClientSideConnection;
-    ws: WebSocket;
-  } | null>(null);
-  const activeSessionIdRef = useRef<string | null>(null);
-  const currentAssistantIdRef = useRef<string | null>(null);
 
-  const instanceTrpc = useMemo(
-    () => (selectedInstance ? createInstanceTrpc(selectedInstance) : null),
-    [selectedInstance],
-  );
+  // ── Hooks ──
+  const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
+    useMcpPicker(selectedInstance);
 
-  // --- MCP picker state ---
-  // The agent whose credential access governs which MCPs are available.
-  const currentAgentId = useMemo(
-    () => instances.find((i) => i.id === selectedInstance)?.agentId,
-    [instances, selectedInstance],
-  );
-  const access = currentAgentId ? agentAccess[currentAgentId] : undefined;
+  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, fetchSessions, busy, activeSessionIdRef } =
+    useAcpSession(selectedInstance, selectedMcpServers, textareaRef);
 
-  // Fetch data needed to build the picker
-  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
-  useEffect(() => {
-    if (currentAgentId && !agentAccess[currentAgentId]) {
-      fetchAgentAccess(currentAgentId);
-    }
-  }, [currentAgentId, agentAccess, fetchAgentAccess]);
+  const { openFileHandler } = useFileTree(selectedInstance);
 
-  // Compute available MCPs: in "all" mode — every MCP secret; in "selective"
-  // mode — only those explicitly assigned to the agent.
-  const mcpOptions = useMemo<McpOption[]>(() => {
-    const mcpSecrets = secrets.filter(isMcpSecret);
-    if (!access) return [];
-    if (access.mode === "all") {
-      return mcpSecrets.map((s) => ({
-        id: s.id,
-        hostname: mcpHostnameFromSecretName(s.name),
-        assigned: true,
-      }));
-    }
-    return mcpSecrets
-      .filter((s) => access.secretIds.includes(s.id))
-      .map((s) => ({
-        id: s.id,
-        hostname: mcpHostnameFromSecretName(s.name),
-        assigned: true,
-      }));
-  }, [secrets, access]);
+  useAutoResize(textareaRef, input);
 
-  // User's per-session enable/disable selection. Default: every available one.
-  const [enabledMcps, setEnabledMcps] = useState<Set<string>>(new Set());
-  const mcpInitializedRef = useRef(false);
-  useEffect(() => {
-    if (!mcpInitializedRef.current && mcpOptions.length > 0) {
-      setEnabledMcps(new Set(mcpOptions.map((o) => o.hostname)));
-      mcpInitializedRef.current = true;
-    }
-  }, [mcpOptions]);
-
-  const toggleMcp = useCallback(
-    (hostname: string) =>
-      setEnabledMcps((p) => {
-        const n = new Set(p);
-        n.has(hostname) ? n.delete(hostname) : n.add(hostname);
-        return n;
-      }),
-    [],
-  );
-  const selectAllMcps = useCallback(
-    () => setEnabledMcps(new Set(mcpOptions.map((o) => o.hostname))),
-    [mcpOptions],
-  );
-  const clearAllMcps = useCallback(() => setEnabledMcps(new Set()), []);
-
-  // Reset initialisation when the agent changes so defaults re-apply.
-  useEffect(() => {
-    mcpInitializedRef.current = false;
-    setEnabledMcps(new Set());
-  }, [currentAgentId]);
-
-  // Derive the ACP-shape payload for session creation/loading.
-  const selectedMcpServers = useMemo<McpServer[]>(() => {
-    return mcpOptions
-      .filter((o) => enabledMcps.has(o.hostname))
-      .map((o) => ({
-        type: "http",
-        name: o.hostname.split(".")[0],
-        url: `https://${o.hostname}/mcp`,
-        headers: [],
-      }));
-  }, [mcpOptions, enabledMcps]);
-
+  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // File tree
-  useEffect(() => {
-    if (instanceTrpc)
-      instanceTrpc.files.tree
-        .query()
-        .then(({ entries }) => setFileTree(entries))
-        .catch(() => {});
-  }, [instanceTrpc, setFileTree]);
-  useEffect(() => {
-    if (!instanceTrpc) return;
-    const i = setInterval(async () => {
-      try {
-        const { entries } = await instanceTrpc.files.tree.query();
-        setFileTree(entries);
-        const cur = useStore.getState().openFile;
-        if (cur) {
-          try {
-            const d = await instanceTrpc.files.read.query({ path: cur.path });
-            d.content !== undefined
-              ? setOpenFile({ path: d.path, content: d.content })
-              : setOpenFile(null);
-          } catch {
-            setOpenFile(null);
-          }
-        }
-      } catch {}
-    }, 2000);
-    return () => clearInterval(i);
-  }, [instanceTrpc, setFileTree, setOpenFile]);
+  // ── Input handling ──
+  const isComputing = busy && !loadingSession;
+  const hasInput = input.trim().length > 0;
+  const showStop = isComputing && !hasInput;
+  const sendDisabled = !isComputing && !hasInput;
 
-  // Wake instance if hibernated on entry
-  useEffect(() => {
-    if (!selectedInstance) return;
-    const inst = instances.find(i => i.id === selectedInstance);
-    const state = inst ? instanceState(inst) : "unknown";
-    if (state === "hibernated") {
-      platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
-    }
-  }, [selectedInstance, instances]);
-
-  const includeChannelSessions = useStore((s) => s.includeChannelSessions);
-  const fetchSessions = useCallback(async () => {
-    if (!selectedInstance) return false;
-    const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
-    if (inst?.state !== "running") return false;
-    try {
-      const list = await platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions });
-      setSessions(list);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [selectedInstance, includeChannelSessions, setSessions]);
-  useEffect(() => {
-    if (!selectedInstance) return;
-    setLoadingSessions(true);
-    let stopped = false;
-    const attempt = () => {
-      if (stopped) return;
-      fetchSessions().then((ok) => {
-        if (stopped) return;
-        if (ok) { setLoadingSessions(false); return; }
-        setTimeout(attempt, 3000);
-      });
-    };
-    attempt();
-    return () => { stopped = true; };
-  }, [selectedInstance, fetchSessions, setLoadingSessions]);
-
-  const resumeSession = useCallback(
-    async (sid: string) => {
-      if (!selectedInstance) return;
-      setBusy(true);
-      setLoadingSession(true);
-      setMessages([]);
-      setSessionId(sid);
-      connectionRef.current?.ws.close();
-      connectionRef.current = null;
-      activeSessionIdRef.current = null;
-      const mm = new Map<string, Message>(),
-        mo: string[] = [];
-      try {
-        const { connection, ws } = await openConnection(
-          selectedInstance,
-          (u) => {
-            // Helper: get or create the assistant message for the current agent turn
-            // (everything between two user messages belongs to one assistant message)
-            const currentAssistant = (): Message => {
-              // Find last user message index
-              let lastUserIdx = -1;
-              for (let i = mo.length - 1; i >= 0; i--) {
-                if (mm.get(mo[i])?.role === "user") { lastUserIdx = i; break; }
-              }
-              // Look for existing assistant message after it
-              for (let i = lastUserIdx + 1; i < mo.length; i++) {
-                const m = mm.get(mo[i]);
-                if (m?.role === "assistant") return m;
-              }
-              // None found — create one
-              const id = crypto.randomUUID();
-              const m: Message = { id, role: "assistant", parts: [], streaming: false };
-              mm.set(id, m);
-              mo.push(id);
-              return m;
-            };
-
-            if (u.sessionUpdate === "user_message_chunk" && u.content.type === "text") {
-              const txt = (u.content.text as string).replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
-              if (!txt) return;
-              const mid = u.messageId ?? crypto.randomUUID();
-              const ex = mm.get(mid);
-              if (ex) {
-                const l = ex.parts[ex.parts.length - 1];
-                l?.kind === "text" ? (l.text += txt) : ex.parts.push({ kind: "text", text: txt });
-              } else {
-                mm.set(mid, { id: mid, role: "user", parts: [{ kind: "text", text: txt }], streaming: false });
-                mo.push(mid);
-              }
-            } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
-              const txt = (u.content.text as string).replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
-              if (!txt) return;
-              const target = currentAssistant();
-              const l = target.parts[target.parts.length - 1];
-              l?.kind === "text" ? (l.text += txt) : target.parts.push({ kind: "text", text: txt });
-            } else if (u.sessionUpdate === "tool_call") {
-              const target = currentAssistant();
-              const content = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
-              target.parts.push({ kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content });
-            } else if (u.sessionUpdate === "tool_call_update") {
-              for (const [, m] of mm) {
-                const chip = m.parts.find((p): p is ToolChipT => p.kind === "tool" && p.toolCallId === u.toolCallId);
-                if (chip) {
-                  if (u.status) chip.status = u.status;
-                  if (u.title) chip.title = u.title;
-                  if (u.content) chip.content = u.content.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
-                  break;
-                }
-              }
-            }
-          },
-        );
-        await connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-          },
-        });
-        await connection.loadSession({
-          sessionId: sid,
-          cwd: ".",
-          mcpServers: selectedMcpServers,
-        });
-        ws.close();
-      } catch {}
-      setMessages(mo.map((id) => mm.get(id)!));
-      setLoadingSession(false);
-      setBusy(false);
-    },
-    [
-      selectedInstance,
-      selectedMcpServers,
-      setBusy,
-      setLoadingSession,
-      setMessages,
-      setSessionId,
-    ],
-  );
-
-  const openFileHandler = useCallback(
-    async (path: string) => {
-      if (!instanceTrpc) return;
-      if (openFile?.path === path) {
-        setOpenFile(null);
-        return;
-      }
-      try {
-        const d = await instanceTrpc.files.read.query({ path });
-        if (d.content !== undefined) {
-          setOpenFile({ path: d.path, content: d.content });
-          setRightTab("files");
-        }
-      } catch {}
-    },
-    [instanceTrpc, openFile, setOpenFile],
-  );
-
-  const send = useCallback(async () => {
+  const send = useCallback(() => {
     const text = input.trim();
-    if (!text || busy || !selectedInstance) return;
+    if (!text) return;
     setInput("");
-    setBusy(true);
-    const uMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      parts: [{ kind: "text", text }],
-      streaming: false,
-    };
-    const aId = crypto.randomUUID();
-    const aMsg: Message = {
-      id: aId,
-      role: "assistant",
-      parts: [],
-      streaming: true,
-    };
-    currentAssistantIdRef.current = aId;
-    setMessages((p) => [...p, uMsg, aMsg]);
-    addLog("prompt", { text });
-    try {
-      if (
-        !connectionRef.current ||
-        connectionRef.current.ws.readyState !== WebSocket.OPEN
-      ) {
-        const { connection, ws } = await openConnection(
-          selectedInstance,
-          (u) => {
-            const aid = currentAssistantIdRef.current;
-            if (!aid) return;
-            if (
-              u.sessionUpdate === "agent_message_chunk" &&
-              u.content.type === "text"
-            ) {
-              setMessages((p) =>
-                p.map((m) => {
-                  if (m.id !== aid) return m;
-                  const parts = [...m.parts];
-                  const l = parts[parts.length - 1];
-                  l?.kind === "text"
-                    ? (parts[parts.length - 1] = {
-                        kind: "text",
-                        text: l.text + u.content.text,
-                      })
-                    : parts.push({ kind: "text", text: u.content.text });
-                  return { ...m, parts };
-                }),
-              );
-              addLog("text", { text: u.content.text });
-            } else if (u.sessionUpdate === "tool_call") {
-              const content = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
-              setMessages((p) =>
-                p.map((m) =>
-                  m.id === aid
-                    ? { ...m, parts: [...m.parts, { kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content } as ToolChipT] }
-                    : m,
-                ),
-              );
-              addLog("tool", { title: u.title, status: u.status });
-            } else if (u.sessionUpdate === "tool_call_update") {
-              const newContent = u.content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
-              setMessages((p) =>
-                p.map((m) => {
-                  if (m.id !== aid) return m;
-                  const parts = m.parts.map((part) =>
-                    part.kind === "tool" && part.toolCallId === u.toolCallId
-                      ? {
-                          ...part,
-                          status: u.status ?? part.status,
-                          title: u.title ?? part.title,
-                          content: newContent?.length ? newContent : part.content,
-                        }
-                      : part,
-                  );
-                  return { ...m, parts };
-                }),
-              );
-            }
-          },
-        );
-        await connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-          },
-        });
-        ws.onclose = () => {
-          connectionRef.current = null;
-        };
-        connectionRef.current = { connection, ws };
-      }
-      const conn = connectionRef.current!.connection;
-      if (!activeSessionIdRef.current) {
-        if (sessionId) {
-          await conn.unstable_resumeSession({
-            sessionId,
-            cwd: ".",
-            mcpServers: selectedMcpServers,
-          });
-          activeSessionIdRef.current = sessionId;
-        } else {
-          const s = await conn.newSession({
-            cwd: ".",
-            mcpServers: selectedMcpServers,
-          });
-          setSessionId(s.sessionId);
-          activeSessionIdRef.current = s.sessionId;
-          addLog("session", { sessionId: s.sessionId });
-          platform.sessions.create.mutate({ sessionId: s.sessionId, instanceId: selectedInstance }).catch(() => {});
-        }
-      }
-      const r = await conn.prompt({
-        sessionId: activeSessionIdRef.current!,
-        prompt: [{ type: "text", text }],
-      });
-      setMessages((p) =>
-        p.map((m) => (m.id === aId ? { ...m, streaming: false } : m)),
-      );
-      addLog("done", { stopReason: r.stopReason });
-    } catch (err: any) {
-      const errMsg = err?.message ?? String(err);
-      addLog("error", { message: errMsg });
-      setMessages((p) =>
-        p.map((m) =>
-          m.id === aId
-            ? { ...m, streaming: false, parts: [{ kind: "text" as const, text: errMsg }] }
-            : m,
-        ),
-      );
-      connectionRef.current?.ws.close();
-      connectionRef.current = null;
-      activeSessionIdRef.current = null;
-    } finally {
-      setBusy(false);
-      fetchSessions();
-      textareaRef.current?.focus();
+    if (busy) {
+      useStore.getState().setQueuedMessage(text);
+      return;
     }
-  }, [
-    input,
-    busy,
-    selectedInstance,
-    sessionId,
-    selectedMcpServers,
-    addLog,
-    setBusy,
-    setMessages,
-    setSessionId,
-    fetchSessions,
-  ]);
+    sendPrompt(text);
+  }, [input, busy, sendPrompt]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
+  const mobileResumeSession = useCallback((sid: string) => {
+    setMobileScreen("chat");
+    resumeSession(sid);
+  }, [setMobileScreen, resumeSession]);
+
+  const handleNewSession = useCallback(() => {
+    if (!sessionId && messages.length === 0) { setMobileScreen("chat"); return; }
+    resetSession();
+    setMobileScreen("chat");
+  }, [sessionId, messages.length, resetSession, setMobileScreen]);
+
+  const handleBack = useCallback(() => {
+    if (window.innerWidth < 768 && mobileScreen === "chat") {
+      setMobileScreen("sessions");
+      return;
+    }
+    resetSession();
+    goBack();
+  }, [mobileScreen, setMobileScreen, resetSession, goBack]);
+
+  // ── Right panel ──
+  const rightTabs = ["files", "log", "configuration"] as const;
+  const rightPanelContent = (
+    <>
+      <div className="flex border-b border-border-light shrink-0">
+        {rightTabs.map(tab => (
+          <button key={tab} onClick={() => setRightTab(tab)}
+            className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
+            {tab === "configuration" ? "config" : tab}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
+        {rightTab === "log" && <LogPanel />}
+        {rightTab === "configuration" && (
+          <ConfigurationPanel
+            mcpOptions={mcpOptions} enabledMcps={enabledMcps}
+            onToggleMcp={toggleMcp} onSelectAllMcps={selectAllMcps} onClearAllMcps={clearAllMcps}
+            hasActiveSession={!!sessionId} accessMode={access?.mode ?? null}
+          />
+        )}
+      </div>
+    </>
+  );
+
+  // ── Layout ──
   return (
     <div className="flex h-screen bg-bg relative overflow-hidden">
       <div className="blob blob-1" />
       <div className="blob blob-2" />
       <div className="blob blob-3" />
-      {/* ── Left: Sessions ── */}
-      <div style={{ width: leftW }} className="shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
-        <SessionsSidebar onResumeSession={resumeSession} onRefresh={fetchSessions} />
+
+      {/* Left: Sessions */}
+      <div
+        style={{ width: leftW }}
+        className={`shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10 ${
+          mobileScreen === "chat" ? "hidden md:flex" : "flex"
+        } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
+      >
+        <SessionsSidebar
+          onResumeSession={mobileResumeSession}
+          onRefresh={fetchSessions}
+          onNewSession={handleNewSession}
+        />
       </div>
       <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("humr-left-w", String(v)); return v; })} />
 
-      {/* ── Main chat column ── */}
-      <div className="flex flex-1 flex-col min-w-0">
+      {/* Main chat column */}
+      <div className={`flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}>
         {/* Header */}
         <header className="flex items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0">
-          <button
-            className="flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
-            onClick={() => { connectionRef.current?.ws.close(); connectionRef.current = null; activeSessionIdRef.current = null; goBack(); }}
-          >
-            <ArrowLeft size={14} /> Agents
+          <button className="flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors" onClick={handleBack}>
+            <ArrowLeft size={14} />
+            <span className="hidden md:inline">Agents</span>
           </button>
           <span className="w-px h-4 bg-border-light" />
-          <h1 className="text-[14px] font-bold text-text">{selectedInstance}</h1>
-          {sessionId && (
+          <h1 className="text-[14px] font-bold text-text truncate">{selectedInstance}</h1>
+          <div className="ml-auto flex items-center gap-2">
             <button
-              className="btn-brutal ml-auto h-7 rounded-lg border border-border-light px-3 text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
-              onClick={() => { connectionRef.current?.ws.close(); connectionRef.current = null; activeSessionIdRef.current = null; setSessionId(null); setMessages([]); }}
+              className="md:hidden h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
+              onClick={() => setShowMobilePanel(true)}
             >
-              <Plus size={12} /> New Session
+              <Settings2 size={14} />
             </button>
-          )}
-          <div className={`${sessionId ? "" : "ml-auto"} flex items-center gap-2`}>
-            {(() => {
-              const inst = instances.find(i => i.id === selectedInstance);
-              const state = inst ? instanceState(inst) : ("starting" as const);
-              const label = busy ? "Busy" : stateLabel[state];
-              const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];
-              const dot = busy ? "bg-warning anim-pulse" : dotColors[state];
-              return (
-                <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${color}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-                  {label}
-                </span>
-              );
-            })()}
+            <StatusBadge selectedInstance={selectedInstance} instances={instances} busy={busy} />
           </div>
         </header>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[760px] px-8 py-8 flex flex-col gap-6">
+          <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
             {loadingSession && (
               <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
                 <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
@@ -560,7 +178,6 @@ export function ChatView() {
                 <p className="text-[14px] text-text-muted">Send a message to begin a new session with this agent</p>
               </div>
             )}
-
             {messages.map((m) => (
               <div key={m.id} className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}>
                 <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
@@ -588,55 +205,81 @@ export function ChatView() {
           </div>
         </div>
 
-        {/* Input */}
-        <div className="border-t border-border-light bg-surface/50 backdrop-blur-xl px-8 py-4 shrink-0">
-          <div className="mx-auto max-w-[760px] flex items-end gap-3">
-            <textarea
-              ref={textareaRef}
-              className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[180px] overflow-y-auto transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
-              value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
-              placeholder="Message agent... (Enter to send)" rows={1} disabled={busy}
-            />
-            <button
-              className="btn-brutal h-[44px] rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 flex items-center gap-1.5"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-              onClick={send} disabled={busy || !input.trim()}
-            >
-              {busy ? "..." : <><SendIcon size={14} /> Send</>}
-            </button>
+        {/* Input area */}
+        <div className="border-t border-border-light bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3">
+          <div className="mx-auto max-w-[760px] flex flex-col gap-1.5">
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={textareaRef}
+                className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
+                value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
+                placeholder={isComputing ? "Queue a message..." : "Message agent..."}
+                rows={1} disabled={loadingSession}
+              />
+              {showStop ? (
+                <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center"
+                  style={{ boxShadow: "3px 3px 0 var(--c-danger)" }} onClick={stopAgent} title="Stop">
+                  <Square size={16} />
+                </button>
+              ) : (
+                <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center"
+                  style={{ boxShadow: "var(--shadow-brutal-accent)" }} onClick={send} disabled={sendDisabled || loadingSession} title="Send">
+                  <SendIcon size={16} />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center min-h-[24px]">
+              {!loadingSession && (
+                <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
+              )}
+              {queuedMessage && (
+                <span className="ml-auto text-[11px] text-text-muted">
+                  1 queued
+                  <button className="ml-1.5 text-danger hover:text-danger/80 font-semibold" onClick={() => setQueuedMessage(null)}>x</button>
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Right: Files/Log/Schedules ── */}
+      {/* Right panel: desktop */}
       <ResizeHandle side="right" onResize={d => setRightW(w => { const v = Math.max(240, Math.min(600, w + d)); localStorage.setItem("humr-right-w", String(v)); return v; })} />
-      <div style={{ width: rightW }} className="shrink-0 flex flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
-        <div className="flex border-b border-border-light shrink-0">
-          {(["files", "log", "schedules", "channels", "mcps"] as const).map(tab => (
-            <button key={tab} onClick={() => setRightTab(tab)}
-              className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
-              {tab}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
-          {rightTab === "log" && <LogPanel />}
-          {rightTab === "schedules" && <SchedulesPanel onResumeSession={resumeSession} />}
-          {rightTab === "channels" && <ChannelsPanel />}
-          {rightTab === "mcps" && (
-            <McpsPanel
-              options={mcpOptions}
-              enabled={enabledMcps}
-              onToggle={toggleMcp}
-              onSelectAll={selectAllMcps}
-              onClearAll={clearAllMcps}
-              hasActiveSession={!!sessionId}
-              accessMode={access?.mode ?? null}
-            />
-          )}
-        </div>
+      <div style={{ width: rightW }} className="hidden md:flex shrink-0 flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
+        {rightPanelContent}
       </div>
+
+      {/* Right panel: mobile overlay */}
+      {showMobilePanel && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobilePanel(false)} />
+          <div className="absolute right-0 top-0 bottom-0 w-full max-w-[400px] bg-surface flex flex-col anim-slide-in-right">
+            <div className="flex items-center justify-between px-4 h-11 border-b border-border-light shrink-0">
+              <span className="text-[13px] font-bold text-text">Panel</span>
+              <button className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
+                onClick={() => setShowMobilePanel(false)}>
+                <ArrowLeft size={14} />
+              </button>
+            </div>
+            {rightPanelContent}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Status badge extracted for readability */
+function StatusBadge({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: any[]; busy: boolean }) {
+  const inst = instances.find((i: any) => i.id === selectedInstance);
+  const state = inst ? instanceState(inst) : ("starting" as const);
+  const label = busy ? "Busy" : stateLabel[state];
+  const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];
+  const dot = busy ? "bg-warning anim-pulse" : dotColors[state];
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      {label}
+    </span>
   );
 }

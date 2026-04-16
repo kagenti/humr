@@ -1,0 +1,67 @@
+import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { SchedulesPanel } from "./SchedulesPanel.js";
+import { ChannelsPanel } from "./ChannelsPanel.js";
+import { McpsPanel, type McpOption } from "./McpsPanel.js";
+
+function Section({ title, defaultOpen = true, children }: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="mb-1">
+      <button
+        className="flex items-center gap-2 w-full px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted hover:text-text-secondary transition-colors bg-surface-raised"
+        onClick={() => setOpen(o => !o)}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {title}
+      </button>
+      {open && <div className="border-t border-border-light">{children}</div>}
+    </div>
+  );
+}
+
+export function ConfigurationPanel({
+  mcpOptions,
+  enabledMcps,
+  onToggleMcp,
+  onSelectAllMcps,
+  onClearAllMcps,
+  hasActiveSession,
+  accessMode,
+}: {
+  mcpOptions: McpOption[];
+  enabledMcps: Set<string>;
+  onToggleMcp: (hostname: string) => void;
+  onSelectAllMcps: () => void;
+  onClearAllMcps: () => void;
+  hasActiveSession: boolean;
+  accessMode: "all" | "selective" | null;
+}) {
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      <Section title="Schedules">
+        <SchedulesPanel />
+      </Section>
+
+      <Section title="Channels">
+        <ChannelsPanel />
+      </Section>
+
+      <Section title="MCP Servers">
+        <McpsPanel
+          options={mcpOptions}
+          enabled={enabledMcps}
+          onToggle={onToggleMcp}
+          onSelectAll={onSelectAllMcps}
+          onClearAll={onClearAllMcps}
+          hasActiveSession={hasActiveSession}
+          accessMode={accessMode}
+        />
+      </Section>
+    </div>
+  );
+}

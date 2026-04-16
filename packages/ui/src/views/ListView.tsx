@@ -74,9 +74,9 @@ export function ListView() {
     <>
       <div>
         {/* Page header */}
-        <div className="flex items-center mb-8">
-          <h1 className="text-[24px] font-bold text-text">My Agents</h1>
-          <div className="ml-auto flex items-center gap-3">
+        <div className="flex items-center gap-3 mb-8">
+          <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
+          <div className="ml-auto flex items-center gap-2 md:gap-3">
             <button
               onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
               className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
@@ -87,10 +87,10 @@ export function ListView() {
             <button
               onClick={() => setShowAddAgent(true)}
               disabled={busyAgent}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
               style={{ boxShadow: "var(--shadow-brutal-accent)" }}
             >
-              <Plus size={14} /> Add Agent
+              <Plus size={14} /> <span className="hidden sm:inline">Add</span> Agent
             </button>
           </div>
         </div>
@@ -128,11 +128,11 @@ export function ListView() {
                 style={{ boxShadow: "var(--shadow-brutal)" }}
               >
                 {/* Card header */}
-                <div className="px-6 pt-5 pb-4">
-                  <div className="flex items-start gap-4">
+                <div className="px-4 md:px-6 pt-4 md:pt-5 pb-3 md:pb-4">
+                  <div className="flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2">
-                        <h2 className="text-[17px] font-bold text-text">{agent.name}</h2>
+                        <h2 className="text-[16px] md:text-[17px] font-bold text-text">{agent.name}</h2>
                         <span className="text-[12px] font-semibold text-text-muted border-2 border-border-light rounded-full px-2.5 py-0.5">
                           {insts.length} instance{insts.length !== 1 && "s"}
                         </span>
@@ -181,7 +181,7 @@ export function ListView() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
                       <button
                         onClick={() => setShowSecretsDlg(agent.id)}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
@@ -243,7 +243,7 @@ export function ListView() {
                       <div
                         key={inst.id}
                         onClick={clickable ? () => selectInstance(inst.id) : undefined}
-                        className={`flex items-center gap-4 border-t-2 border-border-light px-6 py-3.5 transition-colors ${clickable ? "cursor-pointer hover:bg-accent-light" : "opacity-50"}`}
+                        className={`flex items-center gap-3 md:gap-4 border-t-2 border-border-light px-4 md:px-6 py-3 md:py-3.5 min-h-[44px] transition-colors ${clickable ? "cursor-pointer hover:bg-accent-light" : "opacity-50"}`}
                       >
                         <StatusIndicator state={state} />
                         <span className="text-[14px] font-semibold text-text">{inst.name}</span>

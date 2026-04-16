@@ -110,6 +110,7 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @keyframes blob-float-1 { 0%, 100% { transform: translate(0, 0) scale(1); } 33% { transform: translate(30px, -40px) scale(1.05); } 66% { transform: translate(-20px, 20px) scale(0.95); } }
 @keyframes blob-float-2 { 0%, 100% { transform: translate(0, 0) scale(1); } 33% { transform: translate(-40px, 30px) scale(0.95); } 66% { transform: translate(20px, -30px) scale(1.05); } }
 @keyframes blob-float-3 { 0%, 100% { transform: translate(0, 0) scale(1); } 33% { transform: translate(20px, 40px) scale(1.05); } 66% { transform: translate(-30px, -20px) scale(0.95); } }
@@ -120,6 +121,7 @@
 .anim-spin { animation: spin .7s linear infinite; }
 .anim-pulse { animation: pulse 1.4s ease-in-out infinite; }
 .anim-slide { animation: slide 1s ease-in-out infinite; }
+.anim-slide-in-right { animation: slide-in-right .25s ease-out both; }
 
 /* ── Blob background ── */
 .blob {

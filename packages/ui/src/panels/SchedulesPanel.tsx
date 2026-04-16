@@ -53,11 +53,10 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
   const inp = "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="px-4 py-3 border-b-2 border-border-light shrink-0">
+    <div className="flex flex-col">
+      <div className="px-3 py-2.5 shrink-0">
         <button
-          className="btn-brutal h-7 rounded-md border-2 border-border px-3.5 text-[11px] font-bold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
           onClick={() => { setF({ name: "", cron: "", task: "", sessionMode: "fresh" }); setShow(true); }}
         >
           <Plus size={12} /> Add Schedule
@@ -65,7 +64,7 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
       </div>
 
       {show && (
-        <div className="flex flex-col gap-3 border-b-2 border-border-light bg-surface-raised p-4 anim-scale-in">
+        <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
           <input className={inp} placeholder="Name" value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} />
           <input className={`${inp} font-mono`} placeholder="Cron expression" value={f.cron} onChange={e => setF(p => ({ ...p, cron: e.target.value }))} />
           <textarea className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[50px]" placeholder="Task prompt" value={f.task} onChange={e => setF(p => ({ ...p, task: e.target.value }))} rows={2} />

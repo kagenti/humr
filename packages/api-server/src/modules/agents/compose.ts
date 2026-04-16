@@ -15,7 +15,7 @@ import {
   listAllowedUsersByOwner, listAllowedUsersByInstance,
   setAllowedUsers, deleteAllowedUsersByInstanceIds,
 } from "./infrastructure/allowed-users-repository.js";
-import { listSessionsByInstance, listSessionsByScheduleId, findActiveByScheduleId, deactivateByScheduleId, upsertSession } from "./infrastructure/sessions-repository.js";
+import { listSessionsByInstance, listSessionsByScheduleId, findActiveByScheduleId, deactivateByScheduleId, upsertSession, deleteSession } from "./infrastructure/sessions-repository.js";
 import { createTemplatesService } from "./services/TemplatesService.js";
 import { createAgentsService } from "./services/AgentsService.js";
 import { createInstancesService } from "./services/InstancesService.js";
@@ -64,6 +64,7 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
       listByScheduleId: listSessionsByScheduleId(db),
       findActiveByScheduleId: findActiveByScheduleId(db),
       upsert: upsertSession(db),
+      delete: deleteSession(db),
       deactivateByScheduleId: deactivateByScheduleId(db),
       namespace,
     }),

@@ -30,12 +30,10 @@ export function McpsPanel({
 }) {
   if (options.length === 0) {
     return (
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        <div className="px-4 py-6 text-[12px] text-text-muted">
-          {accessMode === "selective"
-            ? "This agent has no MCP connectors assigned. Open the agent's Connectors dialog to assign some, or switch it to All credentials."
-            : "No MCP connectors configured. Add one on the Connectors page."}
-        </div>
+      <div className="px-4 py-4 text-[12px] text-text-muted">
+        {accessMode === "selective"
+          ? "No MCP connectors assigned to this agent."
+          : "No MCP connectors configured."}
       </div>
     );
   }
