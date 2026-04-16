@@ -17,8 +17,8 @@ Open your favorite AI coding agent in the repo and try:
 
 ```
 Walk me through how Humr works step by step. I want to do a demo for myself.
-Explain how things work on the way. Help me create an instance, connect a
-credential, and chat with an agent.
+Explain how things work on the way. Help me connect a model provider, create
+an instance, add a connection to GitHub, and chat with an agent.
 ```
 
 It has full context of the codebase, architecture decisions, and cluster commands. It will guide you through setup, credential injection, and your first chat.
