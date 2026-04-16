@@ -300,3 +300,20 @@ googleWorkspaceTemplate:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# -- Pi coding agent template
+piAgentTemplate:
+  enabled: false
+  name: pi-agent
+  image:
+    repository: ghcr.io/kagenti/humr/pi-agent
+    tag: ""
+    pullPolicy: IfNotPresent
+  description: "Pi coding agent with multi-LLM support"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"

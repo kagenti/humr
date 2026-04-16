@@ -14,7 +14,11 @@ import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
 let triggerWatcher: TriggerWatcher | undefined;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const agentScript = join(__dir, config.HUMR_DEV ? "agent.ts" : "agent.js");
+const agentCommand = config.AGENT_COMMAND
+  ? config.AGENT_COMMAND.split(" ")
+  : config.HUMR_DEV
+    ? ["npx", "tsx", join(__dir, "agent.ts")]
+    : ["node", join(__dir, "agent.js")];
 const homeDir = config.HUMR_DEV
   ? join(__dir, "../working-dir")
   : config.HOME_DIR;
@@ -70,7 +74,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/acp" });
 
 wss.on("connection", (ws) => {
-  const session = spawnAcpSession({ agentScript, workingDir: workDir, isDev: config.HUMR_DEV });
+  const session = spawnAcpSession({ command: agentCommand, workingDir: workDir });
 
   session.onMessage((line) => {
     if (ws.readyState === WebSocket.OPEN) {

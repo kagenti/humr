@@ -1,0 +1,44 @@
+{{- if .Values.piAgentTemplate.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.piAgentTemplate.name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    humr.ai/type: agent-template
+data:
+  spec.yaml: |
+    version: humr.ai/v1
+    image: "{{ .Values.piAgentTemplate.image.repository }}:{{ .Values.piAgentTemplate.image.tag | default .Chart.AppVersion }}"
+    description: {{ .Values.piAgentTemplate.description | quote }}
+    mounts:
+      - path: /home/agent
+        persist: true
+      - path: /tmp
+        persist: false
+    init: |
+      #!/bin/bash
+      # Seed home from image on first boot
+      if [ ! -f /home/agent/.initialized ]; then
+        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
+        touch /home/agent/.initialized
+      fi
+      mkdir -p /home/agent/work
+    env:
+      - name: PORT
+        value: "8080"
+      - name: ANTHROPIC_API_KEY
+        value: "humr:sentinel"
+      - name: OPENAI_API_KEY
+        value: "humr:sentinel"
+    resources:
+      requests:
+        cpu: {{ .Values.piAgentTemplate.resources.requests.cpu | quote }}
+        memory: {{ .Values.piAgentTemplate.resources.requests.memory | quote }}
+      limits:
+        cpu: {{ .Values.piAgentTemplate.resources.limits.cpu | quote }}
+        memory: {{ .Values.piAgentTemplate.resources.limits.memory | quote }}
+    securityContext:
+      readOnlyRootFilesystem: false
+{{- end }}

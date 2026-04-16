@@ -32,6 +32,13 @@ googleWorkspaceTemplate:
     tag: latest
     pullPolicy: Never
 
+piAgentTemplate:
+  enabled: true
+  image:
+    repository: humr-pi-agent
+    tag: latest
+    pullPolicy: Never
+
 # Use plain "localhost" for OneCLI so Google OAuth redirect URIs work.
 # Google exempts http://localhost from HTTPS requirements but rejects
 # subdomain URLs like http://onecli.localhost. See #154.
