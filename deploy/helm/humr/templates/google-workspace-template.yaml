@@ -1,0 +1,42 @@
+{{- if .Values.googleWorkspaceTemplate.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.googleWorkspaceTemplate.name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    humr.ai/type: agent-template
+data:
+  spec.yaml: |
+    version: humr.ai/v1
+    image: "{{ .Values.googleWorkspaceTemplate.image.repository }}:{{ .Values.googleWorkspaceTemplate.image.tag | default .Chart.AppVersion }}"
+    description: {{ .Values.googleWorkspaceTemplate.description | quote }}
+    mounts:
+      - path: /home/agent
+        persist: true
+      - path: /tmp
+        persist: false
+    init: |
+      #!/bin/bash
+      # Seed home from image on first boot
+      if [ ! -f /home/agent/.initialized ]; then
+        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
+        touch /home/agent/.initialized
+      fi
+      mkdir -p /home/agent/work
+    env:
+      - name: PORT
+        value: "8080"
+      - name: GOOGLE_WORKSPACE_CLI_TOKEN
+        value: "humr:sentinel"
+    resources:
+      requests:
+        cpu: {{ .Values.googleWorkspaceTemplate.resources.requests.cpu | quote }}
+        memory: {{ .Values.googleWorkspaceTemplate.resources.requests.memory | quote }}
+      limits:
+        cpu: {{ .Values.googleWorkspaceTemplate.resources.limits.cpu | quote }}
+        memory: {{ .Values.googleWorkspaceTemplate.resources.limits.memory | quote }}
+    securityContext:
+      readOnlyRootFilesystem: false
+{{- end }}

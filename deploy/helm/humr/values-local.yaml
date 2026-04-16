@@ -25,6 +25,13 @@ defaultTemplate:
     tag: latest
     pullPolicy: Never
 
+googleWorkspaceTemplate:
+  enabled: true
+  image:
+    repository: humr-google-workspace-agent
+    tag: latest
+    pullPolicy: Never
+
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
 keycloak:
   testUser:

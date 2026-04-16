@@ -100,6 +100,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
+	assert.Equal(t, "humr:sentinel", envMap["GH_TOKEN"])
 	// Template env
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	// Instance env
