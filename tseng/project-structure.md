@@ -8,5 +8,5 @@
 <!-- package: agent-runtime | role: server | runtime: standalone | path: packages/agent-runtime | package_name: agent-runtime -->
 <!-- package: ui | role: client | path: packages/ui | package_name: humr-ui -->
 <!-- package: humr-base | role: other | path: packages/humr-base | package_name: humr-base -->
-<!-- package: example-agent | role: other | path: packages/example-agent | package_name: example-agent -->
+<!-- package: example-agent | role: other | path: packages/agents/example-agent | package_name: example-agent -->
 <!-- package: controller | role: other | path: packages/controller | package_name: controller (Go) -->

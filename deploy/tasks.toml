@@ -66,7 +66,7 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 docker build -f packages/humr-base/Dockerfile -t humr-base .
-docker build -t humr-example-agent:latest packages/example-agent
+docker build -t humr-example-agent:latest packages/agents/example-agent
 docker build -t humr-google-workspace-agent:latest packages/agents/google-workspace
 '''
 

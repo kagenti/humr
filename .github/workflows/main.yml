@@ -82,8 +82,8 @@ jobs:
           tags: type=raw,value=main
       - uses: docker/build-push-action@v6
         with:
-          context: packages/example-agent
-          file: packages/example-agent/Dockerfile
+          context: packages/agents/example-agent
+          file: packages/agents/example-agent/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
