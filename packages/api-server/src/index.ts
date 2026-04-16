@@ -143,7 +143,6 @@ app.post("/internal/trigger", async (c) => {
 app.route("/", createMcpRoutes({
   channelManager,
   instancesRepo: createInstancesRepository(k8sClient),
-  internalToken: config.mcpInternalToken,
 }));
 
 app.use("/api/*", auth.middleware);

@@ -1,23 +1,4 @@
 {{- $appName := printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- $secretName := printf "%s-mcp-token" (include "humr.fullname" .) }}
-{{- $existingSecret := (lookup "v1" "Secret" .Release.Namespace $secretName) }}
-{{- $mcpToken := "" }}
-{{- if $existingSecret }}
-  {{- $mcpToken = index $existingSecret.data "MCP_INTERNAL_TOKEN" | b64dec }}
-{{- else }}
-  {{- $mcpToken = randAlphaNum 40 }}
-{{- end }}
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ $secretName }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "humr.labels" . | nindent 4 }}
-type: Opaque
-data:
-  MCP_INTERNAL_TOKEN: {{ $mcpToken | b64enc | quote }}
 ---
 apiVersion: v1
 kind: Service
@@ -118,11 +99,6 @@ spec:
               value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
             - name: ONECLI_EXTERNAL_URL
               value: {{ include "humr.url.onecli" . | quote }}
-            - name: MCP_INTERNAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $secretName }}
-                  key: MCP_INTERNAL_TOKEN
           readinessProbe:
             tcpSocket:
               port: http

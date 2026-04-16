@@ -30,7 +30,6 @@ type Config struct {
 	APIServerURL         string // API server internal URL for agent pod → API server calls (e.g. MCP endpoint)
 	APIServerHost        string // API server hostname (for NO_PROXY)
 	APIServerPort        int    // API server port (for network policy egress rule)
-	MCPInternalToken     string // Shared secret for pod→API server MCP auth
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -63,7 +62,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.APIServerURL = os.Getenv("HUMR_API_SERVER_URL")
 	cfg.APIServerHost = os.Getenv("HUMR_API_SERVER_HOST")
 	cfg.APIServerPort = envOrDefaultInt("HUMR_API_SERVER_PORT", 4000)
-	cfg.MCPInternalToken = os.Getenv("MCP_INTERNAL_TOKEN")
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {

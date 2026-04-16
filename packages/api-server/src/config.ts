@@ -20,7 +20,6 @@ const configSchema = z.object({
   keycloakApiClientId: z.string().default("humr-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
-  mcpInternalToken: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -46,6 +45,5 @@ export function loadConfig(): Config {
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
-    mcpInternalToken: process.env.MCP_INTERNAL_TOKEN,
   });
 }
