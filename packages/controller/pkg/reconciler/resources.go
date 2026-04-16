@@ -51,7 +51,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: "/home/agent"},
-		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.APIServerURL, name)},
+		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.MCPServerURL, name)},
 	}
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -243,7 +243,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	acpPort := intstr.FromInt32(8080)
 	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
-	apiPort := intstr.FromInt32(int32(cfg.APIServerPort))
+	mcpPort := intstr.FromInt32(int32(cfg.MCPServerPort))
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 
@@ -291,7 +291,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 						},
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &apiPort},
+						{Protocol: &tcp, Port: &mcpPort},
 					},
 				},
 				{

@@ -140,11 +140,6 @@ app.post("/internal/trigger", async (c) => {
   return c.json(result);
 });
 
-app.route("/", createMcpRoutes({
-  channelManager,
-  k8s: k8sClient,
-}));
-
 app.use("/api/*", auth.middleware);
 
 app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
@@ -216,6 +211,11 @@ app.all("/api/trpc/*", (c) => {
   });
 });
 
+const mcpApp = createMcpRoutes({ channelManager, k8s: k8sClient });
+const mcpServer = serve({ fetch: mcpApp.fetch, port: config.mcpPort }, () => {
+  process.stderr.write(`mcp-server listening on http://localhost:${config.mcpPort}\n`);
+});
+
 const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
@@ -233,6 +233,7 @@ async function shutdown() {
   onecliSyncSub.unsubscribe();
   await channelManager.stopAll();
   await sql.end();
+  mcpServer.close();
   server.close();
   process.exit(0);
 }

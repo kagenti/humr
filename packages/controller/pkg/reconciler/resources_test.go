@@ -21,6 +21,7 @@ var testConfig = &config.Config{
 	GatewayPort:      10255,
 	WebPort:          10254,
 	CACertInitImage:  "busybox:stable",
+	MCPServerPort:    4001,
 }
 
 var testAgent = &types.AgentSpec{
@@ -207,7 +208,6 @@ func TestBuildNetworkPolicy(t *testing.T) {
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["humr.ai/instance"])
 	require.Len(t, np.OwnerReferences, 1)
 
-	// Egress rules: OneCLI + API Server + DNS
 	require.Len(t, np.Spec.Egress, 3)
 
 	// OneCLI rule targets OneCLI pods in the release namespace (gateway + web ports)
@@ -220,14 +220,13 @@ func TestBuildNetworkPolicy(t *testing.T) {
 	assert.Equal(t, int32(10255), onecliRule.Ports[0].Port.IntVal)
 	assert.Equal(t, int32(10254), onecliRule.Ports[1].Port.IntVal)
 
-	// API Server rule allows agent-runtime to reach internal session endpoints
-	apiRule := np.Spec.Egress[1]
-	require.Len(t, apiRule.To, 1)
-	assert.Equal(t, "apiserver", apiRule.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	require.NotNil(t, apiRule.To[0].NamespaceSelector, "API Server egress rule must include namespaceSelector for cross-namespace access")
-	assert.Equal(t, "default", apiRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
-	require.Len(t, apiRule.Ports, 1)
-	assert.Equal(t, int32(4000), apiRule.Ports[0].Port.IntVal)
+	mcpRule := np.Spec.Egress[1]
+	require.Len(t, mcpRule.To, 1)
+	assert.Equal(t, "apiserver", mcpRule.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
+	require.NotNil(t, mcpRule.To[0].NamespaceSelector, "API Server egress rule must include namespaceSelector for cross-namespace access")
+	assert.Equal(t, "default", mcpRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	require.Len(t, mcpRule.Ports, 1)
+	assert.Equal(t, int32(4001), mcpRule.Ports[0].Port.IntVal)
 
 	// Ingress: allow ACP port
 	require.Len(t, np.Spec.Ingress, 1)

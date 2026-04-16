@@ -27,9 +27,11 @@ type Config struct {
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
 	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
-	APIServerURL         string // API server internal URL for agent pod → API server calls (e.g. MCP endpoint)
+	APIServerURL         string // API server internal URL (admin API)
 	APIServerHost        string // API server hostname (for NO_PROXY)
-	APIServerPort        int    // API server port (for network policy egress rule)
+	APIServerPort        int    // API server admin port (for network policy egress rule)
+	MCPServerURL         string // MCP server internal URL (separate port, agent-facing)
+	MCPServerPort        int    // MCP server port (for network policy egress rule)
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -62,6 +64,8 @@ func LoadFromEnv() (*Config, error) {
 	cfg.APIServerURL = os.Getenv("HUMR_API_SERVER_URL")
 	cfg.APIServerHost = os.Getenv("HUMR_API_SERVER_HOST")
 	cfg.APIServerPort = envOrDefaultInt("HUMR_API_SERVER_PORT", 4000)
+	cfg.MCPServerURL = os.Getenv("HUMR_MCP_SERVER_URL")
+	cfg.MCPServerPort = envOrDefaultInt("HUMR_MCP_SERVER_PORT", 4001)
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {
