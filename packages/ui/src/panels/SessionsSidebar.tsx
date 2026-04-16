@@ -35,9 +35,15 @@ export function SessionsSidebar({ onResumeSession, onRefresh, onNewSession }: { 
           className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors ${loading ? "anim-spin" : ""}`}
           onClick={onRefresh}
         >
-          <RefreshCw size={11} />
+          <span className={loading ? "anim-spin" : ""}>
+            <RefreshCw size={11} />
+          </span>
         </button>
-        {loading && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden"><div className="h-full w-1/3 bg-accent rounded-full anim-slide" /></div>}
+        {loading && (
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden">
+            <div className="h-full w-1/3 bg-accent rounded-full anim-slide" />
+          </div>
+        )}
       </div>
       <div className="px-4 py-2 border-b border-border-light">
         <label className="flex items-center gap-2 cursor-pointer text-[11px] text-text-muted">

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "highlight.js/styles/github.css";
+@import "./styles/hljs-dark.css";
 
 @theme {
   /* ── Color tokens (resolved via CSS vars set in :root / .dark) ── */
