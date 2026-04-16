@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useStore } from "./store.js";
 import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
-import { ConnectorsView } from "./views/ConnectorsView.js";
-import { Sun, Moon, Monitor, LogOut, ExternalLink, Menu, X } from "lucide-react";
-import { getUser, logout, getAuthConfig } from "./auth.js";
+import { ProvidersView } from "./views/ProvidersView.js";
+import { ConnectionsView } from "./views/ConnectionsView.js";
+import { McpView } from "./views/McpView.js";
+import { Sun, Moon, Monitor, LogOut, Menu, X } from "lucide-react";
+import { getUser, logout } from "./auth.js";
 import { DialogOverlay } from "./components/DialogOverlay.js";
 import { Logo } from "./components/Logo.js";
 
@@ -45,8 +47,12 @@ export default function App() {
       if (path.startsWith("/chat/")) {
         const inst = decodeURIComponent(path.slice(6));
         useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
-      } else if (path === "/connectors") {
-        useStore.setState({ view: "connectors" });
+      } else if (path === "/providers") {
+        useStore.setState({ view: "providers" });
+      } else if (path === "/connections" || path === "/connectors") {
+        useStore.setState({ view: "connections" });
+      } else if (path === "/mcp") {
+        useStore.setState({ view: "mcp" });
       } else {
         useStore.setState({ selectedInstance: null, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "list" });
       }
@@ -82,7 +88,7 @@ export default function App() {
 
       <Nav />
       <main className="relative z-10 mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10">
-        {view === "connectors" ? <ConnectorsView /> : <ListView />}
+        {view === "providers" ? <ProvidersView /> : view === "connections" ? <ConnectionsView /> : view === "mcp" ? <McpView /> : <ListView />}
       </main>
       <DialogOverlay />
     </div>
@@ -114,8 +120,7 @@ function Nav() {
 
         {/* Desktop nav links */}
         <div className="hidden md:flex items-center gap-1">
-          {(["list", "connectors"] as const).map((v) => {
-            const label = v === "list" ? "Agents" : "Connectors";
+          {([["list", "Agents"], ["providers", "Providers"], ["connections", "Connections"], ["mcp", "MCP"]] as const).map(([v, label]) => {
             const active = view === v;
             return (
               <button
@@ -127,18 +132,6 @@ function Nav() {
               </button>
             );
           })}
-          {getAuthConfig()?.onecliUrl && (
-            <a
-              href={`${getAuthConfig()!.onecliUrl}/connections`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"
-              title="Open OneCLI dashboard"
-            >
-              OneCLI
-              <ExternalLink size={12} />
-            </a>
-          )}
         </div>
 
         {/* Desktop theme toggle */}
@@ -184,8 +177,7 @@ function Nav() {
       {menuOpen && (
         <div className="md:hidden border-t border-border-light bg-surface px-4 py-3 flex flex-col gap-3 anim-in">
           {/* Nav links */}
-          {(["list", "connectors"] as const).map((v) => {
-            const label = v === "list" ? "Agents" : "Connectors";
+          {([["list", "Agents"], ["providers", "Providers"], ["connections", "Connections"], ["mcp", "MCP"]] as const).map(([v, label]) => {
             const active = view === v;
             return (
               <button
@@ -197,18 +189,6 @@ function Nav() {
               </button>
             );
           })}
-          {getAuthConfig()?.onecliUrl && (
-            <a
-              href={`${getAuthConfig()!.onecliUrl}/connections`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-2 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"
-              onClick={() => setMenuOpen(false)}
-            >
-              OneCLI
-              <ExternalLink size={12} />
-            </a>
-          )}
 
           {/* Theme toggle */}
           <div className="flex items-center gap-2 px-3 py-2">

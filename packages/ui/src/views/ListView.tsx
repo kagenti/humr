@@ -275,7 +275,7 @@ export function ListView() {
           templates={templates}
           onSubmit={async (input) => { setShowAddAgent(false); setBusyAgent(true); await createAgent(input); setBusyAgent(false); }}
           onCancel={() => setShowAddAgent(false)}
-          onGoToConnectors={() => { setShowAddAgent(false); setView("connectors"); }}
+          onGoToProviders={() => { setShowAddAgent(false); setView("providers"); }}
         />
       )}
       {showInstDlg && (

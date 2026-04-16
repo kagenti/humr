@@ -3,15 +3,15 @@ import type { TemplateView, SecretView, SecretMode } from "../types.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import { Globe, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../views/ConnectorsView.js";
+import { AuthModeBadge } from "../components/AuthModeBadge.js";
 
 type Step = "pick" | "configure";
 
-export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors }: {
+export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders }: {
   templates: TemplateView[];
   onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; secretMode?: SecretMode; secretIds?: string[]; autoCreateInstance?: boolean }) => void;
   onCancel: () => void;
-  onGoToConnectors: () => void;
+  onGoToProviders: () => void;
 }) {
   const [step, setStep] = useState<Step>("pick");
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateView | null>(null);
@@ -187,7 +187,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
               {loadSecrets && <span className="text-[12px] text-text-muted">Loading...</span>}
               {!loadSecrets && secrets.length === 0 && (
                 <span className="text-[12px] text-text-muted">
-                  No credentials yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToConnectors}>add one</button>
+                  No credentials yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>add one</button>
                 </span>
               )}
 

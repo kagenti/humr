@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { SecretView, SecretMode } from "api-server-api";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../views/ConnectorsView.js";
+import { AuthModeBadge } from "../components/AuthModeBadge.js";
 import { Lock, Sparkles, Globe, Search } from "lucide-react";
 
 export function EditAgentSecretsDialog({
@@ -183,7 +183,7 @@ export function EditAgentSecretsDialog({
             {/* Secrets list */}
             {filtered.length === 0 && (
               <span className="text-[12px] text-text-muted text-center py-4">
-                {q ? "No matching credentials" : "No credentials yet — add some on the Connectors page"}
+                {q ? "No matching credentials" : "No credentials yet — add some on the Providers or Connections page"}
               </span>
             )}
             <div className="flex flex-col gap-2">
