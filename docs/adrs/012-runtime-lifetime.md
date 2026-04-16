@@ -117,6 +117,31 @@ The ADR calls for Redis or equivalent to serve lightweight read operations (sess
 
 ### Persistence conventions
 
-Agent pods start from a clean container image on every turn. Only `/home/agent` (the PVC) survives between turns. See [`AGENTS.md`](../../AGENTS.md) for the full persistence model documented for agent authors.
+Agent pods start from a clean container image on every turn. Only `/home/agent` (the PVC) survives between turns. Everything else — `/tmp`, OS packages, system files — is ephemeral.
 
-Global tool installs should target the home directory (e.g., `npm install -g` with `NPM_CONFIG_PREFIX=~/.npm-global`, `pip install --user`, `cargo install`). In the future, `mise.toml` at the workspace root is the preferred mechanism — mise caches tools under `~/.local/share/mise` which lives on the persistent volume, making tool resolution instant on subsequent turns.
+Global tool installs should target the home directory (e.g., `pip install --user`, `cargo install`). In the future, `mise.toml` at the workspace root is the preferred mechanism — mise caches tools under `~/.local/share/mise` which lives on the persistent volume, making tool resolution instant on subsequent turns.
+
+These conventions should be communicated to the agent harness. For Claude Code agents, this means including them in the `CLAUDE.md` baked into the agent image. Example:
+
+```markdown
+## Runtime environment
+
+You are running inside an ephemeral container. A new container is created for
+each conversation turn — no process state carries over.
+
+### What persists (between turns)
+
+`/home/agent` is backed by a persistent volume. Everything under this path
+survives: workspace files, git checkouts, node_modules, .venv, tool caches,
+your memory files, and configuration.
+
+### What does NOT persist
+
+- OS packages installed via `apt`, `dnf`, etc.
+- Edits to `/etc/hosts`, `/etc/resolv.conf`, or other system files.
+- Anything in `/tmp` or outside `/home/agent`.
+
+If you need a tool that isn't in the base image, prefer installing it under
+your home directory (e.g., `pip install --user`, `cargo install`) or declaring
+it in a `mise.toml` at the workspace root.
+```
