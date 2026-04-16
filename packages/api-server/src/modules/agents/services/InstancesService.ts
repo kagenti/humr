@@ -104,6 +104,7 @@ export function createInstancesService(deps: {
     },
 
     async wake(id) {
+      if (deps.owner && !await deps.repo.isOwnedBy(id, deps.owner)) return null;
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
       const [channels, allowed] = await Promise.all([

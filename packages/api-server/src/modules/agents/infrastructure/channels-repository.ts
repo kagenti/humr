@@ -64,10 +64,10 @@ export function deleteChannelByType(db: Db, owner: string) {
   };
 }
 
-export function deleteChannelsByInstanceIds(db: Db) {
+export function deleteChannelsByInstanceIds(db: Db, owner: string) {
   return async (instanceIds: string[]): Promise<void> => {
     if (instanceIds.length === 0) return;
-    await db.delete(channels).where(inArray(channels.instanceId, instanceIds));
+    await db.delete(channels).where(and(inArray(channels.instanceId, instanceIds), eq(channels.owner, owner)));
   };
 }
 

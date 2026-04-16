@@ -38,9 +38,9 @@ export function setAllowedUsers(db: Db, owner: string) {
   };
 }
 
-export function deleteAllowedUsersByInstanceIds(db: Db) {
+export function deleteAllowedUsersByInstanceIds(db: Db, owner: string) {
   return async (instanceIds: string[]): Promise<void> => {
     if (instanceIds.length === 0) return;
-    await db.delete(allowedUsers).where(inArray(allowedUsers.instanceId, instanceIds));
+    await db.delete(allowedUsers).where(and(inArray(allowedUsers.instanceId, instanceIds), eq(allowedUsers.owner, owner)));
   };
 }

@@ -58,7 +58,7 @@ export function upsertSession(db: Db) {
 }
 
 export function deleteSession(db: Db) {
-  return async (sessionId: string) => {
-    await db.delete(sessions).where(eq(sessions.sessionId, sessionId));
+  return async (sessionId: string, instanceId: string) => {
+    await db.delete(sessions).where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
   };
 }
