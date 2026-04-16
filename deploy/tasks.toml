@@ -60,13 +60,14 @@ dir = "{{config_root}}"
 run = 'docker build -f packages/ui/Dockerfile -t humr-ui:latest .'
 
 ["image:agent"]
-description = "Build agent Docker image (agent-runtime + example-agent)"
+description = "Build agent Docker images (agent-runtime + example-agent + google-workspace)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 docker build -f packages/humr-base/Dockerfile -t humr-base .
 docker build -t humr-example-agent:latest packages/example-agent
+docker build -t humr-google-workspace-agent:latest packages/agents/google-workspace
 '''
 
 # -- Cluster lifecycle (k3s via lima) --
@@ -142,7 +143,7 @@ fi
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
 tar="/tmp/humr-images.tar"
-docker save -o "$tar" humr-controller:latest humr-api-server:latest humr-ui:latest humr-example-agent:latest
+docker save -o "$tar" humr-controller:latest humr-api-server:latest humr-ui:latest humr-example-agent:latest humr-google-workspace-agent:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
 else
@@ -242,7 +243,7 @@ echo "Done."
 '''
 
 ["cluster:build-agent"]
-description = "Build and load agent image into k3s, restart agent pods"
+description = "Build and load agent images into k3s, restart agent pods"
 depends = ["image:agent"]
 dir = "{{config_root}}"
 run = '''
@@ -250,8 +251,8 @@ run = '''
 set -eo pipefail
 
 echo "Loading into k3s..."
-tar="/tmp/humr-example-agent.tar"
-docker save humr-example-agent:latest -o "$tar"
+tar="/tmp/humr-agent-images.tar"
+docker save humr-example-agent:latest humr-google-workspace-agent:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"

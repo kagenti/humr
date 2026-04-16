@@ -272,3 +272,20 @@ defaultTemplate:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# -- Google Workspace agent template
+googleWorkspaceTemplate:
+  enabled: false
+  name: google-workspace
+  image:
+    repository: ghcr.io/kagenti/humr/google-workspace-agent
+    tag: ""
+    pullPolicy: IfNotPresent
+  description: "Google Workspace agent with Drive and Gmail via gws CLI"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
