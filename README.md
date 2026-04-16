@@ -11,7 +11,35 @@
 
 Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
+## Guided Tour
+
+```sh
+git clone https://github.com/kagenti/humr && cd humr
+```
+
+Open your favorite AI coding agent in the repo and try:
+
+```
+Walk me through how Humr works step by step. I want to do a demo for myself.
+Explain how things work on the way. Help me connect a model provider, create
+an instance, add a connection to GitHub, and chat with an agent.
+```
+
+Once you're comfortable, go deeper:
+
+```
+Now show me the advanced stuff. Set up a Slack channel integration, create a
+scheduled job, build a long-living agent with a heartbeat, and wire up an
+MCP server.
+```
+
+Your agent has full context of the codebase, architecture decisions, and cluster commands.
+
+See [PITCH.md](PITCH.md) for the full story of what Humr is and why it exists.
+
 ## Quick Start
+
+For those who prefer pasting commands into a terminal:
 
 ```sh
 mise install                # install deps, configure git hooks
@@ -20,7 +48,7 @@ mise run cluster:status     # check pods
 export KUBECONFIG="$(mise run cluster:kubeconfig)" # activate cluster env
 ```
 
-Open **`humr.localhost:4444`** in your browser, create an instance from a template, and start chatting.
+Open **`humr.localhost:4444`** in your browser (login: `dev` / `dev`), create an instance from a template, and start chatting.
 
 ## Configuration
 
