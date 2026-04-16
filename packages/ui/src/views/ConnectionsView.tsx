@@ -15,11 +15,10 @@ export function ConnectionsView() {
   const fetchSecrets = useStore((s) => s.fetchSecrets);
   const createSecret = useStore((s) => s.createSecret);
   const deleteSecret = useStore((s) => s.deleteSecret);
-  const showAlert = useStore((s) => s.showAlert);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [loading, setLoading] = useState(true);
-  const [addMode, setAddMode] = useState<null | "secret" | "app">(null);
+  const [addMode, setAddMode] = useState<null | "secret">(null);
   const loaded = useRef(false);
 
   // Generic-secret form
@@ -236,10 +235,7 @@ export function ConnectionsView() {
             style={{ boxShadow: "var(--shadow-brutal)" }}
           >
             <div className="flex items-center gap-3">
-              <h3 className="text-[14px] font-bold text-text">
-                {addMode === "secret" && "Add Secret"}
-                {addMode === "app" && "Preconfigured App"}
-              </h3>
+              <h3 className="text-[14px] font-bold text-text">Add Secret</h3>
               <button
                 className="ml-auto text-text-muted hover:text-text"
                 onClick={() => setAddMode(null)}
@@ -249,12 +245,11 @@ export function ConnectionsView() {
               </button>
             </div>
 
-            {addMode === "secret" && (
-              <div className="flex flex-col gap-5">
-                <p className="text-[13px] text-text-secondary leading-relaxed">
-                  Injects a bearer token into outgoing HTTP requests whose host
-                  matches the pattern below.
-                </p>
+            <div className="flex flex-col gap-5">
+              <p className="text-[13px] text-text-secondary leading-relaxed">
+                Injects a bearer token into outgoing HTTP requests whose host
+                matches the pattern below.
+              </p>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
@@ -335,35 +330,10 @@ export function ConnectionsView() {
                   </button>
                 </div>
               </div>
-            )}
-
-            {addMode === "app" && (
-              <div className="flex flex-col gap-3">
-                <p className="text-[13px] text-text-secondary">
-                  Preconfigured apps (GitHub, Google, Slack…) are set up in the
-                  OneCLI dashboard. Once connected there, the resulting secret
-                  will appear in this list automatically.
-                </p>
-                {onecliUrl ? (
-                  <a
-                    href={`${onecliUrl}/connections`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white inline-flex items-center justify-center gap-2 self-start"
-                    style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                  >
-                    Open OneCLI Dashboard <ExternalLink size={13} />
-                  </a>
-                ) : (
-                  <p className="text-[12px] text-text-muted">
-                    OneCLI dashboard URL not configured.
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
       </section>
+
     </div>
   );
 }

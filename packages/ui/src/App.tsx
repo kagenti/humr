@@ -78,7 +78,7 @@ export default function App() {
   // Chat view is full-screen (has its own layout)
   if (view === "chat") return <><ChatView /><DialogOverlay /></>;
 
-  // List + Connectors share the shell
+  // All non-chat views share the shell
   return (
     <div className="min-h-screen bg-bg relative overflow-hidden">
       {/* Floating blobs */}
