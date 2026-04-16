@@ -29,7 +29,7 @@ scheduled job, build a long-living agent with a heartbeat, and wire up an
 MCP server.
 ```
 
-It has full context of the codebase, architecture decisions, and cluster commands.
+Your agent has full context of the codebase, architecture decisions, and cluster commands.
 
 See [PITCH.md](PITCH.md) for the full story of what Humr is and why it exists.
 
@@ -44,7 +44,7 @@ mise run cluster:status     # check pods
 export KUBECONFIG="$(mise run cluster:kubeconfig)" # activate cluster env
 ```
 
-Open **`humr.localhost:4444`** in your browser, create an instance from a template, and start chatting.
+Open **`humr.localhost:4444`** in your browser (login: `dev` / `dev`), create an instance from a template, and start chatting.
 
 ## Configuration
 
