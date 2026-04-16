@@ -21,7 +21,15 @@ Explain how things work on the way. Help me connect a model provider, create
 an instance, add a connection to GitHub, and chat with an agent.
 ```
 
-It has full context of the codebase, architecture decisions, and cluster commands. It will guide you through setup, credential injection, and your first chat.
+Once you're comfortable, go deeper:
+
+```
+Now show me the advanced stuff. Set up a Slack channel integration, create a
+scheduled job, build a long-living agent with a heartbeat, and wire up an
+MCP server.
+```
+
+It has full context of the codebase, architecture decisions, and cluster commands.
 
 See [PITCH.md](PITCH.md) for the full story of what Humr is and why it exists.
 
