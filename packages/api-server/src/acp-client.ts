@@ -6,8 +6,6 @@ import type { InstancesService } from "api-server-api";
 import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
-const WAKE_POLL_INTERVAL_MS = 2_000;
-const WAKE_TIMEOUT_MS = 60_000;
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
@@ -32,10 +30,6 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
     });
     ws.on("error", reject);
   });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function ensureRunning(
@@ -108,13 +102,9 @@ async function withAcpConnection<T>(
 }
 
 async function resolveAcpUrl(k8s: K8sClient, instanceName: string): Promise<string> {
-  // Find active Job pod for this instance
-  const jobs = await k8s.listJobs(`humr.ai/instance=${instanceName}`);
-  const activeJob = jobs.find((j) => !j.status?.succeeded && !j.status?.failed);
-  if (!activeJob) throw new Error(`No active Job for instance ${instanceName}`);
-  const pods = await k8s.listPods(`job-name=${activeJob.metadata!.name!}`);
-  const podIP = pods[0]?.status?.podIP;
-  if (!podIP) throw new Error(`No pod IP for Job ${activeJob.metadata!.name!}`);
+  const cm = await k8s.getConfigMap(instanceName);
+  const podIP = cm?.metadata?.annotations?.["humr.ai/pod-ip"];
+  if (!podIP) throw new Error(`No active pod for instance ${instanceName}`);
   return `ws://${podIP}:8080/api/acp`;
 }
 

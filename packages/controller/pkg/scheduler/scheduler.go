@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"time"
 
@@ -12,28 +11,22 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/util/retry"
-	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
 	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-const (
-	wakePollInterval = 1 * time.Second
-	wakeTimeout      = 2 * time.Minute
-)
+// Annotation key for trigger payload — when set alongside run-request,
+// the controller passes this as the HUMR_TRIGGER env var on the Job.
+const AnnTrigger = "humr.ai/trigger"
 
 type Scheduler struct {
 	client    kubernetes.Interface
 	config    *config.Config
 	cron      *cron.Cron
 	schedules map[string]cron.EntryID
-	restCfg   *restclient.Config // nil in tests
 }
 
 func New(client kubernetes.Interface, cfg *config.Config) *Scheduler {
@@ -43,11 +36,6 @@ func New(client kubernetes.Interface, cfg *config.Config) *Scheduler {
 		cron:      cron.New(),
 		schedules: make(map[string]cron.EntryID),
 	}
-}
-
-func (s *Scheduler) WithRESTConfig(cfg *restclient.Config) *Scheduler {
-	s.restCfg = cfg
-	return s
 }
 
 func (s *Scheduler) Start() { s.cron.Start() }
@@ -113,20 +101,10 @@ func (s *Scheduler) RemoveSchedule(name string) {
 	}
 }
 
+// fire sets the run-request + trigger annotations on the instance ConfigMap.
+// The controller's reconciler picks this up, creates a Job with HUMR_TRIGGER
+// env var, and the agent-runtime handles the trigger on startup.
 func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string, spec *types.ScheduleSpec) error {
-	// Wake instance if hibernated
-	woke, err := s.wakeIfHibernated(ctx, instanceName)
-	if err != nil {
-		return fmt.Errorf("waking instance %s: %w", instanceName, err)
-	}
-	if woke {
-		slog.Info("woke hibernated instance for schedule", "instance", instanceName, "schedule", scheduleName)
-		if !s.waitForPodReady(ctx, instanceName) {
-			return fmt.Errorf("instance %s did not become ready after wake", instanceName)
-		}
-	}
-
-	// Build and deliver trigger
 	trigger := map[string]any{
 		"type":      spec.Type,
 		"task":      spec.Task,
@@ -139,96 +117,30 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 	if spec.SessionMode != "" {
 		trigger["sessionMode"] = spec.SessionMode
 	}
-	triggerJSON, _ := json.Marshal(trigger)
-	filename := fmt.Sprintf("/home/agent/.triggers/%d.json", time.Now().UnixMilli())
-	tmpFilename := filename + ".tmp"
-
-	podName := instanceName + "-0"
-	cmd := []string{"sh", "-c", fmt.Sprintf("mkdir -p /home/agent/.triggers && cat > %s << 'TRIGGER_EOF'\n%s\nTRIGGER_EOF\nmv %s %s", tmpFilename, string(triggerJSON), tmpFilename, filename)}
-
-	if s.restCfg != nil {
-		req := s.client.CoreV1().RESTClient().Post().
-			Resource("pods").
-			Name(podName).
-			Namespace(s.config.Namespace).
-			SubResource("exec").
-			VersionedParams(&corev1.PodExecOptions{
-				Container: "agent",
-				Command:   cmd,
-				Stdout:    true,
-				Stderr:    true,
-			}, scheme.ParameterCodec)
-
-		exec, err := remotecommand.NewSPDYExecutor(s.restCfg, "POST", req.URL())
-		if err != nil {
-			return fmt.Errorf("exec into %s: %w", podName, err)
-		}
-		if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-			Stdout: io.Discard,
-			Stderr: io.Discard,
-		}); err != nil {
-			return fmt.Errorf("exec stream to %s: %w", podName, err)
-		}
+	triggerJSON, err := json.Marshal(trigger)
+	if err != nil {
+		return fmt.Errorf("marshaling trigger: %w", err)
 	}
-	slog.Info("trigger delivered", "pod", podName, "file", filename)
-	return nil
-}
 
-// wakeIfHibernated checks if the instance is hibernated and wakes it.
-// Returns true if the instance was hibernated and is now waking.
-func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (bool, error) {
-	var woke bool
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	// Set run-request + trigger annotations on the instance ConfigMap
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		cm, err := s.client.CoreV1().ConfigMaps(s.config.Namespace).Get(ctx, instanceName, metav1.GetOptions{})
 		if err != nil {
-			return err
+			return fmt.Errorf("getting instance %s: %w", instanceName, err)
 		}
-		instanceSpec, err := types.ParseInstanceSpec(cm.Data["spec.yaml"])
-		if err != nil {
-			return err
-		}
-		if instanceSpec.DesiredState != "hibernated" {
-			woke = false
+
+		// If there's already an active job, skip — don't overlap
+		if cm.Annotations != nil && cm.Annotations[reconciler.AnnActiveJob] != "" {
+			slog.Warn("skipping trigger — instance already has active job", "instance", instanceName, "schedule", scheduleName)
 			return nil
 		}
-		instanceSpec.DesiredState = "running"
-		specYAML, err := yaml.Marshal(instanceSpec)
-		if err != nil {
-			return err
-		}
-		cm.Data["spec.yaml"] = string(specYAML)
+
 		if cm.Annotations == nil {
 			cm.Annotations = make(map[string]string)
 		}
-		cm.Annotations["humr.ai/last-activity"] = time.Now().UTC().Format(time.RFC3339)
+		cm.Annotations[reconciler.AnnRunRequest] = time.Now().UTC().Format(time.RFC3339)
+		cm.Annotations[AnnTrigger] = string(triggerJSON)
 		_, err = s.client.CoreV1().ConfigMaps(s.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
-		if err == nil {
-			woke = true
-		}
 		return err
 	})
-	return woke, err
 }
-
-// waitForPodReady polls until the instance pod is Ready or the timeout expires.
-func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
-	podName := instanceName + "-0"
-	deadline := time.Now().Add(wakeTimeout)
-	for time.Now().Before(deadline) {
-		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
-		if err == nil {
-			for _, c := range pod.Status.Conditions {
-				if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-					return true
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(wakePollInterval):
-		}
-	}
-	return false
-}
-

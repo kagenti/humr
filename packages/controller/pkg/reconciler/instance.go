@@ -3,7 +3,9 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -13,6 +15,13 @@ import (
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
+)
+
+// Annotation keys for the Job lifecycle protocol.
+const (
+	AnnRunRequest = "humr.ai/run-request" // API server sets this to request a Job
+	AnnActiveJob  = "humr.ai/active-job"  // Controller sets this to the running Job name
+	AnnPodIP      = "humr.ai/pod-ip"      // Controller sets this when the pod is ready
 )
 
 type InstanceReconciler struct {
@@ -47,15 +56,12 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, err.Error())
 	}
 
-	// Ensure the instance CM has an OwnerReference to its agent CM so that
-	// K8s garbage collection cascade-deletes orphaned instances when the
-	// agent is removed.
+	// Ensure the instance CM has an OwnerReference to its agent CM.
 	if err := r.ensureAgentOwnerReference(ctx, cm, agentCM); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("setting agent owner reference: %v", err))
 	}
 
-	// Build desired resources — PVCs + NetworkPolicy only.
-	// Jobs are created on demand by the API server, not by the controller.
+	// Infrastructure: PVCs + NetworkPolicy
 	pvcs := BuildPVCs(name, agentSpec, r.config, cm)
 	np := BuildNetworkPolicy(name, r.config, cm)
 
@@ -66,12 +72,73 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying networkpolicy: %v", err))
 	}
 
+	// --- Job lifecycle protocol ---
+	annotations := cm.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	activeJobName := annotations[AnnActiveJob]
+	runRequest := annotations[AnnRunRequest]
+
+	// If there's an active Job, check its status
+	if activeJobName != "" {
+		job, err := r.client.BatchV1().Jobs(r.config.Namespace).Get(ctx, activeJobName, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			// Job was cleaned up (TTL) — clear annotations
+			slog.Info("active job disappeared, clearing", "instance", name, "job", activeJobName)
+			r.clearJobAnnotations(ctx, name)
+			return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("idle", ""))
+		}
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("checking active job: %v", err))
+		}
+
+		if isJobFinished(job) {
+			slog.Info("active job finished", "instance", name, "job", activeJobName)
+			r.clearJobAnnotations(ctx, name)
+			return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("idle", ""))
+		}
+
+		// Job is still running — update pod IP if not yet set
+		if annotations[AnnPodIP] == "" {
+			if ip := r.getJobPodIP(ctx, activeJobName); ip != "" {
+				r.patchAnnotation(ctx, name, AnnPodIP, ip)
+			}
+		}
+		return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("active", ""))
+	}
+
+	// If there's a run-request and no active Job, create one
+	if runRequest != "" {
+		slog.Info("creating job for run-request", "instance", name, "request", runRequest)
+
+		// If a trigger payload is present, pass it as HUMR_TRIGGER env var
+		var extraEnv []corev1.EnvVar
+		if trigger := annotations["humr.ai/trigger"]; trigger != "" {
+			extraEnv = append(extraEnv, corev1.EnvVar{Name: "HUMR_TRIGGER", Value: trigger})
+		}
+		job := BuildJob(name, instanceSpec, agentSpec, r.config, agentName, extraEnv)
+		created, err := r.client.BatchV1().Jobs(r.config.Namespace).Create(ctx, job, metav1.CreateOptions{})
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("creating job: %v", err))
+		}
+
+		// Write active-job annotation and clear run-request + trigger
+		r.patchAnnotations(ctx, name, map[string]string{
+			AnnActiveJob:     created.Name,
+			AnnPodIP:         "",
+			AnnRunRequest:    "",
+			"humr.ai/trigger": "",
+		})
+		slog.Info("job created", "instance", name, "job", created.Name)
+		return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("active", ""))
+	}
+
+	// No active job, no request — idle
 	return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("idle", ""))
 }
 
-// ensureAgentOwnerReference adds a non-controller OwnerReference from the
-// instance CM to the agent CM if one is not already present. This lets K8s
-// garbage collection cascade-delete instances when their agent is removed.
 func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, instanceCM, agentCM *corev1.ConfigMap) error {
 	for _, ref := range instanceCM.OwnerReferences {
 		if ref.UID == agentCM.UID {
@@ -102,8 +169,7 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
 	// Owner references handle cascade deletion of NetworkPolicy.
-	// PVCs have owner references too, but we clean them up explicitly
-	// as a safety net (same as before).
+	// PVCs have owner references too, but we clean them up explicitly as a safety net.
 	r.deletePVCs(ctx, name)
 }
 
@@ -127,7 +193,6 @@ func (r *InstanceReconciler) setError(ctx context.Context, name, msg string) err
 	return fmt.Errorf("instance %s: %s", name, msg)
 }
 
-// applyPVCs creates PVCs if they don't already exist. Idempotent.
 func (r *InstanceReconciler) applyPVCs(ctx context.Context, pvcs []*corev1.PersistentVolumeClaim) error {
 	for _, pvc := range pvcs {
 		_, err := r.client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(ctx, pvc.Name, metav1.GetOptions{})
@@ -141,7 +206,6 @@ func (r *InstanceReconciler) applyPVCs(ctx context.Context, pvcs []*corev1.Persi
 		if err != nil {
 			return err
 		}
-		// PVC already exists — nothing to update (PVC specs are immutable)
 	}
 	return nil
 }
@@ -153,4 +217,66 @@ func (r *InstanceReconciler) applyNetworkPolicy(ctx context.Context, desired *ne
 		return err
 	}
 	return err
+}
+
+// getJobPodIP returns the pod IP for a Job's pod, or "" if not ready.
+func (r *InstanceReconciler) getJobPodIP(ctx context.Context, jobName string) string {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "job-name=" + jobName,
+	})
+	if err != nil || len(pods.Items) == 0 {
+		return ""
+	}
+	pod := &pods.Items[0]
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+			return pod.Status.PodIP
+		}
+	}
+	return ""
+}
+
+// patchAnnotation sets a single annotation on the instance ConfigMap.
+func (r *InstanceReconciler) patchAnnotation(ctx context.Context, name, key, value string) {
+	r.patchAnnotations(ctx, name, map[string]string{key: value})
+}
+
+// patchAnnotations sets multiple annotations on the instance ConfigMap.
+func (r *InstanceReconciler) patchAnnotations(ctx context.Context, name string, anns map[string]string) {
+	retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cm, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if cm.Annotations == nil {
+			cm.Annotations = make(map[string]string)
+		}
+		for k, v := range anns {
+			if v == "" {
+				delete(cm.Annotations, k)
+			} else {
+				cm.Annotations[k] = v
+			}
+		}
+		_, err = r.client.CoreV1().ConfigMaps(r.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// clearJobAnnotations removes all Job-related annotations from the instance ConfigMap.
+func (r *InstanceReconciler) clearJobAnnotations(ctx context.Context, name string) {
+	r.patchAnnotations(ctx, name, map[string]string{
+		AnnActiveJob:  "",
+		AnnPodIP:      "",
+		AnnRunRequest: "",
+	})
+}
+
+func isJobFinished(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if (c.Type == batchv1.JobComplete || c.Type == batchv1.JobFailed) && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }

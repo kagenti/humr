@@ -8,7 +8,6 @@ import {
   createApi, createK8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
-import { loadJobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createAcpClient } from "./acp-client.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
@@ -46,10 +45,9 @@ const onecli = createOnecliClient({
   onecliBaseUrl: config.onecliBaseUrl,
 });
 
-const { api, batchApi } = createApi(config.namespace);
-const k8sClient = createK8sClient(api, config.namespace, batchApi);
+const { api } = createApi(config.namespace);
+const k8sClient = createK8sClient(api, config.namespace);
 const instancesRepo = createInstancesRepository(k8sClient);
-const jobCfg = loadJobBuilderConfig();
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
@@ -171,16 +169,11 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
     return c.json({ error: "not found" }, 404);
   }
 
-  // Find an active Job pod for this instance
-  const jobs = await k8sClient.listJobs(`humr.ai/instance=${instanceId}`);
-  const activeJob = jobs.find((j) => !j.status?.succeeded && !j.status?.failed);
-  if (!activeJob) {
-    return c.json({ error: "instance idle — no active agent pod" }, 503);
-  }
-  const pods = await k8sClient.listPods(`job-name=${activeJob.metadata!.name!}`);
-  const podIP = pods[0]?.status?.podIP;
+  // Find pod IP from instance ConfigMap annotation (set by controller)
+  const cm = await k8sClient.getConfigMap(instanceId);
+  const podIP = cm?.metadata?.annotations?.["humr.ai/pod-ip"];
   if (!podIP) {
-    return c.json({ error: "agent pod starting" }, 503);
+    return c.json({ error: "instance idle — no active agent pod" }, 503);
   }
 
   const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
@@ -232,7 +225,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(k8sClient, jobCfg);
+const acpRelay = createAcpRelay(k8sClient);
 
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);

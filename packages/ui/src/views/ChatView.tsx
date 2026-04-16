@@ -188,8 +188,8 @@ export function ChatView() {
     if (!selectedInstance) return;
     const inst = instances.find(i => i.id === selectedInstance);
     const state = inst ? instanceState(inst) : "unknown";
-    if (state === "hibernated" || state === "idle") {
-      // In Job model, wake is a no-op — but call it for backwards compat
+    // In the Job model, wake is a no-op — instances are always ready
+    if (state === "idle") {
       platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);

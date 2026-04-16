@@ -2,29 +2,29 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { LABEL_AGENT_REF } from "./modules/agents/infrastructure/labels.js";
-import { buildJob, type JobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
-import { isPodReady } from "./modules/agents/infrastructure/configmap-mappers.js";
 
-const WAKE_POLL_MS = 500;
-const WAKE_TIMEOUT_MS = 120_000;
+const POLL_MS = 500;
+const POLL_TIMEOUT_MS = 120_000;
+
+// Annotation keys — must match controller constants.
+const ANN_RUN_REQUEST = "humr.ai/run-request";
+const ANN_ACTIVE_JOB = "humr.ai/active-job";
+const ANN_POD_IP = "humr.ai/pod-ip";
 
 /**
- * Wait for the Job's pod to become Ready and return its IP.
- * Returns null if timeout expires.
+ * Poll the instance ConfigMap until the controller writes a pod IP,
+ * or a pod IP is already present from an existing active Job.
  */
-async function waitForJobPodReady(
+async function waitForPodIP(
   k8s: K8sClient,
-  jobName: string,
+  instanceId: string,
 ): Promise<string | null> {
-  const deadline = Date.now() + WAKE_TIMEOUT_MS;
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const pods = await k8s.listPods(`job-name=${jobName}`);
-    const pod = pods[0];
-    if (pod && isPodReady(pod) && pod.status?.podIP) {
-      return pod.status.podIP;
-    }
-    await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
+    const cm = await k8s.getConfigMap(instanceId);
+    const ip = cm?.metadata?.annotations?.[ANN_POD_IP];
+    if (ip) return ip;
+    await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return null;
 }
@@ -40,10 +40,7 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
-export function createAcpRelay(
-  k8s: K8sClient,
-  jobCfg: JobBuilderConfig,
-) {
+export function createAcpRelay(k8s: K8sClient) {
   const wss = new WebSocketServer({ noServer: true });
 
   function handleUpgrade(
@@ -53,13 +50,13 @@ export function createAcpRelay(
     instanceId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
-      // Buffer messages while we spin up the Job
+      // Buffer messages while we wait for the Job pod
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
         pending.push({ data: data as Buffer, isBinary });
       });
 
-      launchAndConnect(k8s, jobCfg, instanceId)
+      requestAndConnect(k8s, instanceId)
         .then((upstream) => {
           // Flush buffered messages
           for (const msg of pending) {
@@ -102,7 +99,7 @@ export function createAcpRelay(
           });
         })
         .catch((err) => {
-          process.stderr.write(`[acp-relay] Job launch failed: ${err}\n`);
+          process.stderr.write(`[acp-relay] failed: ${err}\n`);
           client.close(1011, "failed to start agent job");
         });
     });
@@ -112,52 +109,66 @@ export function createAcpRelay(
 }
 
 /**
- * Create a Job for this turn, wait for pod readiness, connect WebSocket.
- * If a Job is already running for this instance, connect to it instead.
+ * Request a Job (if not already running) via annotation, wait for pod IP,
+ * then connect WebSocket.
  */
-async function launchAndConnect(
+async function requestAndConnect(
   k8s: K8sClient,
-  jobCfg: JobBuilderConfig,
   instanceId: string,
 ): Promise<WebSocket> {
-  // Check for an already-running Job
-  const existingJobs = await k8s.listJobs(`humr.ai/instance=${instanceId}`);
-  const activeJob = existingJobs.find(
-    (j) => !j.status?.succeeded && !j.status?.failed,
-  );
+  const cm = await k8s.getConfigMap(instanceId);
+  if (!cm) throw new Error(`instance ${instanceId} not found`);
 
-  let jobName: string;
+  const annotations = cm.metadata?.annotations ?? {};
 
-  if (activeJob) {
-    // Reuse existing active Job
-    jobName = activeJob.metadata!.name!;
-  } else {
-    // Resolve agent ConfigMap to build Job spec
-    const instanceCM = await k8s.getConfigMap(instanceId);
-    if (!instanceCM) throw new Error(`instance ${instanceId} not found`);
-
-    const agentName = instanceCM.metadata?.labels?.[LABEL_AGENT_REF];
-    if (!agentName) throw new Error(`instance ${instanceId} has no agent label`);
-
-    const agentCM = await k8s.getConfigMap(agentName);
-    if (!agentCM) throw new Error(`agent ${agentName} not found`);
-
-    const job = buildJob({
-      instanceName: instanceId,
-      instanceCM,
-      agentCM,
-      cfg: jobCfg,
-    });
-
-    const created = await k8s.createJob(job);
-    jobName = created.metadata!.name!;
+  // If there's already a pod IP (active Job), connect directly
+  if (annotations[ANN_POD_IP]) {
+    return connectUpstream(`ws://${annotations[ANN_POD_IP]}:8080/api/acp`);
   }
 
-  // Wait for pod to be ready
-  const podIP = await waitForJobPodReady(k8s, jobName);
-  if (!podIP) {
-    throw new Error(`Job ${jobName} pod did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`);
+  // If there's already an active Job but no pod IP yet, just wait for it
+  if (annotations[ANN_ACTIVE_JOB]) {
+    const podIP = await waitForPodIP(k8s, instanceId);
+    if (!podIP) throw new Error(`pod did not become ready for existing job`);
+    return connectUpstream(`ws://${podIP}:8080/api/acp`);
   }
+
+  // No active Job — request one via annotation.
+  // Use optimistic concurrency: re-read + check before writing to handle races.
+  await setRunRequest(k8s, instanceId);
+
+  // Wait for the controller to create the Job and write pod IP
+  const podIP = await waitForPodIP(k8s, instanceId);
+  if (!podIP) throw new Error(`pod did not become ready within ${POLL_TIMEOUT_MS / 1000}s`);
 
   return connectUpstream(`ws://${podIP}:8080/api/acp`);
+}
+
+/**
+ * Atomically set the run-request annotation, retrying on conflict.
+ * If another request already set active-job in the meantime, skip.
+ */
+async function setRunRequest(
+  k8s: K8sClient,
+  instanceId: string,
+  retries = 3,
+): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    const fresh = await k8s.getConfigMap(instanceId);
+    if (!fresh) throw new Error(`instance ${instanceId} not found`);
+
+    // Another request won the race — a Job is already being created
+    if (fresh.metadata?.annotations?.[ANN_ACTIVE_JOB]) return;
+    if (fresh.metadata?.annotations?.[ANN_RUN_REQUEST]) return;
+
+    if (!fresh.metadata!.annotations) fresh.metadata!.annotations = {};
+    fresh.metadata!.annotations[ANN_RUN_REQUEST] = new Date().toISOString();
+    try {
+      await k8s.replaceConfigMap(instanceId, fresh);
+      return;
+    } catch (err: any) {
+      if (err?.code === 409 && i < retries - 1) continue; // conflict — retry
+      throw err;
+    }
+  }
 }

@@ -69,7 +69,6 @@ export function createInstancesService(deps: {
         name: input.name,
         version: SPEC_VERSION,
         agentId: input.agentId,
-        desiredState: "running" as const,
         env: input.env,
         secretRef: input.secretRef,
         description: input.description,

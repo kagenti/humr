@@ -5,16 +5,13 @@ export interface InfraInstance {
   name: string;
   agentId: string;
   description?: string;
-  desiredState?: string;
   currentState?: string;
   error?: string;
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
   if (infra.currentState === "error") return "error";
-  // In the Job model, instances are always "idle" (ready to accept work)
-  // unless the controller reports an error. The "running" state is transient
-  // (a Job exists) and not tracked in the ConfigMap status.
+  if (infra.currentState === "active") return "running";
   return "idle";
 }
 
