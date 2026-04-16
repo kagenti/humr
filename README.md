@@ -13,6 +13,10 @@ Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini C
 
 ## Guided Tour
 
+```sh
+git clone https://github.com/kagenti/humr && cd humr
+```
+
 Open your favorite AI coding agent in the repo and try:
 
 ```
