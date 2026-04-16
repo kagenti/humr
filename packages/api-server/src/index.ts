@@ -11,7 +11,7 @@ import { createInstancesRepository } from "./modules/agents/infrastructure/Insta
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createAcpClient } from "./acp-client.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
-import { upsertSession } from "./modules/agents/infrastructure/sessions-repository.js";
+import { upsertSession, findActiveByScheduleId } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
 import { createSlackOAuthRoutes } from "./modules/channels/infrastructure/slack-oauth.js";
 import { createChannelManager } from "./modules/channels/services/ChannelManager.js";
@@ -119,19 +119,18 @@ app.post("/internal/trigger", async (c) => {
 
   const mode = body.sessionMode ?? "fresh";
   const sessionType = "schedule_cron";
-  const { sessions } = composeAgentsModule(api, config.namespace, "_system", db);
 
   // For continuous mode, look up existing session
   let resumeSessionId: string | undefined;
   if (mode === "continuous") {
-    const found = await sessions.findByScheduleId(body.schedule);
+    const found = await findActiveByScheduleId(db)(body.schedule);
     resumeSessionId = found?.sessionId;
   }
 
   const acp = createAcpClient({
     namespace: config.namespace,
     instanceName: body.instanceId,
-    onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
+    onSessionCreated: (sid: string) => persistSession(sid, body.instanceId, sessionType as any, body.schedule),
   });
 
   const result = await acp.triggerSession({

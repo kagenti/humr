@@ -26,8 +26,8 @@ export const sessionsRouter = t.router({
     .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.type, input.scheduleId)),
 
   delete: t.procedure
-    .input(z.object({ sessionId: z.string().min(1) }))
-    .mutation(({ ctx, input }) => ctx.sessions.delete(input.sessionId)),
+    .input(z.object({ sessionId: z.string().min(1), instanceId: z.string().min(1) }))
+    .mutation(({ ctx, input }) => ctx.sessions.delete(input.sessionId, input.instanceId)),
 
   listByScheduleId: t.procedure
     .input(z.object({ scheduleId: z.string().min(1) }))

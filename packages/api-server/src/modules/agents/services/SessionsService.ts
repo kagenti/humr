@@ -6,12 +6,15 @@ export function createSessionsService(deps: {
   listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; createdAt: Date } | null>;
   upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) => Promise<void>;
-  delete: (sessionId: string) => Promise<void>;
+  delete: (sessionId: string, instanceId: string) => Promise<void>;
+  isOwnedInstance: (instanceId: string) => Promise<boolean>;
+  isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
   deactivateByScheduleId: (scheduleId: string) => Promise<void>;
   namespace: string;
 }): SessionsApiService {
   return {
     async list(instanceId: string, includeChannel?: boolean) {
+      if (!await deps.isOwnedInstance(instanceId)) return [];
       const acp = createAcpClient({
         namespace: deps.namespace,
         instanceName: instanceId,
@@ -47,14 +50,17 @@ export function createSessionsService(deps: {
     },
 
     async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) {
+      if (!await deps.isOwnedInstance(instanceId)) return;
       await deps.upsert(sessionId, instanceId, type, scheduleId);
     },
 
-    async delete(sessionId: string) {
-      await deps.delete(sessionId);
+    async delete(sessionId: string, instanceId: string) {
+      if (!await deps.isOwnedInstance(instanceId)) return;
+      await deps.delete(sessionId, instanceId);
     },
 
     async listByScheduleId(scheduleId: string) {
+      if (!await deps.isOwnedSchedule(scheduleId)) return [];
       const rows = await deps.listByScheduleId(scheduleId);
       return rows.map((row): SessionView => ({
         sessionId: row.sessionId,
@@ -79,6 +85,7 @@ export function createSessionsService(deps: {
     },
 
     async resetByScheduleId(scheduleId: string) {
+      if (!await deps.isOwnedSchedule(scheduleId)) return;
       await deps.deactivateByScheduleId(scheduleId);
     },
   };

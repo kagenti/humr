@@ -454,8 +454,10 @@ export const useStore = create<HumrStore>((set, get) => ({
     }));
   },
   deleteSession: async (sessionId) => {
+    const instanceId = get().selectedInstance;
+    if (!instanceId) return;
     try {
-      await platform.sessions.delete.mutate({ sessionId });
+      await platform.sessions.delete.mutate({ sessionId, instanceId });
       set((s) => ({
         sessions: s.sessions.filter((x) => x.sessionId !== sessionId),
         // If the deleted session is the active one, clear it
