@@ -6,6 +6,7 @@ export function createSessionsService(deps: {
   listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; createdAt: Date } | null>;
   upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) => Promise<void>;
+  delete: (sessionId: string) => Promise<void>;
   deactivateByScheduleId: (scheduleId: string) => Promise<void>;
   namespace: string;
 }): SessionsApiService {
@@ -47,6 +48,10 @@ export function createSessionsService(deps: {
 
     async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) {
       await deps.upsert(sessionId, instanceId, type, scheduleId);
+    },
+
+    async delete(sessionId: string) {
+      await deps.delete(sessionId);
     },
 
     async listByScheduleId(scheduleId: string) {

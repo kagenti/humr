@@ -62,7 +62,7 @@ export function ChannelsPanel() {
 
   if (!slackAvailable) {
     return (
-      <div className="p-4 text-[13px] text-text-muted">
+      <div className="px-4 py-4 text-[12px] text-text-muted">
         Slack is not configured for this installation.
       </div>
     );

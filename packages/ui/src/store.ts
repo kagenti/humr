@@ -13,6 +13,11 @@ import type {
   SecretView,
   SecretMode,
 } from "./types.js";
+import type {
+  SessionModeState,
+  SessionModelState,
+  SessionConfigOption,
+} from "@agentclientprotocol/sdk/dist/acp.js";
 
 type View = "list" | "chat" | "connectors";
 
@@ -62,7 +67,25 @@ export interface HumrStore {
   log: LogEntry[];
   busy: boolean;
   sessionId: string | null;
-  rightTab: "files" | "log" | "schedules" | "channels" | "mcps";
+  rightTab: "files" | "log" | "configuration";
+
+  // Session config (ACP protocol state)
+  sessionModes: SessionModeState | null;
+  sessionModels: SessionModelState | null;
+  sessionConfigOptions: SessionConfigOption[];
+  setSessionModes: (modes: SessionModeState | null) => void;
+  setSessionModels: (models: SessionModelState | null) => void;
+  setSessionConfigOptions: (options: SessionConfigOption[]) => void;
+
+  // Message queue (for queuing messages while agent is busy)
+  queuedMessage: string | null;
+  setQueuedMessage: (msg: string | null) => void;
+
+  // Mobile navigation
+  mobileScreen: "sessions" | "chat";
+  setMobileScreen: (screen: "sessions" | "chat") => void;
+  showMobilePanel: boolean;
+  setShowMobilePanel: (show: boolean) => void;
 
   // Loading states
   loading: LoadingState;
@@ -111,13 +134,14 @@ export interface HumrStore {
   setLoadingSessions: (loading: boolean) => void;
   setLoadingSession: (loading: boolean) => void;
   addLog: (type: string, payload: object) => void;
+  deleteSession: (sessionId: string) => Promise<void>;
 
   // File tree
   setFileTree: (entries: TreeEntry[]) => void;
   setOpenFile: (file: { path: string; content: string } | null) => void;
 
   // Right tab
-  setRightTab: (tab: "files" | "log" | "schedules" | "channels" | "mcps") => void;
+  setRightTab: (tab: "files" | "log" | "configuration") => void;
 
   // Secrets
   secrets: SecretView[];
@@ -203,6 +227,24 @@ export const useStore = create<HumrStore>((set, get) => ({
   busy: false,
   sessionId: null,
   rightTab: "files",
+
+  // Session config
+  sessionModes: null,
+  sessionModels: null,
+  sessionConfigOptions: [],
+  setSessionModes: (modes) => set({ sessionModes: modes }),
+  setSessionModels: (models) => set({ sessionModels: models }),
+  setSessionConfigOptions: (options) => set({ sessionConfigOptions: options }),
+
+  // Message queue
+  queuedMessage: null,
+  setQueuedMessage: (msg) => set({ queuedMessage: msg }),
+
+  // Mobile navigation
+  mobileScreen: "sessions",
+  setMobileScreen: (screen) => set({ mobileScreen: screen }),
+  showMobilePanel: false,
+  setShowMobilePanel: (show) => set({ showMobilePanel: show }),
 
   // Loading states
   loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
@@ -361,6 +403,12 @@ export const useStore = create<HumrStore>((set, get) => ({
       openFile: null,
       log: [],
       view: "chat",
+      sessionModes: null,
+      sessionModels: null,
+      sessionConfigOptions: [],
+      queuedMessage: null,
+      mobileScreen: "sessions",
+      showMobilePanel: false,
     });
   },
 
@@ -375,6 +423,11 @@ export const useStore = create<HumrStore>((set, get) => ({
       openFile: null,
       log: [],
       view: "list",
+      sessionModes: null,
+      sessionModels: null,
+      sessionConfigOptions: [],
+      queuedMessage: null,
+      showMobilePanel: false,
     });
     get().fetchAgents();
     get().fetchInstances();
@@ -399,6 +452,20 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({
       log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }],
     }));
+  },
+  deleteSession: async (sessionId) => {
+    try {
+      await platform.sessions.delete.mutate({ sessionId });
+      set((s) => ({
+        sessions: s.sessions.filter((x) => x.sessionId !== sessionId),
+        // If the deleted session is the active one, clear it
+        ...(s.sessionId === sessionId
+          ? { sessionId: null, messages: [], sessionModes: null, sessionModels: null, sessionConfigOptions: [] }
+          : {}),
+      }));
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to delete session");
+    }
   },
 
   // File tree

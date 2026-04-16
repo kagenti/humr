@@ -1,11 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "./store.js";
 import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
 import { ConnectorsView } from "./views/ConnectorsView.js";
-import { Shell as ShellIcon, Sun, Moon, Monitor, LogOut, ExternalLink } from "lucide-react";
+import { Sun, Moon, Monitor, LogOut, ExternalLink, Menu, X } from "lucide-react";
 import { getUser, logout, getAuthConfig } from "./auth.js";
 import { DialogOverlay } from "./components/DialogOverlay.js";
+import { Logo } from "./components/Logo.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -80,7 +81,7 @@ export default function App() {
       <div className="blob blob-3" />
 
       <Nav />
-      <main className="relative z-10 mx-auto w-full max-w-[960px] px-[5%] py-10">
+      <main className="relative z-10 mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10">
         {view === "connectors" ? <ConnectorsView /> : <ListView />}
       </main>
       <DialogOverlay />
@@ -100,71 +101,148 @@ function Nav() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const user = getUser();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-50 flex items-center gap-6 border-b border-border-light bg-surface/80 backdrop-blur-sm px-[5%] h-12">
-      <div className="flex items-center gap-2">
-        <ShellIcon size={20} className="text-accent" />
-        <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">humr</span>
-      </div>
+    <nav className="sticky top-0 z-50 border-b border-border-light bg-surface/80 backdrop-blur-sm">
+      <div className="flex items-center gap-6 px-4 md:px-[5%] h-12">
+        {/* Brand */}
+        <div className="flex items-center gap-2">
+          <Logo size={22} className="text-accent" />
+          <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">humr</span>
+        </div>
 
-      <div className="flex items-center gap-1">
-        {(["list", "connectors"] as const).map((v) => {
-          const label = v === "list" ? "Agents" : "Connectors";
-          const active = view === v;
-          return (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-3 py-1.5 text-[14px] font-medium rounded-lg transition-colors ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+        {/* Desktop nav links */}
+        <div className="hidden md:flex items-center gap-1">
+          {(["list", "connectors"] as const).map((v) => {
+            const label = v === "list" ? "Agents" : "Connectors";
+            const active = view === v;
+            return (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1.5 text-[14px] font-medium rounded-lg transition-colors ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+          {getAuthConfig()?.onecliUrl && (
+            <a
+              href={`${getAuthConfig()!.onecliUrl}/connections`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"
+              title="Open OneCLI dashboard"
             >
-              {label}
+              OneCLI
+              <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+
+        {/* Desktop theme toggle */}
+        <div className="ml-auto hidden md:flex items-center gap-0.5 rounded-lg border border-border-light p-0.5">
+          {themeOptions.map(({ value, icon: Icon, label }) => (
+            <button
+              key={value}
+              onClick={() => setTheme(value)}
+              title={label}
+              className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors ${theme === value ? "bg-accent text-white" : "text-text-muted hover:text-text-secondary"}`}
+            >
+              <Icon size={14} />
             </button>
-          );
-        })}
-        {getAuthConfig()?.onecliUrl && (
-          <a
-            href={`${getAuthConfig()!.onecliUrl}/connections`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"
-            title="Open OneCLI dashboard"
-          >
-            OneCLI
-            <ExternalLink size={12} />
-          </a>
-        )}
-      </div>
+          ))}
+        </div>
 
-      {/* Theme toggle */}
-      <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-border-light p-0.5">
-        {themeOptions.map(({ value, icon: Icon, label }) => (
+        {/* Desktop user/logout */}
+        <div className="hidden md:flex items-center gap-2">
+          {user && (
+            <span className="text-[13px] text-text-secondary">
+              {user.profile.preferred_username ?? user.profile.sub}
+            </span>
+          )}
           <button
-            key={value}
-            onClick={() => setTheme(value)}
-            title={label}
-            className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors ${theme === value ? "bg-accent text-white" : "text-text-muted hover:text-text-secondary"}`}
+            onClick={() => logout()}
+            title="Log out"
+            className="h-7 w-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors"
           >
-            <Icon size={14} />
+            <LogOut size={14} />
           </button>
-        ))}
-      </div>
+        </div>
 
-      {/* User / logout */}
-      <div className="flex items-center gap-2">
-        {user && (
-          <span className="text-[13px] text-text-secondary">
-            {user.profile.preferred_username ?? user.profile.sub}
-          </span>
-        )}
+        {/* Mobile hamburger */}
         <button
-          onClick={() => logout()}
-          title="Log out"
-          className="h-7 w-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors"
+          className="md:hidden ml-auto h-8 w-8 rounded-md flex items-center justify-center text-text-secondary hover:text-accent transition-colors"
+          onClick={() => setMenuOpen(o => !o)}
         >
-          <LogOut size={14} />
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {menuOpen && (
+        <div className="md:hidden border-t border-border-light bg-surface px-4 py-3 flex flex-col gap-3 anim-in">
+          {/* Nav links */}
+          {(["list", "connectors"] as const).map((v) => {
+            const label = v === "list" ? "Agents" : "Connectors";
+            const active = view === v;
+            return (
+              <button
+                key={v}
+                onClick={() => { setView(v); setMenuOpen(false); }}
+                className={`text-left px-3 py-2 text-[14px] font-medium rounded-lg transition-colors ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+          {getAuthConfig()?.onecliUrl && (
+            <a
+              href={`${getAuthConfig()!.onecliUrl}/connections`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 text-[14px] font-medium rounded-lg text-text-secondary hover:text-text hover:bg-surface-raised transition-colors flex items-center gap-1.5"
+              onClick={() => setMenuOpen(false)}
+            >
+              OneCLI
+              <ExternalLink size={12} />
+            </a>
+          )}
+
+          {/* Theme toggle */}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span className="text-[13px] text-text-muted mr-2">Theme</span>
+            <div className="flex items-center gap-0.5 rounded-lg border border-border-light p-0.5">
+              {themeOptions.map(({ value, icon: Icon, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setTheme(value)}
+                  title={label}
+                  className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors ${theme === value ? "bg-accent text-white" : "text-text-muted hover:text-text-secondary"}`}
+                >
+                  <Icon size={14} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* User info + logout */}
+          <div className="flex items-center gap-3 px-3 py-2 border-t border-border-light pt-3">
+            {user && (
+              <span className="text-[13px] text-text-secondary flex-1">
+                {user.profile.preferred_username ?? user.profile.sub}
+              </span>
+            )}
+            <button
+              onClick={() => { logout(); setMenuOpen(false); }}
+              className="text-[13px] font-medium text-text-muted hover:text-danger transition-colors flex items-center gap-1"
+            >
+              <LogOut size={14} /> Log out
+            </button>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

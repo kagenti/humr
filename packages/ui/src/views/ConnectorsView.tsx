@@ -135,7 +135,7 @@ export function ConnectorsView() {
   const inp = "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
   return (
-    <div className="max-w-2xl">
+    <div className="w-full max-w-2xl">
       <div className="flex items-center gap-3 mb-8">
         <h1 className="text-[24px] font-bold text-text">Connectors</h1>
         <button
@@ -264,7 +264,7 @@ export function ConnectorsView() {
         {!loaded.current ? null : addMode === null ? (
           <div className="flex flex-col gap-3">
             <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Add Connector</h2>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <AddTypeCard
                 icon={<Globe size={18} />}
                 title="MCP Server"

@@ -56,3 +56,9 @@ export function upsertSession(db: Db) {
       .onConflictDoNothing();
   };
 }
+
+export function deleteSession(db: Db) {
+  return async (sessionId: string) => {
+    await db.delete(sessions).where(eq(sessions.sessionId, sessionId));
+  };
+}

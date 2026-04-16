@@ -25,6 +25,7 @@ This directory contains ADRs for the Humr project.
 | [017](017-db-backed-sessions.md) | DB-backed ACP sessions for metadata | @tomkis |
 | [018](018-slack-integration.md) | Slack integration — Socket Mode, channel-based routing, identity linking | @tomkis |
 | [019](019-session-identity.md) | Scheduled session identity and lifecycle | @janjeliga |
+| [020](020-responsive-ui-pwa.md) | Responsive mobile UI, ACP session controls, PWA | @jezekra1 |
 
 ## Drafts
 
