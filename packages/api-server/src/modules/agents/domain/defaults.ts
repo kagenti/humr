@@ -13,4 +13,3 @@ export const DEFAULT_TEMPLATE_SPEC = {
   },
 };
 
-export const DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 5;

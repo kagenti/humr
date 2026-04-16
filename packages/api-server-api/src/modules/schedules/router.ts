@@ -12,6 +12,7 @@ function toView(sched: Schedule) {
     cron: sched.spec.cron,
     task: sched.spec.task ?? null,
     enabled: sched.spec.enabled,
+    sessionMode: sched.spec.sessionMode,
     status: sched.status ?? null,
   };
 }
@@ -38,20 +39,10 @@ export const schedulesRouter = t.router({
       instanceId: z.string().min(1),
       cron: z.string().min(1),
       task: z.string().min(1),
+      sessionMode: z.enum(["continuous", "fresh"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createCron(input);
-      return toView(sched);
-    }),
-
-  createHeartbeat: t.procedure
-    .input(z.object({
-      name: z.string().min(1),
-      instanceId: z.string().min(1),
-      intervalMinutes: z.number().int().min(1),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const sched = await ctx.schedules.createHeartbeat(input);
       return toView(sched);
     }),
 
@@ -66,6 +57,4 @@ export const schedulesRouter = t.router({
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),
-
-  config: t.procedure.query(({ ctx }) => ctx.schedules.config()),
 });

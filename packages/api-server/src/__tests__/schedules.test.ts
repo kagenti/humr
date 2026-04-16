@@ -50,7 +50,7 @@ afterAll(async () => {
 });
 
 let cronScheduleId: string;
-let heartbeatScheduleId: string;
+let secondCronScheduleId: string;
 
 describe("schedules: API server CRUD", () => {
   describe("create cron schedule", () => {
@@ -84,52 +84,21 @@ describe("schedules: API server CRUD", () => {
     });
   });
 
-  describe("create heartbeat schedule", () => {
-    it("returns correct fields with converted cron", async () => {
-      const result = await client.schedules.createHeartbeat.mutate({
-        name: "heartbeat",
+  describe("create second cron schedule", () => {
+    it("returns correct fields", async () => {
+      const result = await client.schedules.createCron.mutate({
+        name: "health-check",
         instanceId: INSTANCE_ID,
-        intervalMinutes: 5,
+        cron: "*/5 * * * *",
+        task: "check health",
       });
 
-      heartbeatScheduleId = result.id;
-      expect(result.name).toBe("heartbeat");
+      secondCronScheduleId = result.id;
+      expect(result.name).toBe("health-check");
       expect(result.instanceId).toBe(INSTANCE_ID);
-      expect(result.type).toBe("heartbeat");
+      expect(result.type).toBe("cron");
       expect(result.cron).toBe("*/5 * * * *");
       expect(result.enabled).toBe(true);
-    });
-
-    it("converts 1-minute interval correctly", async () => {
-      const result = await client.schedules.createHeartbeat.mutate({
-        name: "every-minute",
-        instanceId: INSTANCE_ID,
-        intervalMinutes: 1,
-      });
-
-      expect(result.cron).toBe("* * * * *");
-
-      await client.schedules.delete.mutate({ id: result.id });
-    });
-
-    it("rejects non-existent instance", async () => {
-      await expect(
-        client.schedules.createHeartbeat.mutate({
-          name: "orphan",
-          instanceId: "no-such-instance",
-          intervalMinutes: 5,
-        }),
-      ).rejects.toThrow();
-    });
-
-    it("rejects zero interval", async () => {
-      await expect(
-        client.schedules.createHeartbeat.mutate({
-          name: "zero",
-          instanceId: INSTANCE_ID,
-          intervalMinutes: 0,
-        }),
-      ).rejects.toThrow();
     });
   });
 
@@ -141,7 +110,7 @@ describe("schedules: API server CRUD", () => {
 
       expect(list).toHaveLength(2);
       const names = list.map((s) => s.name).sort();
-      expect(names).toEqual(["daily-report", "heartbeat"]);
+      expect(names).toEqual(["daily-report", "health-check"]);
     });
 
     it("returns empty array for instance with no schedules", async () => {
@@ -186,7 +155,7 @@ describe("schedules: API server CRUD", () => {
         instanceId: INSTANCE_ID,
       });
       expect(list).toHaveLength(1);
-      expect(list[0].name).toBe("heartbeat");
+      expect(list[0].name).toBe("health-check");
     });
 
     it("ConfigMap is removed from cluster", async () => {
@@ -197,7 +166,7 @@ describe("schedules: API server CRUD", () => {
   describe("read schedule status", () => {
     it("returns null status when controller has not written status.yaml", async () => {
       const sched = await client.schedules.get.query({
-        id: heartbeatScheduleId,
+        id: secondCronScheduleId,
       });
       expect(sched.status).toBeNull();
     });
@@ -209,13 +178,13 @@ describe("schedules: API server CRUD", () => {
         "lastResult: success",
       ].join("\n");
       await patchConfigMapData(
-        heartbeatScheduleId,
+        secondCronScheduleId,
         "status.yaml",
         statusYaml,
       );
 
       const sched = await client.schedules.get.query({
-        id: heartbeatScheduleId,
+        id: secondCronScheduleId,
       });
       expect(sched.status).toMatchObject({
         lastResult: "success",
@@ -235,12 +204,6 @@ describe("schedules: API server CRUD", () => {
     });
   });
 
-  describe("config", () => {
-    it("returns default heartbeat interval", async () => {
-      const config = await client.schedules.config.query();
-      expect(config).toEqual({ defaultHeartbeatIntervalMinutes: 5 });
-    });
-  });
 });
 
 describe("e2e: controller reconciliation", () => {

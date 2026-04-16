@@ -30,7 +30,7 @@ func scheduleCM(name, instanceName string, enabled bool) *corev1.ConfigMap {
 			},
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ntype: heartbeat\ncron: \"*/5 * * * *\"\ntask: check repo\nenabled: " + enabledStr + "\n",
+			"spec.yaml": "version: humr.ai/v1\ntype: cron\ncron: \"*/5 * * * *\"\ntask: check repo\nenabled: " + enabledStr + "\n",
 		},
 	}
 }
@@ -107,7 +107,7 @@ func TestFire_RunningInstance(t *testing.T) {
 	client := fake.NewSimpleClientset(instanceCm)
 	s := New(client, testCfg)
 
-	spec := &types.ScheduleSpec{Type: "heartbeat", Cron: "*/5 * * * *", Task: "check repo", Enabled: true}
+	spec := &types.ScheduleSpec{Type: "cron", Cron: "*/5 * * * *", Task: "check repo", Enabled: true}
 	err := s.fire(context.Background(), "my-instance", "my-schedule", spec)
 	require.NoError(t, err)
 

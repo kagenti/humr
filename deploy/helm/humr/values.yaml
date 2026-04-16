@@ -114,6 +114,10 @@ onecli:
       - 224.0.0.0/4      # multicast
       - 240.0.0.0/4      # IETF reserved
 
+  # -- Force local auth mode (skip NEXTAUTH_SECRET injection).
+  # Useful for test clusters where OneCLI doesn't have a browser-based OAuth provider.
+  forceLocalAuth: false
+
   # -- Combined container resources
   resources:
     requests:

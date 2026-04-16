@@ -130,6 +130,7 @@ export interface HumrStore {
   fetchSchedules: () => Promise<void>;
   toggleSchedule: (id: string) => Promise<void>;
   deleteSchedule: (id: string) => Promise<void>;
+  resetScheduleSession: (scheduleId: string) => Promise<void>;
 }
 
 function applyTheme(theme: Theme) {
@@ -448,6 +449,10 @@ export const useStore = create<HumrStore>((set, get) => ({
   },
   deleteSchedule: async (id) => {
     await platform.schedules.delete.mutate({ id });
+    await get().fetchSchedules();
+  },
+  resetScheduleSession: async (scheduleId) => {
+    await platform.sessions.resetByScheduleId.mutate({ scheduleId });
     await get().fetchSchedules();
   },
 }));
