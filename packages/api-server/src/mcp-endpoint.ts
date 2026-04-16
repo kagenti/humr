@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import yaml from "js-yaml";
 import type { ChannelManager } from "./modules/channels/services/ChannelManager.js";
-import type { InstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
+import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "./modules/agents/infrastructure/labels.js";
 
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
@@ -44,20 +47,45 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
   return session;
 }
 
+async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
+  const instanceCm = await k8s.getConfigMap(instanceId);
+  if (!instanceCm) return false;
+
+  const agentName = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
+  const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
+  if (!agentName || !owner) return false;
+
+  const agentCm = await k8s.getConfigMap(agentName);
+  if (!agentCm) return false;
+
+  const agentOwner = agentCm.metadata?.labels?.[LABEL_OWNER];
+  if (agentOwner !== owner) return false;
+
+  const statusYaml = agentCm.data?.[STATUS_KEY];
+  if (!statusYaml) return false;
+
+  const status = yaml.load(statusYaml) as { accessTokenHash?: string };
+  if (!status?.accessTokenHash) return false;
+
+  const hash = createHash("sha256").update(token).digest("hex");
+  return hash === status.accessTokenHash;
+}
+
 export function createMcpRoutes(deps: {
   channelManager: ChannelManager;
-  instancesRepo: InstancesRepository;
+  k8s: K8sClient;
 }) {
   const app = new Hono();
 
   app.all("/api/instances/:id/mcp", async (c) => {
-    const host = c.req.header("host") ?? "";
-    if (!host.includes(".svc.cluster.local") && !host.startsWith("localhost")) {
-      return c.json({ error: "not found" }, 404);
+    const authHeader = c.req.header("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return c.json({ error: "unauthorized" }, 401);
     }
+    const token = authHeader.slice(7);
 
     const instanceId = c.req.param("id")!;
-    if (!await deps.instancesRepo.get(instanceId)) {
+    if (!await verifyAgentToken(deps.k8s, instanceId, token)) {
       return c.json({ error: "not found" }, 404);
     }
 

@@ -103,7 +103,10 @@ async function processTrigger(
     }
     const mcpServers = [...trigger.mcpServers];
     if (config.HUMR_MCP_URL) {
-      mcpServers.push({ type: "http", name: "humr-outbound", url: config.HUMR_MCP_URL, headers: [] });
+      const mcpHeaders = config.ONECLI_ACCESS_TOKEN
+        ? [{ name: "Authorization", value: `Bearer ${config.ONECLI_ACCESS_TOKEN}` }]
+        : [];
+      mcpServers.push({ type: "http", name: "humr-outbound", url: config.HUMR_MCP_URL, headers: mcpHeaders });
     }
 
     const result = await postTrigger(options.apiServerUrl, {

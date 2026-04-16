@@ -125,7 +125,11 @@ if (config.HUMR_MCP_URL) {
     try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
   }
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
-  mcpServers["humr-outbound"] = { type: "http", url: config.HUMR_MCP_URL };
+  const mcpEntry: Record<string, unknown> = { type: "http", url: config.HUMR_MCP_URL };
+  if (config.ONECLI_ACCESS_TOKEN) {
+    mcpEntry.headers = { Authorization: `Bearer ${config.ONECLI_ACCESS_TOKEN}` };
+  }
+  mcpServers["humr-outbound"] = mcpEntry;
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
   process.stderr.write(`[mcp] Wrote humr-outbound to ${mcpPath}\n`);

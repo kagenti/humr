@@ -12,6 +12,14 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
+type AgentStatus struct {
+	AccessTokenHash string `yaml:"accessTokenHash"`
+}
+
+func WriteAgentStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *AgentStatus) error {
+	return writeStatus(ctx, client, namespace, name, status)
+}
+
 func WriteInstanceStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *types.InstanceStatus) error {
 	return writeStatus(ctx, client, namespace, name, status)
 }

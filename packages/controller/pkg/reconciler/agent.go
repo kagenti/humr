@@ -2,6 +2,8 @@ package reconciler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 
@@ -141,6 +143,14 @@ func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap,
 		return nil, fmt.Errorf("creating token secret: %w", err)
 	}
 	slog.Info("created agent token secret", "agent", name, "secret", secretName)
+
+	hash := sha256.Sum256([]byte(agent.AccessToken))
+	if err := WriteAgentStatus(ctx, r.client, r.config.Namespace, name, &AgentStatus{
+		AccessTokenHash: hex.EncodeToString(hash[:]),
+	}); err != nil {
+		return nil, fmt.Errorf("writing agent status: %w", err)
+	}
+
 	return agent, nil
 }
 
