@@ -51,151 +51,52 @@ var testOwnerCM = &corev1.ConfigMap{
 
 func boolPtr(b bool) *bool { return &b }
 
-// --- StatefulSet tests ---
+// --- PVC tests ---
 
-func TestBuildStatefulSet_Running(t *testing.T) {
-	instance := &types.InstanceSpec{
-		DesiredState: "running",
-		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
-		SecretRef:    "my-secrets",
-	}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
+func TestBuildPVCs_PersistentMount(t *testing.T) {
+	pvcs := BuildPVCs("my-instance", testAgent, testConfig, testOwnerCM)
 
-	require.NotNil(t, ss)
-	assert.Equal(t, "my-instance", ss.Name)
-	assert.Equal(t, "test-agents", ss.Namespace)
-	assert.Equal(t, int32(1), *ss.Spec.Replicas)
+	// Only 1 PVC — /home/agent is persistent, /tmp is not
+	require.Len(t, pvcs, 1)
+	pvc := pvcs[0]
+
+	assert.Equal(t, "home-agent-my-instance-0", pvc.Name)
+	assert.Equal(t, "test-agents", pvc.Namespace)
+	assert.Equal(t, "my-instance", pvc.Labels["humr.ai/instance"])
 
 	// Owner reference
-	require.Len(t, ss.OwnerReferences, 1)
-	assert.Equal(t, "cm-uid-123", string(ss.OwnerReferences[0].UID))
+	require.Len(t, pvc.OwnerReferences, 1)
+	assert.Equal(t, "cm-uid-123", string(pvc.OwnerReferences[0].UID))
 
-	// Labels
-	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["humr.ai/instance"])
-
-	// Container
-	require.Len(t, ss.Spec.Template.Spec.Containers, 1)
-	c := ss.Spec.Template.Spec.Containers[0]
-	assert.Equal(t, "ghcr.io/myorg/agent:latest", c.Image)
-	assert.Equal(t, int32(8080), c.Ports[0].ContainerPort)
-	assert.Equal(t, "acp", c.Ports[0].Name)
-
-	// Probes
-	assert.Equal(t, "/healthz", c.ReadinessProbe.HTTPGet.Path)
-	assert.Equal(t, int32(0), c.ReadinessProbe.InitialDelaySeconds)
-	assert.Equal(t, int32(1), c.ReadinessProbe.PeriodSeconds)
-	assert.Equal(t, "/healthz", c.LivenessProbe.HTTPGet.Path)
-	assert.Equal(t, int32(10), c.LivenessProbe.InitialDelaySeconds)
-
-	// Platform env vars
-	envMap := envToMap(c.Env)
-	assert.Equal(t, "http://x:$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTPS_PROXY"])
-	assert.Equal(t, "http://x:$(ONECLI_ACCESS_TOKEN)@humr-onecli.default.svc.cluster.local:10255", envMap["HTTP_PROXY"])
-
-	// ONECLI_ACCESS_TOKEN comes from Secret via secretKeyRef
-	tokenEnv := c.Env[0]
-	assert.Equal(t, "ONECLI_ACCESS_TOKEN", tokenEnv.Name)
-	assert.Equal(t, "humr-agent-my-agent-token", tokenEnv.ValueFrom.SecretKeyRef.Name)
-	assert.Equal(t, "access-token", tokenEnv.ValueFrom.SecretKeyRef.Key)
-	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
-	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
-	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
-	assert.Equal(t, "humr:sentinel", envMap["GH_TOKEN"])
-	// Template env
-	assert.Equal(t, "8080", envMap["ACP_PORT"])
-	// Instance env
-	assert.Equal(t, "alpha", envMap["GITHUB_ORG"])
-
-	// EnvFrom secretRef
-	require.Len(t, c.EnvFrom, 1)
-	assert.Equal(t, "my-secrets", c.EnvFrom[0].SecretRef.LocalObjectReference.Name)
-
-	// Resources
-	assert.Equal(t, resource.MustParse("250m"), *c.Resources.Requests.Cpu())
-	assert.Equal(t, resource.MustParse("2Gi"), *c.Resources.Limits.Memory())
-
-	// Security context
-	assert.True(t, *ss.Spec.Template.Spec.SecurityContext.RunAsNonRoot)
+	// Storage
+	assert.Equal(t, resource.MustParse("10Gi"), pvc.Spec.Resources.Requests[corev1.ResourceStorage])
+	assert.Contains(t, pvc.Spec.AccessModes, corev1.ReadWriteOnce)
 }
 
-func TestBuildStatefulSet_Hibernated(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
-	assert.Equal(t, int32(0), *ss.Spec.Replicas)
-}
-
-func TestBuildStatefulSet_InitContainer(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
-	require.Len(t, ss.Spec.Template.Spec.InitContainers, 2)
-
-	// First: platform CA cert fetcher (busybox — no dependency on agent image)
-	caIC := ss.Spec.Template.Spec.InitContainers[0]
-	assert.Equal(t, "fetch-ca-cert", caIC.Name)
-	assert.Equal(t, "busybox:stable", caIC.Image)
-	require.Len(t, caIC.VolumeMounts, 1)
-	assert.Equal(t, "/etc/humr/ca", caIC.VolumeMounts[0].MountPath)
-
-	// Second: user-defined init
-	ic := ss.Spec.Template.Spec.InitContainers[1]
-	assert.Equal(t, "ghcr.io/myorg/agent:latest", ic.Image)
-	assert.Equal(t, []string{"sh", "-c", testAgent.Init}, ic.Command)
-}
-
-func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
-	agent := *testAgent
-	agent.Init = ""
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM)
-	// CA cert init container is always present
-	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1)
-	assert.Equal(t, "fetch-ca-cert", ss.Spec.Template.Spec.InitContainers[0].Name)
-}
-
-func TestBuildStatefulSet_Volumes(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
-
-	// 1 PVC (home-agent)
-	assert.Len(t, ss.Spec.VolumeClaimTemplates, 1)
-	assert.Equal(t, "home-agent", ss.Spec.VolumeClaimTemplates[0].Name)
-
-	// EmptyDir for /tmp + emptyDir for CA cert
-	volMap := make(map[string]corev1.Volume)
-	for _, v := range ss.Spec.Template.Spec.Volumes {
-		volMap[v.Name] = v
+func TestBuildPVCs_NoPersistentMounts(t *testing.T) {
+	agent := &types.AgentSpec{
+		Image: "test:latest",
+		Mounts: []types.Mount{
+			{Path: "/tmp", Persist: false},
+		},
 	}
-	assert.NotNil(t, volMap["tmp"].EmptyDir)
-	assert.NotNil(t, volMap["ca-cert"].EmptyDir)
+	pvcs := BuildPVCs("my-instance", agent, testConfig, testOwnerCM)
+	assert.Empty(t, pvcs)
+}
 
-	// Volume mounts on container
-	c := ss.Spec.Template.Spec.Containers[0]
-	mountPaths := make(map[string]string)
-	for _, m := range c.VolumeMounts {
-		mountPaths[m.MountPath] = m.Name
+func TestBuildPVCs_MultiplePersistent(t *testing.T) {
+	agent := &types.AgentSpec{
+		Image: "test:latest",
+		Mounts: []types.Mount{
+			{Path: "/home/agent", Persist: true},
+			{Path: "/workspace", Persist: true},
+			{Path: "/tmp", Persist: false},
+		},
 	}
-	assert.Equal(t, "home-agent", mountPaths["/home/agent"])
-	assert.Equal(t, "tmp", mountPaths["/tmp"])
-	assert.Equal(t, "ca-cert", mountPaths["/etc/humr/ca"])
-}
-
-func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
-	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
-}
-
-// --- Service tests ---
-
-func TestBuildService(t *testing.T) {
-	svc := BuildService("my-instance", testConfig, testOwnerCM)
-	assert.Equal(t, "my-instance", svc.Name)
-	assert.Equal(t, "test-agents", svc.Namespace)
-	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
-	assert.Equal(t, int32(8080), svc.Spec.Ports[0].Port)
-	assert.Equal(t, "acp", svc.Spec.Ports[0].Name)
-	assert.Equal(t, "my-instance", svc.Spec.Selector["humr.ai/instance"])
-	require.Len(t, svc.OwnerReferences, 1)
+	pvcs := BuildPVCs("inst", agent, testConfig, testOwnerCM)
+	require.Len(t, pvcs, 2)
+	assert.Equal(t, "home-agent-inst-0", pvcs[0].Name)
+	assert.Equal(t, "workspace-inst-0", pvcs[1].Name)
 }
 
 // --- NetworkPolicy tests ---
@@ -232,12 +133,4 @@ func TestBuildNetworkPolicy(t *testing.T) {
 	// Ingress: allow ACP port
 	require.Len(t, np.Spec.Ingress, 1)
 	assert.Equal(t, int32(8080), np.Spec.Ingress[0].Ports[0].Port.IntVal)
-}
-
-func envToMap(envs []corev1.EnvVar) map[string]string {
-	m := make(map[string]string)
-	for _, e := range envs {
-		m[e.Name] = e.Value
-	}
-	return m
 }

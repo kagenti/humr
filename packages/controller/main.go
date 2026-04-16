@@ -77,7 +77,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, restCfg, cfg, onecliFactory)
+				run(ctx, client, cfg, onecliFactory)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -86,7 +86,7 @@ func main() {
 	})
 }
 
-func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config, cfg *config.Config, onecliFactory onecli.Factory) {
+func run(ctx context.Context, client kubernetes.Interface, cfg *config.Config, onecliFactory onecli.Factory) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -101,12 +101,9 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
 	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver)
 
-	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
+	sched := scheduler.New(client, cfg)
 	sched.Start()
 	defer sched.Stop()
-
-	idleChecker := reconciler.NewIdleChecker(client, cfg)
-	go idleChecker.RunLoop(ctx)
 
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()

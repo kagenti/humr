@@ -5,7 +5,7 @@ import { appRouter } from "api-server-api/router";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { createDb, runMigrations } from "db";
 import {
-  createApi, createK8sClient, podBaseUrl,
+  createApi, createK8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
@@ -129,7 +129,7 @@ app.post("/internal/trigger", async (c) => {
   }
 
   const acp = createAcpClient({
-    namespace: config.namespace,
+    k8s: k8sClient,
     instanceName: body.instanceId,
     onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
   });
@@ -169,9 +169,16 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
     return c.json({ error: "not found" }, 404);
   }
 
+  // Find pod IP from instance ConfigMap annotation (set by controller)
+  const cm = await k8sClient.getConfigMap(instanceId);
+  const podIP = cm?.metadata?.annotations?.["humr.ai/pod-ip"];
+  if (!podIP) {
+    return c.json({ error: "instance idle — no active agent pod" }, 503);
+  }
+
   const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
   const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-  const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
+  const upstreamUrl = `http://${podIP}:8080/api/trpc${rest}${qs}`;
   try {
     const headers = new Headers(c.req.raw.headers);
     headers.delete("host");
@@ -218,7 +225,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(config.namespace, instancesRepo);
+const acpRelay = createAcpRelay(k8sClient);
 
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);
@@ -272,5 +279,5 @@ server.on("upgrade", async (req, socket, head) => {
   acpRelay.handleUpgrade(req, socket, head, instanceId);
 });
 
-export { createK8sClient, podBaseUrl, createApi };
+export { createK8sClient, createApi };
 export type { K8sClient } from "./modules/agents/infrastructure/k8s.js";

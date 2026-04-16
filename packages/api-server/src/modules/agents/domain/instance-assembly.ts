@@ -5,18 +5,14 @@ export interface InfraInstance {
   name: string;
   agentId: string;
   description?: string;
-  desiredState: "running" | "hibernated";
-  currentState?: "running" | "hibernated" | "error";
+  currentState?: string;
   error?: string;
-  podReady: boolean;
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
   if (infra.currentState === "error") return "error";
-  if (infra.desiredState === "running" && infra.currentState !== "running") return "starting";
-  if (infra.desiredState === "hibernated" && infra.currentState === "running") return "hibernating";
-  if (infra.desiredState === "hibernated") return "hibernated";
-  return "running";
+  if (infra.currentState === "active") return "running";
+  return "idle";
 }
 
 export function assembleInstance(

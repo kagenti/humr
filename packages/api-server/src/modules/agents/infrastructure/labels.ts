@@ -19,4 +19,3 @@ export const STATUS_KEY = "status.yaml";
 
 // ---- Annotation keys ----
 export const LAST_ACTIVITY_KEY = "humr.ai/last-activity";
-export const ACTIVE_SESSION_KEY = "humr.ai/active-session";

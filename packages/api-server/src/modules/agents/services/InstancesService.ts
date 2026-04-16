@@ -69,7 +69,6 @@ export function createInstancesService(deps: {
         name: input.name,
         version: SPEC_VERSION,
         agentId: input.agentId,
-        desiredState: "running" as const,
         env: input.env,
         secretRef: input.secretRef,
         description: input.description,
@@ -104,18 +103,15 @@ export function createInstancesService(deps: {
     },
 
     async wake(id) {
-      const infra = await deps.repo.wake(id);
-      if (!infra) return null;
-      const [channels, allowed] = await Promise.all([
+      // In the Job model, instances are always "ready" — Jobs are created on demand.
+      // Wake is a no-op that returns the current instance.
+      const [infra, channels, allowed] = await Promise.all([
+        deps.repo.get(id, deps.owner),
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      const instance = assembleInstance(infra, channels, allowed);
-
-      if (infra.desiredState === "running") {
-        emit({ type: EventType.InstanceWoken, instanceId: id });
-      }
-      return instance;
+      if (!infra) return null;
+      return assembleInstance(infra, channels, allowed);
     },
 
     async connectSlack(id, slackChannelId) {

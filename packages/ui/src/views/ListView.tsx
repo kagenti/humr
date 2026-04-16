@@ -236,7 +236,7 @@ export function ListView() {
                 ) : (
                   insts.map(inst => {
                     const state = instanceState(inst);
-                    const clickable = state === "running" || state === "hibernated";
+                    const clickable = state === "idle" || state === "running";
                     const label = stateLabel[state];
                     const colors = badgeColors[state];
                     return (

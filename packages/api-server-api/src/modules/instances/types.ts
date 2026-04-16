@@ -13,7 +13,7 @@ export interface SlackChannel extends Channel {
 
 export type ChannelConfig = SlackChannel;
 
-export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
+export type InstanceState = "idle" | "starting" | "running" | "error";
 
 export interface Instance {
   id: string;

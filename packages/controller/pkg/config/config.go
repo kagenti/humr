@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Config struct {
@@ -22,11 +21,13 @@ type Config struct {
 	KeycloakClientSecret string // Confidential client secret
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
-	AgentImagePullSecrets     []string      // Pull secret names for agent pods (comma-separated via env)
-	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
-	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
-	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
+	AgentImagePullPolicy      string   // ImagePullPolicy for agent pods (default: IfNotPresent)
+	AgentImagePullSecrets     []string // Pull secret names for agent pods (comma-separated via env)
+	TerminationGracePeriod    int64    // Termination grace period in seconds for agent pods (default: 5)
+	CACertInitImage           string   // Image for the CA cert init container (default: busybox:stable)
+	JobActiveDeadline         int64    // Max Job runtime in seconds (default: 1800 = 30m)
+	JobTTLAfterFinished       int32    // Seconds to keep completed Jobs (default: 300)
+
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -64,8 +65,9 @@ func LoadFromEnv() (*Config, error) {
 			}
 		}
 	}
-	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
+	cfg.JobActiveDeadline = int64(envOrDefaultInt("HUMR_JOB_ACTIVE_DEADLINE", 1800))
+	cfg.JobTTLAfterFinished = int32(envOrDefaultInt("HUMR_JOB_TTL_AFTER_FINISHED", 300))
 	return cfg, nil
 }
 
@@ -114,11 +116,3 @@ func envOrDefaultInt(key string, def int) int {
 	return def
 }
 
-func envOrDefaultDuration(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
-}

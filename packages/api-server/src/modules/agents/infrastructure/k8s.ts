@@ -1,5 +1,5 @@
 /**
- * Thin K8s client — generic ConfigMap / Pod / PVC operations only.
+ * Thin K8s client — generic ConfigMap / Pod / PVC operations.
  * No domain types, no YAML parsing, no label constants.
  */
 import * as k8s from "@kubernetes/client-node";
@@ -95,10 +95,6 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
-
-export function podBaseUrl(instanceId: string, namespace: string): string {
-  return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
-}
 
 export function createApi(namespace: string) {
   const kc = new k8s.KubeConfig();

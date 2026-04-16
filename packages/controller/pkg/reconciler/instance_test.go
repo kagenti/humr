@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,12 +19,15 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
 	cfg := &config.Config{
-		Namespace:        "test-agents",
-		ReleaseNamespace: "default",
-		ReleaseName:      "humr",
-		GatewayHost:      "humr-onecli",
-		GatewayPort:      10255,
-		WebPort:          10254,
+		Namespace:           "test-agents",
+		ReleaseNamespace:    "default",
+		ReleaseName:         "humr",
+		GatewayHost:         "humr-onecli",
+		GatewayPort:         10255,
+		WebPort:             10254,
+		CACertInitImage:     "busybox:stable",
+		JobActiveDeadline:   1800,
+		JobTTLAfterFinished: 300,
 	}
 	getter := &fakeGetter{cms: agents}
 	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
@@ -69,62 +71,40 @@ func TestReconcile_CreateResources(t *testing.T) {
 
 	ctx := context.Background()
 
-	// StatefulSet created with replicas=1
-	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
+	// PVC created for /home/agent
+	pvcs, err := client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
+		LabelSelector: "humr.ai/instance=my-instance",
+	})
 	require.NoError(t, err)
-	assert.Equal(t, int32(1), *ss.Spec.Replicas)
-
-	// Proxy URL uses $(ONECLI_ACCESS_TOKEN) interpolation from Secret
-	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Contains(t, envMap["HTTPS_PROXY"], "$(ONECLI_ACCESS_TOKEN)@")
-
-	// Service created
-	svc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
+	require.Len(t, pvcs.Items, 1)
+	assert.Equal(t, "home-agent-my-instance-0", pvcs.Items[0].Name)
 
 	// NetworkPolicy created
 	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-egress", metav1.GetOptions{})
 	require.NoError(t, err)
 
-	// Status written
+	// Status written as idle (Job model — no long-lived pod)
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: running")
+	assert.Contains(t, updated.Data["status.yaml"], "currentState: idle")
 }
 
-func TestReconcile_Hibernate(t *testing.T) {
-	cm := instanceCM("hibernated")
-	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
-		cm,
-	)
+func TestReconcile_DesiredStateIgnored(t *testing.T) {
+	// Both "running" and "hibernated" produce the same result: PVCs + NetworkPolicy, status=idle
+	for _, state := range []string{"running", "hibernated"} {
+		t.Run(state, func(t *testing.T) {
+			cm := instanceCM(state)
+			r, client := setupReconciler(t,
+				map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
+				cm,
+			)
 
-	err := r.Reconcile(context.Background(), cm)
-	require.NoError(t, err)
+			err := r.Reconcile(context.Background(), cm)
+			require.NoError(t, err)
 
-	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
-	assert.Equal(t, int32(0), *ss.Spec.Replicas)
-
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: hibernated")
-}
-
-func TestReconcile_UpdateReplicas(t *testing.T) {
-	cm := instanceCM("running")
-	existingSS := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-instance", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+			updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+			assert.Contains(t, updated.Data["status.yaml"], "currentState: idle")
+		})
 	}
-	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
-		cm, existingSS,
-	)
-
-	err := r.Reconcile(context.Background(), cm)
-	require.NoError(t, err)
-
-	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
-	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 }
 
 func TestReconcile_AgentNotFound(t *testing.T) {
@@ -209,9 +189,60 @@ func TestReconcile_PreservesExistingOwnerReferences(t *testing.T) {
 	assert.Contains(t, uids, "agent-uid")
 }
 
+func TestReconcile_RunRequestCreatesJob(t *testing.T) {
+	cm := instanceCM("running")
+	cm.Annotations = map[string]string{
+		AnnRunRequest: "2026-04-16T12:00:00Z",
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
+		cm,
+	)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx, cm)
+	require.NoError(t, err)
+
+	// Job was created
+	jobs, err := client.BatchV1().Jobs("test-agents").List(ctx, metav1.ListOptions{
+		LabelSelector: "humr.ai/instance=my-instance",
+	})
+	require.NoError(t, err)
+	require.Len(t, jobs.Items, 1)
+	assert.Contains(t, jobs.Items[0].Name, "my-instance-")
+
+	// active-job annotation set, run-request cleared
+	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
+	assert.Equal(t, jobs.Items[0].Name, updated.Annotations[AnnActiveJob])
+	assert.Empty(t, updated.Annotations[AnnRunRequest])
+
+	// Status is active
+	assert.Contains(t, updated.Data["status.yaml"], "currentState: active")
+}
+
+func TestReconcile_NoRunRequestNoJob(t *testing.T) {
+	cm := instanceCM("running")
+	// No annotations — no run-request, no active job
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
+		cm,
+	)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx, cm)
+	require.NoError(t, err)
+
+	// No Jobs created
+	jobs, _ := client.BatchV1().Jobs("test-agents").List(ctx, metav1.ListOptions{})
+	assert.Empty(t, jobs.Items)
+
+	// Status is idle
+	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
+	assert.Contains(t, updated.Data["status.yaml"], "currentState: idle")
+}
+
 func TestDelete_CleansPVCs(t *testing.T) {
 	cm := instanceCM("running")
-	// Pre-create PVCs that would have been created by the StatefulSet controller
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "home-agent-my-instance-0",
@@ -224,7 +255,6 @@ func TestDelete_CleansPVCs(t *testing.T) {
 		cm, pvc,
 	)
 
-	// Verify PVC exists before deletion
 	ctx := context.Background()
 	pvcs, err := client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
 		LabelSelector: "humr.ai/instance=my-instance",
@@ -232,7 +262,6 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pvcs.Items, 1)
 
-	// Delete instance — should clean up PVCs
 	r.Delete(ctx, "my-instance")
 
 	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
@@ -241,5 +270,3 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, pvcs.Items)
 }
-
-func int32Ptr(i int32) *int32 { return &i }

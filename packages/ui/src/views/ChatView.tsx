@@ -188,7 +188,8 @@ export function ChatView() {
     if (!selectedInstance) return;
     const inst = instances.find(i => i.id === selectedInstance);
     const state = inst ? instanceState(inst) : "unknown";
-    if (state === "hibernated") {
+    // In the Job model, wake is a no-op — instances are always ready
+    if (state === "idle") {
       platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);
@@ -197,7 +198,7 @@ export function ChatView() {
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
     const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
-    if (inst?.state !== "running") return false;
+    if (inst?.state !== "running" && inst?.state !== "idle") return false;
     try {
       const list = await platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions });
       setSessions(list);

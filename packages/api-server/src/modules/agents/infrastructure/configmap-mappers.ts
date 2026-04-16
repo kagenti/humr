@@ -46,11 +46,6 @@ export function hasType(cm: k8s.V1ConfigMap, type: string): boolean {
   return cm.metadata?.labels?.[LABEL_TYPE] === type;
 }
 
-export function isPodReady(pod: k8s.V1Pod): boolean {
-  const cond = pod.status?.conditions?.find((c) => c.type === "Ready");
-  return cond?.status === "True";
-}
-
 // ---------------------------------------------------------------------------
 // Parsing (ConfigMap → domain)
 // ---------------------------------------------------------------------------
@@ -73,18 +68,17 @@ export function parseAgent(cm: k8s.V1ConfigMap): Agent {
 interface RawInstanceSpec {
   name?: string;
   agentId: string;
-  desiredState: "running" | "hibernated";
   description?: string;
 }
 
-export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
+export function parseInfraInstance(cm: k8s.V1ConfigMap): InfraInstance {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as RawInstanceSpec;
   const statusYaml = cm.data?.[STATUS_KEY];
-  let currentState: InfraInstance["currentState"];
+  let currentState: string | undefined;
   let error: string | undefined;
   if (statusYaml) {
     const raw = yaml.load(statusYaml) as { currentState?: string; error?: string };
-    currentState = raw.currentState as InfraInstance["currentState"];
+    currentState = raw.currentState;
     error = raw.error || undefined;
   }
   return {
@@ -92,10 +86,8 @@ export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraI
     name: spec.name ?? cm.metadata!.name!,
     agentId: spec.agentId,
     description: spec.description,
-    desiredState: spec.desiredState,
     currentState,
     error,
-    podReady: pod ? isPodReady(pod) : false,
   };
 }
 
@@ -192,21 +184,3 @@ export function patchSpecField(
   return { ...cm.data, [SPEC_KEY]: yaml.dump(raw) };
 }
 
-export function setDesiredState(
-  cm: k8s.V1ConfigMap,
-  state: "running" | "hibernated",
-): k8s.V1ConfigMap {
-  const raw = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<string, unknown>;
-  raw.desiredState = state;
-  return {
-    ...cm,
-    metadata: {
-      ...cm.metadata,
-      annotations: {
-        ...cm.metadata?.annotations,
-        [LAST_ACTIVITY_KEY]: new Date().toISOString(),
-      },
-    },
-    data: { ...cm.data, [SPEC_KEY]: yaml.dump(raw) },
-  };
-}
