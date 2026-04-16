@@ -1,4 +1,4 @@
-# ADR-DRAFT: Slack outbound messaging — two delivery modes
+# ADR-DRAFT: Slack outbound messaging — MCP tool
 
 **Date:** 2026-04-16
 **Status:** Proposed
@@ -12,39 +12,32 @@ Agents need to post proactively — scheduled job results, status updates, and o
 
 ## Decision
 
-### 1. Two delivery modes
-
-**Interactive sessions — MCP tool (agent-driven):**
+### 1. Single delivery mode — MCP tool
 
 ```
 send_slack_message(text: string) → { ok: true } | { error: string }
 ```
 
-The agent explicitly decides what and when to post. Flow: harness → MCP tool → agent runtime → new tRPC route on API Server → SlackWorker → Slack.
+The agent explicitly decides what and when to post. Same mechanism for both interactive and scheduled sessions.
 
-- Tool **only registered** when outbound is enabled for the session; hidden otherwise
+Flow: harness → MCP tool → API Server → SlackWorker → Slack.
+
+**MCP endpoint** hosted on the API Server Hono app at `/api/instances/:id/mcp` using Streamable HTTP transport. Direct access to SlackWorker — no agent-runtime round-trip. Auth uses the same mechanism as the existing ACP WebSocket relay.
+
+- Tool **always registered** regardless of outbound state; calls rejected at invocation time when outbound is disabled or no channel connected
 - Returns errors from Slack (bot removed, invalid channel) — harness handles
+- Messages posted as plain text with instance name in a context block
 
-**Scheduled sessions — platform delivery (infra-driven):**
+### 2. Per-session outbound flag
 
-The platform captures all agent output from a scheduled job run and delivers it to the instance's connected Slack channel. The agent is channel-unaware — it just produces output, the platform routes it. Similar to OpenClaw's cron delivery model.
-
-- Delivery happens when the scheduled session completes
-- Posts as a top-level message in the connected channel
-- Enabled per schedule via flag in schedule definition (cron/heartbeat config)
-- Toggle greyed out with tooltip when instance has no connected channel
-
-### 2. Per-session outbound flag (interactive only)
-
-For interactive sessions, outbound is opt-in per session:
+Outbound is opt-in per session:
 
 - **Instance channel config** = inbound direction (existing, always on when connected)
-- **Session outbound flag** = enables the `send_slack_message` MCP tool for that specific session
-- Flag **persisted in DB** (survives page refresh)
+- **Session outbound flag** = gates `send_slack_message` calls for that specific session
+- Flag **persisted in DB** keyed by session ID, default `false` (survives page refresh)
+- For scheduled sessions: auto-set from schedule-level `slackOutbound` config when trigger spawns the session
 
 ### 3. Fire-and-forget threading model
-
-Both delivery modes use the same threading model:
 
 - Outbound message → top-level post in channel → no thread-to-session mapping stored
 - User replies with `@Humr` in the resulting thread → treated as a **new inbound mention** → creates a new session
@@ -53,30 +46,35 @@ Both delivery modes use the same threading model:
 ### 4. UI rework
 
 **Instance list (ListView):**
-- Dedicated button on each instance row opens a modal for channel config
+- New "Channels" button on each instance row opens a modal for channel config
 - Modal contains existing ChannelsPanel content: enable/disable, channel ID, allowed users
 
 **Chat view (ChatView):**
 - "channels" tab removed from right sidebar entirely
-- "Enable Posting to Slack" toggle added to the chat header near session ID
+- On/off toggle added to the chat header near session ID for enabling Slack posting
 - Toggle greyed out with tooltip when instance has no connected channel
 - Toggle applies to new messages only (not retroactive)
 
+**Schedules panel (SchedulesPanel):**
+- "Slack outbound" checkbox added to cron/heartbeat create/edit forms
+- Checkbox greyed out with tooltip when instance has no connected channel
+
 ## Alternatives Considered
 
-**Thread-to-session mapping for outbound messages.** Outbound posts could store `threadTs → sessionId` so replies route back to the originating session. Rejected — adds complexity (mapping storage, stale session handling) and breaks session isolation. OpenClaw uses the same fire-and-forget model.
+**Two delivery modes (MCP tool + platform capture).** Scheduled sessions would be channel-unaware — platform captures all output and delivers on completion. Rejected — requires output capture machinery and completion signaling that doesn't exist today. Single MCP tool approach is simpler and gives agents explicit control in both contexts.
 
-**MCP tool for scheduled sessions too.** Agent would call `send_slack_message` explicitly in scheduled runs. Rejected — scheduled jobs should be channel-unaware; the platform decides where output goes. Separating concerns avoids coupling agent prompts to delivery targets.
+**Thread-to-session mapping for outbound messages.** Outbound posts could store `threadTs → sessionId` so replies route back to the originating session. Rejected — adds complexity (mapping storage, stale session handling) and breaks session isolation.
 
-**Platform delivery for interactive sessions too.** Mirror all session output to Slack. Rejected — interactive sessions are multi-turn and noisy; mirroring everything would spam the channel. Explicit tool gives the agent control over what's worth posting.
+**Conditional tool registration.** Only register `send_slack_message` when outbound is enabled. Rejected — always registering with call-time gating is simpler; no need to dynamically update tool lists.
 
 ## Consequences
 
 **Easier:**
-- Scheduled jobs deliver results without agent awareness of Slack
+- Single delivery mode for all session types — less code, fewer concepts
 - Interactive agents can post selectively via MCP tool
+- Scheduled agents use the same tool — consistent mental model
 - Channel config accessible from instance list without entering a chat
 
 **Harder:**
-- Two delivery modes to implement and maintain
+- Scheduled agents must explicitly call the tool (agent prompt must include posting instructions)
 - No conversational continuity between outbound posts and Slack replies (new session each time)
