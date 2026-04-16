@@ -26,10 +26,10 @@ This directory contains ADRs for the Humr project.
 | [018](018-slack-integration.md) | Slack integration — Socket Mode, channel-based routing, identity linking | @tomkis |
 | [019](019-session-identity.md) | Scheduled session identity and lifecycle | @janjeliga |
 | [020](020-responsive-ui-pwa.md) | Responsive mobile UI, ACP session controls, PWA | @jezekra1 |
+| [021](021-slack-outbound.md) | Slack outbound messaging — MCP tool with per-agent token auth | @tomkis |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
-| [DRAFT](DRAFT-slack-outbound.md) | Slack outbound messaging — per-session MCP tool for proactive channel posting | @tomkis |

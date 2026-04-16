@@ -1,7 +1,7 @@
-# ADR-DRAFT: Slack outbound messaging — MCP tool
+# ADR-021: Slack outbound messaging — MCP tool
 
 **Date:** 2026-04-16
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @tomkis
 
 ## Context

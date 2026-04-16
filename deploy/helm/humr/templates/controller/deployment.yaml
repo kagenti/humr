@@ -63,12 +63,8 @@ spec:
             - name: AGENT_IMAGE_PULL_SECRETS
               value: {{ include "humr.nameList" . }}
             {{- end }}
-            - name: HUMR_API_SERVER_URL
-              value: "http://{{ include "humr.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.port }}"
             - name: HUMR_API_SERVER_HOST
               value: "{{ include "humr.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
-            - name: HUMR_API_SERVER_PORT
-              value: {{ .Values.apiServer.port | quote }}
             - name: HUMR_MCP_SERVER_URL
               value: "http://{{ include "humr.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.mcpPort }}"
             - name: HUMR_MCP_SERVER_PORT
