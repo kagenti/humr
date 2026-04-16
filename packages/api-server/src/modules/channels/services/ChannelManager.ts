@@ -1,12 +1,13 @@
 import { ChannelType, type Instance } from "api-server-api";
 import type { Subscription } from "rxjs";
-import { events$, ofType, EventType, type SlackConnected, type SlackDisconnected } from "../../../events.js";
+import { events$, ofType, EventType, type SlackConnected, type SlackDisconnected, type InstanceDeleted } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 
 export interface ChannelManager {
   availableChannels(): Partial<Record<ChannelType, boolean>>;
   bootstrap(instances: Instance[]): void;
   stopAll(): Promise<void>;
+  postMessage(instanceName: string, text: string): Promise<{ ok: true } | { error: string }>;
 }
 
 export function createChannelManager(deps: {
@@ -31,7 +32,7 @@ export function createChannelManager(deps: {
 
   // Also disconnect Slack bots when an instance is deleted
   subscriptions.push(
-    events$().pipe(ofType(EventType.InstanceDeleted)).subscribe((event) => {
+    events$().pipe(ofType<InstanceDeleted>(EventType.InstanceDeleted)).subscribe((event) => {
       for (const w of workers) w.stop(event.instanceId);
     }),
   );
@@ -53,6 +54,13 @@ export function createChannelManager(deps: {
     async stopAll() {
       for (const sub of subscriptions) sub.unsubscribe();
       await Promise.all(workers.map(w => w.stopAll()));
+    },
+
+    async postMessage(instanceName: string, text: string) {
+      if (workers.length === 0) {
+        return { error: "no channel workers configured" };
+      }
+      return workers[0].postMessage(instanceName, text);
     },
   };
 }

@@ -20,6 +20,7 @@ import {
   findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
+import { createMcpRoutes } from "./mcp-endpoint.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { loadConfig } from "./config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
@@ -161,6 +162,11 @@ if (config.slackBotToken && config.slackAppToken) {
 async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
   return instancesRepo.isOwnedBy(instanceId, owner);
 }
+
+app.route("/", createMcpRoutes({
+  channelManager,
+  instancesRepo: createInstancesRepository(k8sClient),
+}));
 
 app.all("/api/instances/:id/trpc/*", async (c) => {
   const user = c.get("user");

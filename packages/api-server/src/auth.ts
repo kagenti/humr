@@ -27,6 +27,10 @@ const PUBLIC_PATHS = new Set([
   "/api/slack/oauth/callback",
 ]);
 
+const PUBLIC_PATH_PATTERNS = [
+  /^\/api\/instances\/[^/]+\/mcp$/,
+];
+
 export function createAuth(config: AuthConfig) {
   const JWKS = createRemoteJWKSet(new URL(config.jwksUrl));
 
@@ -55,7 +59,7 @@ export function createAuth(config: AuthConfig) {
   }
 
   const middleware: MiddlewareHandler = async (c, next) => {
-    if (PUBLIC_PATHS.has(c.req.path)) return next();
+    if (PUBLIC_PATHS.has(c.req.path) || PUBLIC_PATH_PATTERNS.some(p => p.test(c.req.path))) return next();
 
     const authHeader = c.req.header("authorization");
     if (!authHeader?.startsWith("Bearer ")) {

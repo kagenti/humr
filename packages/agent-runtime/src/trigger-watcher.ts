@@ -8,6 +8,7 @@ import { Agent as HttpsAgent, request as requestHttps } from "node:https";
 const directAgent = new Agent();
 const directHttpsAgent = new HttpsAgent();
 import { z } from "zod/v4";
+import { config } from "./modules/config.js";
 
 const TriggerFile = z.object({
   schedule: z.string(),
@@ -100,13 +101,18 @@ async function processTrigger(
       process.stderr.write(`[trigger] API_SERVER_URL not set, skipping ${trigger.schedule}\n`);
       return;
     }
+    const mcpServers = [...trigger.mcpServers];
+    if (config.HUMR_MCP_URL) {
+      mcpServers.push({ type: "http", name: "humr-outbound", url: config.HUMR_MCP_URL, headers: [] });
+    }
+
     const result = await postTrigger(options.apiServerUrl, {
       instanceId: options.instanceId,
       schedule: trigger.schedule,
       task: trigger.task,
       type: trigger.type,
       sessionMode: trigger.sessionMode,
-      mcpServers: trigger.mcpServers,
+      mcpServers,
     });
     process.stderr.write(`[trigger] Completed: ${trigger.schedule} session=${result.sessionId} stopReason=${result.stopReason ?? "done"}\n`);
   } catch (err) {
