@@ -86,7 +86,17 @@ export function createOnecliSecretsPort(
       fetchJson<OnecliSecret>("/api/secrets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          ...input,
+          // OneCLI requires injectionConfig for generic secrets — default to
+          // Authorization: Bearer which matches the UI description.
+          ...(input.type === "generic" && {
+            injectionConfig: {
+              headerName: "authorization",
+              valueFormat: "Bearer {value}",
+            },
+          }),
+        }),
       }),
 
     updateSecret: (id, input) =>
