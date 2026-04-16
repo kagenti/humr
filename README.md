@@ -11,7 +11,19 @@
 
 Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
+## Guided Tour
+
+Open your favorite AI coding agent in the repo and try:
+
+> *Walk me through how Humr works step by step. I want to do a demo for myself — explain how things work on the way. Help me create an instance, connect a credential, and chat with an agent.*
+
+It has full context of the codebase, architecture decisions, and cluster commands. It will guide you through setup, credential injection, and your first chat — and explain what's happening under the hood.
+
+See [PITCH.md](PITCH.md) for the full story of what Humr is and why it exists.
+
 ## Quick Start
+
+For those who prefer pasting commands into a terminal:
 
 ```sh
 mise install                # install deps, configure git hooks
