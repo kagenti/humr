@@ -46,7 +46,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "GH_TOKEN", Value: "humr:sentinel"},
-		{Name: "GOOGLE_WORKSPACE_CLI_TOKEN", Value: "humr:sentinel"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "HOME", Value: "/home/agent"},
 	}

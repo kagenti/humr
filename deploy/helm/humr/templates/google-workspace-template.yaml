@@ -29,6 +29,8 @@ data:
     env:
       - name: PORT
         value: "8080"
+      - name: GOOGLE_WORKSPACE_CLI_TOKEN
+        value: "humr:sentinel"
     resources:
       requests:
         cpu: {{ .Values.googleWorkspaceTemplate.resources.requests.cpu | quote }}
