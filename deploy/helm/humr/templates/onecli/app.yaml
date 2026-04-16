@@ -130,11 +130,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "humr.onecli.secrets.fullname" . }}
                   key: OAUTH_CLIENT_SECRET
+            {{- if not .Values.onecli.forceLocalAuth }}
             - name: NEXTAUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "humr.onecli.secrets.fullname" . }}
                   key: NEXTAUTH_SECRET
+            {{- end }}
             - name: APP_URL
               value: {{ include "humr.url.onecli" . | quote }}
             - name: NEXT_PUBLIC_APP_URL

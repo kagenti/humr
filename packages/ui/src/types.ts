@@ -74,10 +74,11 @@ export interface Schedule {
   id: string;
   name: string;
   instanceId: string;
-  type: "heartbeat" | "cron";
+  type: "cron";
   cron: string;
   task: string | null;
   enabled: boolean;
+  sessionMode?: "continuous" | "fresh";
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 

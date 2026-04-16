@@ -36,9 +36,7 @@ export type {
   Schedule,
   ScheduleSpec,
   ScheduleStatus,
-  ScheduleConfig,
   CreateCronScheduleInput,
-  CreateHeartbeatScheduleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";
 

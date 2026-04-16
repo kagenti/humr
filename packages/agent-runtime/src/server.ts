@@ -122,8 +122,7 @@ server.listen(config.PORT, () => {
 
   triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,
-    workingDir: workDir,
-    agentScript,
-    isDev: config.HUMR_DEV,
+    apiServerUrl: config.API_SERVER_URL,
+    instanceId: process.env.ADK_INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown",
   });
 });

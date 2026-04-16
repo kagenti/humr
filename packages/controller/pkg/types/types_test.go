@@ -128,14 +128,14 @@ func TestParseInstanceSpec_MissingVersion(t *testing.T) {
 
 func TestParseScheduleSpec(t *testing.T) {
 	spec, err := ParseScheduleSpec(`version: humr.ai/v1
-type: heartbeat
+type: cron
 cron: "*/30 * * * *"
 task: ""
 enabled: true
 `)
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
-	assert.Equal(t, "heartbeat", spec.Type)
+	assert.Equal(t, "cron", spec.Type)
 	assert.Equal(t, "*/30 * * * *", spec.Cron)
 	assert.True(t, spec.Enabled)
 }
@@ -153,6 +153,40 @@ func TestParseScheduleSpec_MissingVersion(t *testing.T) {
 enabled: true`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestParseScheduleSpecWithSessionMode(t *testing.T) {
+	yaml := `
+version: humr.ai/v1
+type: cron
+cron: "*/5 * * * *"
+task: "check health"
+enabled: true
+sessionMode: continuous
+`
+	spec, err := ParseScheduleSpec(yaml)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.SessionMode != "continuous" {
+		t.Errorf("sessionMode = %q, want %q", spec.SessionMode, "continuous")
+	}
+}
+
+func TestParseScheduleSpecSessionModeDefaults(t *testing.T) {
+	yaml := `
+version: humr.ai/v1
+type: cron
+cron: "*/5 * * * *"
+enabled: true
+`
+	spec, err := ParseScheduleSpec(yaml)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.SessionMode != "" {
+		t.Errorf("sessionMode = %q, want empty (default)", spec.SessionMode)
+	}
 }
 
 // --- Helpers ---

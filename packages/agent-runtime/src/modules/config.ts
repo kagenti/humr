@@ -9,6 +9,7 @@ const schema = z.object({
   HOME_DIR: z.string().default("/home/agent"),
   WORK_DIR: z.string().default("/home/agent/work"),
   TRIGGERS_DIR: z.string().default("/home/agent/.triggers"),
+  API_SERVER_URL: z.string().default(""),
 });
 
 export const config = schema.parse(process.env);
