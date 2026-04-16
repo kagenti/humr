@@ -23,9 +23,7 @@ A Humr agent template with the [Google Workspace CLI (`gws`)](https://github.com
 
 ### 2. Get an Access Token
 
-Google's OAuth redirect URI policy requires HTTPS for non-localhost URLs. Since Humr's OneCLI runs behind a reverse proxy on a subdomain (e.g., `onecli.localhost:4444`), the built-in OAuth flow won't work for local development.
-
-Use the **Google OAuth Playground** to get an access token instead:
+Google's OAuth redirect URI policy doesn't support subdomain URLs like `onecli.localhost:4444` (see #154). Until that's resolved, use the **Google OAuth Playground** to get an access token:
 
 1. Go to https://developers.google.com/oauthplayground
 2. Click the **gear icon** (settings) in the top right
@@ -38,20 +36,18 @@ Use the **Google OAuth Playground** to get an access token instead:
 7. Click **Exchange authorization code for tokens**
 8. Copy the **Access token**
 
-> **Note:** Access tokens expire after ~1 hour. Repeat steps 6-8 to get a new one.
+> **Note:** Access tokens expire after ~1 hour. Repeat steps 6-8 to get a new one. Automatic refresh is tracked in #153.
 
-### 3. Configure OneCLI
+### 3. Add the Credential in Humr
 
-1. Open the OneCLI dashboard (e.g., http://onecli.localhost:4444)
+1. Open the Humr UI and go to the **Connectors** page
 2. Add a new **generic secret**:
    - **Host**: `*.googleapis.com`
    - **Header**: `Authorization`
    - **Value**: `Bearer <paste-your-access-token>`
-3. Go to **Agents** and grant the google-workspace agent access to this secret
+3. Grant the google-workspace agent access to this credential
 
 ### 4. Create an Agent
-
-In the Humr UI:
 
 1. Create a new agent from the **google-workspace** template
 2. Create an instance
@@ -74,6 +70,6 @@ The agent never sees your real Google credentials.
 V1 uses short-lived access tokens (~1 hour). When the token expires, `gws` commands will return 401 errors. To refresh:
 
 1. Repeat the OAuth Playground flow (steps 6-8 above) to get a new access token
-2. Update the secret value in OneCLI
+2. Update the secret value in the Humr Connectors page
 
-Automatic token refresh (using refresh tokens) is a planned future enhancement.
+Automatic token refresh using refresh tokens is tracked in #153.
