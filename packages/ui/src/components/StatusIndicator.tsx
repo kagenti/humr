@@ -14,14 +14,14 @@ export const stateLabel: Record<InstanceState, string> = {
 };
 
 export const badgeColors: Record<InstanceState, string> = {
-  idle: "bg-bg text-text-muted border-border-light",
+  idle: "bg-success-light text-success border-success",
   starting: "bg-warning-light text-warning border-warning",
   running: "bg-success-light text-success border-success",
   error: "bg-danger-light text-danger border-danger",
 };
 
 export const dotColors: Record<InstanceState, string> = {
-  idle: "bg-text-muted",
+  idle: "bg-success",
   starting: "bg-warning anim-pulse",
   running: "bg-success",
   error: "bg-danger",
