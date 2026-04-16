@@ -1,4 +1,4 @@
-name: Deploy Main
+name: Continuous Deployment
 
 on:
   push:
