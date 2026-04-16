@@ -2,7 +2,17 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig } from "../auth.js";
 import type { AnthropicAuthMode } from "../types.js";
-import { Unplug, RefreshCw, KeyRound, Plus, Sparkles, Globe, Lock, ExternalLink, X } from "lucide-react";
+import {
+  Unplug,
+  RefreshCw,
+  KeyRound,
+  Plus,
+  Sparkles,
+  Globe,
+  Lock,
+  ExternalLink,
+  X,
+} from "lucide-react";
 import { authFetch } from "../auth.js";
 
 interface McpConnection {
@@ -32,7 +42,11 @@ export function ConnectorsView() {
   const [connecting, setConnecting] = useState(false);
 
   // Generic-secret form
-  const [secretForm, setSecretForm] = useState({ name: "", value: "", hostPattern: "" });
+  const [secretForm, setSecretForm] = useState({
+    name: "",
+    value: "",
+    hostPattern: "",
+  });
   const [savingSecret, setSavingSecret] = useState(false);
 
   // Anthropic form
@@ -56,7 +70,9 @@ export function ConnectorsView() {
     setLoading(false);
   }, [loadConnections, fetchSecrets]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Derived data
   const anthropic = secrets.find((s) => s.type === "anthropic");
@@ -70,7 +86,11 @@ export function ConnectorsView() {
     if (!anthropicKey.trim()) return;
     setSavingAnthropic(true);
     try {
-      await createSecret({ type: "anthropic", name: "Anthropic API Key", value: anthropicKey.trim() });
+      await createSecret({
+        type: "anthropic",
+        name: "Anthropic API Key",
+        value: anthropicKey.trim(),
+      });
       setAnthropicKey("");
     } finally {
       setSavingAnthropic(false);
@@ -93,23 +113,42 @@ export function ConnectorsView() {
         body: JSON.stringify({ mcpServerUrl: mcpUrl.trim() }),
       });
       const data = (await res.json()) as { authUrl?: string; error?: string };
-      if (data.error) { showAlert(data.error, "OAuth Error"); setConnecting(false); return; }
-      if (data.authUrl) { sessionStorage.setItem("humr-return-view", "connectors"); window.location.href = data.authUrl; }
-    } catch (err) { showAlert(`${err}`, "Connection Failed"); setConnecting(false); }
+      if (data.error) {
+        showAlert(data.error, "OAuth Error");
+        setConnecting(false);
+        return;
+      }
+      if (data.authUrl) {
+        sessionStorage.setItem("humr-return-view", "connectors");
+        window.location.href = data.authUrl;
+      }
+    } catch (err) {
+      showAlert(`${err}`, "Connection Failed");
+      setConnecting(false);
+    }
   };
 
   const disconnectMcp = async (hostname: string) => {
     if (!(await showConfirm(`Disconnect "${hostname}"?`, "Disconnect"))) return;
     setDisconnecting(hostname);
     try {
-      await authFetch(`/api/mcp/connections/${encodeURIComponent(hostname)}`, { method: "DELETE" });
+      await authFetch(`/api/mcp/connections/${encodeURIComponent(hostname)}`, {
+        method: "DELETE",
+      });
       await load();
-    } catch (err) { showAlert(`${err}`, "Disconnect Failed"); }
+    } catch (err) {
+      showAlert(`${err}`, "Disconnect Failed");
+    }
     setDisconnecting(null);
   };
 
   const saveSecret = async () => {
-    if (!secretForm.name.trim() || !secretForm.value.trim() || !secretForm.hostPattern.trim()) return;
+    if (
+      !secretForm.name.trim() ||
+      !secretForm.value.trim() ||
+      !secretForm.hostPattern.trim()
+    )
+      return;
     setSavingSecret(true);
     try {
       await createSecret({
@@ -132,7 +171,8 @@ export function ConnectorsView() {
 
   const hasConnectors = connections.length > 0 || genericConnectors.length > 0;
 
-  const inp = "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+  const inp =
+    "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
   return (
     <div className="w-full max-w-2xl">
@@ -140,16 +180,20 @@ export function ConnectorsView() {
         <h1 className="text-[24px] font-bold text-text">Connectors</h1>
         <button
           onClick={load}
-          className={`ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal ${loading ? "anim-spin" : ""}`}
+          className={`ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal`}
           style={{ boxShadow: "var(--shadow-brutal-sm)" }}
         >
-          <RefreshCw size={13} />
+          <span className={loading ? "anim-spin" : ""}>
+            <RefreshCw size={13} />
+          </span>
         </button>
       </div>
 
       {/* Anthropic — featured top section */}
       <section className="mb-10">
-        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">Anthropic Credentials</h2>
+        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
+          Anthropic Credentials
+        </h2>
         {!loaded.current ? (
           <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />
         ) : anthropic ? (
@@ -162,10 +206,14 @@ export function ConnectorsView() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[14px] font-semibold text-text truncate">{anthropic.name}</span>
+                <span className="text-[14px] font-semibold text-text truncate">
+                  {anthropic.name}
+                </span>
                 <AuthModeBadge mode={anthropic.authMode} />
               </div>
-              <div className="text-[12px] text-text-muted">Connected · used by Claude models</div>
+              <div className="text-[12px] text-text-muted">
+                Connected · used by Claude models
+              </div>
             </div>
             <button
               onClick={removeAnthropic}
@@ -186,8 +234,15 @@ export function ConnectorsView() {
                 <Sparkles size={18} />
               </div>
               <div>
-                <div className="text-[14px] font-semibold text-text">Not configured</div>
-                <div className="text-[12px] text-text-muted">Required for Claude models. Paste an API key (<span className="font-mono">sk-ant-api…</span>) or an OAuth token (<span className="font-mono">sk-ant-oat…</span>) — the type is detected automatically.</div>
+                <div className="text-[14px] font-semibold text-text">
+                  Not configured
+                </div>
+                <div className="text-[12px] text-text-muted">
+                  Required for Claude models. Paste an API key (
+                  <span className="font-mono">sk-ant-api…</span>) or an OAuth
+                  token (<span className="font-mono">sk-ant-oat…</span>) — the
+                  type is detected automatically.
+                </div>
               </div>
             </div>
             <div className="flex gap-3">
@@ -214,7 +269,9 @@ export function ConnectorsView() {
 
       {/* Unified connectors list */}
       <section className="mb-6">
-        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">Connectors</h2>
+        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
+          Connectors
+        </h2>
 
         {!loaded.current && (
           <div className="flex flex-col gap-3">
@@ -237,9 +294,24 @@ export function ConnectorsView() {
                 index={i}
                 iconType="mcp"
                 name={c.hostname}
-                subtitle={c.expired ? "Expired" : `Connected ${new Date(c.connectedAt).toLocaleDateString()}`}
-                badge={c.expired ? { label: "Expired", tone: "danger" } : { label: "MCP", tone: "info" }}
-                reconnect={c.expired ? () => { setMcpUrl(`https://${c.hostname}/mcp`); setAddMode("mcp"); } : undefined}
+                subtitle={
+                  c.expired
+                    ? "Expired"
+                    : `Connected ${new Date(c.connectedAt).toLocaleDateString()}`
+                }
+                badge={
+                  c.expired
+                    ? { label: "Expired", tone: "danger" }
+                    : { label: "MCP", tone: "info" }
+                }
+                reconnect={
+                  c.expired
+                    ? () => {
+                        setMcpUrl(`https://${c.hostname}/mcp`);
+                        setAddMode("mcp");
+                      }
+                    : undefined
+                }
                 onDelete={() => disconnectMcp(c.hostname)}
                 deleting={disconnecting === c.hostname}
               />
@@ -263,7 +335,9 @@ export function ConnectorsView() {
       <section className="anim-in">
         {!loaded.current ? null : addMode === null ? (
           <div className="flex flex-col gap-3">
-            <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Add Connector</h2>
+            <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              Add Connector
+            </h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <AddTypeCard
                 icon={<Globe size={18} />}
@@ -329,44 +403,73 @@ export function ConnectorsView() {
             {addMode === "secret" && (
               <div className="flex flex-col gap-5">
                 <p className="text-[13px] text-text-secondary leading-relaxed">
-                  Injects a bearer token into outgoing HTTP requests whose host matches the pattern below.
-                  Use this for custom APIs — for common providers (GitHub, Google, Resend…) pick
+                  Injects a bearer token into outgoing HTTP requests whose host
+                  matches the pattern below. Use this for custom APIs — for
+                  common providers (GitHub, Google, Resend…) pick
                   <strong> Preconfigured App</strong> instead.
                 </p>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">Name</label>
+                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                    Name
+                  </label>
                   <input
                     className={inp}
                     placeholder="e.g. Linear Token"
                     value={secretForm.name}
-                    onChange={(e) => setSecretForm((p) => ({ ...p, name: e.target.value }))}
+                    onChange={(e) =>
+                      setSecretForm((p) => ({ ...p, name: e.target.value }))
+                    }
                     autoFocus
                   />
-                  <p className="text-[11px] text-text-muted">A label so you can identify this connector later.</p>
+                  <p className="text-[11px] text-text-muted">
+                    A label so you can identify this connector later.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">Token</label>
+                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                    Token
+                  </label>
                   <input
                     className={inp}
                     type="password"
                     placeholder="The secret value to inject"
                     value={secretForm.value}
-                    onChange={(e) => setSecretForm((p) => ({ ...p, value: e.target.value }))}
+                    onChange={(e) =>
+                      setSecretForm((p) => ({ ...p, value: e.target.value }))
+                    }
                   />
-                  <p className="text-[11px] text-text-muted">Injected as <span className="font-mono">Authorization: Bearer &lt;value&gt;</span>. Stored encrypted in OneCLI — the agent never sees the raw value.</p>
+                  <p className="text-[11px] text-text-muted">
+                    Injected as{" "}
+                    <span className="font-mono">
+                      Authorization: Bearer &lt;value&gt;
+                    </span>
+                    . Stored encrypted in OneCLI — the agent never sees the raw
+                    value.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">Host Pattern</label>
+                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                    Host Pattern
+                  </label>
                   <input
                     className={`${inp} font-mono`}
                     placeholder="e.g. api.linear.app"
                     value={secretForm.hostPattern}
-                    onChange={(e) => setSecretForm((p) => ({ ...p, hostPattern: e.target.value }))}
+                    onChange={(e) =>
+                      setSecretForm((p) => ({
+                        ...p,
+                        hostPattern: e.target.value,
+                      }))
+                    }
                   />
-                  <p className="text-[11px] text-text-muted">Hostname the token applies to. Requests to other hosts are untouched. Supports wildcards (e.g. <span className="font-mono">*.example.com</span>).</p>
+                  <p className="text-[11px] text-text-muted">
+                    Hostname the token applies to. Requests to other hosts are
+                    untouched. Supports wildcards (e.g.{" "}
+                    <span className="font-mono">*.example.com</span>).
+                  </p>
                 </div>
 
                 <div className="flex justify-end">
@@ -374,7 +477,12 @@ export function ConnectorsView() {
                     className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40"
                     style={{ boxShadow: "var(--shadow-brutal-accent)" }}
                     onClick={saveSecret}
-                    disabled={savingSecret || !secretForm.name.trim() || !secretForm.value.trim() || !secretForm.hostPattern.trim()}
+                    disabled={
+                      savingSecret ||
+                      !secretForm.name.trim() ||
+                      !secretForm.value.trim() ||
+                      !secretForm.hostPattern.trim()
+                    }
                   >
                     {savingSecret ? "..." : "Add Secret"}
                   </button>
@@ -385,8 +493,9 @@ export function ConnectorsView() {
             {addMode === "app" && (
               <div className="flex flex-col gap-3">
                 <p className="text-[13px] text-text-secondary">
-                  Preconfigured apps (GitHub, Google, Slack…) are set up in the OneCLI dashboard.
-                  Once connected there, the resulting secret will appear in this list automatically.
+                  Preconfigured apps (GitHub, Google, Slack…) are set up in the
+                  OneCLI dashboard. Once connected there, the resulting secret
+                  will appear in this list automatically.
                 </p>
                 {onecliUrl ? (
                   <a
@@ -399,7 +508,9 @@ export function ConnectorsView() {
                     Open OneCLI Dashboard <ExternalLink size={13} />
                   </a>
                 ) : (
-                  <p className="text-[12px] text-text-muted">OneCLI dashboard URL not configured.</p>
+                  <p className="text-[12px] text-text-muted">
+                    OneCLI dashboard URL not configured.
+                  </p>
                 )}
               </div>
             )}
@@ -420,14 +531,23 @@ export function AuthModeBadge({ mode }: { mode?: AnthropicAuthMode }) {
   return (
     <span
       className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${tone}`}
-      title={mode === "oauth" ? "Stored as sk-ant-oat… — injected as Authorization: Bearer header" : "Stored as sk-ant-api… — injected as x-api-key header"}
+      title={
+        mode === "oauth"
+          ? "Stored as sk-ant-oat… — injected as Authorization: Bearer header"
+          : "Stored as sk-ant-api… — injected as x-api-key header"
+      }
     >
       {label}
     </span>
   );
 }
 
-function AddTypeCard({ icon, title, description, onClick }: {
+function AddTypeCard({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
   icon: React.ReactNode;
   title: string;
   description: string;
@@ -481,16 +601,25 @@ function ConnectorRow({
   return (
     <div
       className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
-      style={{ boxShadow: "var(--shadow-brutal)", animationDelay: `${index * 50}ms` }}
+      style={{
+        boxShadow: "var(--shadow-brutal)",
+        animationDelay: `${index * 50}ms`,
+      }}
     >
       <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
         {iconType === "mcp" ? <Globe size={16} /> : <Lock size={16} />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{name}</div>
-        <div className="text-[12px] font-mono text-text-muted truncate">{subtitle}</div>
+        <div className="text-[14px] font-semibold text-text truncate">
+          {name}
+        </div>
+        <div className="text-[12px] font-mono text-text-muted truncate">
+          {subtitle}
+        </div>
       </div>
-      <span className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${toneClass}`}>
+      <span
+        className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${toneClass}`}
+      >
         {badge.label}
       </span>
       {reconnect && (

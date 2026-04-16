@@ -3,22 +3,33 @@ import { SessionType } from "api-server-api";
 import { useStore } from "../store.js";
 import { RefreshCw, ArrowLeft, Trash2, Plus } from "lucide-react";
 
-export function SessionsSidebar({ onResumeSession, onRefresh, onNewSession }: { onResumeSession: (sid: string) => void; onRefresh: () => void; onNewSession: () => void }) {
-  const sessions = useStore(s => s.sessions);
-  const sessionId = useStore(s => s.sessionId);
-  const loading = useStore(s => s.loading.sessions);
-  const includeChannel = useStore(s => s.includeChannelSessions);
-  const setIncludeChannel = useStore(s => s.setIncludeChannelSessions);
-  const deleteSession = useStore(s => s.deleteSession);
-  const showConfirm = useStore(s => s.showConfirm);
-  const goBack = useStore(s => s.goBack);
+export function SessionsSidebar({
+  onResumeSession,
+  onRefresh,
+  onNewSession,
+}: {
+  onResumeSession: (sid: string) => void;
+  onRefresh: () => void;
+  onNewSession: () => void;
+}) {
+  const sessions = useStore((s) => s.sessions);
+  const sessionId = useStore((s) => s.sessionId);
+  const loading = useStore((s) => s.loading.sessions);
+  const includeChannel = useStore((s) => s.includeChannelSessions);
+  const setIncludeChannel = useStore((s) => s.setIncludeChannelSessions);
+  const deleteSession = useStore((s) => s.deleteSession);
+  const showConfirm = useStore((s) => s.showConfirm);
+  const goBack = useStore((s) => s.goBack);
 
-  const confirmDelete = useCallback(async (sid: string, title: string | null | undefined) => {
-    const label = title || sid.slice(0, 12);
-    if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
-      deleteSession(sid);
-    }
-  }, [showConfirm, deleteSession]);
+  const confirmDelete = useCallback(
+    async (sid: string, title: string | null | undefined) => {
+      const label = title || sid.slice(0, 12);
+      if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
+        deleteSession(sid);
+      }
+    },
+    [showConfirm, deleteSession],
+  );
 
   return (
     <>
@@ -30,14 +41,22 @@ export function SessionsSidebar({ onResumeSession, onRefresh, onNewSession }: { 
         >
           <ArrowLeft size={14} />
         </button>
-        <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Sessions</span>
+        <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+          Sessions
+        </span>
         <button
-          className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors ${loading ? "anim-spin" : ""}`}
+          className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors`}
           onClick={onRefresh}
         >
-          <RefreshCw size={11} />
+          <span className={loading ? "anim-spin" : ""}>
+            <RefreshCw size={11} />
+          </span>
         </button>
-        {loading && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden"><div className="h-full w-1/3 bg-accent rounded-full anim-slide" /></div>}
+        {loading && (
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden">
+            <div className="h-full w-1/3 bg-accent rounded-full anim-slide" />
+          </div>
+        )}
       </div>
       <div className="px-4 py-2 border-b border-border-light">
         <label className="flex items-center gap-2 cursor-pointer text-[11px] text-text-muted">
@@ -51,8 +70,12 @@ export function SessionsSidebar({ onResumeSession, onRefresh, onNewSession }: { 
         </label>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {!loading && sessions.length === 0 && <p className="px-4 py-5 text-[12px] text-text-muted">No sessions yet</p>}
-        {sessions.map(s => (
+        {!loading && sessions.length === 0 && (
+          <p className="px-4 py-5 text-[12px] text-text-muted">
+            No sessions yet
+          </p>
+        )}
+        {sessions.map((s) => (
           <SessionRow
             key={s.sessionId}
             session={s}
@@ -76,8 +99,19 @@ export function SessionsSidebar({ onResumeSession, onRefresh, onNewSession }: { 
 
 const LONG_PRESS_MS = 400;
 
-function SessionRow({ session: s, active, onResume, onDelete }: {
-  session: { sessionId: string; title?: string | null; type: string; createdAt: string; updatedAt?: string | null };
+function SessionRow({
+  session: s,
+  active,
+  onResume,
+  onDelete,
+}: {
+  session: {
+    sessionId: string;
+    title?: string | null;
+    type: string;
+    createdAt: string;
+    updatedAt?: string | null;
+  };
   active: boolean;
   onResume: () => void;
   onDelete: () => void;
@@ -118,7 +152,8 @@ function SessionRow({ session: s, active, onResume, onDelete }: {
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -131,23 +166,35 @@ function SessionRow({ session: s, active, onResume, onDelete }: {
       onTouchStart={startPress}
       onTouchEnd={endPress}
       onTouchCancel={endPress}
-      onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuOpen(true);
+      }}
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          <span className={`text-[13px] truncate ${active ? "text-accent font-bold" : "text-text font-medium"}`}>
+          <span
+            className={`text-[13px] truncate ${active ? "text-accent font-bold" : "text-text font-medium"}`}
+          >
             {s.title || s.sessionId.slice(0, 12)}
           </span>
           {s.type === SessionType.ChannelSlack && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">slack</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
+              slack
+            </span>
           )}
         </div>
-        <span className="text-[11px] text-text-muted">{new Date(s.updatedAt ?? s.createdAt).toLocaleString()}</span>
+        <span className="text-[11px] text-text-muted">
+          {new Date(s.updatedAt ?? s.createdAt).toLocaleString()}
+        </span>
       </div>
       {/* Desktop: hover-visible delete button */}
       <button
         className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-text-muted opacity-0 group-hover:opacity-100 hover:text-danger transition-all"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
         title="Delete session"
       >
         <Trash2 size={12} />
@@ -161,7 +208,11 @@ function SessionRow({ session: s, active, onResume, onDelete }: {
         >
           <button
             className="flex items-center gap-2 w-full px-4 py-2 text-[13px] text-danger hover:bg-danger-light transition-colors"
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+              onDelete();
+            }}
           >
             <Trash2 size={13} /> Delete session
           </button>
