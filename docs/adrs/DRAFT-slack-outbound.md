@@ -1,4 +1,4 @@
-# ADR-DRAFT: Slack outbound messaging — per-session MCP tool for proactive channel posting
+# ADR-DRAFT: Slack outbound messaging — two delivery modes
 
 **Date:** 2026-04-16
 **Status:** Proposed
@@ -12,35 +12,41 @@ Agents need to post proactively — scheduled job results, status updates, and o
 
 ## Decision
 
-### 1. `send_slack_message` MCP tool in agent runtime
+### 1. Two delivery modes
 
-A single MCP tool exposed to the harness:
+**Interactive sessions — MCP tool (agent-driven):**
 
 ```
 send_slack_message(text: string) → { ok: true } | { error: string }
 ```
 
-Flow: harness → MCP tool → agent runtime → **new tRPC route** on API Server → SlackWorker → Slack.
+The agent explicitly decides what and when to post. Flow: harness → MCP tool → agent runtime → new tRPC route on API Server → SlackWorker → Slack.
 
-- Posts as a **top-level message** in the instance's connected Slack channel
-- Each invocation = one top-level message (no grouping or threading)
-- Tool is **only registered** when outbound is enabled for the session; hidden otherwise
-- Returns errors from Slack (bot removed, invalid channel) — harness is responsible for handling
+- Tool **only registered** when outbound is enabled for the session; hidden otherwise
+- Returns errors from Slack (bot removed, invalid channel) — harness handles
 
-### 2. Per-session outbound flag
+**Scheduled sessions — platform delivery (infra-driven):**
 
-Outbound is opt-in per session, not per instance:
+The platform captures all agent output from a scheduled job run and delivers it to the instance's connected Slack channel. The agent is channel-unaware — it just produces output, the platform routes it. Similar to OpenClaw's cron delivery model.
+
+- Delivery happens when the scheduled session completes
+- Posts as a top-level message in the connected channel
+- Enabled per schedule via flag in schedule definition (cron/heartbeat config)
+- Toggle greyed out with tooltip when instance has no connected channel
+
+### 2. Per-session outbound flag (interactive only)
+
+For interactive sessions, outbound is opt-in per session:
 
 - **Instance channel config** = inbound direction (existing, always on when connected)
-- **Session outbound flag** = enables the MCP tool for that specific session
+- **Session outbound flag** = enables the `send_slack_message` MCP tool for that specific session
 - Flag **persisted in DB** (survives page refresh)
-- Scheduled/headless sessions: deferred — will be addressed when scheduled sessions become headful
 
 ### 3. Fire-and-forget threading model
 
-Outbound messages have no thread-to-session binding:
+Both delivery modes use the same threading model:
 
-- Agent posts top-level message → no mapping stored
+- Outbound message → top-level post in channel → no thread-to-session mapping stored
 - User replies with `@Humr` in the resulting thread → treated as a **new inbound mention** → creates a new session
 - Context from the originating session is not carried over (acceptable trade-off for simplicity)
 
@@ -58,19 +64,19 @@ Outbound messages have no thread-to-session binding:
 
 ## Alternatives Considered
 
-**Thread-to-session mapping for outbound messages.** Outbound posts could store `threadTs → sessionId` so replies route back to the originating session. Rejected — adds complexity (mapping storage, stale session handling) for marginal benefit. Users can continue in the UI session if they need context.
+**Thread-to-session mapping for outbound messages.** Outbound posts could store `threadTs → sessionId` so replies route back to the originating session. Rejected — adds complexity (mapping storage, stale session handling) and breaks session isolation. OpenClaw uses the same fire-and-forget model.
 
-**Outbound as instance-level setting.** All sessions would inherit outbound capability. Rejected — per-session control gives users finer-grained control and avoids accidental Slack spam during exploratory sessions.
+**MCP tool for scheduled sessions too.** Agent would call `send_slack_message` explicitly in scheduled runs. Rejected — scheduled jobs should be channel-unaware; the platform decides where output goes. Separating concerns avoids coupling agent prompts to delivery targets.
 
-**Separate REST endpoint instead of MCP tool.** Agent runtime could expose an HTTP endpoint. Rejected — harnesses already speak MCP; adding a tool is the idiomatic integration path.
+**Platform delivery for interactive sessions too.** Mirror all session output to Slack. Rejected — interactive sessions are multi-turn and noisy; mirroring everything would spam the channel. Explicit tool gives the agent control over what's worth posting.
 
 ## Consequences
 
 **Easier:**
-- Agents can communicate results proactively without user polling
-- Channel config is accessible from instance list without entering a chat
-- Per-session opt-in prevents accidental spam
+- Scheduled jobs deliver results without agent awareness of Slack
+- Interactive agents can post selectively via MCP tool
+- Channel config accessible from instance list without entering a chat
 
 **Harder:**
+- Two delivery modes to implement and maintain
 - No conversational continuity between outbound posts and Slack replies (new session each time)
-- Scheduled sessions cannot use outbound until they become headful
