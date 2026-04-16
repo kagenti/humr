@@ -15,6 +15,10 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    - port: {{ .Values.apiServer.mcpPort }}
+      targetPort: mcp
+      protocol: TCP
+      name: mcp
   selector:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -48,6 +52,8 @@ spec:
           ports:
             - containerPort: {{ .Values.apiServer.port }}
               name: http
+            - containerPort: {{ .Values.apiServer.mcpPort }}
+              name: mcp
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -60,6 +66,8 @@ spec:
               value: {{ .Values.agentNamespace | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            - name: MCP_PORT
+              value: {{ .Values.apiServer.mcpPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.apiServer.slackBotToken }}

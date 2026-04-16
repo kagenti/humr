@@ -1,6 +1,7 @@
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { WebSocketServer, WebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
@@ -116,6 +117,23 @@ wss.on("connection", (ws) => {
     if (ws.readyState === WebSocket.OPEN) ws.close();
   });
 });
+
+if (config.HUMR_MCP_URL) {
+  const mcpPath = join(workDir, ".mcp.json");
+  let mcpConfig: Record<string, unknown> = {};
+  if (existsSync(mcpPath)) {
+    try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
+  }
+  const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
+  const mcpEntry: Record<string, unknown> = { type: "http", url: config.HUMR_MCP_URL };
+  if (config.ONECLI_ACCESS_TOKEN) {
+    mcpEntry.headers = { Authorization: `Bearer ${config.ONECLI_ACCESS_TOKEN}` };
+  }
+  mcpServers["humr-outbound"] = mcpEntry;
+  mcpConfig.mcpServers = mcpServers;
+  writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
+  process.stderr.write(`[mcp] Wrote humr-outbound to ${mcpPath}\n`);
+}
 
 server.listen(config.PORT, () => {
   process.stderr.write(`Humr on http://localhost:${config.PORT}\n`);

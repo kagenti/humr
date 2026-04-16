@@ -38,6 +38,7 @@ export interface SlackWorker {
   start(instanceName: string, channel: ChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
+  postMessage(instanceName: string, text: string): Promise<{ ok: true } | { error: string }>;
 }
 
 export interface SlackOAuthPending {
@@ -353,25 +354,36 @@ export function createSlackWorker(
     });
   }
 
-  async function ensureApp(): Promise<BoltApp> {
-    if (app) return app;
+  let appFailed = false;
 
-    app = new App({
+  async function ensureApp(): Promise<BoltApp | null> {
+    if (app) return app;
+    if (appFailed) return null;
+
+    const bolt = new App({
       token: botToken,
       appToken,
       socketMode: true,
       logLevel: LogLevel.DEBUG,
     });
 
-    app.event("app_mention", handleAppMention);
-    app.command("/humr", handleCommand);
-    app.action(/^instance_select:/, handleInstanceSelect as Parameters<BoltApp["action"]>[1]);
+    bolt.event("app_mention", handleAppMention);
+    bolt.command("/humr", handleCommand);
+    bolt.action(/^instance_select:/, handleInstanceSelect as Parameters<BoltApp["action"]>[1]);
 
-    app.error(async (error) => {
+    bolt.error(async (error) => {
       process.stderr.write(`[slack] Bolt error: ${error}\n`);
     });
 
-    await app.start();
+    try {
+      await bolt.start();
+    } catch (err) {
+      appFailed = true;
+      process.stderr.write(`[slack] Failed to start Slack bot: ${err instanceof Error ? err.message : String(err)}\n`);
+      return null;
+    }
+
+    app = bolt;
     process.stderr.write("Slack bot started (single app)\n");
     return app;
   }
@@ -382,7 +394,11 @@ export function createSlackWorker(
     async start(instanceName: string, channel: ChannelConfig) {
       const { slackChannelId } = channel as SlackChannel;
       registerMapping(slackChannelId, instanceName);
-      await ensureApp();
+      const started = await ensureApp();
+      if (!started) {
+        process.stderr.write(`Slack: skipping ${instanceName} — bot not connected\n`);
+        return;
+      }
       process.stderr.write(`Slack: registered ${instanceName} → channel ${slackChannelId}\n`);
     },
 
@@ -399,6 +415,32 @@ export function createSlackWorker(
       if (app) {
         await app.stop();
         app = null;
+      }
+    },
+
+    async postMessage(instanceName: string, text: string) {
+      const channels = instanceChannels.get(instanceName);
+      if (!channels || channels.size === 0) {
+        return { error: "no channel connected" };
+      }
+
+      if (!app) {
+        return { error: "slack bot not running" };
+      }
+
+      const slackChannelId = [...channels][0];
+      try {
+        await app.client.chat.postMessage({
+          channel: slackChannelId,
+          text,
+          blocks: [
+            { type: "section", text: { type: "mrkdwn", text } },
+            { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
+          ],
+        });
+        return { ok: true as const };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
       }
     },
   };

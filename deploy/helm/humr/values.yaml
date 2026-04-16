@@ -216,6 +216,7 @@ apiServer:
     tag: ""
     pullPolicy: IfNotPresent
   port: 4000
+  mcpPort: 4001
   # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.

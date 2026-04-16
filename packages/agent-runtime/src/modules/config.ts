@@ -10,6 +10,8 @@ const schema = z.object({
   WORK_DIR: z.string().default("/home/agent/work"),
   TRIGGERS_DIR: z.string().default("/home/agent/.triggers"),
   API_SERVER_URL: z.string().default(""),
+  HUMR_MCP_URL: z.string().optional(),
+  ONECLI_ACCESS_TOKEN: z.string().optional(),
 });
 
 export const config = schema.parse(process.env);

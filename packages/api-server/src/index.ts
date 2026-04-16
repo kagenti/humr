@@ -20,6 +20,7 @@ import {
   findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
+import { createMcpRoutes } from "./mcp-endpoint.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { loadConfig } from "./config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
@@ -102,9 +103,6 @@ app.get("/api/auth/config", (c) =>
   }),
 );
 
-// --- Internal endpoints (no JWT auth — secured by K8s NetworkPolicy) ---
-// Called by agent-runtime trigger-watcher to execute scheduled sessions.
-// Session lookup, creation, persistence, and ACP relay all happen here.
 app.post("/internal/trigger", async (c) => {
   const body = await c.req.json<{
     instanceId: string;
@@ -121,7 +119,6 @@ app.post("/internal/trigger", async (c) => {
   const sessionType = "schedule_cron";
   const { sessions } = composeAgentsModule(api, config.namespace, "_system", db);
 
-  // For continuous mode, look up existing session
   let resumeSessionId: string | undefined;
   if (mode === "continuous") {
     const found = await sessions.findByScheduleId(body.schedule);
@@ -214,6 +211,11 @@ app.all("/api/trpc/*", (c) => {
   });
 });
 
+const mcpApp = createMcpRoutes({ channelManager, k8s: k8sClient });
+const mcpServer = serve({ fetch: mcpApp.fetch, port: config.mcpPort }, () => {
+  process.stderr.write(`mcp-server listening on http://localhost:${config.mcpPort}\n`);
+});
+
 const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
@@ -231,6 +233,7 @@ async function shutdown() {
   onecliSyncSub.unsubscribe();
   await channelManager.stopAll();
   await sql.end();
+  mcpServer.close();
   server.close();
   process.exit(0);
 }

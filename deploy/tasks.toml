@@ -94,6 +94,7 @@ LIMA_TEMPLATE="deploy/lima-k3s.yaml"
 HELM_VALUES=""
 HELM_EXTRA_ARGS=()
 NO_RESTART=false
+DEV_VALUES="deploy/helm/humr/values-dev.yaml"
 for arg in "$@"; do
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
@@ -160,7 +161,11 @@ echo "Installing/upgrading Humr chart..."
 # No --wait: the keycloak-provision post-install hook imports the humr realm,
 # which OneCLI's wait-for-keycloak init container depends on. With --wait,
 # helm would block on OneCLI readiness before the hook ever runs → deadlock.
-helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
+if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
+    HELM_VALUES="$DEV_VALUES"
+    echo "Using dev overrides: $DEV_VALUES"
+  fi
+  helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then

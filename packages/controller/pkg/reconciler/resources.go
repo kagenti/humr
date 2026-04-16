@@ -40,6 +40,8 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
+		{Name: "NO_PROXY", Value: cfg.APIServerHost},
+		{Name: "no_proxy", Value: cfg.APIServerHost},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
@@ -49,6 +51,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: "/home/agent"},
+		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.MCPServerURL, name)},
 	}
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -240,7 +243,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	acpPort := intstr.FromInt32(8080)
 	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
-	apiServerPort := intstr.FromInt32(4000)
+	mcpPort := intstr.FromInt32(int32(cfg.MCPServerPort))
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 
@@ -279,8 +282,6 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 					},
 				},
 				{
-					// API Server (cross-namespace: runs in the release namespace)
-					// Agent-runtime calls internal session endpoints for schedule session persistence
 					To: []networkingv1.NetworkPolicyPeer{{
 						PodSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
@@ -290,7 +291,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 						},
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &apiServerPort},
+						{Protocol: &tcp, Port: &mcpPort},
 					},
 				},
 				{
