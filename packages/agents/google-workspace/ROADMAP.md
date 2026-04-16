@@ -2,9 +2,9 @@
 
 ## Planned Enhancements
 
-### Claude Code Skills
+### ~~Claude Code Skills~~ (Done)
 
-Replace the flat `workspace/work/CLAUDE.md` with structured Claude Code skills (`.claude/skills/`). Skills are composable, discoverable, and follow Claude Code conventions — the agent could ship with dedicated skills for Drive operations, Gmail triage, Calendar management, etc.
+~~Replace the flat `workspace/work/CLAUDE.md` with structured Claude Code skills (`.claude/skills/`).~~ Shipped: `drive-upload`, `drive-manage`, `gmail-triage`, `calendar-agenda`, `sheets-data`.
 
 ### Automatic OAuth Token Refresh
 
