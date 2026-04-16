@@ -1,34 +1,32 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
-import type { InstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
-import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
+import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { LABEL_AGENT_REF } from "./modules/agents/infrastructure/labels.js";
+import { buildJob, type JobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
+import { isPodReady } from "./modules/agents/infrastructure/configmap-mappers.js";
 
-const DEBOUNCE_MS = 30_000;
-const WAKE_POLL_MS = 1_000;
+const WAKE_POLL_MS = 500;
 const WAKE_TIMEOUT_MS = 120_000;
 
-const lastActivityTimestamps = new Map<string, number>();
-
-function shouldUpdateActivity(instanceId: string): boolean {
-  const now = Date.now();
-  const last = lastActivityTimestamps.get(instanceId) ?? 0;
-  if (now - last < DEBOUNCE_MS) return false;
-  lastActivityTimestamps.set(instanceId, now);
-  return true;
-}
-
-async function waitForPodReady(
-  repo: InstancesRepository,
-  instanceId: string,
-): Promise<boolean> {
+/**
+ * Wait for the Job's pod to become Ready and return its IP.
+ * Returns null if timeout expires.
+ */
+async function waitForJobPodReady(
+  k8s: K8sClient,
+  jobName: string,
+): Promise<string | null> {
   const deadline = Date.now() + WAKE_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (await repo.isPodReady(instanceId)) return true;
+    const pods = await k8s.listPods(`job-name=${jobName}`);
+    const pod = pods[0];
+    if (pod && isPodReady(pod) && pod.status?.podIP) {
+      return pod.status.podIP;
+    }
     await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
   }
-  return false;
+  return null;
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
@@ -42,7 +40,10 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
-export function createAcpRelay(namespace: string, repo: InstancesRepository) {
+export function createAcpRelay(
+  k8s: K8sClient,
+  jobCfg: JobBuilderConfig,
+) {
   const wss = new WebSocketServer({ noServer: true });
 
   function handleUpgrade(
@@ -52,27 +53,15 @@ export function createAcpRelay(namespace: string, repo: InstancesRepository) {
     instanceId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
-      const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
-
-      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
-
+      // Buffer messages while we spin up the Job
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
         pending.push({ data: data as Buffer, isBinary });
       });
 
-      connectUpstream(upstreamUrl)
-        .catch(async () => {
-          const woken = await repo.wakeIfHibernated(instanceId);
-          if (woken) {
-            const ready = await waitForPodReady(repo, instanceId);
-            if (!ready) throw new Error("pod did not become ready after wake");
-          }
-          return connectUpstream(upstreamUrl);
-        })
+      launchAndConnect(k8s, jobCfg, instanceId)
         .then((upstream) => {
-          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
-
+          // Flush buffered messages
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(msg.data, { binary: msg.isBinary });
@@ -80,17 +69,11 @@ export function createAcpRelay(namespace: string, repo: InstancesRepository) {
           }
           pending.length = 0;
 
+          // Bidirectional relay
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(data, { binary: isBinary });
-
-              if (shouldUpdateActivity(instanceId)) {
-                repo.patchAnnotation(
-                  instanceId,
-                  LAST_ACTIVITY_KEY, new Date().toISOString(),
-                ).catch(() => {});
-              }
             }
           });
 
@@ -113,17 +96,68 @@ export function createAcpRelay(namespace: string, repo: InstancesRepository) {
           });
 
           client.on("close", () => {
-            repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.close();
             }
           });
         })
-        .catch(() => {
-          client.close(1011, "failed to connect to agent");
+        .catch((err) => {
+          process.stderr.write(`[acp-relay] Job launch failed: ${err}\n`);
+          client.close(1011, "failed to start agent job");
         });
     });
   }
 
   return { handleUpgrade };
+}
+
+/**
+ * Create a Job for this turn, wait for pod readiness, connect WebSocket.
+ * If a Job is already running for this instance, connect to it instead.
+ */
+async function launchAndConnect(
+  k8s: K8sClient,
+  jobCfg: JobBuilderConfig,
+  instanceId: string,
+): Promise<WebSocket> {
+  // Check for an already-running Job
+  const existingJobs = await k8s.listJobs(`humr.ai/instance=${instanceId}`);
+  const activeJob = existingJobs.find(
+    (j) => !j.status?.succeeded && !j.status?.failed,
+  );
+
+  let jobName: string;
+
+  if (activeJob) {
+    // Reuse existing active Job
+    jobName = activeJob.metadata!.name!;
+  } else {
+    // Resolve agent ConfigMap to build Job spec
+    const instanceCM = await k8s.getConfigMap(instanceId);
+    if (!instanceCM) throw new Error(`instance ${instanceId} not found`);
+
+    const agentName = instanceCM.metadata?.labels?.[LABEL_AGENT_REF];
+    if (!agentName) throw new Error(`instance ${instanceId} has no agent label`);
+
+    const agentCM = await k8s.getConfigMap(agentName);
+    if (!agentCM) throw new Error(`agent ${agentName} not found`);
+
+    const job = buildJob({
+      instanceName: instanceId,
+      instanceCM,
+      agentCM,
+      cfg: jobCfg,
+    });
+
+    const created = await k8s.createJob(job);
+    jobName = created.metadata!.name!;
+  }
+
+  // Wait for pod to be ready
+  const podIP = await waitForJobPodReady(k8s, jobName);
+  if (!podIP) {
+    throw new Error(`Job ${jobName} pod did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`);
+  }
+
+  return connectUpstream(`ws://${podIP}:8080/api/acp`);
 }

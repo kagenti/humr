@@ -57,7 +57,7 @@ export interface AgentView {
   description?: string;
 }
 
-export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
+export type InstanceState = "idle" | "starting" | "running" | "hibernating" | "hibernated" | "error";
 
 export interface InstanceView {
   id: string;

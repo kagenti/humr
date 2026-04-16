@@ -5,9 +5,10 @@ import { appRouter } from "api-server-api/router";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { createDb, runMigrations } from "db";
 import {
-  createApi, createK8sClient, podBaseUrl,
+  createApi, createK8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
+import { loadJobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createAcpClient } from "./acp-client.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
@@ -45,9 +46,10 @@ const onecli = createOnecliClient({
   onecliBaseUrl: config.onecliBaseUrl,
 });
 
-const { api } = createApi(config.namespace);
-const k8sClient = createK8sClient(api, config.namespace);
+const { api, batchApi } = createApi(config.namespace);
+const k8sClient = createK8sClient(api, config.namespace, batchApi);
 const instancesRepo = createInstancesRepository(k8sClient);
+const jobCfg = loadJobBuilderConfig();
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
@@ -129,7 +131,7 @@ app.post("/internal/trigger", async (c) => {
   }
 
   const acp = createAcpClient({
-    namespace: config.namespace,
+    k8s: k8sClient,
     instanceName: body.instanceId,
     onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
   });
@@ -169,9 +171,21 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
     return c.json({ error: "not found" }, 404);
   }
 
+  // Find an active Job pod for this instance
+  const jobs = await k8sClient.listJobs(`humr.ai/instance=${instanceId}`);
+  const activeJob = jobs.find((j) => !j.status?.succeeded && !j.status?.failed);
+  if (!activeJob) {
+    return c.json({ error: "instance idle — no active agent pod" }, 503);
+  }
+  const pods = await k8sClient.listPods(`job-name=${activeJob.metadata!.name!}`);
+  const podIP = pods[0]?.status?.podIP;
+  if (!podIP) {
+    return c.json({ error: "agent pod starting" }, 503);
+  }
+
   const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
   const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-  const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
+  const upstreamUrl = `http://${podIP}:8080/api/trpc${rest}${qs}`;
   try {
     const headers = new Headers(c.req.raw.headers);
     headers.delete("host");
@@ -218,7 +232,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(config.namespace, instancesRepo);
+const acpRelay = createAcpRelay(k8sClient, jobCfg);
 
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);
@@ -272,5 +286,5 @@ server.on("upgrade", async (req, socket, head) => {
   acpRelay.handleUpgrade(req, socket, head, instanceId);
 });
 
-export { createK8sClient, podBaseUrl, createApi };
+export { createK8sClient, createApi };
 export type { K8sClient } from "./modules/agents/infrastructure/k8s.js";

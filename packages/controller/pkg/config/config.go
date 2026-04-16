@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Config struct {
@@ -22,10 +21,9 @@ type Config struct {
 	KeycloakClientSecret string // Confidential client secret
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
-	AgentImagePullSecrets     []string      // Pull secret names for agent pods (comma-separated via env)
-	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
-	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
+	AgentImagePullPolicy      string   // ImagePullPolicy for agent pods (default: IfNotPresent)
+	AgentImagePullSecrets     []string // Pull secret names for agent pods (comma-separated via env)
+	TerminationGracePeriod    int64    // Termination grace period in seconds for agent pods (default: 5)
 	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 }
 
@@ -64,7 +62,6 @@ func LoadFromEnv() (*Config, error) {
 			}
 		}
 	}
-	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	return cfg, nil
 }
@@ -114,11 +111,3 @@ func envOrDefaultInt(key string, def int) int {
 	return def
 }
 
-func envOrDefaultDuration(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
-}

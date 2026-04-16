@@ -105,17 +105,19 @@ secretRef: cg-team-alpha-secrets
 }
 
 func TestParseInstanceSpec_MissingDesiredState(t *testing.T) {
-	_, err := ParseInstanceSpec(`version: humr.ai/v1
+	// desiredState is no longer enforced in the Job model
+	spec, err := ParseInstanceSpec(`version: humr.ai/v1
 agentId: foo`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "desiredState")
+	assert.NoError(t, err)
+	assert.Equal(t, "", spec.DesiredState)
 }
 
-func TestParseInstanceSpec_InvalidDesiredState(t *testing.T) {
-	_, err := ParseInstanceSpec(`version: humr.ai/v1
+func TestParseInstanceSpec_AnyDesiredState(t *testing.T) {
+	// Any value is accepted — the field is ignored by the controller
+	spec, err := ParseInstanceSpec(`version: humr.ai/v1
 desiredState: paused`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "'running' or 'hibernated'")
+	assert.NoError(t, err)
+	assert.Equal(t, "paused", spec.DesiredState)
 }
 
 func TestParseInstanceSpec_MissingVersion(t *testing.T) {

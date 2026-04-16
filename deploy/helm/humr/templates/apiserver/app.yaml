@@ -99,6 +99,31 @@ spec:
               value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
             - name: ONECLI_EXTERNAL_URL
               value: {{ include "humr.url.onecli" . | quote }}
+            {{- /* Job builder config — needed for creating agent Jobs */}}
+            - name: HUMR_RELEASE_NAME
+              value: {{ include "humr.fullname" . }}
+            - name: HUMR_RELEASE_NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: ONECLI_GATEWAY_HOST
+              value: {{ include "humr.onecli.fullname" . }}
+            - name: ONECLI_GATEWAY_PORT
+              value: {{ .Values.onecli.gateway.port | quote }}
+            - name: ONECLI_WEB_PORT
+              value: {{ .Values.onecli.web.port | quote }}
+            - name: CA_CERT_INIT_IMAGE
+              value: {{ .Values.controller.caCertInitImage | default "busybox:stable" }}
+            - name: AGENT_IMAGE_PULL_POLICY
+              value: {{ .Values.controller.agentImagePullPolicy | default "IfNotPresent" }}
+            {{- with .Values.controller.agentImagePullSecrets }}
+            - name: AGENT_IMAGE_PULL_SECRETS
+              value: {{ include "humr.nameList" . }}
+            {{- end }}
+            - name: HUMR_TERMINATION_GRACE_PERIOD
+              value: {{ .Values.controller.terminationGracePeriod | default 5 | quote }}
+            - name: HUMR_JOB_ACTIVE_DEADLINE
+              value: {{ .Values.apiServer.jobActiveDeadline | default 1800 | quote }}
+            - name: HUMR_JOB_TTL_AFTER_FINISHED
+              value: {{ .Values.apiServer.jobTtlAfterFinished | default 300 | quote }}
           readinessProbe:
             tcpSocket:
               port: http

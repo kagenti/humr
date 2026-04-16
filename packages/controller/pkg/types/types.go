@@ -119,12 +119,8 @@ func ParseInstanceSpec(data string) (*InstanceSpec, error) {
 	if err := validateVersion(spec.Version); err != nil {
 		return nil, fmt.Errorf("instance spec: %w", err)
 	}
-	if spec.DesiredState == "" {
-		return nil, fmt.Errorf("instance spec: desiredState is required")
-	}
-	if spec.DesiredState != "running" && spec.DesiredState != "hibernated" {
-		return nil, fmt.Errorf("instance spec: desiredState must be 'running' or 'hibernated', got %q", spec.DesiredState)
-	}
+	// desiredState is kept for backwards compatibility but no longer enforced —
+	// the Job model has no running/hibernated distinction.
 	return &spec, nil
 }
 

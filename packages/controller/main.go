@@ -105,9 +105,6 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	sched.Start()
 	defer sched.Stop()
 
-	idleChecker := reconciler.NewIdleChecker(client, cfg)
-	go idleChecker.RunLoop(ctx)
-
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
 

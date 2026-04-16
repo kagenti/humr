@@ -1,5 +1,5 @@
 /**
- * Thin K8s client — generic ConfigMap / Pod / PVC operations only.
+ * Thin K8s client — generic ConfigMap / Pod / PVC / Job operations.
  * No domain types, no YAML parsing, no label constants.
  */
 import * as k8s from "@kubernetes/client-node";
@@ -21,6 +21,11 @@ export interface K8sClient {
 
   listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
   deletePVC(name: string): Promise<void>;
+
+  createJob(body: k8s.V1Job): Promise<k8s.V1Job>;
+  getJob(name: string): Promise<k8s.V1Job | null>;
+  deleteJob(name: string): Promise<void>;
+  listJobs(labelSelector: string): Promise<k8s.V1Job[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,7 +40,7 @@ function is404(err: unknown): boolean {
   );
 }
 
-export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClient {
+export function createK8sClient(api: k8s.CoreV1Api, namespace: string, batchApi?: k8s.BatchV1Api): K8sClient {
   return {
     async listConfigMaps(labelSelector) {
       const res = await api.listNamespacedConfigMap({ namespace, labelSelector });
@@ -89,6 +94,32 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
     async deletePVC(name) {
       await api.deleteNamespacedPersistentVolumeClaim({ name, namespace });
     },
+
+    async createJob(body) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      return batchApi.createNamespacedJob({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async getJob(name) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      try {
+        return await batchApi.readNamespacedJob({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async deleteJob(name) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      await batchApi.deleteNamespacedJob({ name, namespace, body: { propagationPolicy: "Background" } });
+    },
+
+    async listJobs(labelSelector) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      const res = await batchApi.listNamespacedJob({ namespace, labelSelector });
+      return res.items ?? [];
+    },
   };
 }
 
@@ -96,6 +127,7 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
 // Utilities
 // ---------------------------------------------------------------------------
 
+/** @deprecated Use pod IP from Job status instead of static DNS. */
 export function podBaseUrl(instanceId: string, namespace: string): string {
   return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
 }
@@ -103,5 +135,9 @@ export function podBaseUrl(instanceId: string, namespace: string): string {
 export function createApi(namespace: string) {
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
-  return { api: kc.makeApiClient(k8s.CoreV1Api), namespace };
+  return {
+    api: kc.makeApiClient(k8s.CoreV1Api),
+    batchApi: kc.makeApiClient(k8s.BatchV1Api),
+    namespace,
+  };
 }

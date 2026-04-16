@@ -77,14 +77,14 @@ interface RawInstanceSpec {
   description?: string;
 }
 
-export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
+export function parseInfraInstance(cm: k8s.V1ConfigMap, _pod?: k8s.V1Pod): InfraInstance {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as RawInstanceSpec;
   const statusYaml = cm.data?.[STATUS_KEY];
-  let currentState: InfraInstance["currentState"];
+  let currentState: string | undefined;
   let error: string | undefined;
   if (statusYaml) {
     const raw = yaml.load(statusYaml) as { currentState?: string; error?: string };
-    currentState = raw.currentState as InfraInstance["currentState"];
+    currentState = raw.currentState;
     error = raw.error || undefined;
   }
   return {
@@ -95,7 +95,6 @@ export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraI
     desiredState: spec.desiredState,
     currentState,
     error,
-    podReady: pod ? isPodReady(pod) : false,
   };
 }
 
