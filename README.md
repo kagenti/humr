@@ -21,6 +21,9 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 - **Bring your own agent** — Claude Code ships as the default template. Codex, Gemini CLI, or anything that speaks [ACP](https://spec.agentcontrolprotocol.com) works too. No lock-in to one vendor's SDK or cloud.
 
+<!-- TODO: replace with screenshot or demo video of a running agent session -->
+![Humr UI](docs/assets/hero.png)
+
 ## Guided Tour
 
 ```sh
