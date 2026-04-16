@@ -14,8 +14,6 @@ const fixtureAgentYAML = `version: humr.ai/v1
 image: ghcr.io/myorg/code-guardian:latest
 description: "Persistent agent for repo monitoring"
 mounts:
-  - path: /workspace
-    persist: true
   - path: /home/agent
     persist: true
   - path: /tmp
@@ -64,7 +62,7 @@ func TestResolveAgent(t *testing.T) {
 	assert.Equal(t, "code-guardian", cm.Name)
 	assert.EqualValues(t, "agent-uid", cm.UID)
 	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
-	assert.Len(t, spec.Mounts, 3)
+	assert.Len(t, spec.Mounts, 2)
 }
 
 func TestResolveAgent_NotFound(t *testing.T) {

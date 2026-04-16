@@ -13,21 +13,20 @@ data:
     image: "{{ .Values.defaultTemplate.image.repository }}:{{ .Values.defaultTemplate.image.tag | default .Chart.AppVersion }}"
     description: {{ .Values.defaultTemplate.description | quote }}
     mounts:
-      - path: /workspace
-        persist: true
       - path: /home/agent
         persist: true
       - path: /tmp
         persist: false
     init: |
       #!/bin/bash
-      # Seed workspace from image on first boot
-      if [ ! -f /workspace/.initialized ]; then
-        cp -rn /app/working-dir/. /workspace/ 2>/dev/null || true
-        touch /workspace/.initialized
+      # Seed home from image on first boot
+      if [ ! -f /home/agent/.initialized ]; then
+        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
+        touch /home/agent/.initialized
       fi
-      if [ -f /workspace/requirements.txt ]; then
-        pip install -r /workspace/requirements.txt
+      mkdir -p /home/agent/work
+      if [ -f /home/agent/work/requirements.txt ]; then
+        pip install -r /home/agent/work/requirements.txt
       fi
     env:
       - name: PORT

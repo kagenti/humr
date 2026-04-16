@@ -13,16 +13,14 @@ const fixtureTemplateYAML = `version: humr.ai/v1
 image: ghcr.io/myorg/code-guardian:latest
 description: "Persistent agent for repo monitoring"
 mounts:
-  - path: /workspace
-    persist: true
   - path: /home/agent
     persist: true
   - path: /tmp
     persist: false
 init: |
   #!/bin/bash
-  if [ -f /workspace/requirements.txt ]; then
-    pip install -r /workspace/requirements.txt
+  if [ -f /home/agent/requirements.txt ]; then
+    pip install -r /home/agent/requirements.txt
   fi
 env:
   - name: ACP_PORT
@@ -45,10 +43,10 @@ func TestParseAgentSpec(t *testing.T) {
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
 	assert.Equal(t, "Persistent agent for repo monitoring", spec.Description)
-	assert.Len(t, spec.Mounts, 3)
+	assert.Len(t, spec.Mounts, 2)
 	assert.True(t, spec.Mounts[0].Persist)
-	assert.Equal(t, "/workspace", spec.Mounts[0].Path)
-	assert.False(t, spec.Mounts[2].Persist)
+	assert.Equal(t, "/home/agent", spec.Mounts[0].Path)
+	assert.False(t, spec.Mounts[1].Persist)
 	assert.Contains(t, spec.Init, "pip install")
 	assert.Len(t, spec.Env, 1)
 	assert.Equal(t, "ACP_PORT", spec.Env[0].Name)
