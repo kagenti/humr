@@ -52,6 +52,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: "/home/agent"},
 		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.APIServerURL, name)},
+		{Name: "HUMR_MCP_TOKEN", Value: cfg.MCPInternalToken},
 	}
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})

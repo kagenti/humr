@@ -166,6 +166,7 @@ async function verifyOwner(instanceId: string, owner: string): Promise<boolean> 
 app.route("/", createMcpRoutes({
   channelManager,
   instancesRepo: createInstancesRepository(k8sClient),
+  internalToken: config.mcpInternalToken,
 }));
 
 app.all("/api/instances/:id/trpc/*", async (c) => {

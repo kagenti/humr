@@ -11,6 +11,7 @@ const schema = z.object({
   TRIGGERS_DIR: z.string().default("/home/agent/.triggers"),
   API_SERVER_URL: z.string().default(""),
   HUMR_MCP_URL: z.string().optional(),
+  HUMR_MCP_TOKEN: z.string().optional(),
 });
 
 export const config = schema.parse(process.env);

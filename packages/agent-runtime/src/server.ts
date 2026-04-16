@@ -125,7 +125,9 @@ if (config.HUMR_MCP_URL) {
     try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
   }
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
-  mcpServers["humr-outbound"] = { type: "http", url: config.HUMR_MCP_URL };
+  const headers: Record<string, string> = {};
+  if (config.HUMR_MCP_TOKEN) headers["x-humr-token"] = config.HUMR_MCP_TOKEN;
+  mcpServers["humr-outbound"] = { type: "http", url: config.HUMR_MCP_URL, headers };
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
   process.stderr.write(`[mcp] Wrote humr-outbound to ${mcpPath}\n`);

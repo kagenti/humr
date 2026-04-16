@@ -69,6 +69,11 @@ spec:
               value: "{{ include "humr.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
             - name: HUMR_API_SERVER_PORT
               value: {{ .Values.apiServer.port | quote }}
+            - name: MCP_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.fullname" . }}-mcp-token
+                  key: MCP_INTERNAL_TOKEN
             - name: HUMR_IDLE_TIMEOUT
               value: {{ .Values.controller.idleTimeout | default "1h" | quote }}
             - name: HUMR_TERMINATION_GRACE_PERIOD

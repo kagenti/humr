@@ -47,10 +47,16 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
 export function createMcpRoutes(deps: {
   channelManager: ChannelManager;
   instancesRepo: InstancesRepository;
+  internalToken?: string;
 }) {
   const app = new Hono();
 
   app.all("/api/instances/:id/mcp", async (c) => {
+    const token = c.req.header("x-humr-token");
+    if (!deps.internalToken || token !== deps.internalToken) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+
     const instanceId = c.req.param("id")!;
     if (!await deps.instancesRepo.get(instanceId)) {
       return c.json({ error: "not found" }, 404);
