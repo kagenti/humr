@@ -22,7 +22,11 @@ The agent explicitly decides what and when to post. Same mechanism for both inte
 
 Flow: harness → MCP tool → API Server → SlackWorker → Slack.
 
-**MCP endpoint** hosted on the API Server Hono app at `/api/instances/:id/mcp` using Streamable HTTP transport. Direct access to SlackWorker — no agent-runtime round-trip. Auth uses the same mechanism as the existing ACP WebSocket relay.
+**MCP endpoint** hosted on a dedicated port (separate from the admin API) at `/api/instances/:id/mcp` using Streamable HTTP transport. Direct access to SlackWorker — no agent-runtime round-trip.
+
+**Auth:** Agent-runtime sends its `ONECLI_ACCESS_TOKEN` as a Bearer header. The controller writes a SHA-256 hash of the token into the agent ConfigMap's `status.yaml` at registration time. The MCP endpoint verifies the hash and checks that the agent's owner matches the instance's owner.
+
+**Network isolation:** The MCP port is the only API server port allowed by the agent's NetworkPolicy — agents cannot reach the admin API (tRPC, OAuth, etc.).
 
 - Tool **always registered**; calls rejected at invocation time when no channel connected
 - Returns errors from Slack (bot removed, invalid channel) — harness handles
