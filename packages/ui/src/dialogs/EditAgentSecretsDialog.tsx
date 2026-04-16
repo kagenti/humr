@@ -69,7 +69,7 @@ export function EditAgentSecretsDialog({
     }
   };
 
-  // Classify each secret — renders consistently with the Connectors page
+  // Classify each secret — renders consistently with the Connections page
   const classify = (s: SecretView): "anthropic" | "mcp" | "secret" => {
     if (s.type === "anthropic") return "anthropic";
     if (s.name.startsWith("__humr_mcp:")) return "mcp";

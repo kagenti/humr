@@ -18,10 +18,10 @@ export function ConnectionsView() {
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [loading, setLoading] = useState(true);
-  const [addMode, setAddMode] = useState<null | "secret">(null);
+  const [showAddSecret, setShowAddSecret] = useState(false);
   const loaded = useRef(false);
 
-  // Generic-secret form
+  // Secret form
   const [secretForm, setSecretForm] = useState({
     name: "",
     value: "",
@@ -42,8 +42,7 @@ export function ConnectionsView() {
     load();
   }, [load]);
 
-  // Only show non-anthropic, non-MCP secrets
-  const genericConnectors = secrets.filter(
+  const customSecrets = secrets.filter(
     (s) => s.type !== "anthropic" && !s.name.startsWith("__humr_mcp:"),
   );
 
@@ -63,14 +62,14 @@ export function ConnectionsView() {
         hostPattern: secretForm.hostPattern.trim(),
       });
       setSecretForm({ name: "", value: "", hostPattern: "" });
-      setAddMode(null);
+      setShowAddSecret(false);
     } finally {
       setSavingSecret(false);
     }
   };
 
-  const deleteGeneric = async (id: string, name: string) => {
-    if (!(await showConfirm(`Delete "${name}"?`, "Delete Connection"))) return;
+  const removeSecret = async (id: string, name: string) => {
+    if (!(await showConfirm(`Delete "${name}"?`, "Delete Secret"))) return;
     await deleteSecret(id);
   };
 
@@ -93,10 +92,10 @@ export function ConnectionsView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        Credentials that OneCLI injects into your agents' outbound HTTP requests. Preconfigured OAuth apps and custom bearer tokens.
+        Credentials that OneCLI injects into your agents' outbound HTTP requests.
       </p>
 
-      {/* Apps section — link to OneCLI */}
+      {/* Apps */}
       {onecliUrl && (
         <section className="mb-8">
           <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
@@ -114,10 +113,10 @@ export function ConnectionsView() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[14px] font-semibold text-text">
-                Preconfigured Apps
+                GitHub, Google, Slack
               </div>
               <div className="text-[12px] text-text-muted">
-                GitHub, Google, Slack and other OAuth apps — managed in OneCLI
+                OAuth apps managed in OneCLI
               </div>
             </div>
             <ExternalLink size={14} className="text-text-muted shrink-0" />
@@ -125,11 +124,13 @@ export function ConnectionsView() {
         </section>
       )}
 
-      {/* Secrets list */}
-      <section className="mb-6">
-        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
-          Secrets
-        </h2>
+      {/* Secrets */}
+      <section>
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+            Secrets
+          </h2>
+        </div>
 
         {!loaded.current && (
           <div className="flex flex-col gap-3">
@@ -138,15 +139,15 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {loaded.current && genericConnectors.length === 0 && addMode === null && (
+        {loaded.current && customSecrets.length === 0 && !showAddSecret && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-10 text-center text-[14px] text-text-muted anim-in">
-            No custom secrets yet — add one below
+            No custom secrets yet
           </div>
         )}
 
         {loaded.current && (
           <div className="flex flex-col gap-3">
-            {genericConnectors.map((s, i) => (
+            {customSecrets.map((s, i) => (
               <div
                 key={s.id}
                 className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
@@ -170,7 +171,7 @@ export function ConnectionsView() {
                   Secret
                 </span>
                 <button
-                  onClick={() => deleteGeneric(s.id, s.name)}
+                  onClick={() => removeSecret(s.id, s.name)}
                   className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger"
                   style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                   title="Remove"
@@ -181,75 +182,45 @@ export function ConnectionsView() {
             ))}
           </div>
         )}
-      </section>
 
-      {/* Add connection */}
-      <section className="anim-in">
-        {!loaded.current ? null : addMode === null ? (
-          <div className="flex flex-col gap-3">
-            <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-              Add Connection
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Add secret — inline button / form (like MCP tab) */}
+        {loaded.current && (
+          <div className="mt-4 anim-in">
+            {!showAddSecret ? (
               <button
-                onClick={() => setAddMode("secret")}
-                className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex flex-col gap-2 hover:border-accent hover:bg-accent-light transition-colors"
+                onClick={() => setShowAddSecret(true)}
+                className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex items-center gap-3 hover:border-accent hover:bg-accent-light transition-colors w-full"
                 style={{ boxShadow: "var(--shadow-brutal-sm)" }}
               >
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                    <Lock size={18} />
-                  </div>
-                  <Plus size={14} className="text-text-muted ml-auto" />
+                <div className="w-8 h-8 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
+                  <Lock size={16} />
                 </div>
-                <div>
-                  <div className="text-[13px] font-bold text-text">Secret</div>
-                  <div className="text-[11px] text-text-muted">Token for a custom host</div>
+                <div className="flex-1">
+                  <div className="text-[13px] font-bold text-text">Add Secret</div>
+                  <div className="text-[11px] text-text-muted">Bearer token for a custom host</div>
                 </div>
+                <Plus size={14} className="text-text-muted" />
               </button>
-              {onecliUrl && (
-                <a
-                  href={`${onecliUrl}/connections`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex flex-col gap-2 hover:border-accent hover:bg-accent-light transition-colors"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                      <KeyRound size={18} />
-                    </div>
-                    <ExternalLink size={14} className="text-text-muted ml-auto" />
-                  </div>
-                  <div>
-                    <div className="text-[13px] font-bold text-text">Preconfigured App</div>
-                    <div className="text-[11px] text-text-muted">GitHub, Google, etc.</div>
-                  </div>
-                </a>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div
-            className="rounded-xl border-2 border-border bg-surface p-6 flex flex-col gap-4 anim-scale-in"
-            style={{ boxShadow: "var(--shadow-brutal)" }}
-          >
-            <div className="flex items-center gap-3">
-              <h3 className="text-[14px] font-bold text-text">Add Secret</h3>
-              <button
-                className="ml-auto text-text-muted hover:text-text"
-                onClick={() => setAddMode(null)}
-                title="Cancel"
+            ) : (
+              <div
+                className="rounded-xl border-2 border-border bg-surface p-6 flex flex-col gap-4 anim-scale-in"
+                style={{ boxShadow: "var(--shadow-brutal)" }}
               >
-                <X size={16} />
-              </button>
-            </div>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-[14px] font-bold text-text">Add Secret</h3>
+                  <button
+                    className="ml-auto text-text-muted hover:text-text"
+                    onClick={() => setShowAddSecret(false)}
+                    title="Cancel"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
 
-            <div className="flex flex-col gap-5">
-              <p className="text-[13px] text-text-secondary leading-relaxed">
-                Injects a bearer token into outgoing HTTP requests whose host
-                matches the pattern below.
-              </p>
+                <p className="text-[13px] text-text-secondary leading-relaxed">
+                  Injects a bearer token into outgoing HTTP requests whose host
+                  matches the pattern below.
+                </p>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
@@ -265,7 +236,7 @@ export function ConnectionsView() {
                     autoFocus
                   />
                   <p className="text-[11px] text-text-muted">
-                    A label so you can identify this connection later.
+                    A label so you can identify this secret later.
                   </p>
                 </div>
 
@@ -330,10 +301,10 @@ export function ConnectionsView() {
                   </button>
                 </div>
               </div>
+            )}
           </div>
         )}
       </section>
-
     </div>
   );
 }

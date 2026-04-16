@@ -32,8 +32,8 @@ export function McpsPanel({
     return (
       <div className="px-4 py-4 text-[12px] text-text-muted">
         {accessMode === "selective"
-          ? "No MCP connectors assigned to this agent."
-          : "No MCP connectors configured."}
+          ? "No MCP connections assigned to this agent."
+          : "No MCP connections configured."}
       </div>
     );
   }

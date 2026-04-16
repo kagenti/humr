@@ -186,9 +186,9 @@ export function ListView() {
                         onClick={() => setShowSecretsDlg(agent.id)}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                        title="Manage agent connectors"
+                        title="Manage agent connections"
                       >
-                        <KeyRound size={12} /> Connectors
+                        <KeyRound size={12} /> Connections
                       </button>
                       <button
                         onClick={() => setShowInstDlg(agent.id)}
