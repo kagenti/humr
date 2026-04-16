@@ -4,7 +4,6 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import type { ChannelManager } from "./modules/channels/services/ChannelManager.js";
 import type { InstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
-import type { UserIdentity } from "api-server-api";
 
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
@@ -49,19 +48,11 @@ export function createMcpRoutes(deps: {
   channelManager: ChannelManager;
   instancesRepo: InstancesRepository;
 }) {
-  const app = new Hono<{ Variables: { user: UserIdentity } }>();
-
-  async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
-    return deps.instancesRepo.isOwnedBy(instanceId, owner);
-  }
+  const app = new Hono();
 
   app.all("/api/instances/:id/mcp", async (c) => {
     const instanceId = c.req.param("id")!;
-    const user = c.get("user") as UserIdentity | undefined;
-    if (user && !await verifyOwner(instanceId, user.sub)) {
-      return c.json({ error: "not found" }, 404);
-    }
-    if (!user && !await deps.instancesRepo.get(instanceId)) {
+    if (!await deps.instancesRepo.get(instanceId)) {
       return c.json({ error: "not found" }, 404);
     }
 
