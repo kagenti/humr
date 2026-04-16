@@ -93,10 +93,24 @@ jobs:
           cache-from: type=gha,scope=example-agent
           cache-to: type=gha,mode=max,scope=example-agent
 
+  helm-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build-images, build-example-agent]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Log in to GHCR OCI
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
+      - name: Package Helm chart
+        run: helm package deploy/helm/humr --version 0.0.0-main --app-version main
+      - name: Push to OCI registry
+        run: helm push humr-0.0.0-main.tgz oci://ghcr.io/kagenti/humr/charts
+
   deploy:
     runs-on: arc-runner-set
     timeout-minutes: 10
-    needs: [build-images, build-example-agent]
+    needs: helm-package
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
