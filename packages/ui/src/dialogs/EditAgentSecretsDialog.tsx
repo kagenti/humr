@@ -102,11 +102,12 @@ export function EditAgentSecretsDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h2 className="text-[20px] font-bold text-text">Credential Access</h2>
+          <h2 className="text-[20px] font-bold text-text">Credential Injection</h2>
           <p className="text-[12px] text-text-muted mt-1">
-            Credentials are injected by the OneCLI gateway at request time —{" "}
-            <span className="font-semibold text-text-secondary">{agentName}</span>{" "}
-            never sees raw values.
+            OneCLI injects credentials into{" "}
+            <span className="font-semibold text-text-secondary">{agentName}</span>'s
+            outbound requests when the destination host matches. Values stay in
+            OneCLI — the agent never sees them.
           </p>
         </div>
 
@@ -116,14 +117,14 @@ export function EditAgentSecretsDialog({
             active={mode === "all"}
             icon={<Globe size={16} />}
             title="All credentials"
-            description="Every secret and app connection"
+            description="Any matching credential"
             onClick={() => setMode("all")}
           />
           <ModeCard
             active={mode === "selective"}
             icon={<Lock size={16} />}
             title="Selective"
-            description="Choose specific credentials"
+            description="Only credentials you pick"
             onClick={() => setMode("selective")}
           />
         </div>
@@ -143,10 +144,11 @@ export function EditAgentSecretsDialog({
         ) : mode === "all" ? (
           <div className="rounded-lg border-2 border-border-light bg-surface-raised px-5 py-6 text-center">
             <p className="text-[13px] text-text-secondary">
-              Agent has access to <strong>all {secrets.length} credentials</strong>.
+              OneCLI may inject any of your <strong>{secrets.length} credentials</strong>{" "}
+              when the destination host matches.
             </p>
             <p className="text-[11px] text-text-muted mt-1">
-              Switch to <em>Selective</em> to restrict which credentials the agent can use.
+              Switch to <em>Selective</em> to restrict the set.
             </p>
           </div>
         ) : (

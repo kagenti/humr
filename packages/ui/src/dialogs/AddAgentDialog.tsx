@@ -147,9 +147,9 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
               <input className={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" />
             </label>
 
-            {/* Credential Access */}
+            {/* Credential Injection */}
             <div className="flex flex-col gap-3">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Credential Access</span>
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Credential Injection</span>
 
               {/* Mode toggle */}
               <div className="grid grid-cols-2 gap-2">
@@ -162,7 +162,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
                     <Globe size={12} className="text-text-secondary" />
                     <span className="text-[12px] font-bold text-text">All credentials</span>
                   </div>
-                  <span className="text-[11px] text-text-muted">Every secret, including new ones</span>
+                  <span className="text-[11px] text-text-muted">Any matching credential, now or later</span>
                 </button>
                 <button
                   type="button"
@@ -173,15 +173,16 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
                     <Lock size={12} className="text-text-secondary" />
                     <span className="text-[12px] font-bold text-text">Selective</span>
                   </div>
-                  <span className="text-[11px] text-text-muted">Choose specific credentials</span>
+                  <span className="text-[11px] text-text-muted">Only credentials you pick</span>
                 </button>
               </div>
 
-              {secretMode === "all" ? (
-                <p className="text-[12px] text-text-muted leading-relaxed">
-                  Agent will have access to all your current secrets, MCP connections, and any credentials you add later.
-                </p>
-              ) : null}
+              <p className="text-[12px] text-text-muted leading-relaxed">
+                OneCLI injects credentials into this agent's outbound requests when the destination host matches. Values stay in OneCLI — the agent never sees them.{" "}
+                {secretMode === "all"
+                  ? "Any credential is eligible, including ones you add later."
+                  : "Only the credentials you pick are eligible."}
+              </p>
 
               {loadSecrets && <span className="text-[12px] text-text-muted">Loading...</span>}
               {!loadSecrets && secrets.length === 0 && (
