@@ -1,13 +1,10 @@
-# Humr
-
-```
- ╦ ╦╦ ╦╔╦╗╔═╗
- ╠═╣║ ║║║║╠╦╝
- ╩ ╩╚═╝╩ ╩╩╚═
-
- Run your own background agents on Kubernetes.
- Isolated by default. Credentialed. Always-on.
-```
+<p align="center">
+  <img src="docs/assets/logo.svg" width="120" alt="Humr logo" />
+</p>
+<h3 align="center">
+  Run your own background agents on Kubernetes.<br/>
+  Isolated by default. Credentialed. Always-on.
+</h3>
 
 Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. Humr gives Claude Code, Codex, Gemini CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
 
