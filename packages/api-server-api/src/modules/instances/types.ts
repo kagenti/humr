@@ -1,6 +1,6 @@
-import { type EnvVar, ChannelType } from "../shared.js";
+import { type EnvVar, ChannelType, type UnifiedBackend } from "../shared.js";
 
-export { ChannelType };
+export { ChannelType, type UnifiedBackend };
 
 export interface Channel {
   type: ChannelType;
@@ -11,7 +11,33 @@ export interface SlackChannel extends Channel {
   slackChannelId: string;
 }
 
-export type ChannelConfig = SlackChannel;
+export interface TelegramChannel extends Channel {
+  type: ChannelType.Telegram;
+  telegramChatId: string;
+}
+
+export interface UnifiedChannel extends Channel {
+  type: ChannelType.Unified;
+  backend: UnifiedBackend;
+  slackChannelId?: string;
+  telegramChatId?: string;
+}
+
+export type ChannelConfig = SlackChannel | TelegramChannel | UnifiedChannel;
+
+export interface ConnectTelegramInput {
+  botToken: string;
+  telegramChatId: string;
+}
+
+export interface ConnectUnifiedInput {
+  backend: UnifiedBackend;
+  slackBotToken?: string;
+  slackAppToken?: string;
+  slackChannelId?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+}
 
 export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
 
@@ -51,4 +77,8 @@ export interface InstancesService {
   wake: (id: string) => Promise<Instance | null>;
   connectSlack: (id: string, slackChannelId: string) => Promise<Instance | null>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
+  connectTelegram: (id: string, input: ConnectTelegramInput) => Promise<Instance | null>;
+  disconnectTelegram: (id: string) => Promise<Instance | null>;
+  connectUnified: (id: string, input: ConnectUnifiedInput) => Promise<Instance | null>;
+  disconnectUnified: (id: string) => Promise<Instance | null>;
 }

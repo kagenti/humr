@@ -2,14 +2,19 @@ import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
+import {
+  deleteChannelsByInstance, listChannelsByInstance,
+} from "./modules/agents/infrastructure/channels-repository.js";
 import { upsertSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
+import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
+import { createUnifiedWorker } from "./modules/channels/infrastructure/unified-worker.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
-  findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
+  findIdentityLink, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
+import type { PendingOAuthFlow } from "./auth/identity-oauth.js";
 import { loadConfig } from "./config.js";
 import { createOnecliClient } from "./onecli.js";
 import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
@@ -38,15 +43,20 @@ const systemInstances = composeSystemInstances(api, config.namespace, db);
 const persistSession = upsertSession(db);
 
 const identityLinkService = createIdentityLinkService({
-  findBySlackUser: findIdentityBySlackUser(db),
+  find: findIdentityLink(db),
   upsert: upsertIdentityLink(db),
   delete: deleteIdentityLink(db),
 });
 
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
+const pendingChannelOAuthFlows = new Map<string, PendingOAuthFlow>();
 
 const slackOauthCallbackUrl = config.slackOauthCallbackUrl
   ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+const channelOauthCallbackUrl = config.channelOauthCallbackUrl
+  ?? `${config.uiBaseUrl}/api/channel/oauth/callback`;
+
+const fetchChannelsForManager = listChannelsByInstance(db, "");
 
 const channelManager = createChannelManager({
   slackWorker: config.slackBotToken && config.slackAppToken
@@ -66,10 +76,48 @@ const channelManager = createChannelManager({
         pendingSlackOAuthFlows,
       )
     : undefined,
+  telegramWorker: config.telegramEnabled
+    ? createTelegramWorker(
+        config.namespace,
+        () => systemInstances,
+        persistSession,
+        identityLinkService,
+        {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: channelOauthCallbackUrl,
+        },
+        pendingChannelOAuthFlows,
+      )
+    : undefined,
+  unifiedWorker: config.unifiedChannelEnabled
+    ? createUnifiedWorker(
+        config.namespace,
+        () => systemInstances,
+        persistSession,
+        identityLinkService,
+        {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: channelOauthCallbackUrl,
+        },
+        pendingChannelOAuthFlows,
+      )
+    : undefined,
+  fetchChannels: fetchChannelsForManager,
 });
 
 const { server: apiServer } = startApiServerApp({
-  config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows,
+  config,
+  api,
+  db,
+  onecli,
+  channelManager,
+  identityLinkService,
+  pendingSlackOAuthFlows,
+  pendingChannelOAuthFlows,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -77,7 +125,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
 });
 
 systemInstances.list().then((all) => {
-  channelManager.bootstrap(all);
+  channelManager.bootstrap(all).catch(() => {});
 }).catch(() => {});
 
 async function shutdown() {

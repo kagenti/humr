@@ -121,6 +121,17 @@ export interface HumrStore {
   updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
+  connectTelegram: (id: string, input: { botToken: string; telegramChatId: string }) => Promise<void>;
+  disconnectTelegram: (id: string) => Promise<void>;
+  connectUnified: (id: string, input: {
+    backend: "slack" | "telegram";
+    slackBotToken?: string;
+    slackAppToken?: string;
+    slackChannelId?: string;
+    telegramBotToken?: string;
+    telegramChatId?: string;
+  }) => Promise<void>;
+  disconnectUnified: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;
   goBack: () => void;
 
@@ -393,6 +404,42 @@ export const useStore = create<HumrStore>((set, get) => ({
       await get().fetchInstances();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to disconnect Slack");
+    }
+  },
+
+  connectTelegram: async (id, input) => {
+    try {
+      await platform.instances.connectTelegram.mutate({ id, ...input });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to connect Telegram");
+    }
+  },
+
+  disconnectTelegram: async (id) => {
+    try {
+      await platform.instances.disconnectTelegram.mutate({ id });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to disconnect Telegram");
+    }
+  },
+
+  connectUnified: async (id, input) => {
+    try {
+      await platform.instances.connectUnified.mutate({ id, ...input });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to connect Unified channel");
+    }
+  },
+
+  disconnectUnified: async (id) => {
+    try {
+      await platform.instances.disconnectUnified.mutate({ id });
+      await get().fetchInstances();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to disconnect Unified channel");
     }
   },
 

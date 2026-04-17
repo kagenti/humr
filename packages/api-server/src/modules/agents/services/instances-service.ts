@@ -2,21 +2,28 @@ import type {
   InstancesService,
   CreateInstanceInput,
   UpdateInstanceInput,
-  ChannelConfig,
+  ConnectTelegramInput,
+  ConnectUnifiedInput,
   Agent,
 } from "api-server-api";
 import { SPEC_VERSION, ChannelType } from "api-server-api";
 import type { InstancesRepository } from "./../infrastructure/instances-repository.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit, EventType } from "../../../events.js";
+import {
+  toPublicChannel,
+  type StoredChannelConfig,
+  type StoredTelegramChannel,
+  type StoredUnifiedChannel,
+} from "../../channels/domain/stored-channel-config.js";
 
 export function createInstancesService(deps: {
   repo: InstancesRepository;
   owner: string | undefined;
   getAgent: (id: string) => Promise<Agent | null>;
-  listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
-  listChannelsByInstance: (instanceId: string) => Promise<ChannelConfig[]>;
-  upsertChannel: (instanceId: string, channel: ChannelConfig) => Promise<void>;
+  listChannelsByOwner: () => Promise<Map<string, StoredChannelConfig[]>>;
+  listChannelsByInstance: (instanceId: string) => Promise<StoredChannelConfig[]>;
+  upsertChannel: (instanceId: string, channel: StoredChannelConfig) => Promise<void>;
   deleteChannelByType: (instanceId: string, type: ChannelType) => Promise<void>;
   deleteChannelsByInstanceIds: (instanceIds: string[]) => Promise<void>;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
@@ -24,6 +31,10 @@ export function createInstancesService(deps: {
   setAllowedUsers: (instanceId: string, subs: string[]) => Promise<void>;
   deleteAllowedUsersByInstanceIds: (instanceIds: string[]) => Promise<void>;
 }): InstancesService {
+  function publish(channels: StoredChannelConfig[]) {
+    return channels.map(toPublicChannel);
+  }
+
   return {
     async list() {
       const [infraInstances, channelMap, allowedUsersMap] = await Promise.all([
@@ -47,7 +58,11 @@ export function createInstancesService(deps: {
       }
 
       return infraInstances.map((infra) =>
-        assembleInstance(infra, channelMap.get(infra.id) ?? [], allowedUsersMap.get(infra.id) ?? []),
+        assembleInstance(
+          infra,
+          publish(channelMap.get(infra.id) ?? []),
+          allowedUsersMap.get(infra.id) ?? [],
+        ),
       );
     },
 
@@ -58,7 +73,7 @@ export function createInstancesService(deps: {
         deps.listAllowedUsersByInstance(id),
       ]);
       if (!infra) return null;
-      return assembleInstance(infra, channels, allowed);
+      return assembleInstance(infra, publish(channels), allowed);
     },
 
     async create(input: CreateInstanceInput) {
@@ -97,7 +112,7 @@ export function createInstancesService(deps: {
         deps.listChannelsByInstance(input.id),
         deps.listAllowedUsersByInstance(input.id),
       ]);
-      const instance = assembleInstance(infra, channels, allowed);
+      const instance = assembleInstance(infra, publish(channels), allowed);
 
       emit({ type: EventType.InstanceUpdated, instanceId: input.id });
       return instance;
@@ -111,7 +126,7 @@ export function createInstancesService(deps: {
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      const instance = assembleInstance(infra, channels, allowed);
+      const instance = assembleInstance(infra, publish(channels), allowed);
 
       if (infra.desiredState === "running") {
         emit({ type: EventType.InstanceWoken, instanceId: id });
@@ -123,15 +138,14 @@ export function createInstancesService(deps: {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
 
-      const channel = { type: ChannelType.Slack, slackChannelId } as ChannelConfig;
-      await deps.upsertChannel(id, channel);
+      await deps.upsertChannel(id, { type: ChannelType.Slack, slackChannelId });
       emit({ type: EventType.SlackConnected, instanceId: id, slackChannelId });
 
       const [channels, allowed] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      return assembleInstance(infra, channels, allowed);
+      return assembleInstance(infra, publish(channels), allowed);
     },
 
     async disconnectSlack(id) {
@@ -145,7 +159,77 @@ export function createInstancesService(deps: {
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      return assembleInstance(infra, channels, allowed);
+      return assembleInstance(infra, publish(channels), allowed);
+    },
+
+    async connectTelegram(id, input: ConnectTelegramInput) {
+      const infra = await deps.repo.get(id, deps.owner);
+      if (!infra) return null;
+
+      const stored: StoredTelegramChannel = {
+        type: ChannelType.Telegram,
+        telegramChatId: input.telegramChatId,
+        botToken: input.botToken,
+      };
+      await deps.upsertChannel(id, stored);
+      emit({ type: EventType.TelegramConnected, instanceId: id, telegramChatId: input.telegramChatId });
+
+      const [channels, allowed] = await Promise.all([
+        deps.listChannelsByInstance(id),
+        deps.listAllowedUsersByInstance(id),
+      ]);
+      return assembleInstance(infra, publish(channels), allowed);
+    },
+
+    async disconnectTelegram(id) {
+      const infra = await deps.repo.get(id, deps.owner);
+      if (!infra) return null;
+
+      await deps.deleteChannelByType(id, ChannelType.Telegram);
+      emit({ type: EventType.TelegramDisconnected, instanceId: id });
+
+      const [channels, allowed] = await Promise.all([
+        deps.listChannelsByInstance(id),
+        deps.listAllowedUsersByInstance(id),
+      ]);
+      return assembleInstance(infra, publish(channels), allowed);
+    },
+
+    async connectUnified(id, input: ConnectUnifiedInput) {
+      const infra = await deps.repo.get(id, deps.owner);
+      if (!infra) return null;
+
+      const stored: StoredUnifiedChannel = {
+        type: ChannelType.Unified,
+        backend: input.backend,
+        slackChannelId: input.slackChannelId,
+        slackBotToken: input.slackBotToken,
+        slackAppToken: input.slackAppToken,
+        telegramChatId: input.telegramChatId,
+        telegramBotToken: input.telegramBotToken,
+      };
+      await deps.upsertChannel(id, stored);
+      emit({ type: EventType.UnifiedConnected, instanceId: id, backend: input.backend });
+
+      const [channels, allowed] = await Promise.all([
+        deps.listChannelsByInstance(id),
+        deps.listAllowedUsersByInstance(id),
+      ]);
+      return assembleInstance(infra, publish(channels), allowed);
+    },
+
+    async disconnectUnified(id) {
+      const infra = await deps.repo.get(id, deps.owner);
+      if (!infra) return null;
+
+      await deps.deleteChannelByType(id, ChannelType.Unified);
+      emit({ type: EventType.UnifiedDisconnected, instanceId: id });
+
+      const [channels, allowed] = await Promise.all([
+        deps.listChannelsByInstance(id),
+        deps.listAllowedUsersByInstance(id),
+      ]);
+      return assembleInstance(infra, publish(channels), allowed);
     },
 
     async delete(id) {

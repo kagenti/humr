@@ -227,6 +227,13 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
+  # -- Enable per-instance Telegram channel workers (#92). Each instance supplies its own bot token.
+  telegramEnabled: false
+  # -- Enable the unified (ChatAdapter-based) channel worker used for A/B comparing parallel vs. abstracted implementations.
+  unifiedChannelEnabled: false
+  # -- Base64-encoded 32-byte key used to encrypt per-instance channel tokens in the DB.
+  # Required when telegramEnabled or unifiedChannelEnabled is true; auto-generated if left empty.
+  channelEncryptionKey: ""
 
   # -- Database connection (empty host = use shared local postgres)
   db:

@@ -36,17 +36,27 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
     version: "1.0.0",
   });
 
+  const postToChannel = async ({ text }: { text: string }) => {
+    const result = await channelManager.postMessage(instanceId, text);
+    if ("error" in result) {
+      return { content: [{ type: "text" as const, text: result.error }], isError: true };
+    }
+    return { content: [{ type: "text" as const, text: "Message sent" }] };
+  };
+
+  server.tool(
+    "send_channel_message",
+    "Send a message to the chat channel (Slack, Telegram, or Unified) connected to this agent instance",
+    { text: z.string() },
+    postToChannel,
+  );
+
+  // Deprecated alias — kept for backwards compatibility with existing agents.
   server.tool(
     "send_slack_message",
-    "Send a message to the Slack channel connected to this agent instance",
+    "Deprecated: use send_channel_message. Sends to whatever channel type is connected.",
     { text: z.string() },
-    async ({ text }) => {
-      const result = await channelManager.postMessage(instanceId, text);
-      if ("error" in result) {
-        return { content: [{ type: "text" as const, text: result.error }], isError: true };
-      }
-      return { content: [{ type: "text" as const, text: "Message sent" }] };
-    },
+    postToChannel,
   );
 
   const transport = new WebStandardStreamableHTTPServerTransport({

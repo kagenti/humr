@@ -73,4 +73,62 @@ export const instancesRouter = t.router({
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return inst;
     }),
+
+  connectTelegram: t.procedure
+    .input(z.object({
+      id: z.string().min(1),
+      botToken: z.string().min(1),
+      telegramChatId: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.channels.available.telegram) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Telegram worker not enabled" });
+      }
+      const inst = await ctx.instances.connectTelegram(input.id, {
+        botToken: input.botToken,
+        telegramChatId: input.telegramChatId,
+      });
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return inst;
+    }),
+
+  disconnectTelegram: t.procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const inst = await ctx.instances.disconnectTelegram(input.id);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return inst;
+    }),
+
+  connectUnified: t.procedure
+    .input(z.object({
+      id: z.string().min(1),
+      backend: z.enum(["slack", "telegram"]),
+      slackBotToken: z.string().optional(),
+      slackAppToken: z.string().optional(),
+      slackChannelId: z.string().optional(),
+      telegramBotToken: z.string().optional(),
+      telegramChatId: z.string().optional(),
+    }).refine(
+      (v) => v.backend === "slack"
+        ? !!(v.slackBotToken && v.slackAppToken && v.slackChannelId)
+        : !!(v.telegramBotToken && v.telegramChatId),
+      { message: "Required credentials missing for selected backend" },
+    ))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.channels.available.unified) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Unified channel worker not enabled" });
+      }
+      const inst = await ctx.instances.connectUnified(input.id, input);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return inst;
+    }),
+
+  disconnectUnified: t.procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const inst = await ctx.instances.disconnectUnified(input.id);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return inst;
+    }),
 });

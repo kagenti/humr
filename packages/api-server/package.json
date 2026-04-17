@@ -16,6 +16,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@slack/bolt": "^4.7.0",
     "@trpc/server": "^11.16.0",
+    "grammy": "^1.28.0",
     "api-server-api": "workspace:*",
     "cron-parser": "^5.5.0",
     "db": "workspace:*",
