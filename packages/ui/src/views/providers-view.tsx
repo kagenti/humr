@@ -83,7 +83,7 @@ export function ProvidersView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        API keys for the AI harnesses that power your agents.
+        Provider credentials for the AI harnesses that power your agents.
       </p>
 
       {/* Anthropic */}
@@ -105,7 +105,7 @@ export function ProvidersView() {
                   <AuthModeBadge mode={anthropic.authMode} />
                 </div>
                 <div className="text-[12px] text-text-muted">
-                  Connected — powers Claude Code agents
+                  Connected — available to agents that use Anthropic-backed harnesses
                 </div>
               </div>
               <button
@@ -130,7 +130,7 @@ export function ProvidersView() {
               <div>
                 <div className="text-[15px] font-bold text-text">Anthropic</div>
                 <div className="text-[12px] text-text-muted">
-                  Required for Claude Code agents. Paste an API key (
+                  Use this with agents that talk to Anthropic. Paste an API key (
                   <span className="font-mono">sk-ant-api…</span>) or an OAuth
                   token (<span className="font-mono">sk-ant-oat…</span>) — the
                   type is detected automatically.
@@ -145,7 +145,7 @@ export function ProvidersView() {
                   Quick setup
                 </div>
                 <div className="text-[13px] text-text-secondary">
-                  Run this inside a Claude Code agent to generate a token:
+                  If you use Claude Code locally, run this to generate a token:
                 </div>
                 <code className="text-[13px] font-mono font-semibold text-accent mt-1 block">
                   claude setup-token

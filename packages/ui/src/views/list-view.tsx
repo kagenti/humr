@@ -112,7 +112,7 @@ export function ListView() {
           !hasProvider ? (
             <div className="flex flex-col items-center justify-center py-20">
               <h2 className="text-[20px] font-bold text-text mb-2">Get started</h2>
-              <p className="text-[13px] text-text-muted mb-8">Two steps to your first AI agent</p>
+              <p className="text-[13px] text-text-muted mb-8">Two steps to your first coding agent</p>
               <div className="flex flex-col gap-4 w-full max-w-md">
                 <button
                   onClick={() => setView("providers")}
@@ -124,7 +124,7 @@ export function ListView() {
                   </div>
                   <div>
                     <div className="text-[14px] font-bold text-text">Set up a provider</div>
-                    <div className="text-[12px] text-text-muted">Your agents need an API key to reach an AI model</div>
+                    <div className="text-[12px] text-text-muted">Your agents need credentials for at least one AI model provider</div>
                   </div>
                 </button>
                 <button

@@ -151,7 +151,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
                 <Sparkles size={16} className="text-warning shrink-0" />
                 <p className="text-[12px] text-text-secondary">
-                  No provider configured — this agent won't be able to reach an AI model.{" "}
+                  No AI provider configured — this agent won't be able to reach a model yet.{" "}
                   <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>Set one up</button>
                 </p>
               </div>
