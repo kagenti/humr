@@ -40,6 +40,10 @@ func BuildPVCs(name string, agentSpec *types.AgentSpec, cfg *config.Config, owne
 				},
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
+				// RWO: only one Job pod mounts this at a time (enforced by the
+				// controller's one-active-Job-per-instance invariant). RWX would
+				// remove this coupling but requires NFS/CephFS/EFS — not available
+				// on most default StorageClasses (local-path, gp3, pd-standard).
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
