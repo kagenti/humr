@@ -19,35 +19,20 @@ A Humr agent template with the [Google Workspace CLI (`gws`)](https://github.com
    - Add your Google email as a **test user**
 5. **Create OAuth Client ID** — go to **APIs & Services > Credentials > + Create Credentials > OAuth client ID**:
    - Application type: **Web application**
+   - Add **Authorized redirect URIs**:
+     - `http://localhost:4444/api/apps/google-drive/callback`
+     - `http://localhost:4444/api/apps/gmail/callback`
    - Save the **Client ID** and **Client Secret**
 
-### 2. Get an Access Token
+### 2. Connect Google Drive in OneCLI
 
-Google's OAuth redirect URI policy doesn't support subdomain URLs like `onecli.localhost:4444` (see #154). Until that's resolved, use the **Google OAuth Playground** to get an access token:
+1. Open OneCLI at http://localhost:4444
+2. Navigate to **Apps** (or **Connectors**)
+3. Add **Google Drive** with your **Client ID** and **Client Secret** from step 1
+4. Complete the Google OAuth consent flow
+5. Grant the google-workspace agent access to this credential
 
-1. Go to https://developers.google.com/oauthplayground
-2. Click the **gear icon** (settings) in the top right
-3. Check **"Use your own OAuth credentials"**
-4. Enter your **Client ID** and **Client Secret** from step 1
-5. In the left panel, select the scopes you need:
-   - **Drive API v3** — `https://www.googleapis.com/auth/drive`
-   - **Gmail API v1** — `https://www.googleapis.com/auth/gmail.modify`
-6. Click **Authorize APIs** and sign in with your Google account
-7. Click **Exchange authorization code for tokens**
-8. Copy the **Access token**
-
-> **Note:** Access tokens expire after ~1 hour. Repeat steps 6-8 to get a new one. Automatic refresh is tracked in #153.
-
-### 3. Add the Credential in Humr
-
-1. Open the Humr UI and go to the **Connectors** page
-2. Add a new **generic secret**:
-   - **Host**: `*.googleapis.com`
-   - **Header**: `Authorization`
-   - **Value**: `Bearer <paste-your-access-token>`
-3. Grant the google-workspace agent access to this credential
-
-### 4. Create an Agent
+### 3. Create an Agent
 
 1. Create a new agent from the **google-workspace** template
 2. Create an instance
@@ -67,9 +52,4 @@ The agent never sees your real Google credentials.
 
 ## Token Lifecycle
 
-V1 uses short-lived access tokens (~1 hour). When the token expires, `gws` commands will return 401 errors. To refresh:
-
-1. Repeat the OAuth Playground flow (steps 6-8 above) to get a new access token
-2. Update the secret value in the Humr Connectors page
-
-Automatic token refresh using refresh tokens is tracked in #153.
+OneCLI stores the OAuth refresh token and automatically exchanges it for a new access token when the current one expires. No manual intervention is needed after the initial OAuth consent.
