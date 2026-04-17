@@ -306,7 +306,16 @@ export function createSlackWorker(
     }
 
     const instance = await instances().get(instanceName);
-    if (instance && instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(keycloakSub)) {
+    if (!instance) {
+      unregisterInstance(instanceName);
+      await app.client.chat.postMessage({
+        channel: event.channel,
+        thread_ts: threadTs,
+        text: `Instance "${instanceName}" no longer exists. It has been disconnected from this channel.`,
+      });
+      return;
+    }
+    if (instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(keycloakSub)) {
       await app.client.chat.postEphemeral({
         channel: event.channel,
         user: slackUserId,
@@ -335,7 +344,16 @@ export function createSlackWorker(
 
     const instanceName = action.selected_option.value;
     const instance = await instances().get(instanceName);
-    if (instance && instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(pending.keycloakSub)) {
+    if (!instance) {
+      unregisterInstance(instanceName);
+      await app.client.chat.postEphemeral({
+        channel: pending.channel,
+        user: body.user.id,
+        text: `Instance "${instanceName}" no longer exists. It has been disconnected from this channel.`,
+      });
+      return;
+    }
+    if (instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(pending.keycloakSub)) {
       await app.client.chat.postEphemeral({
         channel: pending.channel,
         user: body.user.id,
