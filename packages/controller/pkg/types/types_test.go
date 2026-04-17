@@ -10,7 +10,7 @@ import (
 // --- Agent ---
 
 const fixtureTemplateYAML = `version: humr.ai/v1
-image: ghcr.io/myorg/code-guardian:latest
+image: ghcr.io/myorg/claude-code:latest
 description: "Persistent agent for repo monitoring"
 mounts:
   - path: /home/agent
@@ -41,7 +41,7 @@ func TestParseAgentSpec(t *testing.T) {
 	spec, err := ParseAgentSpec(fixtureTemplateYAML)
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
-	assert.Equal(t, "ghcr.io/myorg/code-guardian:latest", spec.Image)
+	assert.Equal(t, "ghcr.io/myorg/claude-code:latest", spec.Image)
 	assert.Equal(t, "Persistent agent for repo monitoring", spec.Description)
 	assert.Len(t, spec.Mounts, 2)
 	assert.True(t, spec.Mounts[0].Persist)
@@ -90,7 +90,7 @@ mounts:
 func TestParseInstanceSpec(t *testing.T) {
 	spec, err := ParseInstanceSpec(`version: humr.ai/v1
 desiredState: running
-agentId: code-guardian
+agentId: claude-code
 env:
   - name: GITHUB_ORG
     value: "team-alpha"
@@ -99,7 +99,7 @@ secretRef: cg-team-alpha-secrets
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "running", spec.DesiredState)
-	assert.Equal(t, "code-guardian", spec.AgentName)
+	assert.Equal(t, "claude-code", spec.AgentName)
 	assert.Equal(t, "cg-team-alpha-secrets", spec.SecretRef)
 	assert.Len(t, spec.Env, 1)
 }

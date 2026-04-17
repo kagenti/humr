@@ -8,7 +8,7 @@ pnpm workspaces + standalone Go module:
 - `packages/agent-runtime/` — ACP WebSocket server + trigger watcher inside agent pods
 - `packages/agent-runtime-api/` — tRPC router definitions for agent-runtime
 - `packages/humr-base/` — shared base image/utilities
-- `packages/agents/example-agent/` — example agent configuration
+- `packages/agents/claude-code/` — default Claude Code agent image
 - `packages/agents/google-workspace/` — Google Workspace agent (Drive, Gmail via gws CLI)
 - `packages/controller/` — Go K8s reconciler + scheduler
 - `packages/ui/` — React chat interface (Vite)

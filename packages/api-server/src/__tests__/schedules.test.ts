@@ -212,10 +212,9 @@ describe("e2e: controller reconciliation", () => {
   let e2eScheduleId: string;
 
   beforeAll(async () => {
-    // Use the default catalog template "code-guardian"
     const agent = await client.agents.create.mutate({
       name: "e2e-agent",
-      templateId: "code-guardian",
+      templateId: "claude-code",
     });
     e2eAgentId = agent.id;
     const inst = await client.instances.create.mutate({
