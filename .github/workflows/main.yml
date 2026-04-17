@@ -15,8 +15,6 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/kagenti/humr
-  HELM_RELEASE: humr
-  HELM_NAMESPACE: humr
 
 jobs:
   build-images:
@@ -142,13 +140,15 @@ jobs:
     runs-on: arc-runner-set
     timeout-minutes: 10
     needs: helm-package
+    environment:
+      name: Development
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
       - name: Deploy via Helm
-        run: helm upgrade ${{ env.HELM_RELEASE }} deploy/helm/humr --namespace ${{ env.HELM_NAMESPACE }} --reset-then-reuse-values --timeout 5m
+        run: helm upgrade ${{ vars.HELM_RELEASE }} deploy/helm/humr --namespace ${{ vars.HELM_NAMESPACE }} --reset-then-reuse-values --timeout 5m
       - uses: azure/setup-kubectl@v4
       - name: Wait for rollout
         run: |
-          kubectl rollout status statefulset --namespace ${{ env.HELM_NAMESPACE }} --timeout=5m
-          kubectl rollout status deployment --namespace ${{ env.HELM_NAMESPACE }} --timeout=5m
+          kubectl rollout status statefulset --namespace ${{ vars.HELM_NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment --namespace ${{ vars.HELM_NAMESPACE }} --timeout=5m
