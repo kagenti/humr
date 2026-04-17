@@ -83,7 +83,7 @@ export function ProvidersView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        API keys that power your AI agents. Set up a model provider before creating your first agent.
+        API keys for the AI harnesses that power your agents.
       </p>
 
       {/* Anthropic */}
