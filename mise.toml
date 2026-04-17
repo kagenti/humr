@@ -26,6 +26,7 @@ postinstall = ["{{ mise_bin }} setup"]
 [task_config]
 includes = [
     "./tasks.toml",
+    "packages/agent-runtime/tasks.toml",
     "packages/ui/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/api-server/tasks.toml",

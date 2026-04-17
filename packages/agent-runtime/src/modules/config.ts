@@ -6,6 +6,7 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true"),
+  AGENT_COMMAND: z.string().min(1).default("claude-code-acp"),
   HOME_DIR: z.string().default("/home/agent"),
   WORK_DIR: z.string().default("/home/agent/work"),
   TRIGGERS_DIR: z.string().default("/home/agent/.triggers"),
