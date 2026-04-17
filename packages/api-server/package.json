@@ -17,6 +17,7 @@
     "@trpc/server": "^11.16.0",
     "api-server-api": "workspace:*",
     "cron-parser": "^5.5.0",
+    "croner": "^10.0.1",
     "db": "workspace:*",
     "hono": "^4.7.11",
     "jose": "^6.0.11",

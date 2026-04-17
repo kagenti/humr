@@ -21,7 +21,6 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/config"
 	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
-	"github.com/kagenti/humr/packages/controller/pkg/scheduler"
 )
 
 func main() {
@@ -101,10 +100,6 @@ func run(ctx context.Context, client kubernetes.Interface, cfg *config.Config, o
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
 	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver)
 
-	sched := scheduler.New(client, cfg)
-	sched.Start()
-	defer sched.Stop()
-
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
 
@@ -135,8 +130,6 @@ func run(ctx context.Context, client kubernetes.Interface, cfg *config.Config, o
 				agentReconciler.Delete(ctx, cm.Name, cm.Labels["humr.ai/owner"])
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
-			case "agent-schedule":
-				sched.RemoveSchedule(cm.Name)
 			}
 		},
 	})
@@ -177,13 +170,6 @@ func run(ctx context.Context, client kubernetes.Interface, cfg *config.Config, o
 					queue.AddRateLimited(key)
 					return
 				}
-			case "agent-schedule":
-				if err := sched.SyncSchedule(cm); err != nil {
-					slog.Error("sync schedule", "name", name, "error", err)
-					queue.AddRateLimited(key)
-					return
-				}
-				slog.Info("synced schedule", "name", name)
 			}
 			queue.Forget(key)
 		}()

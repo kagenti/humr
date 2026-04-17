@@ -21,6 +21,7 @@ import {
   findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
+import { createCronScheduler } from "./cron-scheduler.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { loadConfig } from "./config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
@@ -230,12 +231,33 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
 
 const acpRelay = createAcpRelay(k8sClient, jobCfg);
 
+// Cron scheduler — polls schedule ConfigMaps and creates Jobs on fire
+const cronScheduler = createCronScheduler(k8sClient, jobCfg);
+const SCHEDULE_POLL_MS = 30_000;
+async function syncSchedules() {
+  try {
+    const cms = await k8sClient.listConfigMaps("humr.ai/type=agent-schedule");
+    const seen = new Set<string>();
+    for (const cm of cms) {
+      seen.add(cm.metadata!.name!);
+      const instanceId = cm.metadata!.labels!["humr.ai/instance"];
+      cronScheduler.sync(cm.metadata!.name!, instanceId, cm.data?.["spec.yaml"] ?? "");
+    }
+  } catch (err) {
+    process.stderr.write(`[cron] sync error: ${err}\n`);
+  }
+}
+syncSchedules();
+const schedulePollTimer = setInterval(syncSchedules, SCHEDULE_POLL_MS);
+
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);
 }).catch(() => {});
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
+  clearInterval(schedulePollTimer);
+  cronScheduler.stop();
   k8sCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   onecliSyncSub.unsubscribe();
