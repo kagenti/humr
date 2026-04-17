@@ -54,7 +54,7 @@ When a user sends a message in a channel:
 Each bot reply includes a Slack `context` block showing the active instance:
 
 ```
-🔗 my-agent-1  ·  claude-code  ·  running
+🔗 my-agent-1  ·  coding-agent  ·  running
 ```
 
 This keeps the instance visible without cluttering the conversation.
