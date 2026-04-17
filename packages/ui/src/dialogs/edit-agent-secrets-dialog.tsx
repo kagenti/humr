@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { SecretView, SecretMode } from "api-server-api";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../components/AuthModeBadge.js";
+import { AuthModeBadge } from "../components/auth-mode-badge.js";
 import { Lock, Sparkles, Globe, Search } from "lucide-react";
 
 export function EditAgentSecretsDialog({

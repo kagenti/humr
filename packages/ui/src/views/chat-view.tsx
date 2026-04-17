@@ -1,19 +1,19 @@
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import { useStore } from "../store.js";
-import { instanceState, stateLabel, badgeColors, dotColors } from "../components/StatusIndicator.js";
+import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
 import { ArrowLeft, Send as SendIcon, Square, Settings2 } from "lucide-react";
-import { Markdown } from "../components/Markdown.js";
-import { ToolChip } from "../components/ToolChip.js";
-import { ResizeHandle } from "../components/ResizeHandle.js";
-import { SessionsSidebar } from "../panels/SessionsSidebar.js";
-import { FilesPanel } from "../panels/FilesPanel.js";
-import { LogPanel } from "../panels/LogPanel.js";
-import { ConfigurationPanel } from "../panels/ConfigurationPanel.js";
-import { SessionConfigBar } from "../components/SessionConfigPopover.js";
-import { useAcpSession } from "../hooks/useAcpSession.js";
-import { useMcpPicker } from "../hooks/useMcpPicker.js";
-import { useFileTree } from "../hooks/useFileTree.js";
-import { useAutoResize } from "../hooks/useAutoResize.js";
+import { Markdown } from "./../components/markdown.js";
+import { ToolChip } from "./../components/tool-chip.js";
+import { ResizeHandle } from "./../components/resize-handle.js";
+import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
+import { FilesPanel } from "./../panels/files-panel.js";
+import { LogPanel } from "./../panels/log-panel.js";
+import { ConfigurationPanel } from "./../panels/configuration-panel.js";
+import { SessionConfigBar } from "./../components/session-config-popover.js";
+import { useAcpSession } from "./../hooks/use-acp-session.js";
+import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
+import { useFileTree } from "./../hooks/use-file-tree.js";
+import { useAutoResize } from "./../hooks/use-auto-resize.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);

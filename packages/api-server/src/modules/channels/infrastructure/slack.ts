@@ -2,7 +2,7 @@ import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewa
 import crypto from "node:crypto";
 import { ChannelType, SessionType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
 import { createAcpClient, ensureRunning } from "../../../acp-client.js";
-import type { IdentityLinkService } from "../services/IdentityLinkService.js";
+import type { IdentityLinkService } from "./../services/identity-link-service.js";
 
 type BoltApp = InstanceType<typeof App>;
 

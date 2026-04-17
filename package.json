@@ -16,6 +16,9 @@
     "docker:google-workspace:start": "docker rm -f humr-google-workspace-agent 2>/dev/null; docker run --name humr-google-workspace-agent -p 3001:8080 humr-google-workspace-agent"
   },
   "devDependencies": {
+    "eslint": "^10.2.0",
+    "eslint-plugin-unicorn": "^64.0.0",
+    "typescript-eslint": "^8.58.2",
     "vitest": "^4.1.3"
   }
 }

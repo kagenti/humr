@@ -5,7 +5,7 @@ import type {
   SecretType,
   AgentAccess,
 } from "api-server-api";
-import type { OnecliSecretsPort } from "../infrastructure/OnecliSecretsPort.js";
+import type { OnecliSecretsPort } from "./../infrastructure/onecli-secrets-port.js";
 import { hostPatternFor } from "../domain/types.js";
 
 export function createSecretsService(deps: {

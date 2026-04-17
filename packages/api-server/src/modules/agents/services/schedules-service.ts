@@ -3,7 +3,7 @@ import type {
   CreateCronScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
-import type { SchedulesRepository } from "../infrastructure/SchedulesRepository.js";
+import type { SchedulesRepository } from "./../infrastructure/schedules-repository.js";
 import { validateCron } from "../domain/cron.js";
 
 export function createSchedulesService(deps: {

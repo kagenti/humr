@@ -3,7 +3,7 @@ import type { TemplateView, SecretView, SecretMode } from "../types.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import { Globe, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../components/AuthModeBadge.js";
+import { AuthModeBadge } from "../components/auth-mode-badge.js";
 
 type Step = "pick" | "configure";
 

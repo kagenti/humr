@@ -6,8 +6,8 @@ import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
 import type { Message, ToolChip } from "../types.js";
-import { instanceState } from "../components/StatusIndicator.js";
-import { getSavedPreferences } from "../components/SessionConfigPopover.js";
+import { instanceState } from "./../components/status-indicator.js";
+import { getSavedPreferences } from "./../components/session-config-popover.js";
 
 // ── Shared helpers ──
 
@@ -292,7 +292,6 @@ export function useAcpSession(
       }
     }
     return conn;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInstance, selectedMcpServers, captureSessionConfig]);
 
   const ensureConnection = useCallback((): Promise<ClientSideConnection | null> => {

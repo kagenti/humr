@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { SchedulesPanel } from "./SchedulesPanel.js";
-import { ChannelsPanel } from "./ChannelsPanel.js";
-import { McpsPanel, type McpOption } from "./McpsPanel.js";
+import { SchedulesPanel } from "./schedules-panel.js";
+import { ChannelsPanel } from "./channels-panel.js";
+import { McpsPanel, type McpOption } from "./mcps-panel.js";
 
 function Section({ title, defaultOpen = true, children }: {
   title: string;

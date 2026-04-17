@@ -2,10 +2,10 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { TemplatesService, AgentsService, InstancesService, SchedulesService, SessionsApiService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
-import { createTemplatesRepository } from "./infrastructure/TemplatesRepository.js";
-import { createAgentsRepository } from "./infrastructure/AgentsRepository.js";
-import { createInstancesRepository } from "./infrastructure/InstancesRepository.js";
-import { createSchedulesRepository } from "./infrastructure/SchedulesRepository.js";
+import { createTemplatesRepository } from "./infrastructure/templates-repository.js";
+import { createAgentsRepository } from "./infrastructure/agents-repository.js";
+import { createInstancesRepository } from "./infrastructure/instances-repository.js";
+import { createSchedulesRepository } from "./infrastructure/schedules-repository.js";
 import {
   listChannelsByOwner, listChannelsByInstance,
   upsertChannel, deleteChannelByType,
@@ -16,11 +16,11 @@ import {
   setAllowedUsers, deleteAllowedUsersByInstanceIds,
 } from "./infrastructure/allowed-users-repository.js";
 import { listSessionsByInstance, listSessionsByScheduleId, findActiveByScheduleId, deactivateByScheduleId, upsertSession, deleteSession } from "./infrastructure/sessions-repository.js";
-import { createTemplatesService } from "./services/TemplatesService.js";
-import { createAgentsService } from "./services/AgentsService.js";
-import { createInstancesService } from "./services/InstancesService.js";
-import { createSchedulesService } from "./services/SchedulesService.js";
-import { createSessionsService } from "./services/SessionsService.js";
+import { createTemplatesService } from "./services/templates-service.js";
+import { createAgentsService } from "./services/agents-service.js";
+import { createInstancesService } from "./services/instances-service.js";
+import { createSchedulesService } from "./services/schedules-service.js";
+import { createSessionsService } from "./services/sessions-service.js";
 
 export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
   templates: TemplatesService;

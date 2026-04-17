@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useStore } from "../store.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import type { McpOption } from "../panels/McpsPanel.js";
+import type { McpOption } from "./../panels/mcps-panel.js";
 
 /**
  * Manages MCP server selection for session creation.

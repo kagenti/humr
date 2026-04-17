@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { SlackOAuthPending } from "./slack.js";
-import type { IdentityLinkService } from "../services/IdentityLinkService.js";
+import type { IdentityLinkService } from "./../services/identity-link-service.js";
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 

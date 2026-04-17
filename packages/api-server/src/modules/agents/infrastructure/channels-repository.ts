@@ -10,7 +10,8 @@ function toChannelConfig(row: { type: string; config: unknown }): ChannelConfig 
 
 export function listChannelsByOwner(db: Db, owner: string) {
   return async (): Promise<Map<string, ChannelConfig[]>> => {
-    const rows = await db.select().from(channels).where(eq(channels.owner, owner));
+    const condition = owner ? eq(channels.owner, owner) : undefined;
+    const rows = await db.select().from(channels).where(condition);
     const map = new Map<string, ChannelConfig[]>();
     for (const row of rows) {
       const list = map.get(row.instanceId) ?? [];
@@ -67,7 +68,10 @@ export function deleteChannelByType(db: Db, owner: string) {
 export function deleteChannelsByInstanceIds(db: Db, owner: string) {
   return async (instanceIds: string[]): Promise<void> => {
     if (instanceIds.length === 0) return;
-    await db.delete(channels).where(and(inArray(channels.instanceId, instanceIds), eq(channels.owner, owner)));
+    const condition = owner
+      ? and(inArray(channels.instanceId, instanceIds), eq(channels.owner, owner))
+      : inArray(channels.instanceId, instanceIds);
+    await db.delete(channels).where(condition);
   };
 }
 
