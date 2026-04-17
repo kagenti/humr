@@ -11,6 +11,10 @@ cpus: 4
 memory: 4GiB
 disk: 100GiB
 
+containerd:
+  system: false
+  user: false
+
 provision:
   - mode: system
     script: |
