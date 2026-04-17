@@ -274,23 +274,16 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {/* Add MCP — inline button / form */}
+        {/* Add MCP — button / form */}
         {loaded.current && (
           <div className="mt-4 anim-in">
             {!showAddMcp ? (
               <button
                 onClick={() => setShowAddMcp(true)}
-                className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex items-center gap-3 hover:border-accent hover:bg-accent-light transition-colors w-full"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
               >
-                <div className="w-8 h-8 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                  <Globe size={16} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-[13px] font-bold text-text">Connect MCP Server</div>
-                  <div className="text-[11px] text-text-muted">OAuth to a remote MCP server</div>
-                </div>
-                <Plus size={14} className="text-text-muted" />
+                <Plus size={14} /> Connect MCP Server
               </button>
             ) : (
               <div
@@ -390,23 +383,16 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {/* Add secret — inline button / form */}
+        {/* Add secret — button / form */}
         {loaded.current && (
           <div className="mt-4 anim-in">
             {!showAddSecret ? (
               <button
                 onClick={() => setShowAddSecret(true)}
-                className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex items-center gap-3 hover:border-accent hover:bg-accent-light transition-colors w-full"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
               >
-                <div className="w-8 h-8 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                  <Lock size={16} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-[13px] font-bold text-text">Add Secret</div>
-                  <div className="text-[11px] text-text-muted">Bearer token for a custom host</div>
-                </div>
-                <Plus size={14} className="text-text-muted" />
+                <Plus size={14} /> Add Secret
               </button>
             ) : (
               <div
