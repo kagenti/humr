@@ -274,52 +274,15 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {/* Add MCP — button / form */}
         {loaded.current && (
-          <div className="mt-4 anim-in">
-            {!showAddMcp ? (
-              <button
-                onClick={() => setShowAddMcp(true)}
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-              >
-                <Plus size={14} /> Connect MCP Server
-              </button>
-            ) : (
-              <div
-                className="rounded-xl border-2 border-border bg-surface p-6 flex flex-col gap-4 anim-scale-in"
-                style={{ boxShadow: "var(--shadow-brutal)" }}
-              >
-                <div className="flex items-center gap-3">
-                  <h3 className="text-[14px] font-bold text-text">Connect MCP Server</h3>
-                  <button
-                    className="ml-auto text-text-muted hover:text-text"
-                    onClick={() => setShowAddMcp(false)}
-                    title="Cancel"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-                <div className="flex gap-3">
-                  <input
-                    className={inp}
-                    value={mcpUrl}
-                    onChange={(e) => setMcpUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && startMcpOAuth()}
-                    placeholder="https://example.com/mcp"
-                    autoFocus
-                  />
-                  <button
-                    className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
-                    style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                    onClick={startMcpOAuth}
-                    disabled={!mcpUrl.trim() || connecting}
-                  >
-                    {connecting ? "..." : "Connect"}
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="mt-4">
+            <button
+              onClick={() => setShowAddMcp(true)}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
+              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            >
+              <Plus size={14} /> Connect MCP Server
+            </button>
           </div>
         )}
       </section>
@@ -383,121 +346,162 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {/* Add secret — button / form */}
         {loaded.current && (
-          <div className="mt-4 anim-in">
-            {!showAddSecret ? (
-              <button
-                onClick={() => setShowAddSecret(true)}
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-              >
-                <Plus size={14} /> Add Secret
-              </button>
-            ) : (
-              <div
-                className="rounded-xl border-2 border-border bg-surface p-6 flex flex-col gap-4 anim-scale-in"
-                style={{ boxShadow: "var(--shadow-brutal)" }}
-              >
-                <div className="flex items-center gap-3">
-                  <h3 className="text-[14px] font-bold text-text">Add Secret</h3>
-                  <button
-                    className="ml-auto text-text-muted hover:text-text"
-                    onClick={() => setShowAddSecret(false)}
-                    title="Cancel"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <p className="text-[13px] text-text-secondary leading-relaxed">
-                  Injects a bearer token into outgoing HTTP requests whose host
-                  matches the pattern below.
-                </p>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                    Name
-                  </label>
-                  <input
-                    className={inp}
-                    placeholder="e.g. Linear Token"
-                    value={secretForm.name}
-                    onChange={(e) =>
-                      setSecretForm((p) => ({ ...p, name: e.target.value }))
-                    }
-                    autoFocus
-                  />
-                  <p className="text-[11px] text-text-muted">
-                    A label so you can identify this secret later.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                    Token
-                  </label>
-                  <input
-                    className={inp}
-                    type="password"
-                    placeholder="The secret value to inject"
-                    value={secretForm.value}
-                    onChange={(e) =>
-                      setSecretForm((p) => ({ ...p, value: e.target.value }))
-                    }
-                  />
-                  <p className="text-[11px] text-text-muted">
-                    Injected as{" "}
-                    <span className="font-mono">
-                      Authorization: Bearer &lt;value&gt;
-                    </span>
-                    . Stored encrypted in OneCLI — the agent never sees the raw
-                    value.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                    Host Pattern
-                  </label>
-                  <input
-                    className={`${inp} font-mono`}
-                    placeholder="e.g. api.linear.app"
-                    value={secretForm.hostPattern}
-                    onChange={(e) =>
-                      setSecretForm((p) => ({
-                        ...p,
-                        hostPattern: e.target.value,
-                      }))
-                    }
-                  />
-                  <p className="text-[11px] text-text-muted">
-                    Hostname the token applies to. Requests to other hosts are
-                    untouched. Supports wildcards (e.g.{" "}
-                    <span className="font-mono">*.example.com</span>).
-                  </p>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40"
-                    style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                    onClick={saveSecret}
-                    disabled={
-                      savingSecret ||
-                      !secretForm.name.trim() ||
-                      !secretForm.value.trim() ||
-                      !secretForm.hostPattern.trim()
-                    }
-                  >
-                    {savingSecret ? "..." : "Add Secret"}
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="mt-4">
+            <button
+              onClick={() => setShowAddSecret(true)}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
+              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            >
+              <Plus size={14} /> Add Secret
+            </button>
           </div>
         )}
       </section>
+
+      {/* Connect MCP Server dialog */}
+      {showAddMcp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => setShowAddMcp(false)}>
+          <div
+            className="w-[480px] rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+            style={{ boxShadow: "var(--shadow-brutal)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-[20px] font-bold text-text">Connect MCP Server</h2>
+            <p className="text-[13px] text-text-secondary">
+              Enter the URL of a remote MCP server to connect via OAuth.
+            </p>
+            <div className="flex gap-3">
+              <input
+                className={inp}
+                value={mcpUrl}
+                onChange={(e) => setMcpUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && startMcpOAuth()}
+                placeholder="https://example.com/mcp"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                onClick={() => setShowAddMcp(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                onClick={startMcpOAuth}
+                disabled={!mcpUrl.trim() || connecting}
+              >
+                {connecting ? "..." : "Connect"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Secret dialog */}
+      {showAddSecret && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => setShowAddSecret(false)}>
+          <div
+            className="w-[480px] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+            style={{ boxShadow: "var(--shadow-brutal)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-[20px] font-bold text-text">Add Secret</h2>
+            <p className="text-[13px] text-text-secondary leading-relaxed">
+              Injects a bearer token into outgoing HTTP requests whose host
+              matches the pattern below.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Name
+              </label>
+              <input
+                className={inp}
+                placeholder="e.g. Linear Token"
+                value={secretForm.name}
+                onChange={(e) =>
+                  setSecretForm((p) => ({ ...p, name: e.target.value }))
+                }
+                autoFocus
+              />
+              <p className="text-[11px] text-text-muted">
+                A label so you can identify this secret later.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Token
+              </label>
+              <input
+                className={inp}
+                type="password"
+                placeholder="The secret value to inject"
+                value={secretForm.value}
+                onChange={(e) =>
+                  setSecretForm((p) => ({ ...p, value: e.target.value }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                Injected as{" "}
+                <span className="font-mono">
+                  Authorization: Bearer &lt;value&gt;
+                </span>
+                . Stored encrypted — the agent never sees the raw value.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Host Pattern
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder="e.g. api.linear.app"
+                value={secretForm.hostPattern}
+                onChange={(e) =>
+                  setSecretForm((p) => ({
+                    ...p,
+                    hostPattern: e.target.value,
+                  }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                Hostname the token applies to. Supports wildcards (e.g.{" "}
+                <span className="font-mono">*.example.com</span>).
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                onClick={() => setShowAddSecret(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                onClick={saveSecret}
+                disabled={
+                  savingSecret ||
+                  !secretForm.name.trim() ||
+                  !secretForm.value.trim() ||
+                  !secretForm.hostPattern.trim()
+                }
+              >
+                {savingSecret ? "..." : "Add Secret"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
