@@ -88,9 +88,14 @@ export type AnthropicAuthMode = "api-key" | "oauth";
 
 /** Prefix used for MCP OAuth secrets stored in OneCLI. */
 export const MCP_SECRET_PREFIX = "__humr_mcp:";
+export const OPENAI_HOST_PATTERN = "api.openai.com";
 
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
   return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);
+}
+
+export function isOpenAiSecret(s: { type: SecretType; hostPattern: string }): boolean {
+  return s.type === "generic" && s.hostPattern === OPENAI_HOST_PATTERN;
 }
 
 export function mcpHostnameFromSecretName(name: string): string {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
+import { OPENAI_HOST_PATTERN, isOpenAiSecret } from "../types.js";
 import { AuthModeBadge } from "../components/auth-mode-badge.js";
 import {
   Sparkles,
@@ -22,6 +23,8 @@ export function ProvidersView() {
   // Anthropic form
   const [anthropicKey, setAnthropicKey] = useState("");
   const [savingAnthropic, setSavingAnthropic] = useState(false);
+  const [openAiKey, setOpenAiKey] = useState("");
+  const [savingOpenAi, setSavingOpenAi] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
@@ -36,6 +39,7 @@ export function ProvidersView() {
   }, [load]);
 
   const anthropic = secrets.find((s) => s.type === "anthropic");
+  const openAi = secrets.find(isOpenAiSecret);
 
   const saveAnthropic = async () => {
     if (!anthropicKey.trim()) return;
@@ -56,6 +60,28 @@ export function ProvidersView() {
     if (!anthropic) return;
     if (!(await showConfirm("Remove Anthropic API key?", "Remove Key"))) return;
     await deleteSecret(anthropic.id);
+  };
+
+  const saveOpenAi = async () => {
+    if (!openAiKey.trim()) return;
+    setSavingOpenAi(true);
+    try {
+      await createSecret({
+        type: "generic",
+        name: "OpenAI API Key",
+        value: openAiKey.trim(),
+        hostPattern: OPENAI_HOST_PATTERN,
+      });
+      setOpenAiKey("");
+    } finally {
+      setSavingOpenAi(false);
+    }
+  };
+
+  const removeOpenAi = async () => {
+    if (!openAi) return;
+    if (!(await showConfirm("Remove OpenAI API key?", "Remove Key"))) return;
+    await deleteSecret(openAi.id);
   };
 
   const copySetupToken = () => {
@@ -184,13 +210,83 @@ export function ProvidersView() {
         )}
       </section>
 
+      {/* OpenAI */}
+      <section className="mb-8">
+        {!loaded.current ? (
+          <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />
+        ) : openAi ? (
+          <div
+            className="rounded-xl border-2 border-accent bg-accent-light p-5 anim-in"
+            style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 shrink-0 rounded-lg bg-accent flex items-center justify-center text-white">
+                <Sparkles size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[15px] font-bold text-text">OpenAI</span>
+                </div>
+                <div className="text-[12px] text-text-muted">
+                  Connected — available to agents that use OpenAI-backed harnesses
+                </div>
+              </div>
+              <button
+                onClick={removeOpenAi}
+                className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                title="Remove"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="rounded-xl border-2 border-warning bg-warning-light p-5 anim-in flex flex-col gap-4"
+            style={{ boxShadow: "var(--shadow-brutal)" }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 shrink-0 rounded-lg bg-warning flex items-center justify-center text-white">
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <div className="text-[15px] font-bold text-text">OpenAI</div>
+                <div className="text-[12px] text-text-muted">
+                  Use this with agents that talk to OpenAI, including Codex-backed harnesses. The key is injected for{" "}
+                  <span className="font-mono">{OPENAI_HOST_PATTERN}</span>.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <input
+                className={inp}
+                type="password"
+                placeholder="sk-proj-…"
+                value={openAiKey}
+                onChange={(e) => setOpenAiKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveOpenAi()}
+              />
+              <button
+                className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                onClick={saveOpenAi}
+                disabled={!openAiKey.trim() || savingOpenAi}
+              >
+                {savingOpenAi ? "..." : "Save"}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Coming Soon providers */}
       <section>
         <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
           Coming Soon
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ComingSoonCard name="OpenAI" description="Powers Codex agents" />
           <ComingSoonCard name="Google" description="Powers Gemini CLI agents" />
         </div>
       </section>

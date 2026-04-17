@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
-import { isMcpSecret } from "../types.js";
+import { isMcpSecret, isOpenAiSecret } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
@@ -38,7 +38,7 @@ export function ListView() {
   // Persisted across mount in the store — ensures skeleton doesn't reappear
   // when the user navigates away and back while data is already loaded.
   const loadedOnce = useStore(s => s.loadedOnce);
-  const hasProvider = secrets.some(s => s.type === "anthropic");
+  const hasProvider = secrets.some(s => s.type === "anthropic" || isOpenAiSecret(s));
   const initialLoaded = loadedOnce.agents && loadedOnce.instances && secretsLoaded;
 
   const byAgent = useMemo(() => {
