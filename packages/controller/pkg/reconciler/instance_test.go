@@ -26,8 +26,6 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 		GatewayPort:         10255,
 		WebPort:             10254,
 		CACertInitImage:     "busybox:stable",
-		JobActiveDeadline:   1800,
-		JobTTLAfterFinished: 300,
 	}
 	getter := &fakeGetter{cms: agents}
 	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
@@ -187,58 +185,6 @@ func TestReconcile_PreservesExistingOwnerReferences(t *testing.T) {
 	uids := []string{string(updated.OwnerReferences[0].UID), string(updated.OwnerReferences[1].UID)}
 	assert.Contains(t, uids, "other-uid")
 	assert.Contains(t, uids, "agent-uid")
-}
-
-func TestReconcile_RunRequestCreatesJob(t *testing.T) {
-	cm := instanceCM("running")
-	cm.Annotations = map[string]string{
-		AnnRunRequest: "2026-04-16T12:00:00Z",
-	}
-	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
-		cm,
-	)
-
-	ctx := context.Background()
-	err := r.Reconcile(ctx, cm)
-	require.NoError(t, err)
-
-	// Job was created
-	jobs, err := client.BatchV1().Jobs("test-agents").List(ctx, metav1.ListOptions{
-		LabelSelector: "humr.ai/instance=my-instance",
-	})
-	require.NoError(t, err)
-	require.Len(t, jobs.Items, 1)
-	assert.Contains(t, jobs.Items[0].Name, "my-instance-")
-
-	// active-job annotation set, run-request cleared
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
-	assert.Equal(t, jobs.Items[0].Name, updated.Annotations[AnnActiveJob])
-	assert.Empty(t, updated.Annotations[AnnRunRequest])
-
-	// Status is active
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: active")
-}
-
-func TestReconcile_NoRunRequestNoJob(t *testing.T) {
-	cm := instanceCM("running")
-	// No annotations — no run-request, no active job
-	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"code-guardian": agentCM()},
-		cm,
-	)
-
-	ctx := context.Background()
-	err := r.Reconcile(ctx, cm)
-	require.NoError(t, err)
-
-	// No Jobs created
-	jobs, _ := client.BatchV1().Jobs("test-agents").List(ctx, metav1.ListOptions{})
-	assert.Empty(t, jobs.Items)
-
-	// Status is idle
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: idle")
 }
 
 func TestDelete_CleansPVCs(t *testing.T) {

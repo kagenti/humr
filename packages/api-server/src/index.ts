@@ -8,6 +8,7 @@ import {
   createApi, createK8sClient,
 } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
+import { loadJobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
 import { composeAgentsModule, composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createAcpClient } from "./acp-client.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
@@ -45,8 +46,9 @@ const onecli = createOnecliClient({
   onecliBaseUrl: config.onecliBaseUrl,
 });
 
-const { api } = createApi(config.namespace);
-const k8sClient = createK8sClient(api, config.namespace);
+const { api, batchApi } = createApi(config.namespace);
+const k8sClient = createK8sClient(api, config.namespace, batchApi);
+const jobCfg = loadJobBuilderConfig();
 const instancesRepo = createInstancesRepository(k8sClient);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
@@ -128,9 +130,14 @@ app.post("/internal/trigger", async (c) => {
     resumeSessionId = found?.sessionId;
   }
 
+  // The trigger is called from within the agent pod — connect back to its ACP server.
+  // The pod's IP is the request source, but since agent-runtime listens on 8080
+  // and the request comes from the same pod, we use the request's remote address.
+  const podIP = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? c.req.raw.headers.get?.("x-real-ip")
+    ?? "127.0.0.1";
   const acp = createAcpClient({
-    k8s: k8sClient,
-    instanceName: body.instanceId,
+    podUrl: `ws://${podIP}:8080/api/acp`,
     onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
   });
 
@@ -169,16 +176,12 @@ app.all("/api/instances/:id/trpc/*", async (c) => {
     return c.json({ error: "not found" }, 404);
   }
 
-  // Find pod IP from instance ConfigMap annotation (set by controller)
-  const cm = await k8sClient.getConfigMap(instanceId);
-  const podIP = cm?.metadata?.annotations?.["humr.ai/pod-ip"];
-  if (!podIP) {
-    return c.json({ error: "instance idle — no active agent pod" }, 503);
-  }
+  // One-shot model: no persistent pod to relay tRPC to
+  return c.json({ error: "instance idle — no active agent pod" }, 503);
 
   const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
   const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-  const upstreamUrl = `http://${podIP}:8080/api/trpc${rest}${qs}`;
+  const upstreamUrl = `http://unreachable:8080/api/trpc${rest}${qs}`;
   try {
     const headers = new Headers(c.req.raw.headers);
     headers.delete("host");
@@ -225,7 +228,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(k8sClient);
+const acpRelay = createAcpRelay(k8sClient, jobCfg);
 
 systemInstances.list().then((all) => {
   channelManager.bootstrap(all);

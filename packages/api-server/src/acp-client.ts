@@ -3,7 +3,6 @@ import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type { InstancesService } from "api-server-api";
-import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
 
@@ -101,25 +100,17 @@ async function withAcpConnection<T>(
   }
 }
 
-async function resolveAcpUrl(k8s: K8sClient, instanceName: string): Promise<string> {
-  const cm = await k8s.getConfigMap(instanceName);
-  const podIP = cm?.metadata?.annotations?.["humr.ai/pod-ip"];
-  if (!podIP) throw new Error(`No active pod for instance ${instanceName}`);
-  return `ws://${podIP}:8080/api/acp`;
-}
-
 export function createAcpClient(opts: {
-  k8s: K8sClient;
-  instanceName: string;
+  podUrl: string;
   onSessionCreated: (sessionId: string) => Promise<void>;
 }): AcpClient {
+  const url = opts.podUrl;
 
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
       let stream: Stream;
       let ws: WebSocket;
       try {
-        const url = await resolveAcpUrl(opts.k8s, opts.instanceName);
         ({ stream, ws } = await wsStream(url));
       } catch {
         return [];
@@ -153,7 +144,7 @@ export function createAcpClient(opts: {
     },
 
     async sendPrompt(prompt: string): Promise<string> {
-      const url = await resolveAcpUrl(opts.k8s, opts.instanceName);
+
       const responseChunks: string[] = [];
 
       await withAcpConnection(url, "humr-acp", {
@@ -176,7 +167,7 @@ export function createAcpClient(opts: {
       resumeSessionId?: string;
       mcpServers?: unknown[];
     }): Promise<TriggerSessionResult> {
-      const url = await resolveAcpUrl(opts.k8s, opts.instanceName);
+
       return withAcpConnection(url, "humr-trigger", {}, async (connection) => {
         let sessionId: string;
         const mcpServers = (triggerOpts.mcpServers ?? []) as any[];

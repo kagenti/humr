@@ -46,6 +46,10 @@ export function hasType(cm: k8s.V1ConfigMap, type: string): boolean {
   return cm.metadata?.labels?.[LABEL_TYPE] === type;
 }
 
+export function isPodReady(pod: k8s.V1Pod): boolean {
+  return pod.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false;
+}
+
 // ---------------------------------------------------------------------------
 // Parsing (ConfigMap → domain)
 // ---------------------------------------------------------------------------

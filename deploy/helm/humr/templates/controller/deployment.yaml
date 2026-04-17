@@ -65,10 +65,6 @@ spec:
             {{- end }}
             - name: HUMR_TERMINATION_GRACE_PERIOD
               value: {{ .Values.controller.terminationGracePeriod | default 5 | quote }}
-            - name: HUMR_JOB_ACTIVE_DEADLINE
-              value: {{ .Values.controller.jobActiveDeadline | default 1800 | quote }}
-            - name: HUMR_JOB_TTL_AFTER_FINISHED
-              value: {{ .Values.controller.jobTtlAfterFinished | default 300 | quote }}
             - name: POD_NAME
               valueFrom:
                 fieldRef:

@@ -1,12 +1,7 @@
 /**
- * Thin K8s client — generic ConfigMap / Pod / PVC operations.
- * No domain types, no YAML parsing, no label constants.
+ * Thin K8s client — generic ConfigMap / Pod / PVC / Job operations.
  */
 import * as k8s from "@kubernetes/client-node";
-
-// ---------------------------------------------------------------------------
-// K8sClient interface
-// ---------------------------------------------------------------------------
 
 export interface K8sClient {
   listConfigMaps(labelSelector: string): Promise<k8s.V1ConfigMap[]>;
@@ -22,11 +17,9 @@ export interface K8sClient {
 
   listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
   deletePVC(name: string): Promise<void>;
-}
 
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
+  createJob(body: k8s.V1Job): Promise<k8s.V1Job>;
+}
 
 function is404(err: unknown): boolean {
   return (
@@ -36,7 +29,7 @@ function is404(err: unknown): boolean {
   );
 }
 
-export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClient {
+export function createK8sClient(api: k8s.CoreV1Api, namespace: string, batchApi: k8s.BatchV1Api): K8sClient {
   return {
     async listConfigMaps(labelSelector) {
       const res = await api.listNamespacedConfigMap({ namespace, labelSelector });
@@ -99,15 +92,19 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
     async deletePVC(name) {
       await api.deleteNamespacedPersistentVolumeClaim({ name, namespace });
     },
+
+    async createJob(body) {
+      return batchApi.createNamespacedJob({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
 
 export function createApi(namespace: string) {
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
-  return { api: kc.makeApiClient(k8s.CoreV1Api), namespace };
+  return {
+    api: kc.makeApiClient(k8s.CoreV1Api),
+    batchApi: kc.makeApiClient(k8s.BatchV1Api),
+    namespace,
+  };
 }

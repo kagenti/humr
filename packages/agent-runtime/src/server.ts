@@ -111,10 +111,38 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => session.kill());
+  ws.on("close", () => {
+    session.kill();
+    maybeShutdown();
+  });
   session.exited.then(() => {
     if (ws.readyState === WebSocket.OPEN) ws.close();
   });
+});
+
+const SHUTDOWN_GRACE_MS = 5_000;
+let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
+
+function maybeShutdown() {
+  if (wss.clients.size > 0) return;
+  if (triggerWatcher && triggerWatcher.activeCount() > 0) return;
+  if (shutdownTimer) return;
+  shutdownTimer = setTimeout(() => {
+    // Re-check — a new connection may have arrived during grace period
+    if (wss.clients.size > 0 || (triggerWatcher?.activeCount() ?? 0) > 0) {
+      shutdownTimer = null;
+      return;
+    }
+    process.stderr.write("No active sessions — shutting down\n");
+    server.close(() => process.exit(0));
+  }, SHUTDOWN_GRACE_MS);
+}
+
+wss.on("connection", () => {
+  if (shutdownTimer) {
+    clearTimeout(shutdownTimer);
+    shutdownTimer = null;
+  }
 });
 
 server.listen(config.PORT, () => {

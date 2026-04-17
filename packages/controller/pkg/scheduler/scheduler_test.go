@@ -1,8 +1,6 @@
 package scheduler
 
 import (
-	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,8 +10,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
 var testCfg = &config.Config{Namespace: "test-agents"}
@@ -93,59 +89,5 @@ func TestRemoveSchedule(t *testing.T) {
 
 func TestRemoveSchedule_NonExistent(t *testing.T) {
 	s := New(fake.NewSimpleClientset(), testCfg)
-	s.RemoveSchedule("nope") // should not panic
-}
-
-func TestFire_SetsRunRequestAndTrigger(t *testing.T) {
-	instanceCm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-instance", Namespace: "test-agents",
-			Labels: map[string]string{"humr.ai/type": "agent-instance"},
-		},
-		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
-		},
-	}
-	client := fake.NewSimpleClientset(instanceCm)
-	s := New(client, testCfg)
-
-	spec := &types.ScheduleSpec{Type: "cron", Cron: "*/5 * * * *", Task: "check repo", Enabled: true, SessionMode: "continuous"}
-	err := s.fire(context.Background(), "my-instance", "my-schedule", spec)
-	require.NoError(t, err)
-
-	// Verify run-request annotation was set
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
-	assert.NotEmpty(t, updated.Annotations[reconciler.AnnRunRequest])
-
-	// Verify trigger annotation was set with correct payload
-	triggerJSON := updated.Annotations[AnnTrigger]
-	assert.NotEmpty(t, triggerJSON)
-	var trigger map[string]any
-	require.NoError(t, json.Unmarshal([]byte(triggerJSON), &trigger))
-	assert.Equal(t, "check repo", trigger["task"])
-	assert.Equal(t, "my-schedule", trigger["schedule"])
-	assert.Equal(t, "continuous", trigger["sessionMode"])
-}
-
-func TestFire_SkipsWhenActiveJob(t *testing.T) {
-	instanceCm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-instance", Namespace: "test-agents",
-			Labels:      map[string]string{"humr.ai/type": "agent-instance"},
-			Annotations: map[string]string{reconciler.AnnActiveJob: "my-instance-abc123"},
-		},
-		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
-		},
-	}
-	client := fake.NewSimpleClientset(instanceCm)
-	s := New(client, testCfg)
-
-	spec := &types.ScheduleSpec{Type: "cron", Task: "check repo", Enabled: true}
-	err := s.fire(context.Background(), "my-instance", "my-schedule", spec)
-	require.NoError(t, err)
-
-	// run-request should NOT be set
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
-	assert.Empty(t, updated.Annotations[reconciler.AnnRunRequest])
+	s.RemoveSchedule("nope")
 }
