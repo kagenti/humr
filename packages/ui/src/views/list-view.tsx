@@ -33,11 +33,13 @@ export function ListView() {
   const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delAgent, setDelAgent] = useState<string | null>(null);
   const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
+  const [secretsLoaded, setSecretsLoaded] = useState(false);
 
   // Persisted across mount in the store — ensures skeleton doesn't reappear
   // when the user navigates away and back while data is already loaded.
   const loadedOnce = useStore(s => s.loadedOnce);
-  const initialLoaded = loadedOnce.agents && loadedOnce.instances;
+  const hasProvider = secrets.some(s => s.type === "anthropic");
+  const initialLoaded = loadedOnce.agents && loadedOnce.instances && secretsLoaded;
 
   const byAgent = useMemo(() => {
     const m = new Map<string, InstanceView[]>();
@@ -46,7 +48,7 @@ export function ListView() {
   }, [instances]);
 
   // Fetch secrets + per-agent access once we have the agent list
-  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
+  useEffect(() => { fetchSecrets().finally(() => setSecretsLoaded(true)); }, [fetchSecrets]);
   useEffect(() => {
     for (const a of agents) {
       if (!agentAccess[a.id]) fetchAgentAccess(a.id);
@@ -73,48 +75,80 @@ export function ListView() {
   return (
     <>
       <div>
-        {/* Page header */}
-        <div className="flex items-center gap-3 mb-8">
-          <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
-          <div className="ml-auto flex items-center gap-2 md:gap-3">
-            <button
-              onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
-              className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
-              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-            >
-              <RefreshCw size={14} />
-            </button>
-            <button
-              onClick={() => setShowAddAgent(true)}
-              disabled={busyAgent}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-            >
-              <Plus size={14} /> <span className="hidden sm:inline">Add</span> Agent
-            </button>
+        {/* Page header — hidden during onboarding empty state */}
+        {(agents.length > 0 || hasProvider) && (
+          <div className="flex items-center gap-3 mb-8">
+            <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
+            <div className="ml-auto flex items-center gap-2 md:gap-3">
+              <button
+                onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
+                className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+              >
+                <RefreshCw size={14} />
+              </button>
+              <button
+                onClick={() => setShowAddAgent(true)}
+                disabled={busyAgent}
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+              >
+                <Plus size={14} /> <span className="hidden sm:inline">Add</span> Agent
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Skeleton during initial load */}
-        {!initialLoaded && (
+        {/* Skeleton during initial load — only when we expect agents */}
+        {!initialLoaded && agents.length > 0 && (
           <div className="flex flex-col gap-6">
             <div className="rounded-xl border-2 border-border-light bg-surface h-[120px] anim-pulse" />
             <div className="rounded-xl border-2 border-border-light bg-surface h-[120px] anim-pulse" />
           </div>
         )}
 
-        {/* Empty state — only after initial load, only when no agents, and not mid-creation */}
+        {/* Empty state */}
         {initialLoaded && !busyAgent && agents.length === 0 && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-8 py-16 text-center">
-            <p className="text-[15px] text-text-secondary mb-4">No agents yet</p>
-            <button
-              onClick={() => setShowAddAgent(true)}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-semibold text-white flex items-center gap-1.5 mx-auto"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-            >
-              <Plus size={14} /> Add your first agent
-            </button>
-          </div>
+          !hasProvider ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <h2 className="text-[20px] font-bold text-text mb-2">Get started</h2>
+              <p className="text-[13px] text-text-muted mb-8">Two steps to your first AI agent</p>
+              <div className="flex flex-col gap-4 w-full max-w-md">
+                <button
+                  onClick={() => setView("providers")}
+                  className="btn-brutal rounded-xl border-2 border-warning bg-warning-light p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full"
+                  style={{ boxShadow: "var(--shadow-brutal)" }}
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-warning flex items-center justify-center text-white text-[15px] font-bold">
+                    1
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-bold text-text">Set up a provider</div>
+                    <div className="text-[12px] text-text-muted">Your agents need an API key to reach an AI model</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setShowAddAgent(true)}
+                  className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full"
+                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-border-light flex items-center justify-center text-text-secondary text-[15px] font-bold">
+                    2
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-bold text-text">Add your first agent</div>
+                    <div className="text-[12px] text-text-muted">Pick a template or bring your own image</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-20 text-center">
+              <p className="text-[14px] text-text-secondary">
+                No agents yet — click <strong>+ Add Agent</strong> above to create one.
+              </p>
+            </div>
+          )
         )}
 
         {/* Agent cards */}
