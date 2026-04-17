@@ -1,8 +1,10 @@
 import type { OnecliClient } from "../../../onecli.js";
 
 /**
- * Shape returned by OneCLI's `GET /api/connections`. Fields beyond `id` and
- * `provider` are treated as optional — we normalize in the service layer.
+ * Normalized shape produced by this port. OneCLI exposes connections only
+ * embedded in `GET /api/apps` — there is no standalone list endpoint as of
+ * onecli 0.0.9. The port collapses the app+connection response into flat rows
+ * for connected apps only.
  */
 export interface OnecliAppConnection {
   id: string;
@@ -18,6 +20,69 @@ export interface OnecliConnectionsPort {
   listAppConnections(): Promise<OnecliAppConnection[]>;
 }
 
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === "string");
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Flattens OneCLI's app-list response into connected-app rows. Tolerates the
+ * two most likely shapes: `[{ provider, connection: {...} }, ...]` and
+ * `{ apps: [...] }` — plus a pass-through for any future flat shape.
+ */
+function flattenApps(data: unknown): OnecliAppConnection[] {
+  const list: unknown[] = Array.isArray(data)
+    ? data
+    : Array.isArray(asRecord(data)?.apps)
+      ? (asRecord(data)!.apps as unknown[])
+      : [];
+
+  const out: OnecliAppConnection[] = [];
+  for (const item of list) {
+    const app = asRecord(item);
+    if (!app) continue;
+
+    const provider = asString(app.provider) ?? asString(app.id);
+    if (!provider) continue;
+
+    const connection =
+      asRecord(app.connection) ??
+      asRecord(app.connectedService) ??
+      // Flat shape: fields live directly on the app record.
+      (app.id && app.status ? app : null);
+    if (!connection) continue;
+
+    const id = asString(connection.id) ?? provider;
+    const label =
+      asString(app.label) ??
+      asString(app.name) ??
+      asString(connection.label) ??
+      provider;
+
+    out.push({
+      id,
+      provider,
+      label,
+      status: asString(connection.status) ?? null,
+      scopes: asStringArray(connection.scopes) ?? null,
+      connectedAt: asString(connection.connectedAt) ?? null,
+      metadata: asRecord(connection.metadata),
+    });
+  }
+  return out;
+}
+
 export function createOnecliConnectionsPort(
   oc: OnecliClient,
   userJwt: string,
@@ -25,14 +90,13 @@ export function createOnecliConnectionsPort(
 ): OnecliConnectionsPort {
   return {
     async listAppConnections() {
-      const res = await oc.onecliFetch(userJwt, userSub, "/api/connections");
+      const res = await oc.onecliFetch(userJwt, userSub, "/api/apps");
       if (!res.ok) {
         const body = await res.text();
-        throw new Error(`OneCLI GET /api/connections: ${res.status} ${body}`);
+        throw new Error(`OneCLI GET /api/apps: ${res.status} ${body}`);
       }
       const data = (await res.json()) as unknown;
-      if (!Array.isArray(data)) return [];
-      return data as OnecliAppConnection[];
+      return flattenApps(data);
     },
   };
 }
