@@ -16,7 +16,8 @@ function makeFakeOc(
     syncUser: async () => {},
     async onecliFetch(_jwt: string, _sub: string, path: string, init?: RequestInit) {
       calls.push({ path, init });
-      const match = responses[path];
+      const key = `${init?.method ?? "GET"} ${path}`;
+      const match = responses[key] ?? responses[path];
       if (!match) {
         return new Response(JSON.stringify({ error: "not stubbed" }), { status: 500 });
       }
@@ -115,5 +116,32 @@ describe("onecli-connections-port", () => {
     const port = createOnecliConnectionsPort(client, "jwt", "sub");
     const ids = await port.getAgentAppConnectionIds("abc");
     expect(ids).toEqual(["conn-1", "conn-2"]);
+  });
+
+  it("setAgentAppConnectionIds PUTs the id list with the schema-matching key", async () => {
+    const { client, calls } = makeFakeOc({
+      "PUT /api/agents/uuid%2Fodd/connections": { ok: true, body: { success: true } },
+    });
+    const port = createOnecliConnectionsPort(client, "jwt", "sub");
+    await port.setAgentAppConnectionIds("uuid/odd", ["c-1", "c-2"]);
+    expect(calls[0].path).toBe("/api/agents/uuid%2Fodd/connections");
+    expect(calls[0].init?.method).toBe("PUT");
+    expect(JSON.parse(calls[0].init?.body as string)).toEqual({
+      appConnectionIds: ["c-1", "c-2"],
+    });
+  });
+
+  it("setAgentAppConnectionIds surfaces OneCLI error body in the thrown message", async () => {
+    const { client } = makeFakeOc({
+      "PUT /api/agents/abc/connections": {
+        ok: false,
+        status: 400,
+        body: { error: "One or more app connections not found" },
+      },
+    });
+    const port = createOnecliConnectionsPort(client, "jwt", "sub");
+    await expect(
+      port.setAgentAppConnectionIds("abc", ["bad"]),
+    ).rejects.toThrow(/OneCLI PUT \/api\/agents\/abc\/connections.*400.*One or more/);
   });
 });

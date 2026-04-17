@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type {
   AppConnectionView,
   SecretView,
@@ -22,6 +22,7 @@ export function EditAgentSecretsDialog({
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [apps, setApps] = useState<AppConnectionView[]>([]);
   const [assignedAppIds, setAssignedAppIds] = useState<Set<string>>(new Set());
+  const initialAppIds = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
@@ -45,6 +46,7 @@ export function EditAgentSecretsDialog({
         setAssigned(new Set(access.secretIds));
         setApps(appList);
         setAssignedAppIds(new Set(agentApps.connectionIds));
+        initialAppIds.current = [...agentApps.connectionIds].sort();
       } catch (err: any) {
         if (!cancelled) setError(err?.message ?? "Failed to load");
       } finally {
@@ -63,22 +65,50 @@ export function EditAgentSecretsDialog({
       return n;
     });
 
+  const toggleApp = (id: string) =>
+    setAssignedAppIds((p) => {
+      const n = new Set(p);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
   const selectAll = () => setAssigned(new Set(filtered.map((s) => s.id)));
   const clearAll = () => setAssigned(new Set());
 
   const save = async () => {
     setSaving(true);
+    setError(null);
     try {
       await platform.secrets.setAgentAccess.mutate({
         agentName: agentId,
         mode,
         secretIds: [...assigned],
       });
-      onClose();
     } catch (err: any) {
       setError(err?.message ?? "Failed to save");
       setSaving(false);
+      return;
     }
+
+    const nextAppIds = [...assignedAppIds].sort();
+    const appsChanged =
+      nextAppIds.length !== initialAppIds.current.length ||
+      nextAppIds.some((id, i) => id !== initialAppIds.current[i]);
+    if (appsChanged) {
+      try {
+        await platform.connections.setAgentConnections.mutate({
+          agentName: agentId,
+          connectionIds: nextAppIds,
+        });
+        initialAppIds.current = nextAppIds;
+      } catch (err: any) {
+        setError(`Secrets saved; apps failed: ${err?.message ?? String(err)}`);
+        setSaving(false);
+        return;
+      }
+    }
+    setSaving(false);
+    onClose();
   };
 
   // Classify each secret — renders consistently with the Connections page
@@ -228,7 +258,9 @@ export function EditAgentSecretsDialog({
           </>
         )}
 
-        {!loading && <AppsGroup apps={apps} assignedIds={assignedAppIds} />}
+        {!loading && (
+          <AppsGroup apps={apps} assignedIds={assignedAppIds} onToggle={toggleApp} />
+        )}
 
         <div className="flex justify-end gap-3 pt-1">
           <button
@@ -318,70 +350,110 @@ function AccessGroup({
 function AppsGroup({
   apps,
   assignedIds,
+  onToggle,
 }: {
   apps: AppConnectionView[];
   assignedIds: Set<string>;
+  onToggle: (id: string) => void;
 }) {
-  if (assignedIds.size === 0) return null;
-  const byId = new Map(apps.map((a) => [a.id, a]));
-  // Preserve the assignment order and surface any IDs we couldn't resolve
-  // (revoked connection, or /api/connections unavailable) so the user knows
-  // the agent has access to something we can't describe right now.
-  const rows = [...assignedIds].map((id) => ({ id, app: byId.get(id) }));
+  if (apps.length === 0 && assignedIds.size === 0) return null;
+  // Stale IDs: assigned upstream but no longer in the connections list
+  // (e.g. connection revoked in OneCLI while the agent still has the grant).
+  // Rendering them keeps "uncheck to unassign" working as the recovery path.
+  const knownIds = new Set(apps.map((a) => a.id));
+  const staleIds = [...assignedIds].filter((id) => !knownIds.has(id));
   return (
     <div>
       <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
         Apps
       </div>
       <p className="text-[11px] text-text-muted mb-2">
-        OAuth apps assigned to this agent. Manage assignment in OneCLI.
+        OAuth apps this agent can use. Connect new apps in OneCLI.
       </p>
       <div className="flex flex-col gap-2">
-        {rows.map(({ id, app }) => (
-          <div
+        {apps.map((app) => (
+          <AppRow
+            key={app.id}
+            id={app.id}
+            label={app.label}
+            identity={app.identity}
+            status={app.status}
+            checked={assignedIds.has(app.id)}
+            onToggle={onToggle}
+          />
+        ))}
+        {staleIds.map((id) => (
+          <AppRow
             key={id}
-            className="flex items-center gap-3 rounded-lg border-2 border-border-light bg-bg px-4 py-2.5"
-          >
-            <KeyRound size={14} className="text-text-secondary shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-medium text-text truncate">
-                {app?.label ?? "Unavailable app"}
-              </div>
-              {app?.identity ? (
-                <div className="text-[11px] font-mono text-text-muted truncate">
-                  {app.identity}
-                </div>
-              ) : !app ? (
-                <div className="text-[11px] font-mono text-text-muted truncate">
-                  {id}
-                </div>
-              ) : null}
-            </div>
-            <span
-              className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
-                !app || app.status === "unknown"
-                  ? "bg-surface-raised text-text-muted border-border-light"
-                  : app.status === "expired"
-                    ? "bg-danger-light text-danger border-danger"
-                    : app.status === "disconnected"
-                      ? "bg-surface-raised text-text-muted border-border-light"
-                      : "bg-info-light text-info border-info"
-              }`}
-            >
-              {!app
-                ? "Unresolved"
-                : app.status === "expired"
-                  ? "Expired"
-                  : app.status === "disconnected"
-                    ? "Disconnected"
-                    : app.status === "unknown"
-                      ? "Unknown"
-                      : "Connected"}
-            </span>
-          </div>
+            id={id}
+            label="Unavailable app"
+            identity={id}
+            status={undefined}
+            checked={assignedIds.has(id)}
+            onToggle={onToggle}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function AppRow({
+  id,
+  label,
+  identity,
+  status,
+  checked,
+  onToggle,
+}: {
+  id: string;
+  label: string;
+  identity?: string;
+  status: AppConnectionView["status"] | undefined;
+  checked: boolean;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <label
+      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-2.5 cursor-pointer transition-colors hover:border-accent ${checked ? "border-accent bg-accent-light" : "border-border-light"}`}
+    >
+      <input
+        type="checkbox"
+        className="accent-[var(--color-accent)] w-4 h-4"
+        checked={checked}
+        onChange={() => onToggle(id)}
+      />
+      <KeyRound size={14} className="text-text-secondary shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium text-text truncate">{label}</div>
+        {identity && (
+          <div className="text-[11px] font-mono text-text-muted truncate">
+            {identity}
+          </div>
+        )}
+      </div>
+      <span
+        className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
+          !status || status === "unknown"
+            ? "bg-surface-raised text-text-muted border-border-light"
+            : status === "expired"
+              ? "bg-danger-light text-danger border-danger"
+              : status === "disconnected"
+                ? "bg-surface-raised text-text-muted border-border-light"
+                : "bg-info-light text-info border-info"
+        }`}
+      >
+        {!status
+          ? "Unresolved"
+          : status === "expired"
+            ? "Expired"
+            : status === "disconnected"
+              ? "Disconnected"
+              : status === "unknown"
+                ? "Unknown"
+                : "Connected"}
+      </span>
+    </label>
   );
 }
 

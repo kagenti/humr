@@ -15,6 +15,7 @@ function makePort(overrides: Partial<OnecliConnectionsPort> = {}): OnecliConnect
     listAppConnections: async () => [],
     findAgentByIdentifier: async () => null,
     getAgentAppConnectionIds: async () => [],
+    setAgentAppConnectionIds: async () => {},
     ...overrides,
   };
 }
@@ -165,5 +166,46 @@ describe("ConnectionsService.getAgentConnections", () => {
     expect(await svc.getAgentConnections("my-agent")).toEqual({
       connectionIds: ["c-1", "c-2"],
     });
+  });
+});
+
+describe("ConnectionsService.setAgentConnections", () => {
+  it("throws when the agent is not registered in OneCLI", async () => {
+    const svc = createConnectionsService({
+      port: makePort({ findAgentByIdentifier: async () => null }),
+    });
+    await expect(
+      svc.setAgentConnections("not-synced", ["c-1"]),
+    ).rejects.toThrow(/not found in OneCLI/);
+  });
+
+  it("writes deduplicated ids through the port when the agent is found", async () => {
+    const agent: OnecliAgent = { id: "uuid", identifier: "my-agent" };
+    const calls: { uuid: string; ids: string[] }[] = [];
+    const svc = createConnectionsService({
+      port: makePort({
+        findAgentByIdentifier: async () => agent,
+        setAgentAppConnectionIds: async (uuid, ids) => {
+          calls.push({ uuid, ids });
+        },
+      }),
+    });
+    await svc.setAgentConnections("my-agent", ["c-1", "c-2", "c-1"]);
+    expect(calls).toEqual([{ uuid: "uuid", ids: ["c-1", "c-2"] }]);
+  });
+
+  it("forwards an empty list (unassign all)", async () => {
+    const agent: OnecliAgent = { id: "uuid", identifier: "my-agent" };
+    const calls: { uuid: string; ids: string[] }[] = [];
+    const svc = createConnectionsService({
+      port: makePort({
+        findAgentByIdentifier: async () => agent,
+        setAgentAppConnectionIds: async (uuid, ids) => {
+          calls.push({ uuid, ids });
+        },
+      }),
+    });
+    await svc.setAgentConnections("my-agent", []);
+    expect(calls).toEqual([{ uuid: "uuid", ids: [] }]);
   });
 });
