@@ -7,12 +7,14 @@ import type {
 } from "api-server-api";
 import { SPEC_VERSION, ChannelType } from "api-server-api";
 import type { InstancesRepository } from "../infrastructure/InstancesRepository.js";
+import type { InstanceProvisioner } from "../infrastructure/instance-provisioner.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit, EventType } from "../../../events.js";
 
 export function createInstancesService(deps: {
   repo: InstancesRepository;
   owner: string | undefined;
+  provisioner?: InstanceProvisioner;
   getAgent: (id: string) => Promise<Agent | null>;
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByInstance: (instanceId: string) => Promise<ChannelConfig[]>;
@@ -74,6 +76,9 @@ export function createInstancesService(deps: {
         description: input.description,
       };
       const infra = await deps.repo.create(input.agentId, spec, deps.owner ?? "");
+      if (deps.provisioner) {
+        await deps.provisioner.provision(infra.id);
+      }
       if (input.allowedUsers && input.allowedUsers.length > 0) {
         await deps.setAllowedUsers(infra.id, input.allowedUsers);
       }
@@ -146,6 +151,9 @@ export function createInstancesService(deps: {
     async delete(id) {
       const deleted = await deps.repo.delete(id, deps.owner);
       if (deleted) {
+        if (deps.provisioner) {
+          await deps.provisioner.deprovision(id).catch(() => {});
+        }
         await deps.deleteAllowedUsersByInstanceIds([id]);
         emit({ type: EventType.InstanceDeleted, instanceId: id });
       }

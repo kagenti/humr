@@ -47,8 +47,8 @@ const onecli = createOnecliClient({
   onecliBaseUrl: config.onecliBaseUrl,
 });
 
-const { api, batchApi } = createApi(config.namespace);
-const k8sClient = createK8sClient(api, config.namespace, batchApi);
+const { api, batchApi, networkingApi } = createApi(config.namespace);
+const k8sClient = createK8sClient(api, config.namespace, batchApi, networkingApi);
 const jobCfg = loadJobBuilderConfig();
 const instancesRepo = createInstancesRepository(k8sClient);
 await runMigrations(config.databaseUrl, config.migrationsPath);
@@ -59,7 +59,7 @@ const k8sCleanupSub = startK8sCleanupSaga(k8sClient);
 const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
 const onecliSyncSub = startOnecliSyncSaga(onecli);
 
-const systemInstances = composeSystemInstances(api, config.namespace, db);
+const systemInstances = composeSystemInstances(k8sClient, config.namespace, db);
 
 const persistSession = upsertSession(db);
 
@@ -122,7 +122,7 @@ app.post("/internal/trigger", async (c) => {
 
   const mode = body.sessionMode ?? "fresh";
   const sessionType = "schedule_cron";
-  const { sessions } = composeAgentsModule(api, config.namespace, "_system", db);
+  const { sessions } = composeAgentsModule(k8sClient, config.namespace, "_system", db);
 
   // For continuous mode, look up existing session
   let resumeSessionId: string | undefined;
@@ -203,7 +203,10 @@ app.all("/api/trpc/*", (c) => {
   const user = c.get("user");
   const userJwt = c.req.header("authorization")!.slice(7);
 
-  const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db);
+  const { templates, agents, instances, schedules, sessions } = composeAgentsModule(
+    k8sClient, config.namespace, user.sub, db,
+    { onecli, userJwt },
+  );
   const secrets = createSecretsService({
     port: createOnecliSecretsPort(onecli, userJwt, user.sub),
   });

@@ -16,7 +16,15 @@ export interface K8sClient {
   patchPod(name: string, body: object): Promise<void>;
 
   listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
+  createPVC(body: k8s.V1PersistentVolumeClaim): Promise<k8s.V1PersistentVolumeClaim>;
   deletePVC(name: string): Promise<void>;
+
+  getSecret(name: string): Promise<k8s.V1Secret | null>;
+  createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
+  deleteSecret(name: string): Promise<void>;
+
+  createNetworkPolicy(body: k8s.V1NetworkPolicy): Promise<k8s.V1NetworkPolicy>;
+  getNetworkPolicy(name: string): Promise<k8s.V1NetworkPolicy | null>;
 
   createJob(body: k8s.V1Job): Promise<k8s.V1Job>;
 }
@@ -29,7 +37,12 @@ function is404(err: unknown): boolean {
   );
 }
 
-export function createK8sClient(api: k8s.CoreV1Api, namespace: string, batchApi: k8s.BatchV1Api): K8sClient {
+export function createK8sClient(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  batchApi: k8s.BatchV1Api,
+  networkingApi?: k8s.NetworkingV1Api,
+): K8sClient {
   return {
     async listConfigMaps(labelSelector) {
       const res = await api.listNamespacedConfigMap({ namespace, labelSelector });
@@ -89,8 +102,48 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string, batchApi:
       return res.items ?? [];
     },
 
+    async createPVC(body) {
+      return api.createNamespacedPersistentVolumeClaim({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
     async deletePVC(name) {
       await api.deleteNamespacedPersistentVolumeClaim({ name, namespace });
+    },
+
+    async getSecret(name) {
+      try {
+        return await api.readNamespacedSecret({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async createSecret(body) {
+      return api.createNamespacedSecret({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async deleteSecret(name) {
+      try {
+        await api.deleteNamespacedSecret({ name, namespace });
+      } catch (err) {
+        if (!is404(err)) throw err;
+      }
+    },
+
+    async createNetworkPolicy(body) {
+      if (!networkingApi) throw new Error("NetworkingV1Api not configured");
+      return networkingApi.createNamespacedNetworkPolicy({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async getNetworkPolicy(name) {
+      if (!networkingApi) throw new Error("NetworkingV1Api not configured");
+      try {
+        return await networkingApi.readNamespacedNetworkPolicy({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
     },
 
     async createJob(body) {
@@ -105,6 +158,7 @@ export function createApi(namespace: string) {
   return {
     api: kc.makeApiClient(k8s.CoreV1Api),
     batchApi: kc.makeApiClient(k8s.BatchV1Api),
+    networkingApi: kc.makeApiClient(k8s.NetworkingV1Api),
     namespace,
   };
 }
