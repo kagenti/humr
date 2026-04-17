@@ -43,6 +43,12 @@ onecli:
   image: ghcr.io/kagenti/onecli:0.0.9
   replicas: 1
 
+  # -- Override the external hostname for OneCLI (empty = onecli.{{ domain }}).
+  # Set to "localhost" for local dev to enable Google OAuth — plain localhost
+  # is exempt from Google's HTTPS redirect URI requirement, while subdomains
+  # like onecli.localhost are not. See: https://github.com/kagenti/humr/issues/154
+  externalHostname: ""
+
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""
