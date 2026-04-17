@@ -32,6 +32,12 @@ googleWorkspaceTemplate:
     tag: latest
     pullPolicy: Never
 
+# Use plain "localhost" for OneCLI so Google OAuth redirect URIs work.
+# Google exempts http://localhost from HTTPS requirements but rejects
+# subdomain URLs like http://onecli.localhost. See #154.
+onecli:
+  externalHostname: localhost
+
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
 keycloak:
   testUser:

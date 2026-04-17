@@ -93,7 +93,15 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 
 {{- define "humr.url.onecli" -}}
+{{- if .Values.onecli.externalHostname }}
+{{- if .Values.port }}
+{{- printf "%s://%s:%v" .Values.scheme .Values.onecli.externalHostname .Values.port }}
+{{- else }}
+{{- printf "%s://%s" .Values.scheme .Values.onecli.externalHostname }}
+{{- end }}
+{{- else }}
 {{- printf "%s://onecli.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
 {{- end }}
 
 {{/* ---- Shared PostgreSQL ---- */}}

@@ -25,6 +25,19 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
+    {{- /* OneCLI: primary hostname (custom or onecli.{{ domain }}) */ -}}
+    {{- if $.Values.onecli.externalHostname }}
+    - host: {{ $.Values.onecli.externalHostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "humr.onecli.fullname" $ }}
+                port:
+                  name: web
+    {{- end }}
     {{- range $domain := $domains }}
     - host: {{ printf "onecli.%s" $domain }}
       http:
