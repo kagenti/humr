@@ -10,6 +10,11 @@ export interface AppConnectionView {
   connectedAt?: string;
 }
 
+export interface AgentAppConnections {
+  connectionIds: string[];
+}
+
 export interface ConnectionsService {
   list(): Promise<AppConnectionView[]>;
+  getAgentConnections(agentName: string): Promise<AgentAppConnections>;
 }

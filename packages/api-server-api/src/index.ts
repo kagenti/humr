@@ -54,6 +54,7 @@ export type {
 export type { ChannelsService } from "./modules/channels/types.js";
 
 export type {
+  AgentAppConnections,
   AppConnectionStatus,
   AppConnectionView,
   ConnectionsService,

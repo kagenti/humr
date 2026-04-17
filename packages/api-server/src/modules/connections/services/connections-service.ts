@@ -1,4 +1,5 @@
 import type {
+  AgentAppConnections,
   AppConnectionStatus,
   AppConnectionView,
   ConnectionsService,
@@ -41,6 +42,16 @@ export function createConnectionsService(deps: {
         ...(c.scopes ? { scopes: c.scopes } : {}),
         ...(c.connectedAt ? { connectedAt: c.connectedAt } : {}),
       }));
+    },
+
+    async getAgentConnections(agentName: string): Promise<AgentAppConnections> {
+      const agent = await deps.port.findAgentByIdentifier(agentName);
+      if (!agent) {
+        // Agent may not be registered in OneCLI yet (controller sync is async).
+        return { connectionIds: [] };
+      }
+      const connectionIds = await deps.port.getAgentAppConnectionIds(agent.id);
+      return { connectionIds };
     },
   };
 }
