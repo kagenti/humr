@@ -1,7 +1,6 @@
-import type * as k8sLib from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { TemplatesService, AgentsService, InstancesService, SchedulesService, SessionsApiService } from "api-server-api";
-import { createK8sClient, type K8sClient } from "./infrastructure/k8s.js";
+import type { K8sClient } from "./infrastructure/k8s.js";
 import { createTemplatesRepository } from "./infrastructure/TemplatesRepository.js";
 import { createAgentsRepository } from "./infrastructure/AgentsRepository.js";
 import { createInstancesRepository } from "./infrastructure/InstancesRepository.js";
@@ -38,10 +37,10 @@ export function composeAgentsModule(
   schedules: SchedulesService;
   sessions: SessionsApiService;
 } {
-  const templatesRepo = createTemplatesRepository(k8s);
-  const agentsRepo = createAgentsRepository(k8s);
-  const instancesRepo = createInstancesRepository(k8s);
-  const schedulesRepo = createSchedulesRepository(k8s);
+  const templatesRepo = createTemplatesRepository(db);
+  const agentsRepo = createAgentsRepository(db);
+  const instancesRepo = createInstancesRepository(db);
+  const schedulesRepo = createSchedulesRepository(db);
 
   const agentProvisioner = opts?.onecli && opts?.userJwt
     ? createAgentProvisioner(k8s, opts.onecli, opts.userJwt, owner)
@@ -54,7 +53,7 @@ export function composeAgentsModule(
     provisioner: agentProvisioner,
   });
 
-  const instanceProvisioner = createInstanceProvisioner(k8s);
+  const instanceProvisioner = createInstanceProvisioner(k8s, db);
 
   return {
     templates: createTemplatesService({ repo: templatesRepo }),
@@ -87,9 +86,9 @@ export function composeAgentsModule(
 }
 
 export function composeSystemInstances(k8s: K8sClient, namespace: string, db: Db): InstancesService {
-  const templatesRepo = createTemplatesRepository(k8s);
-  const agentsRepo = createAgentsRepository(k8s);
-  const instancesRepo = createInstancesRepository(k8s);
+  const templatesRepo = createTemplatesRepository(db);
+  const agentsRepo = createAgentsRepository(db);
+  const instancesRepo = createInstancesRepository(db);
 
   const agents = createAgentsService({
     repo: agentsRepo,

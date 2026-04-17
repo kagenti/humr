@@ -1,12 +1,8 @@
-import type { Agent } from "api-server-api";
-import type { K8sClient } from "./k8s.js";
-import {
-  LABEL_TYPE, TYPE_AGENT, LABEL_OWNER,
-} from "./labels.js";
-import {
-  parseAgent, isOwnedBy, hasType,
-  buildAgentConfigMap, patchSpecField,
-} from "./configmap-mappers.js";
+import type { Agent, AgentSpec } from "api-server-api";
+import crypto from "node:crypto";
+import { eq, and } from "drizzle-orm";
+import type { Db } from "db";
+import { agents } from "db";
 
 export interface AgentsRepository {
   list(owner: string): Promise<Agent[]>;
@@ -16,39 +12,49 @@ export interface AgentsRepository {
   delete(id: string, owner: string): Promise<void>;
 }
 
-export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
+function toAgent(row: typeof agents.$inferSelect): Agent {
+  return {
+    id: row.id,
+    name: row.name,
+    templateId: row.templateId ?? undefined,
+    spec: row.spec as AgentSpec,
+  };
+}
+
+export function createAgentsRepository(db: Db): AgentsRepository {
   return {
     async list(owner) {
-      const cms = await k8s.listConfigMaps(
-        `${LABEL_TYPE}=${TYPE_AGENT},${LABEL_OWNER}=${owner}`,
-      );
-      return cms.map(parseAgent);
+      const rows = await db.select().from(agents).where(eq(agents.owner, owner));
+      return rows.map(toAgent);
     },
 
     async get(id, owner) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !isOwnedBy(cm, owner) || !hasType(cm, TYPE_AGENT)) return null;
-      return parseAgent(cm);
+      const [row] = await db.select().from(agents).where(and(eq(agents.id, id), eq(agents.owner, owner)));
+      return row ? toAgent(row) : null;
     },
 
     async create(spec, owner, templateId?) {
-      const body = buildAgentConfigMap(spec, owner, templateId);
-      const created = await k8s.createConfigMap(body);
-      return parseAgent(created);
+      const id = `agent-${crypto.randomBytes(4).toString("hex")}`;
+      const name = (spec as any).name ?? id;
+      const [row] = await db.insert(agents).values({
+        id, name, owner, templateId: templateId ?? null, spec,
+      }).returning();
+      return toAgent(row);
     },
 
     async updateSpec(id, owner, patch) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !isOwnedBy(cm, owner) || !hasType(cm, TYPE_AGENT)) return null;
-      cm.data = patchSpecField(cm, patch);
-      const updated = await k8s.replaceConfigMap(id, cm);
-      return parseAgent(updated);
+      const [existing] = await db.select().from(agents).where(and(eq(agents.id, id), eq(agents.owner, owner)));
+      if (!existing) return null;
+      const merged = { ...(existing.spec as Record<string, unknown>), ...patch };
+      const [updated] = await db.update(agents)
+        .set({ spec: merged, name: (merged as any).name ?? existing.name })
+        .where(and(eq(agents.id, id), eq(agents.owner, owner)))
+        .returning();
+      return toAgent(updated);
     },
 
     async delete(id, owner) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !isOwnedBy(cm, owner) || !hasType(cm, TYPE_AGENT)) return;
-      await k8s.deleteConfigMap(id);
+      await db.delete(agents).where(and(eq(agents.id, id), eq(agents.owner, owner)));
     },
   };
 }

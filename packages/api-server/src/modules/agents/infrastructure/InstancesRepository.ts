@@ -1,11 +1,7 @@
-import type { K8sClient } from "./k8s.js";
-import {
-  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF,
-} from "./labels.js";
-import {
-  parseInfraInstance, isOwnedBy, hasType,
-  buildInstanceConfigMap, patchSpecField,
-} from "./configmap-mappers.js";
+import crypto from "node:crypto";
+import { eq, and } from "drizzle-orm";
+import type { Db } from "db";
+import { instances } from "db";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
 export interface InstancesRepository {
@@ -17,48 +13,65 @@ export interface InstancesRepository {
   isOwnedBy(id: string, owner: string): Promise<boolean>;
 }
 
-export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
+function toInfra(row: typeof instances.$inferSelect): InfraInstance {
+  return {
+    id: row.id,
+    name: row.name,
+    agentId: row.agentId,
+    description: row.description ?? undefined,
+  };
+}
+
+export function createInstancesRepository(db: Db): InstancesRepository {
   return {
     async list(owner?) {
-      const ownerSelector = owner ? `,${LABEL_OWNER}=${owner}` : "";
-      const configMaps = await k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_INSTANCE}${ownerSelector}`);
-      return configMaps.map((cm) => parseInfraInstance(cm));
+      const rows = owner
+        ? await db.select().from(instances).where(eq(instances.owner, owner))
+        : await db.select().from(instances);
+      return rows.map(toInfra);
     },
 
     async get(id, owner?) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return null;
-      if (owner && !isOwnedBy(cm, owner)) return null;
-      if (!owner && !hasType(cm, TYPE_INSTANCE)) return null;
-      return parseInfraInstance(cm);
+      const conds = owner
+        ? and(eq(instances.id, id), eq(instances.owner, owner))
+        : eq(instances.id, id);
+      const [row] = await db.select().from(instances).where(conds);
+      return row ? toInfra(row) : null;
     },
 
     async create(agentId, spec, owner) {
-      const body = buildInstanceConfigMap(agentId, spec, owner);
-      const created = await k8s.createConfigMap(body);
-      return parseInfraInstance(created);
+      const id = `inst-${crypto.randomBytes(4).toString("hex")}`;
+      const name = (spec as any).name ?? id;
+      const description = (spec as any).description ?? null;
+      const [row] = await db.insert(instances).values({
+        id, name, agentId, owner, description,
+      }).returning();
+      return toInfra(row);
     },
 
     async updateSpec(id, owner, patch) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return null;
-      if (owner && !isOwnedBy(cm, owner)) return null;
-      cm.data = patchSpecField(cm, patch);
-      const updated = await k8s.replaceConfigMap(id, cm);
-      return parseInfraInstance(updated);
+      const conds = owner
+        ? and(eq(instances.id, id), eq(instances.owner, owner))
+        : eq(instances.id, id);
+      const updates: Partial<typeof instances.$inferInsert> = {};
+      if (patch.description !== undefined) updates.description = patch.description as string;
+      if (patch.name !== undefined) updates.name = patch.name as string;
+      const [updated] = await db.update(instances).set(updates).where(conds).returning();
+      return updated ? toInfra(updated) : null;
     },
 
     async delete(id, owner?) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return false;
-      if (owner && !isOwnedBy(cm, owner)) return false;
-      await k8s.deleteConfigMap(id);
-      return true;
+      const conds = owner
+        ? and(eq(instances.id, id), eq(instances.owner, owner))
+        : eq(instances.id, id);
+      const result = await db.delete(instances).where(conds).returning();
+      return result.length > 0;
     },
 
     async isOwnedBy(id, owner) {
-      const cm = await k8s.getConfigMap(id);
-      return cm !== null && isOwnedBy(cm, owner);
+      const [row] = await db.select({ id: instances.id }).from(instances)
+        .where(and(eq(instances.id, id), eq(instances.owner, owner)));
+      return !!row;
     },
   };
 }

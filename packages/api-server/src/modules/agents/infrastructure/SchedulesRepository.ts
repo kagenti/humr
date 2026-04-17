@@ -1,13 +1,8 @@
-import type { Schedule, ScheduleSpec } from "api-server-api";
-import yaml from "js-yaml";
-import type { K8sClient } from "./k8s.js";
-import {
-  LABEL_TYPE, TYPE_SCHEDULE, LABEL_OWNER, LABEL_INSTANCE_REF,
-  LABEL_AGENT_REF, SPEC_KEY,
-} from "./labels.js";
-import {
-  parseSchedule, isOwnedBy, buildScheduleConfigMap,
-} from "./configmap-mappers.js";
+import type { Schedule, ScheduleSpec, ScheduleStatus } from "api-server-api";
+import crypto from "node:crypto";
+import { eq, and } from "drizzle-orm";
+import type { Db } from "db";
+import { schedules, instances } from "db";
 
 export interface SchedulesRepository {
   list(instanceId: string, owner: string): Promise<Schedule[]>;
@@ -18,53 +13,64 @@ export interface SchedulesRepository {
   readAgentRef(instanceId: string, owner: string): Promise<string | null>;
 }
 
-export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
-  async function getOwned(id: string, owner: string) {
-    const cm = await k8s.getConfigMap(id);
-    if (!cm || !isOwnedBy(cm, owner)) return null;
-    return cm;
-  }
+function toSchedule(row: typeof schedules.$inferSelect): Schedule {
+  const spec = row.spec as ScheduleSpec;
+  const status: ScheduleStatus | undefined = row.lastRun
+    ? { lastRun: row.lastRun.toISOString(), lastResult: row.lastResult ?? undefined }
+    : undefined;
+  return {
+    id: row.id,
+    name: row.name,
+    instanceId: row.instanceId,
+    spec,
+    status,
+  };
+}
 
+export function createSchedulesRepository(db: Db): SchedulesRepository {
   return {
     async list(instanceId, owner) {
-      const cms = await k8s.listConfigMaps(
-        `${LABEL_TYPE}=${TYPE_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceId},${LABEL_OWNER}=${owner}`,
-      );
-      return cms.map(parseSchedule);
+      const rows = await db.select().from(schedules)
+        .where(and(eq(schedules.instanceId, instanceId), eq(schedules.owner, owner)));
+      return rows.map(toSchedule);
     },
 
     async get(id, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return null;
-      return parseSchedule(cm);
+      const [row] = await db.select().from(schedules)
+        .where(and(eq(schedules.id, id), eq(schedules.owner, owner)));
+      return row ? toSchedule(row) : null;
     },
 
     async create(instanceId, agentRef, spec, owner) {
-      const body = buildScheduleConfigMap(instanceId, agentRef, spec, owner);
-      const created = await k8s.createConfigMap(body);
-      return parseSchedule(created);
+      const id = `sched-${crypto.randomBytes(4).toString("hex")}`;
+      const name = (spec as any).name ?? id;
+      const [row] = await db.insert(schedules).values({
+        id, name, instanceId, agentId: agentRef, owner, spec,
+      }).returning();
+      return toSchedule(row);
     },
 
     async delete(id, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return;
-      await k8s.deleteConfigMap(id);
+      await db.delete(schedules).where(and(eq(schedules.id, id), eq(schedules.owner, owner)));
     },
 
     async toggle(id, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return null;
-      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+      const [existing] = await db.select().from(schedules)
+        .where(and(eq(schedules.id, id), eq(schedules.owner, owner)));
+      if (!existing) return null;
+      const spec = existing.spec as ScheduleSpec;
       spec.enabled = !spec.enabled;
-      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await k8s.replaceConfigMap(id, cm);
-      return parseSchedule(updated);
+      const [updated] = await db.update(schedules)
+        .set({ spec })
+        .where(eq(schedules.id, id))
+        .returning();
+      return toSchedule(updated);
     },
 
     async readAgentRef(instanceId, owner) {
-      const cm = await getOwned(instanceId, owner);
-      if (!cm) return null;
-      return cm.metadata!.labels![LABEL_AGENT_REF] ?? null;
+      const [row] = await db.select({ agentId: instances.agentId }).from(instances)
+        .where(and(eq(instances.id, instanceId), eq(instances.owner, owner)));
+      return row?.agentId ?? null;
     },
   };
 }

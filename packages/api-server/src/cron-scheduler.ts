@@ -1,8 +1,9 @@
 import { Cron } from "croner";
-import yaml from "js-yaml";
+import { eq } from "drizzle-orm";
+import type { Db } from "db";
+import { schedules, instances, agents } from "db";
 import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { LABEL_AGENT_REF, SPEC_KEY, STATUS_KEY } from "./modules/agents/infrastructure/labels.js";
-import { buildJob, type JobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
+import { buildJob, type JobBuilderConfig, type AgentSpec } from "./modules/agents/infrastructure/job-builder.js";
 
 interface ScheduleSpec {
   cron: string;
@@ -13,72 +14,65 @@ interface ScheduleSpec {
   mcpServers?: Record<string, unknown>;
 }
 
-export function createCronScheduler(k8s: K8sClient, jobCfg: JobBuilderConfig) {
+export function createCronScheduler(k8s: K8sClient, jobCfg: JobBuilderConfig, db: Db) {
   const jobs = new Map<string, Cron>();
 
-  function sync(name: string, instanceId: string, specYaml: string) {
-    remove(name);
-
-    const spec = yaml.load(specYaml) as ScheduleSpec;
+  function sync(id: string, instanceId: string, spec: ScheduleSpec) {
+    remove(id);
     if (!spec.enabled || !spec.cron) return;
 
     const job = new Cron(spec.cron, () => {
-      fire(name, instanceId, spec).catch((err) => {
-        process.stderr.write(`[cron] ${name} failed: ${err}\n`);
-        writeStatus(name, err.message);
+      fire(id, instanceId, spec).catch((err) => {
+        process.stderr.write(`[cron] ${id} failed: ${err}\n`);
       });
     });
 
-    jobs.set(name, job);
-    process.stderr.write(`[cron] registered ${name} (${spec.cron})\n`);
+    jobs.set(id, job);
+    process.stderr.write(`[cron] registered ${id} (${spec.cron})\n`);
   }
 
-  function remove(name: string) {
-    const existing = jobs.get(name);
-    if (existing) {
-      existing.stop();
-      jobs.delete(name);
-    }
+  function remove(id: string) {
+    const existing = jobs.get(id);
+    if (existing) { existing.stop(); jobs.delete(id); }
   }
 
-  async function fire(name: string, instanceId: string, spec: ScheduleSpec) {
-    const instanceCM = await k8s.getConfigMap(instanceId);
-    if (!instanceCM) throw new Error(`instance ${instanceId} not found`);
+  async function fire(scheduleId: string, instanceId: string, spec: ScheduleSpec) {
+    const [inst] = await db.select().from(instances).where(eq(instances.id, instanceId));
+    if (!inst) throw new Error(`instance ${instanceId} not found`);
 
-    const agentName = instanceCM.metadata?.labels?.[LABEL_AGENT_REF];
-    if (!agentName) throw new Error(`instance ${instanceId} has no agent label`);
-
-    const agentCM = await k8s.getConfigMap(agentName);
-    if (!agentCM) throw new Error(`agent ${agentName} not found`);
+    const [agent] = await db.select().from(agents).where(eq(agents.id, inst.agentId));
+    if (!agent) throw new Error(`agent ${inst.agentId} not found`);
 
     const triggerPayload = JSON.stringify({
       type: spec.type ?? "cron",
       task: spec.task,
       timestamp: new Date().toISOString(),
-      schedule: name,
+      schedule: scheduleId,
       ...(spec.sessionMode && { sessionMode: spec.sessionMode }),
       ...(spec.mcpServers && { mcpServers: spec.mcpServers }),
     });
 
     const job = buildJob({
-      instanceName: instanceId,
-      instanceCM,
-      agentCM,
+      instanceId,
+      agentId: agent.id,
+      agentSpec: agent.spec as AgentSpec,
       cfg: jobCfg,
       extraEnv: [{ name: "HUMR_TRIGGER", value: triggerPayload }],
     });
 
     const created = await k8s.createJob(job);
-    process.stderr.write(`[cron] ${name} → Job ${created.metadata!.name!}\n`);
-    writeStatus(name, "success");
+    process.stderr.write(`[cron] ${scheduleId} → Job ${created.metadata!.name!}\n`);
+
+    await db.update(schedules)
+      .set({ lastRun: new Date(), lastResult: "success" })
+      .where(eq(schedules.id, scheduleId));
   }
 
-  async function writeStatus(name: string, result: string) {
-    try {
-      await k8s.patchConfigMap(name, {
-        data: { [STATUS_KEY]: yaml.dump({ version: "humr.ai/v1", lastRun: new Date().toISOString(), lastResult: result }) },
-      });
-    } catch { /* best effort */ }
+  async function syncAll() {
+    const rows = await db.select().from(schedules);
+    for (const row of rows) {
+      sync(row.id, row.instanceId, row.spec as ScheduleSpec);
+    }
   }
 
   function stop() {
@@ -86,5 +80,5 @@ export function createCronScheduler(k8s: K8sClient, jobCfg: JobBuilderConfig) {
     jobs.clear();
   }
 
-  return { sync, remove, stop };
+  return { sync, remove, syncAll, stop };
 }

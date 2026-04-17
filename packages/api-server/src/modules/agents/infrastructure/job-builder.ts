@@ -1,7 +1,5 @@
 import type * as k8s from "@kubernetes/client-node";
-import yaml from "js-yaml";
 import crypto from "node:crypto";
-import { LABEL_AGENT_REF, SPEC_KEY } from "./labels.js";
 
 export interface JobBuilderConfig {
   namespace: string;
@@ -36,19 +34,13 @@ export function loadJobBuilderConfig(): JobBuilderConfig {
   };
 }
 
-interface AgentSpec {
+export interface AgentSpec {
   image: string;
   mounts?: { path: string; persist: boolean }[];
   init?: string;
   env?: { name: string; value: string }[];
   resources?: { requests?: Record<string, string>; limits?: Record<string, string> };
   securityContext?: { runAsNonRoot?: boolean };
-}
-
-interface InstanceSpec {
-  agentId?: string;
-  env?: { name: string; value: string }[];
-  secretRef?: string;
 }
 
 function sanitizeMountName(path: string): string {
@@ -60,24 +52,20 @@ function gatewayFQDN(cfg: JobBuilderConfig): string {
 }
 
 export function buildJob(opts: {
-  instanceName: string;
-  instanceCM: k8s.V1ConfigMap;
-  agentCM: k8s.V1ConfigMap;
+  instanceId: string;
+  agentId: string;
+  agentSpec: AgentSpec;
   cfg: JobBuilderConfig;
   extraEnv?: k8s.V1EnvVar[];
 }): k8s.V1Job {
-  const { instanceName, instanceCM, agentCM, cfg } = opts;
-  const agentSpec = yaml.load(agentCM.data?.[SPEC_KEY] ?? "") as AgentSpec;
-  const instanceSpec = yaml.load(instanceCM.data?.[SPEC_KEY] ?? "") as InstanceSpec;
-  const agentName = instanceCM.metadata?.labels?.[LABEL_AGENT_REF]
-    ?? instanceSpec.agentId ?? agentCM.metadata!.name!;
+  const { instanceId, agentId, agentSpec, cfg } = opts;
 
-  const labels: Record<string, string> = { "humr.ai/instance": instanceName };
-  const jobName = `${instanceName}-${crypto.randomBytes(4).toString("hex")}`;
+  const labels: Record<string, string> = { "humr.ai/instance": instanceId };
+  const jobName = `${instanceId}-${crypto.randomBytes(4).toString("hex")}`;
 
   const proxyAddr = `http://x:$(ONECLI_ACCESS_TOKEN)@${gatewayFQDN(cfg)}:${cfg.gatewayPort}`;
   const caCertPath = "/etc/humr/ca/ca.crt";
-  const tokenSecretName = `humr-agent-${agentName}-token`;
+  const tokenSecretName = `humr-agent-${agentId}-token`;
 
   const env: k8s.V1EnvVar[] = [
     { name: "ONECLI_ACCESS_TOKEN", valueFrom: { secretKeyRef: { name: tokenSecretName, key: "access-token" } } },
@@ -91,18 +79,12 @@ export function buildJob(opts: {
     { name: "NODE_USE_ENV_PROXY", value: "1" },
     { name: "GIT_HTTP_PROXY_AUTHMETHOD", value: "basic" },
     { name: "GH_TOKEN", value: "humr:sentinel" },
-    { name: "ADK_INSTANCE_ID", value: instanceName },
+    { name: "ADK_INSTANCE_ID", value: instanceId },
     { name: "API_SERVER_URL", value: `http://${cfg.releaseName}-apiserver.${cfg.releaseNamespace}.svc.cluster.local:4000` },
     { name: "HOME", value: "/home/agent" },
     ...(agentSpec.env ?? []).map(e => ({ name: e.name, value: e.value })),
-    ...(instanceSpec.env ?? []).map(e => ({ name: e.name, value: e.value })),
     ...(opts.extraEnv ?? []),
   ];
-
-  const envFrom: k8s.V1EnvFromSource[] = [];
-  if (instanceSpec.secretRef) {
-    envFrom.push({ secretRef: { name: instanceSpec.secretRef } });
-  }
 
   const volumes: k8s.V1Volume[] = [];
   const volumeMounts: k8s.V1VolumeMount[] = [];
@@ -111,7 +93,7 @@ export function buildJob(opts: {
     const volName = sanitizeMountName(m.path);
     volumeMounts.push({ name: volName, mountPath: m.path });
     if (m.persist) {
-      volumes.push({ name: volName, persistentVolumeClaim: { claimName: `${volName}-${instanceName}-0` } });
+      volumes.push({ name: volName, persistentVolumeClaim: { claimName: `${volName}-${instanceId}-0` } });
     } else {
       volumes.push({ name: volName, emptyDir: {} });
     }
@@ -160,14 +142,10 @@ export function buildJob(opts: {
             imagePullPolicy: cfg.agentImagePullPolicy as any,
             ports: [{ name: "acp", containerPort: 8080 }],
             env,
-            envFrom: envFrom.length > 0 ? envFrom : undefined,
             readinessProbe: { httpGet: { path: "/healthz", port: "acp" as any }, periodSeconds: 1 },
             livenessProbe: { httpGet: { path: "/healthz", port: "acp" as any }, initialDelaySeconds: 10, periodSeconds: 10 },
             securityContext: { capabilities: { drop: ["ALL"] } },
-            resources: {
-              requests: agentSpec.resources?.requests,
-              limits: agentSpec.resources?.limits,
-            },
+            resources: { requests: agentSpec.resources?.requests, limits: agentSpec.resources?.limits },
             volumeMounts,
           }],
           volumes,

@@ -1,10 +1,7 @@
 import type { Template, TemplateSpec } from "api-server-api";
-import type { K8sClient } from "./k8s.js";
-import {
-  LABEL_TYPE, TYPE_TEMPLATE, LABEL_OWNER, SPEC_KEY,
-} from "./labels.js";
-import { parseTemplate, hasType } from "./configmap-mappers.js";
-import yaml from "js-yaml";
+import { eq } from "drizzle-orm";
+import type { Db } from "db";
+import { templates } from "db";
 
 export interface TemplatesRepository {
   list(): Promise<Template[]>;
@@ -12,29 +9,27 @@ export interface TemplatesRepository {
   readSpec(id: string): Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 }
 
-export function createTemplatesRepository(k8s: K8sClient): TemplatesRepository {
+export function createTemplatesRepository(db: Db): TemplatesRepository {
   return {
     async list() {
-      const cms = await k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_TEMPLATE}`);
-      return cms
-        .filter((cm) => !cm.metadata?.labels?.[LABEL_OWNER])
-        .map(parseTemplate);
+      const rows = await db.select().from(templates);
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        spec: r.spec as TemplateSpec,
+      }));
     },
 
     async get(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_TEMPLATE)) return null;
-      if (cm.metadata?.labels?.[LABEL_OWNER]) return null;
-      return parseTemplate(cm);
+      const [row] = await db.select().from(templates).where(eq(templates.id, id));
+      if (!row) return null;
+      return { id: row.id, name: row.name, spec: row.spec as TemplateSpec };
     },
 
     async readSpec(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_TEMPLATE)) return null;
-      return {
-        spec: yaml.load(cm.data?.[SPEC_KEY] ?? "") as TemplateSpec,
-        isOwned: !!cm.metadata?.labels?.[LABEL_OWNER],
-      };
+      const [row] = await db.select().from(templates).where(eq(templates.id, id));
+      if (!row) return null;
+      return { spec: row.spec as TemplateSpec, isOwned: false };
     },
   };
 }

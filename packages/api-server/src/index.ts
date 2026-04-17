@@ -232,20 +232,13 @@ const server = serve({ fetch: app.fetch, port: config.port }, () => {
   process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
 });
 
-const acpRelay = createAcpRelay(k8sClient, jobCfg);
+const acpRelay = createAcpRelay(k8sClient, jobCfg, db);
 
-// Cron scheduler — polls schedule ConfigMaps and creates Jobs on fire
-const cronScheduler = createCronScheduler(k8sClient, jobCfg);
+const cronScheduler = createCronScheduler(k8sClient, jobCfg, db);
 const SCHEDULE_POLL_MS = 30_000;
 async function syncSchedules() {
   try {
-    const cms = await k8sClient.listConfigMaps("humr.ai/type=agent-schedule");
-    const seen = new Set<string>();
-    for (const cm of cms) {
-      seen.add(cm.metadata!.name!);
-      const instanceId = cm.metadata!.labels!["humr.ai/instance"];
-      cronScheduler.sync(cm.metadata!.name!, instanceId, cm.data?.["spec.yaml"] ?? "");
-    }
+    await cronScheduler.syncAll();
   } catch (err) {
     process.stderr.write(`[cron] sync error: ${err}\n`);
   }
