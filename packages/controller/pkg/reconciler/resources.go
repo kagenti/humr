@@ -51,7 +51,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: "/home/agent"},
-		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.MCPServerURL, name)},
+		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 	}
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -243,7 +243,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	acpPort := intstr.FromInt32(8080)
 	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
-	mcpPort := intstr.FromInt32(int32(cfg.MCPServerPort))
+	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 
@@ -282,6 +282,8 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 					},
 				},
 				{
+					// Harness API server: separate port exposing only the subset of
+					// API available to agent harnesses (triggers, MCP tools).
 					To: []networkingv1.NetworkPolicyPeer{{
 						PodSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
@@ -291,7 +293,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 						},
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &mcpPort},
+						{Protocol: &tcp, Port: &harnessPort},
 					},
 				},
 				{
