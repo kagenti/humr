@@ -9,7 +9,7 @@
  Isolated by default. Credentialed. Always-on.
 ```
 
-Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. Humr gives Claude Code, Codex, or Gemini CLI an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
+Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. Humr gives Claude Code, Codex, Gemini CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
 
 ## What you get
 
@@ -19,7 +19,7 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 - **Slack-native channels** — One Slack app, unlimited agents. Per-thread routing, identity linking via `/humr login`, per-instance access control. Your agents live where your team already works.
 
-- **Bring your own agent** — Claude Code ships as the default template. Codex, Gemini CLI, or anything that speaks [ACP](https://spec.agentcontrolprotocol.com) works too. No lock-in to one vendor's SDK or cloud.
+- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Gemini CLI, or anything that speaks [ACP](https://spec.agentcontrolprotocol.com) works too. No lock-in to one vendor's SDK or cloud.
 
 <!-- TODO: replace with screenshot or demo video of a running agent session -->
 ![Humr UI](docs/assets/hero.png)
