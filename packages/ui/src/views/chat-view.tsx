@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import { useStore } from "../store.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
-import { ArrowLeft, Send as SendIcon, Square, Settings2 } from "lucide-react";
+import { ArrowLeft, Send as SendIcon, Square, Settings2, Paperclip, X, FileText as FileIcon } from "lucide-react";
+import type { Attachment } from "./../types.js";
 import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
 import { ResizeHandle } from "./../components/resize-handle.js";
@@ -32,10 +33,12 @@ export function ChatView() {
   const setShowMobilePanel = useStore((s) => s.setShowMobilePanel);
 
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Hooks ──
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
@@ -48,6 +51,61 @@ export function ChatView() {
 
   useAutoResize(textareaRef, input);
 
+  // ── Attachment helpers ──
+  const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    for (const file of Array.from(files)) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        if (IMAGE_MIME.includes(file.type)) {
+          setAttachments((prev) => [...prev, { kind: "image", data: base64, mimeType: file.type }]);
+        } else {
+          setAttachments((prev) => [...prev, { kind: "file", name: file.name, data: base64, mimeType: file.type || "application/octet-stream", size: file.size }]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Paste handler — intercept file paste on the textarea
+  const onPaste = useCallback((e: React.ClipboardEvent) => {
+    const files = Array.from(e.clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile()!)
+      .filter(Boolean);
+    if (files.length > 0) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  }, [addFiles]);
+
+  // Drag-and-drop state
+  const [dragOver, setDragOver] = useState(false);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  }, [addFiles]);
+
   // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -56,19 +114,22 @@ export function ChatView() {
   // ── Input handling ──
   const isComputing = busy && !loadingSession;
   const hasInput = input.trim().length > 0;
-  const showStop = isComputing && !hasInput;
-  const sendDisabled = !isComputing && !hasInput;
+  const hasContent = hasInput || attachments.length > 0;
+  const showStop = isComputing && !hasContent;
+  const sendDisabled = !isComputing && !hasContent;
 
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text) return;
+    const files = attachments.length > 0 ? attachments : undefined;
+    if (!text && !files) return;
     setInput("");
+    setAttachments([]);
     if (busy) {
       useStore.getState().setQueuedMessage(text);
       return;
     }
-    sendPrompt(text);
-  }, [input, busy, sendPrompt]);
+    sendPrompt(text, files);
+  }, [input, attachments, busy, sendPrompt]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -184,7 +245,7 @@ export function ChatView() {
                   {m.role === "user" ? "You" : "Agent"}
                 </span>
                 <div className={m.role === "user"
-                  ? "rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
+                  ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
                   : "flex flex-col gap-2 max-w-full"
                 }>
                   {m.parts.map((p, i) =>
@@ -195,6 +256,19 @@ export function ChatView() {
                           {m.streaming && i === m.parts.length - 1 && <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />}
                         </span>
                       )
+                    ) : p.kind === "image" ? (
+                      <img
+                        key={i}
+                        src={`data:${p.mimeType};base64,${p.data}`}
+                        alt="image"
+                        className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
+                      />
+                    ) : p.kind === "file" ? (
+                      <div key={i} className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2">
+                        <FileIcon size={14} className="text-text-muted shrink-0" />
+                        <span className="text-[12px] text-text-secondary">{p.name}</span>
+                        <span className="text-[10px] text-text-muted">{p.size < 1024 ? `${p.size} B` : `${(p.size / 1024).toFixed(1)} KB`}</span>
+                      </div>
                     ) : <ToolChip key={i} chip={p} />
                   )}
                   {m.streaming && m.parts.length === 0 && <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />}
@@ -206,16 +280,65 @@ export function ChatView() {
         </div>
 
         {/* Input area */}
-        <div className="border-t border-border-light bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3">
+        <div
+          className={`border-t bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3 transition-colors ${dragOver ? "border-accent bg-accent-light/30" : "border-border-light"}`}
+          onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+        >
           <div className="mx-auto max-w-[760px] flex flex-col gap-1.5">
+            <input
+              ref={fileInputRef} type="file" multiple className="hidden"
+              onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ""; }}
+            />
             <div className="flex items-end gap-2">
-              <textarea
-                ref={textareaRef}
-                className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
-                value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
-                placeholder={isComputing ? "Queue a message..." : "Message agent..."}
-                rows={1} disabled={loadingSession}
-              />
+              <button
+                className="h-[44px] w-[44px] rounded-lg border border-border-light bg-bg text-text-muted hover:text-accent hover:border-accent shrink-0 flex items-center justify-center transition-colors disabled:opacity-40"
+                onClick={() => fileInputRef.current?.click()} disabled={loadingSession} title="Attach file"
+              >
+                <Paperclip size={16} />
+              </button>
+              {attachments.length > 0 ? (
+                <div className="flex-1 rounded-lg border border-accent bg-bg shadow-[0_0_0_3px_var(--color-accent-glow)] transition-all focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--color-accent-glow)]">
+                  <div className="flex gap-2 flex-wrap px-3 pt-3">
+                    {attachments.map((a, i) => (
+                      <div key={i} className="relative group">
+                        {a.kind === "image" ? (
+                          <img
+                            src={`data:${a.mimeType};base64,${a.data}`}
+                            alt="attachment"
+                            className="h-14 w-14 rounded-md border border-border-light object-cover"
+                          />
+                        ) : (
+                          <div className="h-14 px-3 rounded-md border border-border-light bg-surface-raised flex items-center gap-2">
+                            <FileIcon size={14} className="text-text-muted shrink-0" />
+                            <span className="text-[11px] text-text-secondary truncate max-w-[120px]">{a.name}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => removeAttachment(i)}
+                          className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-danger text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    className="w-full bg-transparent px-4 py-2 text-[14px] text-text outline-none resize-none max-h-[50vh] overflow-hidden placeholder:text-text-muted disabled:opacity-40"
+                    value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown} onPaste={onPaste}
+                    placeholder={isComputing ? "Queue a message..." : "Message agent..."}
+                    rows={1} disabled={loadingSession}
+                  />
+                </div>
+              ) : (
+                <textarea
+                  ref={textareaRef}
+                  className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
+                  value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown} onPaste={onPaste}
+                  placeholder={isComputing ? "Queue a message..." : "Message agent..."}
+                  rows={1} disabled={loadingSession}
+                />
+              )}
               {showStop ? (
                 <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center"
                   style={{ boxShadow: "3px 3px 0 var(--c-danger)" }} onClick={stopAgent} title="Stop">

@@ -39,9 +39,7 @@ export function useFileTree(selectedInstance: string | null) {
         if (cur) {
           try {
             const d = await instanceTrpc.files.read.query({ path: cur.path });
-            d.content !== undefined
-              ? setOpenFile({ path: d.path, content: d.content })
-              : setOpenFile(null);
+            setOpenFile({ path: d.path, content: d.content ?? "", binary: d.binary, mimeType: d.mimeType });
           } catch { setOpenFile(null); }
         }
       } catch {}
@@ -55,10 +53,8 @@ export function useFileTree(selectedInstance: string | null) {
       if (openFile?.path === path) { setOpenFile(null); return; }
       try {
         const d = await instanceTrpc.files.read.query({ path });
-        if (d.content !== undefined) {
-          setOpenFile({ path: d.path, content: d.content });
-          setRightTab("files");
-        }
+        setOpenFile({ path: d.path, content: d.content ?? "", binary: d.binary, mimeType: d.mimeType });
+        setRightTab("files");
       } catch {}
     },
     [instanceTrpc, openFile, setOpenFile, setRightTab],

@@ -63,7 +63,7 @@ export interface HumrStore {
   messages: Message[];
   schedules: Schedule[];
   fileTree: TreeEntry[];
-  openFile: { path: string; content: string } | null;
+  openFile: { path: string; content: string; binary?: boolean; mimeType?: string } | null;
   log: LogEntry[];
   busy: boolean;
   sessionId: string | null;
@@ -138,7 +138,7 @@ export interface HumrStore {
 
   // File tree
   setFileTree: (entries: TreeEntry[]) => void;
-  setOpenFile: (file: { path: string; content: string } | null) => void;
+  setOpenFile: (file: { path: string; content: string; binary?: boolean; mimeType?: string } | null) => void;
 
   // Right tab
   setRightTab: (tab: "files" | "log" | "configuration") => void;
