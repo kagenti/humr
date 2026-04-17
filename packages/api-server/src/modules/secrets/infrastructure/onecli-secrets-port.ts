@@ -1,3 +1,4 @@
+import type { EnvMapping } from "api-server-api";
 import type { OnecliClient } from "../../../onecli.js";
 
 export interface OnecliSecret {
@@ -6,8 +7,11 @@ export interface OnecliSecret {
   type: string;
   hostPattern: string;
   createdAt: string;
-  /** For type="anthropic", OneCLI stores { authMode: "api-key" | "oauth" }. */
-  metadata?: { authMode?: "api-key" | "oauth" } | null;
+  /** Type-specific metadata. `authMode` is server-owned (Anthropic only); `envMappings` is client-settable. */
+  metadata?: {
+    authMode?: "api-key" | "oauth";
+    envMappings?: EnvMapping[];
+  } | null;
 }
 
 export interface OnecliAgent {
@@ -25,8 +29,16 @@ export interface OnecliSecretsPort {
     type: string;
     value: string;
     hostPattern: string;
+    envMappings?: EnvMapping[];
   }): Promise<OnecliSecret>;
-  updateSecret(id: string, input: { name?: string; value?: string }): Promise<void>;
+  updateSecret(
+    id: string,
+    input: {
+      name?: string;
+      value?: string;
+      envMappings?: EnvMapping[];
+    },
+  ): Promise<void>;
   deleteSecret(id: string): Promise<void>;
   findAgentByIdentifier(identifier: string): Promise<OnecliAgent | null>;
   getAgentSecrets(agentUuid: string): Promise<string[]>;
@@ -82,12 +94,13 @@ export function createOnecliSecretsPort(
   return {
     listSecrets: () => fetchJson<OnecliSecret[]>("/api/secrets"),
 
-    createSecret: (input) =>
-      fetchJson<OnecliSecret>("/api/secrets", {
+    createSecret: (input) => {
+      const { envMappings, ...rest } = input;
+      return fetchJson<OnecliSecret>("/api/secrets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...input,
+          ...rest,
           // OneCLI requires injectionConfig for generic secrets — default to
           // Authorization: Bearer which matches the UI description.
           ...(input.type === "generic" && {
@@ -96,15 +109,22 @@ export function createOnecliSecretsPort(
               valueFormat: "Bearer {value}",
             },
           }),
+          ...(envMappings !== undefined && { metadata: { envMappings } }),
         }),
-      }),
+      });
+    },
 
-    updateSecret: (id, input) =>
-      fetchVoid(`/api/secrets/${encodeURIComponent(id)}`, {
+    updateSecret: (id, input) => {
+      const { envMappings, ...rest } = input;
+      return fetchVoid(`/api/secrets/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      }),
+        body: JSON.stringify({
+          ...rest,
+          ...(envMappings !== undefined && { metadata: { envMappings } }),
+        }),
+      });
+    },
 
     deleteSecret: (id) =>
       fetchVoid(`/api/secrets/${encodeURIComponent(id)}`, { method: "DELETE" }),

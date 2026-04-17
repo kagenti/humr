@@ -5,6 +5,13 @@ import type {
   SecurityContext,
 } from "../templates/types.js";
 
+/** Env names that are managed by the platform/template and cannot be edited by users. */
+export const PROTECTED_AGENT_ENV_NAMES: readonly string[] = ["PORT"];
+
+export function isProtectedAgentEnvName(name: string): boolean {
+  return PROTECTED_AGENT_ENV_NAMES.includes(name);
+}
+
 export interface AgentSpec {
   version: string;
   name: string;
@@ -35,6 +42,7 @@ export interface CreateAgentInput {
 export interface UpdateAgentInput {
   id: string;
   description?: string;
+  env?: EnvVar[];
 }
 
 export interface AgentsService {

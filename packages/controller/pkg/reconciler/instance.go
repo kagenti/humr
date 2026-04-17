@@ -3,6 +3,9 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +16,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
@@ -20,10 +24,11 @@ type InstanceReconciler struct {
 	client   kubernetes.Interface
 	config   *config.Config
 	resolver *AgentResolver
+	factory  onecli.Factory
 }
 
-func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver) *InstanceReconciler {
-	return &InstanceReconciler{client: client, config: cfg, resolver: resolver}
+func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver, factory onecli.Factory) *InstanceReconciler {
+	return &InstanceReconciler{client: client, config: cfg, resolver: resolver, factory: factory}
 }
 
 func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
@@ -55,8 +60,10 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("setting agent owner reference: %v", err))
 	}
 
+	connectorEnvs := r.collectConnectorEnvs(ctx, agentCM, agentName)
+
 	// Build desired resources
-	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm)
+	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, connectorEnvs)
 	svc := BuildService(name, r.config, cm)
 	np := BuildNetworkPolicy(name, r.config, cm)
 
@@ -108,6 +115,59 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 		_, err = r.client.CoreV1().ConfigMaps(r.config.Namespace).Update(ctx, current, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+// collectConnectorEnvs fetches the agent's granted secrets from OneCLI and
+// derives the pod env vars their envMappings declare.
+//
+// Soft-fails on any error: a transient OneCLI outage or missing owner label
+// must not block instance reconciliation. The next reconcile pass will retry.
+func (r *InstanceReconciler) collectConnectorEnvs(ctx context.Context, agentCM *corev1.ConfigMap, agentName string) []corev1.EnvVar {
+	if r.factory == nil {
+		return nil
+	}
+	owner := agentCM.Labels["humr.ai/owner"]
+	if owner == "" {
+		slog.Warn("agent missing humr.ai/owner label; skipping connector envs", "agent", agentName)
+		return nil
+	}
+	oc, err := r.factory.ClientForOwner(ctx, owner)
+	if err != nil {
+		slog.Warn("could not get OneCLI client; skipping connector envs", "agent", agentName, "error", err)
+		return nil
+	}
+	secrets, err := oc.ListSecretsForAgent(ctx, agentName)
+	if err != nil {
+		slog.Warn("could not list secrets for agent; skipping connector envs", "agent", agentName, "error", err)
+		return nil
+	}
+	return envMappingsToEnvVars(secrets)
+}
+
+// envMappingsToEnvVars flattens each secret's metadata.envMappings into a pod
+// env slice. Duplicate envName across secrets is resolved deterministically
+// (smallest secret ID wins) — values are typically identical so the dedupe is
+// usually a no-op. Pure function; kept separate for unit testing.
+func envMappingsToEnvVars(secrets []onecli.Secret) []corev1.EnvVar {
+	ordered := append([]onecli.Secret(nil), secrets...)
+	slices.SortFunc(ordered, func(a, b onecli.Secret) int {
+		return strings.Compare(a.ID, b.ID)
+	})
+	seen := make(map[string]struct{})
+	var envs []corev1.EnvVar
+	for _, s := range ordered {
+		if s.Metadata == nil {
+			continue
+		}
+		for _, m := range s.Metadata.EnvMappings {
+			if _, dup := seen[m.EnvName]; dup {
+				continue
+			}
+			seen[m.EnvName] = struct{}{}
+			envs = append(envs, corev1.EnvVar{Name: m.EnvName, Value: m.Placeholder})
+		}
+	}
+	return envs
 }
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {

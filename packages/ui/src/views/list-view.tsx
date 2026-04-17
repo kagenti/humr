@@ -230,9 +230,9 @@ export function ListView() {
                         onClick={() => setShowSecretsDlg(agent.id)}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                        title="Manage agent connections"
+                        title="Configure agent credentials and env vars"
                       >
-                        <KeyRound size={12} /> Connections
+                        <KeyRound size={12} /> Configure
                       </button>
                       <button
                         onClick={() => setShowInstDlg(agent.id)}
@@ -329,13 +329,17 @@ export function ListView() {
           onCancel={() => setShowInstDlg(null)}
         />
       )}
-      {showSecretsDlg && (
-        <EditAgentSecretsDialog
-          agentId={showSecretsDlg}
-          agentName={agents.find(a => a.id === showSecretsDlg)?.name ?? showSecretsDlg}
-          onClose={() => setShowSecretsDlg(null)}
-        />
-      )}
+      {showSecretsDlg &&
+        (() => {
+          const agent = agents.find((a) => a.id === showSecretsDlg);
+          if (!agent) return null;
+          return (
+            <EditAgentSecretsDialog
+              agent={agent}
+              onClose={() => setShowSecretsDlg(null)}
+            />
+          );
+        })()}
     </>
   );
 }

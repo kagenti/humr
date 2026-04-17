@@ -12,6 +12,8 @@ import type {
   Schedule,
   SecretView,
   SecretMode,
+  EnvMapping,
+  EnvVar,
 } from "./types.js";
 import type {
   SessionModeState,
@@ -109,6 +111,10 @@ export interface HumrStore {
     autoCreateInstance?: boolean;
   }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
+  updateAgent: (
+    id: string,
+    patch: { description?: string; env?: EnvVar[] },
+  ) => Promise<void>;
 
   // Per-agent credential-access cache (mode + assigned secret ids)
   agentAccess: Record<string, { mode: SecretMode; secretIds: string[] }>;
@@ -146,7 +152,17 @@ export interface HumrStore {
   // Secrets
   secrets: SecretView[];
   fetchSecrets: () => Promise<void>;
-  createSecret: (input: { type: "anthropic" | "generic"; name: string; value: string; hostPattern?: string }) => Promise<void>;
+  createSecret: (input: {
+    type: "anthropic" | "generic";
+    name: string;
+    value: string;
+    hostPattern?: string;
+    envMappings?: EnvMapping[];
+  }) => Promise<void>;
+  updateSecret: (
+    id: string,
+    patch: { name?: string; value?: string; envMappings?: EnvMapping[] },
+  ) => Promise<void>;
   deleteSecret: (id: string) => Promise<void>;
 
   // Schedules
@@ -324,6 +340,15 @@ export const useStore = create<HumrStore>((set, get) => ({
     }
   },
 
+  updateAgent: async (id, patch) => {
+    try {
+      await platform.agents.update.mutate({ id, ...patch });
+      await get().fetchAgents();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to update agent");
+    }
+  },
+
   agentAccess: {},
   fetchAgentAccess: async (agentId) => {
     try {
@@ -495,6 +520,14 @@ export const useStore = create<HumrStore>((set, get) => ({
       await get().fetchSecrets();
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create secret");
+    }
+  },
+  updateSecret: async (id, patch) => {
+    try {
+      await platform.secrets.update.mutate({ id, ...patch });
+      await get().fetchSecrets();
+    } catch (err: any) {
+      get().showAlert(err?.message ?? "Failed to update secret");
     }
   },
   deleteSecret: async (id) => {

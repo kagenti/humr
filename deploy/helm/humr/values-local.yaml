@@ -1,5 +1,8 @@
 # Local dev: images built with docker and loaded into k3s directly.
 # Used via: helm install -f values-local.yaml
+onecli:
+  image: humr-onecli:dev
+
 ui:
   image:
     repository: humr-ui

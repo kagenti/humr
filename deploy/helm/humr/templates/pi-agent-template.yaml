@@ -28,10 +28,6 @@ data:
     env:
       - name: PORT
         value: "8080"
-      - name: ANTHROPIC_API_KEY
-        value: "humr:sentinel"
-      - name: OPENAI_API_KEY
-        value: "humr:sentinel"
     resources:
       requests:
         cpu: {{ .Values.piAgentTemplate.resources.requests.cpu | quote }}

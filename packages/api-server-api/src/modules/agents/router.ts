@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { t } from "../../trpc.js";
+import { ENV_NAME_RE } from "../secrets/types.js";
 import type { Agent } from "./types.js";
 
 function toView(agent: Agent) {
@@ -10,8 +11,14 @@ function toView(agent: Agent) {
     templateId: agent.templateId ?? null,
     image: agent.spec.image,
     description: agent.spec.description,
+    env: agent.spec.env,
   };
 }
+
+const envVarSchema = z.object({
+  name: z.string().min(1).max(255).regex(ENV_NAME_RE, "name must match [A-Z_][A-Z0-9_]*"),
+  value: z.string().max(10000),
+});
 
 export const agentsRouter = t.router({
   list: t.procedure.query(async ({ ctx }) => {
@@ -46,6 +53,7 @@ export const agentsRouter = t.router({
     .input(z.object({
       id: z.string().min(1),
       description: z.string().optional(),
+      env: z.array(envVarSchema).max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);

@@ -1,11 +1,24 @@
-import type {
-  AgentsService,
-  CreateAgentInput,
-  UpdateAgentInput,
-  TemplateSpec,
+import {
+  isProtectedAgentEnvName,
+  type AgentsService,
+  type CreateAgentInput,
+  type UpdateAgentInput,
+  type EnvVar,
+  type TemplateSpec,
 } from "api-server-api";
 import type { AgentsRepository } from "./../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
+
+/**
+ * Returns a new env list where any platform-managed entries (e.g. PORT) are
+ * taken from `current` rather than `incoming`, preventing clients from
+ * clobbering template-owned envs.
+ */
+function preserveProtectedEnvs(current: EnvVar[], incoming: EnvVar[]): EnvVar[] {
+  const preserved = current.filter((e) => isProtectedAgentEnvName(e.name));
+  const user = incoming.filter((e) => !isProtectedAgentEnvName(e.name));
+  return [...preserved, ...user];
+}
 
 export function createAgentsService(deps: {
   repo: AgentsRepository;
@@ -33,8 +46,14 @@ export function createAgentsService(deps: {
     },
 
     async update(input: UpdateAgentInput) {
+      let env = input.env;
+      if (env !== undefined) {
+        const current = await deps.repo.get(input.id, deps.owner);
+        env = preserveProtectedEnvs(current?.spec.env ?? [], env);
+      }
       return deps.repo.updateSpec(input.id, deps.owner, {
         description: input.description,
+        env,
       });
     },
 

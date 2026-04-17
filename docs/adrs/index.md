@@ -28,6 +28,8 @@ This directory contains ADRs for the Humr project.
 | [020](020-responsive-ui-pwa.md) | Responsive mobile UI, ACP session controls, PWA | @jezekra1 |
 | [021](021-slack-outbound.md) | Slack outbound messaging — MCP tool with per-agent token auth | @tomkis |
 | [022](022-harness-api-server.md) | Harness API server — separate port with restricted API surface | @tomkis |
+| [023](023-harness-agnostic-base-image.md) | Harness-agnostic agent base image (`humr-base` + `AGENT_COMMAND`) | @tomas |
+| [024](024-connector-declared-envs.md) | Connector-declared pod envs + per-agent env overrides | @tomas |
 
 ## Drafts
 

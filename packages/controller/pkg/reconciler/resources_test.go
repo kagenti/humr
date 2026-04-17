@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
@@ -60,7 +61,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -101,7 +102,9 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
-	assert.Equal(t, "humr:sentinel", envMap["GH_TOKEN"])
+	// GH_TOKEN must come from a connector envMapping, not a platform default.
+	_, hasGH := envMap["GH_TOKEN"]
+	assert.False(t, hasGH, "GH_TOKEN must not be a platform env")
 	// Template env
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	// Instance env
@@ -121,13 +124,13 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 func TestBuildStatefulSet_Hibernated(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
 func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 2)
 
 	// First: platform CA cert fetcher (busybox — no dependency on agent image)
@@ -147,7 +150,7 @@ func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 	agent := *testAgent
 	agent.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM, nil)
 	// CA cert init container is always present
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1)
 	assert.Equal(t, "fetch-ca-cert", ss.Spec.Template.Spec.InitContainers[0].Name)
@@ -155,7 +158,7 @@ func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 
 func TestBuildStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
 
 	// 1 PVC (home-agent)
 	assert.Len(t, ss.Spec.VolumeClaimTemplates, 1)
@@ -180,9 +183,28 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	assert.Equal(t, "ca-cert", mountPaths["/etc/humr/ca"])
 }
 
+func TestBuildStatefulSet_ConnectorEnvs(t *testing.T) {
+	instance := &types.InstanceSpec{
+		DesiredState: "running",
+		// Instance-level override for GH_TOKEN must win over the connector's value.
+		Env: []types.EnvVar{{Name: "GH_TOKEN", Value: "override"}},
+	}
+	connectorEnvs := []corev1.EnvVar{
+		{Name: "GH_TOKEN", Value: onecli.DefaultEnvPlaceholder},
+		{Name: "ANTHROPIC_API_KEY", Value: onecli.DefaultEnvPlaceholder},
+	}
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, connectorEnvs)
+
+	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t, onecli.DefaultEnvPlaceholder, envMap["ANTHROPIC_API_KEY"])
+	// K8s takes the last EnvVar with a given name; instance env is appended
+	// after connector env so user override wins.
+	assert.Equal(t, "override", envMap["GH_TOKEN"])
+}
+
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 
