@@ -19,7 +19,7 @@ import type {
   SessionConfigOption,
 } from "@agentclientprotocol/sdk/dist/acp.js";
 
-type View = "list" | "chat" | "providers" | "connections" | "mcp";
+type View = "list" | "chat" | "providers" | "connections";
 
 interface LoadingState {
   templates: boolean;
@@ -166,15 +166,13 @@ function viewToPath(view: View, instance?: string | null): string {
   if (view === "chat" && instance) return `/chat/${encodeURIComponent(instance)}`;
   if (view === "providers") return "/providers";
   if (view === "connections") return "/connections";
-  if (view === "mcp") return "/mcp";
   return "/";
 }
 
 function pathToState(path: string): { view: View; instance?: string } {
   if (path.startsWith("/chat/")) return { view: "chat", instance: decodeURIComponent(path.slice(6)) };
   if (path === "/providers") return { view: "providers" };
-  if (path === "/connections" || path === "/connectors") return { view: "connections" };
-  if (path === "/mcp") return { view: "mcp" };
+  if (path === "/connections" || path === "/connectors" || path === "/mcp") return { view: "connections" };
   return { view: "list" };
 }
 

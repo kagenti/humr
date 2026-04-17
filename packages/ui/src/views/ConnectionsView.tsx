@@ -1,27 +1,43 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
-import { getAuthConfig } from "../auth.js";
+import { getAuthConfig, authFetch } from "../auth.js";
 import {
   RefreshCw,
   Lock,
   KeyRound,
+  Globe,
+  Unplug,
   Plus,
   ExternalLink,
   X,
 } from "lucide-react";
+
+interface McpConnection {
+  hostname: string;
+  connectedAt: string;
+  expired: boolean;
+}
 
 export function ConnectionsView() {
   const secrets = useStore((s) => s.secrets);
   const fetchSecrets = useStore((s) => s.fetchSecrets);
   const createSecret = useStore((s) => s.createSecret);
   const deleteSecret = useStore((s) => s.deleteSecret);
+  const showAlert = useStore((s) => s.showAlert);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [loading, setLoading] = useState(true);
-  const [showAddSecret, setShowAddSecret] = useState(false);
   const loaded = useRef(false);
 
-  // Secret form
+  // MCP state
+  const [connections, setConnections] = useState<McpConnection[]>([]);
+  const [showAddMcp, setShowAddMcp] = useState(false);
+  const [mcpUrl, setMcpUrl] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+
+  // Secret state
+  const [showAddSecret, setShowAddSecret] = useState(false);
   const [secretForm, setSecretForm] = useState({
     name: "",
     value: "",
@@ -31,12 +47,20 @@ export function ConnectionsView() {
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
 
+  const loadConnections = useCallback(async () => {
+    try {
+      const r = await authFetch("/api/mcp/connections");
+      const d = await r.json();
+      if (Array.isArray(d)) setConnections(d);
+    } catch {}
+  }, []);
+
   const load = useCallback(async () => {
     if (!loaded.current) setLoading(true);
-    await fetchSecrets();
+    await Promise.all([loadConnections(), fetchSecrets()]);
     loaded.current = true;
     setLoading(false);
-  }, [fetchSecrets]);
+  }, [loadConnections, fetchSecrets]);
 
   useEffect(() => {
     load();
@@ -45,6 +69,49 @@ export function ConnectionsView() {
   const customSecrets = secrets.filter(
     (s) => s.type !== "anthropic" && !s.name.startsWith("__humr_mcp:"),
   );
+
+  // --- MCP actions ---
+
+  const startMcpOAuth = async () => {
+    if (!mcpUrl.trim()) return;
+    setConnecting(true);
+    try {
+      const res = await authFetch("/api/oauth/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mcpServerUrl: mcpUrl.trim() }),
+      });
+      const data = (await res.json()) as { authUrl?: string; error?: string };
+      if (data.error) {
+        showAlert(data.error, "OAuth Error");
+        setConnecting(false);
+        return;
+      }
+      if (data.authUrl) {
+        sessionStorage.setItem("humr-return-view", "connections");
+        window.location.href = data.authUrl;
+      }
+    } catch (err) {
+      showAlert(`${err}`, "Connection Failed");
+      setConnecting(false);
+    }
+  };
+
+  const disconnectMcp = async (hostname: string) => {
+    if (!(await showConfirm(`Disconnect "${hostname}"?`, "Disconnect"))) return;
+    setDisconnecting(hostname);
+    try {
+      await authFetch(`/api/mcp/connections/${encodeURIComponent(hostname)}`, {
+        method: "DELETE",
+      });
+      await load();
+    } catch (err) {
+      showAlert(`${err}`, "Disconnect Failed");
+    }
+    setDisconnecting(null);
+  };
+
+  // --- Secret actions ---
 
   const saveSecret = async () => {
     if (
@@ -92,15 +159,18 @@ export function ConnectionsView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        Credentials that OneCLI injects into your agents' outbound HTTP requests.
+        External services and credentials available to your agents. OneCLI injects these into outbound HTTP requests — agents never see raw tokens.
       </p>
 
       {/* Apps */}
       {onecliUrl && (
-        <section className="mb-8">
-          <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
+        <section className="mb-10">
+          <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
             Apps
           </h2>
+          <p className="text-[12px] text-text-muted mb-4">
+            OAuth apps like GitHub, Google, and Slack — set up and managed in OneCLI.
+          </p>
           <a
             href={`${onecliUrl}/connections`}
             target="_blank"
@@ -116,7 +186,7 @@ export function ConnectionsView() {
                 GitHub, Google, Slack
               </div>
               <div className="text-[12px] text-text-muted">
-                OAuth apps managed in OneCLI
+                Manage in OneCLI dashboard
               </div>
             </div>
             <ExternalLink size={14} className="text-text-muted shrink-0" />
@@ -124,23 +194,160 @@ export function ConnectionsView() {
         </section>
       )}
 
-      {/* Secrets */}
-      <section>
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-            Secrets
-          </h2>
-        </div>
+      {/* MCP Servers */}
+      <section className="mb-10">
+        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+          MCP Servers
+        </h2>
+        <p className="text-[12px] text-text-muted mb-4">
+          Remote tool servers connected via OAuth. They provide tools your agents can use during sessions.
+        </p>
 
         {!loaded.current && (
           <div className="flex flex-col gap-3">
             <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
+          </div>
+        )}
+
+        {loaded.current && connections.length === 0 && !showAddMcp && (
+          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+            No MCP servers connected yet
+          </div>
+        )}
+
+        {loaded.current && connections.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {connections.map((c, i) => (
+              <div
+                key={c.hostname}
+                className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
+                style={{
+                  boxShadow: "var(--shadow-brutal)",
+                  animationDelay: `${i * 50}ms`,
+                }}
+              >
+                <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
+                  <Globe size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14px] font-semibold text-text truncate">
+                    {c.hostname}
+                  </div>
+                  <div className="text-[12px] font-mono text-text-muted truncate">
+                    {c.expired
+                      ? "Expired"
+                      : `Connected ${new Date(c.connectedAt).toLocaleDateString()}`}
+                  </div>
+                </div>
+                <span
+                  className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
+                    c.expired
+                      ? "bg-danger-light text-danger border-danger"
+                      : "bg-info-light text-info border-info"
+                  }`}
+                >
+                  {c.expired ? "Expired" : "Connected"}
+                </span>
+                {c.expired && (
+                  <button
+                    onClick={() => {
+                      setMcpUrl(`https://${c.hostname}/mcp`);
+                      setShowAddMcp(true);
+                    }}
+                    className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white"
+                    style={{ boxShadow: "2px 2px 0 var(--color-accent)" }}
+                  >
+                    Reconnect
+                  </button>
+                )}
+                <button
+                  onClick={() => disconnectMcp(c.hostname)}
+                  disabled={disconnecting === c.hostname}
+                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
+                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                  title="Disconnect"
+                >
+                  <Unplug size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add MCP — inline button / form */}
+        {loaded.current && (
+          <div className="mt-4 anim-in">
+            {!showAddMcp ? (
+              <button
+                onClick={() => setShowAddMcp(true)}
+                className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex items-center gap-3 hover:border-accent hover:bg-accent-light transition-colors w-full"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+              >
+                <div className="w-8 h-8 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
+                  <Globe size={16} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[13px] font-bold text-text">Connect MCP Server</div>
+                  <div className="text-[11px] text-text-muted">OAuth to a remote MCP server</div>
+                </div>
+                <Plus size={14} className="text-text-muted" />
+              </button>
+            ) : (
+              <div
+                className="rounded-xl border-2 border-border bg-surface p-6 flex flex-col gap-4 anim-scale-in"
+                style={{ boxShadow: "var(--shadow-brutal)" }}
+              >
+                <div className="flex items-center gap-3">
+                  <h3 className="text-[14px] font-bold text-text">Connect MCP Server</h3>
+                  <button
+                    className="ml-auto text-text-muted hover:text-text"
+                    onClick={() => setShowAddMcp(false)}
+                    title="Cancel"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  <input
+                    className={inp}
+                    value={mcpUrl}
+                    onChange={(e) => setMcpUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && startMcpOAuth()}
+                    placeholder="https://example.com/mcp"
+                    autoFocus
+                  />
+                  <button
+                    className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
+                    style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                    onClick={startMcpOAuth}
+                    disabled={!mcpUrl.trim() || connecting}
+                  >
+                    {connecting ? "..." : "Connect"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Secrets */}
+      <section>
+        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+          Secrets
+        </h2>
+        <p className="text-[12px] text-text-muted mb-4">
+          Custom bearer tokens injected into outbound requests matching a host pattern.
+        </p>
+
+        {!loaded.current && (
+          <div className="flex flex-col gap-3">
             <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
           </div>
         )}
 
         {loaded.current && customSecrets.length === 0 && !showAddSecret && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-10 text-center text-[14px] text-text-muted anim-in">
+          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
             No custom secrets yet
           </div>
         )}
@@ -183,7 +390,7 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {/* Add secret — inline button / form (like MCP tab) */}
+        {/* Add secret — inline button / form */}
         {loaded.current && (
           <div className="mt-4 anim-in">
             {!showAddSecret ? (

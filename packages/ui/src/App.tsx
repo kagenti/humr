@@ -4,7 +4,6 @@ import { ListView } from "./views/ListView.js";
 import { ChatView } from "./views/ChatView.js";
 import { ProvidersView } from "./views/ProvidersView.js";
 import { ConnectionsView } from "./views/ConnectionsView.js";
-import { McpView } from "./views/McpView.js";
 import { Sun, Moon, Monitor, LogOut, Menu, X } from "lucide-react";
 import { getUser, logout } from "./auth.js";
 import { DialogOverlay } from "./components/DialogOverlay.js";
@@ -49,10 +48,8 @@ export default function App() {
         useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
       } else if (path === "/providers") {
         useStore.setState({ view: "providers" });
-      } else if (path === "/connections" || path === "/connectors") {
+      } else if (path === "/connections" || path === "/connectors" || path === "/mcp") {
         useStore.setState({ view: "connections" });
-      } else if (path === "/mcp") {
-        useStore.setState({ view: "mcp" });
       } else {
         useStore.setState({ selectedInstance: null, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "list" });
       }
@@ -88,7 +85,7 @@ export default function App() {
 
       <Nav />
       <main className="relative z-10 mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10">
-        {view === "providers" ? <ProvidersView /> : view === "connections" ? <ConnectionsView /> : view === "mcp" ? <McpView /> : <ListView />}
+        {view === "providers" ? <ProvidersView /> : view === "connections" ? <ConnectionsView /> : <ListView />}
       </main>
       <DialogOverlay />
     </div>
@@ -120,7 +117,7 @@ function Nav() {
 
         {/* Desktop nav links */}
         <div className="hidden md:flex items-center gap-1">
-          {([["list", "Agents"], ["providers", "Providers"], ["connections", "Connections"], ["mcp", "MCP"]] as const).map(([v, label]) => {
+          {([["list", "Agents"], ["providers", "Providers"], ["connections", "Connections"]] as const).map(([v, label]) => {
             const active = view === v;
             return (
               <button
@@ -177,7 +174,7 @@ function Nav() {
       {menuOpen && (
         <div className="md:hidden border-t border-border-light bg-surface px-4 py-3 flex flex-col gap-3 anim-in">
           {/* Nav links */}
-          {([["list", "Agents"], ["providers", "Providers"], ["connections", "Connections"], ["mcp", "MCP"]] as const).map(([v, label]) => {
+          {([["list", "Agents"], ["providers", "Providers"], ["connections", "Connections"]] as const).map(([v, label]) => {
             const active = view === v;
             return (
               <button
