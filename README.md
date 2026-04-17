@@ -50,13 +50,11 @@ Your agent has full context of the codebase, architecture decisions, and cluster
 Prerequisites: [mise](https://mise.jdx.dev), a Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.), macOS or Linux.
 
 ```sh
-mise install                # install deps, configure git hooks
-mise run cluster:install    # create local k3s cluster + deploy (or upgrade) Humr
-mise run cluster:status     # check pods
-export KUBECONFIG="$(mise run cluster:kubeconfig)" # activate cluster env
+mise install                # install toolchain + deps
+mise run cluster:install    # create local k3s cluster + deploy Humr
 ```
 
-Open **`humr.localhost:4444`** in your browser (login: `dev` / `dev`), create an instance from a template, and start chatting.
+Open **`humr.localhost:4444`** (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [operations guide](docs/operations.md) for cluster commands, credential setup, and Slack integration.
 
 ## Learn more
 
