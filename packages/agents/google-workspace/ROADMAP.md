@@ -6,16 +6,10 @@
 
 ~~Replace the flat `workspace/work/CLAUDE.md` with structured Claude Code skills (`.claude/skills/`).~~ Shipped: `drive-upload`, `drive-manage`, `gmail-triage`, `calendar-agenda`, `sheets-data`.
 
-### Automatic OAuth Token Refresh
+### ~~OneCLI OAuth Flow for Local Development~~ (Done)
 
-V1 uses short-lived access tokens (~1 hour) obtained via the OAuth Playground. When the token expires, the user must manually refresh it.
+~~Google's OAuth 2.0 policy requires HTTPS for redirect URIs on subdomains (e.g., `onecli.localhost:4444`). This prevents the built-in OneCLI OAuth flow from working in local development.~~ Shipped: `onecli.externalHostname: localhost` in `values-local.yaml` routes OneCLI through plain `localhost:4444`, which Google exempts from HTTPS requirements.
 
-A future enhancement would store the OAuth refresh token in OneCLI and automatically exchange it for a new access token before expiry, removing the manual step entirely.
+### ~~Automatic OAuth Token Refresh~~ (Not needed)
 
-### OneCLI OAuth Flow for Local Development
-
-Google's OAuth 2.0 policy requires HTTPS for redirect URIs on subdomains (e.g., `onecli.localhost:4444`). This prevents the built-in OneCLI OAuth flow from working in local development.
-
-Options to explore:
-- Configure OneCLI to use `http://localhost:<port>` as the redirect URI (plain `localhost` is exempt from the HTTPS requirement)
-- Add HTTPS support to the local dev cluster (e.g., via mkcert)
+~~With the native OAuth flow (above), OneCLI receives refresh tokens during the initial consent. A future enhancement could proactively refresh tokens before expiry to avoid transient 401s.~~ OneCLI apps already handle token refresh automatically — no additional work needed.
