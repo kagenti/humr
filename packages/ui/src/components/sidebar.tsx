@@ -32,7 +32,7 @@ export function Sidebar() {
 
   return (
     <nav
-      className={`flex flex-col h-screen bg-surface border-r border-border-light shrink-0 transition-[width] duration-200 ${collapsed ? "w-[52px]" : "w-[200px]"}`}
+      className={`hidden md:flex flex-col h-screen bg-surface border-r border-border-light shrink-0 transition-[width] duration-200 ${collapsed ? "w-[52px]" : "w-[200px]"}`}
     >
       {/* Logo */}
       <button

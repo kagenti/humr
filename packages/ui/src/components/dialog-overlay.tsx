@@ -26,7 +26,7 @@ export function DialogOverlay() {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => closeDialog(false)}>
       <div
-        className="w-[400px] rounded-xl border-2 border-border bg-surface p-6 flex flex-col gap-4 anim-scale-in"
+        className="w-[400px] max-w-[calc(100vw-2rem)] rounded-xl border-2 border-border bg-surface p-5 md:p-6 flex flex-col gap-4 anim-scale-in"
         style={{ boxShadow: "var(--shadow-brutal)" }}
         onClick={e => e.stopPropagation()}
       >

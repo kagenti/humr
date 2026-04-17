@@ -97,7 +97,7 @@ export function EditAgentSecretsDialog({
       onClick={onClose}
     >
       <div
-        className="w-[560px] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+        className="w-[560px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
         style={{ boxShadow: "var(--shadow-brutal)" }}
         onClick={(e) => e.stopPropagation()}
       >
