@@ -18,7 +18,23 @@ export interface TextPart {
   text: string;
 }
 
-export type MessagePart = TextPart | ToolChip;
+export interface ImagePart {
+  kind: "image";
+  data: string;       // base64-encoded
+  mimeType: string;   // e.g. "image/png", "image/jpeg"
+}
+
+export interface FilePart {
+  kind: "file";
+  name: string;
+  data: string;       // base64-encoded
+  mimeType: string;
+  size: number;
+}
+
+export type Attachment = ImagePart | FilePart;
+
+export type MessagePart = TextPart | ImagePart | FilePart | ToolChip;
 
 export interface Message {
   id: string;

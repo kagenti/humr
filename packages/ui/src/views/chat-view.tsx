@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
-import { ArrowLeft, Send as SendIcon, Square, Settings2 } from "lucide-react";
+import { ArrowLeft, Settings2, FileText as FileIcon } from "lucide-react";
 import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
 import { ResizeHandle } from "./../components/resize-handle.js";
+import { ChatInput } from "./../components/chat-input.js";
 import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
 import { FilesPanel } from "./../panels/files-panel.js";
 import { LogPanel } from "./../panels/log-panel.js";
@@ -13,7 +14,6 @@ import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
 import { useFileTree } from "./../hooks/use-file-tree.js";
-import { useAutoResize } from "./../hooks/use-auto-resize.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -31,7 +31,6 @@ export function ChatView() {
   const showMobilePanel = useStore((s) => s.showMobilePanel);
   const setShowMobilePanel = useStore((s) => s.setShowMobilePanel);
 
-  const [input, setInput] = useState("");
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -46,33 +45,10 @@ export function ChatView() {
 
   const { openFileHandler } = useFileTree(selectedInstance);
 
-  useAutoResize(textareaRef, input);
-
   // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  // ── Input handling ──
-  const isComputing = busy && !loadingSession;
-  const hasInput = input.trim().length > 0;
-  const showStop = isComputing && !hasInput;
-  const sendDisabled = !isComputing && !hasInput;
-
-  const send = useCallback(() => {
-    const text = input.trim();
-    if (!text) return;
-    setInput("");
-    if (busy) {
-      useStore.getState().setQueuedMessage(text);
-      return;
-    }
-    sendPrompt(text);
-  }, [input, busy, sendPrompt]);
-
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  };
 
   const mobileResumeSession = useCallback((sid: string) => {
     setMobileScreen("chat");
@@ -184,7 +160,7 @@ export function ChatView() {
                   {m.role === "user" ? "You" : "Agent"}
                 </span>
                 <div className={m.role === "user"
-                  ? "rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
+                  ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
                   : "flex flex-col gap-2 max-w-full"
                 }>
                   {m.parts.map((p, i) =>
@@ -195,6 +171,19 @@ export function ChatView() {
                           {m.streaming && i === m.parts.length - 1 && <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />}
                         </span>
                       )
+                    ) : p.kind === "image" ? (
+                      <img
+                        key={i}
+                        src={`data:${p.mimeType};base64,${p.data}`}
+                        alt="image"
+                        className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
+                      />
+                    ) : p.kind === "file" ? (
+                      <div key={i} className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2">
+                        <FileIcon size={14} className="text-text-muted shrink-0" />
+                        <span className="text-[12px] text-text-secondary">{p.name}</span>
+                        <span className="text-[10px] text-text-muted">{p.size < 1024 ? `${p.size} B` : `${(p.size / 1024).toFixed(1)} KB`}</span>
+                      </div>
                     ) : <ToolChip key={i} chip={p} />
                   )}
                   {m.streaming && m.parts.length === 0 && <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />}
@@ -205,42 +194,19 @@ export function ChatView() {
           </div>
         </div>
 
-        {/* Input area */}
-        <div className="border-t border-border-light bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3">
-          <div className="mx-auto max-w-[760px] flex flex-col gap-1.5">
-            <div className="flex items-end gap-2">
-              <textarea
-                ref={textareaRef}
-                className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
-                value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
-                placeholder={isComputing ? "Queue a message..." : "Message agent..."}
-                rows={1} disabled={loadingSession}
-              />
-              {showStop ? (
-                <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center"
-                  style={{ boxShadow: "3px 3px 0 var(--c-danger)" }} onClick={stopAgent} title="Stop">
-                  <Square size={16} />
-                </button>
-              ) : (
-                <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }} onClick={send} disabled={sendDisabled || loadingSession} title="Send">
-                  <SendIcon size={16} />
-                </button>
-              )}
-            </div>
-            <div className="flex items-center min-h-[24px]">
-              {!loadingSession && (
-                <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
-              )}
-              {queuedMessage && (
-                <span className="ml-auto text-[11px] text-text-muted">
-                  1 queued
-                  <button className="ml-1.5 text-danger hover:text-danger/80 font-semibold" onClick={() => setQueuedMessage(null)}>x</button>
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+        <ChatInput
+          textareaRef={textareaRef}
+          busy={busy}
+          loadingSession={loadingSession}
+          queuedMessage={queuedMessage}
+          onSend={sendPrompt}
+          onStop={stopAgent}
+          onQueue={setQueuedMessage}
+          onClearQueue={() => setQueuedMessage(null)}
+          footer={!loadingSession && (
+            <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
+          )}
+        />
       </div>
 
       {/* Right panel: desktop */}

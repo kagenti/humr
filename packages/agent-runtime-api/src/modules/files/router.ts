@@ -9,8 +9,8 @@ export const filesRouter = t.router({
 
   read: t.procedure
     .input(z.object({ path: z.string() }))
-    .query(({ ctx, input }) => {
-      const result = ctx.files.readFileSafe(input.path);
+    .query(async ({ ctx, input }) => {
+      const result = await ctx.files.readFileSafe(input.path);
       if (!result) {
         throw new TRPCError({ code: "NOT_FOUND" });
       }

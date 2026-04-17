@@ -5,7 +5,7 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
-import type { Message, ToolChip } from "../types.js";
+import type { Message, Attachment, ToolChip } from "../types.js";
 import { instanceState } from "./../components/status-indicator.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 
@@ -19,6 +19,22 @@ function mapToolContent(content: any[] | undefined) {
 /** Strip system tags from text chunks */
 function cleanText(raw: string): string {
   return raw.replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
+}
+
+/** Detect text-based files. Browsers often leave file.type empty for Markdown, YAML, etc. */
+const TEXT_EXTENSIONS = new Set([
+  ".md", ".mdx", ".txt", ".json", ".jsonl", ".csv", ".tsv", ".yaml", ".yml",
+  ".xml", ".html", ".htm", ".css", ".scss", ".js", ".jsx", ".ts", ".tsx",
+  ".py", ".rb", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".sh",
+  ".toml", ".ini", ".env", ".log", ".sql", ".graphql", ".svg",
+]);
+
+function isTextMime(mime: string, name: string): boolean {
+  if (mime.startsWith("text/")) return true;
+  if (mime === "application/json" || mime === "application/xml") return true;
+  const dot = name.lastIndexOf(".");
+  if (dot !== -1 && TEXT_EXTENSIONS.has(name.substring(dot).toLowerCase())) return true;
+  return false;
 }
 
 // ── Hook ──
@@ -202,6 +218,14 @@ export function useAcpSession(
           }),
         );
         addLog("text", { text: u.content.text });
+      } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "image") {
+        setMessages((p) =>
+          p.map((m) => {
+            if (m.id !== aid) return m;
+            return { ...m, parts: [...m.parts, { kind: "image", data: u.content.data, mimeType: u.content.mimeType }] };
+          }),
+        );
+        addLog("image", { mimeType: u.content.mimeType });
       } else if (u.sessionUpdate === "tool_call") {
         const content = mapToolContent(u.content);
         setMessages((p) =>
@@ -364,12 +388,25 @@ export function useAcpSession(
             mm.set(mid, { id: mid, role: "user", parts: [{ kind: "text", text: txt }], streaming: false });
             mo.push(mid);
           }
+        } else if (u.sessionUpdate === "user_message_chunk" && u.content.type === "image") {
+          const mid = u.messageId ?? crypto.randomUUID();
+          const ex = mm.get(mid);
+          const part = { kind: "image" as const, data: u.content.data as string, mimeType: u.content.mimeType as string };
+          if (ex) {
+            ex.parts.push(part);
+          } else {
+            mm.set(mid, { id: mid, role: "user", parts: [part], streaming: false });
+            mo.push(mid);
+          }
         } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
           const txt = cleanText(u.content.text as string);
           if (!txt) return;
           const target = currentAssistant();
           const l = target.parts[target.parts.length - 1];
           l?.kind === "text" ? (l.text += txt) : target.parts.push({ kind: "text", text: txt });
+        } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "image") {
+          const target = currentAssistant();
+          target.parts.push({ kind: "image", data: u.content.data as string, mimeType: u.content.mimeType as string });
         } else if (u.sessionUpdate === "tool_call") {
           const target = currentAssistant();
           target.parts.push({ kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content: mapToolContent(u.content) });
@@ -415,10 +452,15 @@ export function useAcpSession(
 
   // ── Send prompt ──
 
-  const sendPrompt = useCallback(async (text: string) => {
-    if (!text || !selectedInstance) return;
+  const sendPrompt = useCallback(async (text: string, attachments?: Attachment[]) => {
+    if ((!text && (!attachments || attachments.length === 0)) || !selectedInstance) return;
     setBusy(true);
-    const uMsg: Message = { id: crypto.randomUUID(), role: "user", parts: [{ kind: "text", text }], streaming: false };
+
+    const userParts: Message["parts"] = [];
+    if (attachments?.length) for (const a of attachments) userParts.push(a);
+    if (text) userParts.push({ kind: "text", text });
+
+    const uMsg: Message = { id: crypto.randomUUID(), role: "user", parts: userParts, streaming: false };
     const aId = crypto.randomUUID();
     const aMsg: Message = { id: aId, role: "assistant", parts: [], streaming: true };
     currentAssistantIdRef.current = aId;
@@ -428,7 +470,30 @@ export function useAcpSession(
     try {
       const conn = await ensureConnection();
       if (!conn) throw new Error("Failed to establish connection");
-      const r = await conn.prompt({ sessionId: activeSessionIdRef.current!, prompt: [{ type: "text", text }] });
+
+      const promptBlocks: any[] = [];
+      if (attachments?.length) {
+        for (const a of attachments) {
+          if (a.kind === "image") {
+            promptBlocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
+          } else if (isTextMime(a.mimeType, a.name)) {
+            // Claude only honors EmbeddedResource with a `text` field — decode base64 back to UTF-8.
+            const text = new TextDecoder().decode(Uint8Array.from(atob(a.data), c => c.charCodeAt(0)));
+            promptBlocks.push({
+              type: "resource",
+              resource: { uri: `file:///${a.name}`, text, mimeType: a.mimeType },
+            });
+          } else {
+            // Binary blobs are ignored by the Claude agent — send as resource_link so the
+            // file name at least appears in the conversation, and warn in the log.
+            addLog("warning", { message: `Binary attachment "${a.name}" (${a.mimeType}) — Claude cannot read this file type.` });
+            promptBlocks.push({ type: "resource_link", uri: `file:///${a.name}`, name: a.name, mimeType: a.mimeType });
+          }
+        }
+      }
+      if (text) promptBlocks.push({ type: "text", text });
+
+      const r = await conn.prompt({ sessionId: activeSessionIdRef.current!, prompt: promptBlocks });
       setMessages((p) => p.map((m) => (m.id === aId ? { ...m, streaming: false } : m)));
       addLog("done", { stopReason: r.stopReason });
     } catch (err: any) {
