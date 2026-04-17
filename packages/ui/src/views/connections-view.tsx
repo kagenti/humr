@@ -141,7 +141,7 @@ export function ConnectionsView() {
   return (
     <div className="w-full max-w-2xl">
       <div className="flex items-center gap-3 mb-8">
-        <h1 className="text-[24px] font-bold text-text">Connections</h1>
+        <h1 className="text-[20px] md:text-[24px] font-bold text-text">Connections</h1>
         <button
           onClick={load}
           className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal"
@@ -358,7 +358,7 @@ export function ConnectionsView() {
       {showAddMcp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => setShowAddMcp(false)}>
           <div
-            className="w-[480px] rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+            className="w-[480px] max-w-[calc(100vw-2rem)] rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
             style={{ boxShadow: "var(--shadow-brutal)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -401,7 +401,7 @@ export function ConnectionsView() {
       {showAddSecret && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => setShowAddSecret(false)}>
           <div
-            className="w-[480px] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+            className="w-[480px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
             style={{ boxShadow: "var(--shadow-brutal)" }}
             onClick={(e) => e.stopPropagation()}
           >

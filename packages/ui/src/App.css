@@ -97,12 +97,16 @@
     font-size: 15px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
   }
 
   * { scrollbar-width: thin; scrollbar-color: var(--c-border-light) transparent; }
   button, [role="button"], a { cursor: pointer; }
   :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 }
+
+/* ── Safe area for notched devices ── */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 /* ── Animations ── */
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }

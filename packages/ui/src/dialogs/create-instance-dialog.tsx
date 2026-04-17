@@ -12,7 +12,7 @@ export function CreateInstanceDialog({ agentName, onSubmit, onCancel }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
       <div
-        className="w-[460px] max-h-[80vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+        className="w-[460px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
         style={{ boxShadow: "var(--shadow-brutal)" }}
         onClick={e => e.stopPropagation()}
       >

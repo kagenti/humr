@@ -71,7 +71,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
       <div
-        className="w-[520px] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-7 flex flex-col gap-5 anim-scale-in"
+        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
         style={{ boxShadow: "var(--shadow-brutal)" }}
         onClick={e => e.stopPropagation()}
       >
@@ -265,8 +265,8 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
               )}
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none mr-auto" title="Start a running instance of this agent right away">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none sm:mr-auto" title="Start a running instance of this agent right away">
                 <input
                   type="checkbox"
                   className="accent-[var(--color-accent)] w-4 h-4"
@@ -275,17 +275,19 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                 />
                 <span className="text-[12px] font-semibold text-text-secondary">Create instance immediately</span>
               </label>
-              <button className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text" style={{ boxShadow: "var(--shadow-brutal-sm)" }} onClick={() => setStep("pick")}>
-                Back
-              </button>
-              <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                onClick={submit}
-                disabled={!name.trim()}
-              >
-                Create Agent
-              </button>
+              <div className="flex items-center gap-3 ml-auto">
+                <button className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text" style={{ boxShadow: "var(--shadow-brutal-sm)" }} onClick={() => setStep("pick")}>
+                  Back
+                </button>
+                <button
+                  className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
+                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                  onClick={submit}
+                  disabled={!name.trim()}
+                >
+                  Create Agent
+                </button>
+              </div>
             </div>
           </>
         )}
