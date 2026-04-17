@@ -35,7 +35,7 @@ export function ConnectionsView() {
 
   // OneCLI app connections (OAuth apps: Google, GitHub, Slack, ...)
   const [appConnections, setAppConnections] = useState<AppConnectionView[]>([]);
-  const [appsError, setAppsError] = useState(false);
+  const [appsError, setAppsError] = useState<string | null>(null);
 
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
@@ -60,10 +60,10 @@ export function ConnectionsView() {
     try {
       const list = await platform.connections.list.query();
       setAppConnections(list);
-      setAppsError(false);
+      setAppsError(null);
     } catch (err) {
       console.warn("connections.list failed", err);
-      setAppsError(true);
+      setAppsError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -191,8 +191,13 @@ export function ConnectionsView() {
           )}
 
           {loaded.current && appsError && (
-            <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-6 text-center text-[13px] text-text-muted anim-in">
-              Couldn't load app connections from OneCLI.
+            <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in">
+              <div className="text-[13px] font-semibold text-danger">
+                Couldn't load app connections from OneCLI.
+              </div>
+              <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
+                {appsError}
+              </div>
             </div>
           )}
 
@@ -232,16 +237,18 @@ export function ConnectionsView() {
                     className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
                       c.status === "expired"
                         ? "bg-danger-light text-danger border-danger"
-                        : c.status === "disconnected"
-                          ? "bg-surface-raised text-text-muted border-border-light"
-                          : "bg-info-light text-info border-info"
+                        : c.status === "connected"
+                          ? "bg-info-light text-info border-info"
+                          : "bg-surface-raised text-text-muted border-border-light"
                     }`}
                   >
                     {c.status === "expired"
                       ? "Expired"
                       : c.status === "disconnected"
                         ? "Disconnected"
-                        : "Connected"}
+                        : c.status === "unknown"
+                          ? "Unknown"
+                          : "Connected"}
                   </span>
                 </div>
               ))}

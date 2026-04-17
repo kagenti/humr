@@ -1,4 +1,8 @@
-export type AppConnectionStatus = "connected" | "expired" | "disconnected";
+export type AppConnectionStatus =
+  | "connected"
+  | "expired"
+  | "disconnected"
+  | "unknown";
 
 export interface AppConnectionView {
   id: string;

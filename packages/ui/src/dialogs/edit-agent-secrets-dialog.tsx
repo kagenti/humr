@@ -322,8 +322,12 @@ function AppsGroup({
   apps: AppConnectionView[];
   assignedIds: Set<string>;
 }) {
-  const assigned = apps.filter((a) => assignedIds.has(a.id));
-  if (assigned.length === 0) return null;
+  if (assignedIds.size === 0) return null;
+  const byId = new Map(apps.map((a) => [a.id, a]));
+  // Preserve the assignment order and surface any IDs we couldn't resolve
+  // (revoked connection, or /api/connections unavailable) so the user knows
+  // the agent has access to something we can't describe right now.
+  const rows = [...assignedIds].map((id) => ({ id, app: byId.get(id) }));
   return (
     <div>
       <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
@@ -333,36 +337,46 @@ function AppsGroup({
         OAuth apps assigned to this agent. Manage assignment in OneCLI.
       </p>
       <div className="flex flex-col gap-2">
-        {assigned.map((a) => (
+        {rows.map(({ id, app }) => (
           <div
-            key={a.id}
+            key={id}
             className="flex items-center gap-3 rounded-lg border-2 border-border-light bg-bg px-4 py-2.5"
           >
             <KeyRound size={14} className="text-text-secondary shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-medium text-text truncate">
-                {a.label}
+                {app?.label ?? "Unavailable app"}
               </div>
-              {a.identity && (
+              {app?.identity ? (
                 <div className="text-[11px] font-mono text-text-muted truncate">
-                  {a.identity}
+                  {app.identity}
                 </div>
-              )}
+              ) : !app ? (
+                <div className="text-[11px] font-mono text-text-muted truncate">
+                  {id}
+                </div>
+              ) : null}
             </div>
             <span
               className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
-                a.status === "expired"
-                  ? "bg-danger-light text-danger border-danger"
-                  : a.status === "disconnected"
-                    ? "bg-surface-raised text-text-muted border-border-light"
-                    : "bg-info-light text-info border-info"
+                !app || app.status === "unknown"
+                  ? "bg-surface-raised text-text-muted border-border-light"
+                  : app.status === "expired"
+                    ? "bg-danger-light text-danger border-danger"
+                    : app.status === "disconnected"
+                      ? "bg-surface-raised text-text-muted border-border-light"
+                      : "bg-info-light text-info border-info"
               }`}
             >
-              {a.status === "expired"
-                ? "Expired"
-                : a.status === "disconnected"
-                  ? "Disconnected"
-                  : "Connected"}
+              {!app
+                ? "Unresolved"
+                : app.status === "expired"
+                  ? "Expired"
+                  : app.status === "disconnected"
+                    ? "Disconnected"
+                    : app.status === "unknown"
+                      ? "Unknown"
+                      : "Connected"}
             </span>
           </div>
         ))}
