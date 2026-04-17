@@ -78,6 +78,21 @@ spec:
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
             {{- end }}
+            {{- if .Values.apiServer.telegramEnabled }}
+            - name: TELEGRAM_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.apiServer.unifiedChannelEnabled }}
+            - name: UNIFIED_CHANNEL_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if or .Values.apiServer.telegramEnabled .Values.apiServer.unifiedChannelEnabled }}
+            - name: HUMR_CHANNEL_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $appName }}-channel-secret
+                  key: HUMR_CHANNEL_ENCRYPTION_KEY
+            {{- end }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"

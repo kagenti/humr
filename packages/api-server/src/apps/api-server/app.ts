@@ -21,6 +21,7 @@ import { createSecretsService } from "./../../modules/secrets/services/secrets-s
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
+import { createChannelOAuthRoutes, type PendingOAuthFlow } from "../../auth/identity-oauth.js";
 
 export interface ApiServerAppDeps {
   config: Config;
@@ -30,10 +31,11 @@ export interface ApiServerAppDeps {
   channelManager: ChannelManager;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
+  pendingChannelOAuthFlows: Map<string, PendingOAuthFlow>;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows } = deps;
+  const { config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows, pendingChannelOAuthFlows } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -47,6 +49,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   const slackOauthCallbackUrl = config.slackOauthCallbackUrl
     ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+  const channelOauthCallbackUrl = config.channelOauthCallbackUrl
+    ?? `${config.uiBaseUrl}/api/channel/oauth/callback`;
 
   const app = new Hono<{ Variables: { user: UserIdentity } }>();
 
@@ -71,6 +75,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       keycloakRealm: config.keycloakRealm,
       keycloakClientId: config.keycloakClientId,
       callbackUrl: slackOauthCallbackUrl,
+    }));
+  }
+
+  if (config.telegramEnabled || config.unifiedChannelEnabled) {
+    app.route("/", createChannelOAuthRoutes({
+      pending: pendingChannelOAuthFlows,
+      identityLinks: identityLinkService,
+      keycloakUrl: config.keycloakUrl,
+      keycloakRealm: config.keycloakRealm,
+      keycloakClientId: config.keycloakClientId,
+      callbackUrl: channelOauthCallbackUrl,
+      path: "/api/channel/oauth/callback",
     }));
   }
 

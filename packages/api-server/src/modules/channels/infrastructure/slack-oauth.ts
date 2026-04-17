@@ -69,6 +69,7 @@ export function createSlackOAuthRoutes(deps: {
     ) as { sub: string };
 
     await deps.identityLinks.link(
+      "slack",
       pending.slackUserId,
       payload.sub,
       tokenData.refresh_token ?? null,

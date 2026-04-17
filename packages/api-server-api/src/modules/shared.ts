@@ -5,4 +5,8 @@ export interface EnvVar {
 
 export enum ChannelType {
   Slack = "slack",
+  Telegram = "telegram",
+  Unified = "unified",
 }
+
+export type UnifiedBackend = "slack" | "telegram";

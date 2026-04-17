@@ -13,6 +13,10 @@ export enum EventType {
   InstanceWoken = "InstanceWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
+  TelegramConnected = "TelegramConnected",
+  TelegramDisconnected = "TelegramDisconnected",
+  UnifiedConnected = "UnifiedConnected",
+  UnifiedDisconnected = "UnifiedDisconnected",
 }
 
 export type UserAuthenticated = {
@@ -53,6 +57,28 @@ export type SlackDisconnected = {
   instanceId: string;
 };
 
+export type TelegramConnected = {
+  type: EventType.TelegramConnected;
+  instanceId: string;
+  telegramChatId: string;
+};
+
+export type TelegramDisconnected = {
+  type: EventType.TelegramDisconnected;
+  instanceId: string;
+};
+
+export type UnifiedConnected = {
+  type: EventType.UnifiedConnected;
+  instanceId: string;
+  backend: "slack" | "telegram";
+};
+
+export type UnifiedDisconnected = {
+  type: EventType.UnifiedDisconnected;
+  instanceId: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | InstanceCreated
@@ -60,7 +86,11 @@ export type DomainEvent =
   | InstanceDeleted
   | InstanceWoken
   | SlackConnected
-  | SlackDisconnected;
+  | SlackDisconnected
+  | TelegramConnected
+  | TelegramDisconnected
+  | UnifiedConnected
+  | UnifiedDisconnected;
 
 // ---------------------------------------------------------------------------
 // Event bus

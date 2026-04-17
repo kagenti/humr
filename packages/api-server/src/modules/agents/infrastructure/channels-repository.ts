@@ -1,21 +1,20 @@
 import type { Db } from "db";
 import { channels, eq, and, inArray } from "db";
-import type { ChannelConfig } from "api-server-api";
 import { ChannelType } from "api-server-api";
-
-function toChannelConfig(row: { type: string; config: unknown }): ChannelConfig {
-  const config = row.config as Record<string, unknown>;
-  return { type: row.type as ChannelType, ...config } as ChannelConfig;
-}
+import {
+  decryptStoredConfig,
+  encryptStoredConfig,
+  type StoredChannelConfig,
+} from "../../channels/domain/stored-channel-config.js";
 
 export function listChannelsByOwner(db: Db, owner: string) {
-  return async (): Promise<Map<string, ChannelConfig[]>> => {
+  return async (): Promise<Map<string, StoredChannelConfig[]>> => {
     const condition = owner ? eq(channels.owner, owner) : undefined;
     const rows = await db.select().from(channels).where(condition);
-    const map = new Map<string, ChannelConfig[]>();
+    const map = new Map<string, StoredChannelConfig[]>();
     for (const row of rows) {
       const list = map.get(row.instanceId) ?? [];
-      list.push(toChannelConfig(row));
+      list.push(decryptStoredConfig(row.type, row.config as Record<string, unknown>));
       map.set(row.instanceId, list);
     }
     return map;
@@ -23,21 +22,21 @@ export function listChannelsByOwner(db: Db, owner: string) {
 }
 
 export function listChannelsByInstance(db: Db, owner: string) {
-  return async (instanceId: string): Promise<ChannelConfig[]> => {
+  return async (instanceId: string): Promise<StoredChannelConfig[]> => {
     const rows = await db
       .select()
       .from(channels)
       .where(and(eq(channels.instanceId, instanceId), eq(channels.owner, owner)));
-    return rows.map(toChannelConfig);
+    return rows.map((row) => decryptStoredConfig(row.type, row.config as Record<string, unknown>));
   };
 }
 
 export function upsertChannel(db: Db, owner: string) {
-  return async (instanceId: string, channel: ChannelConfig): Promise<void> => {
-    const { type, ...config } = channel;
+  return async (instanceId: string, channel: StoredChannelConfig): Promise<void> => {
+    const config = encryptStoredConfig(channel);
     await db
       .insert(channels)
-      .values({ instanceId, owner, type, config })
+      .values({ instanceId, owner, type: channel.type, config })
       .onConflictDoUpdate({
         target: [channels.instanceId, channels.type],
         set: { config, owner },

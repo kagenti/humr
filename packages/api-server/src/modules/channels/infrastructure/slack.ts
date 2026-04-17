@@ -1,8 +1,9 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewareArgs } from "@slack/bolt";
 import crypto from "node:crypto";
-import { ChannelType, SessionType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
+import { ChannelType, SessionType, type InstancesService } from "api-server-api";
 import { createAcpClient, ensureRunning } from "../../../acp-client.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
+import type { StoredChannelConfig } from "../domain/stored-channel-config.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -35,7 +36,7 @@ async function getContextMessages(
 
 export interface SlackWorker {
   type: ChannelType.Slack;
-  start(instanceName: string, channel: ChannelConfig): Promise<void>;
+  start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   postMessage(instanceName: string, text: string): Promise<{ ok: true } | { error: string }>;
@@ -200,7 +201,7 @@ export function createSlackWorker(
     const subcommand = command.text.trim().toLowerCase();
 
     if (subcommand === "login") {
-      const existing = await identityLinks.resolve(command.user_id);
+      const existing = await identityLinks.resolve("slack", command.user_id);
       if (existing) {
         await ack({ response_type: "ephemeral", text: "You are already linked. Use `/humr logout` to unlink first." });
         return;
@@ -225,13 +226,13 @@ export function createSlackWorker(
     }
 
     if (subcommand === "logout") {
-      const existing = await identityLinks.resolve(command.user_id);
+      const existing = await identityLinks.resolve("slack", command.user_id);
       if (!existing) {
         await ack({ response_type: "ephemeral", text: "You don't have a linked account." });
         return;
       }
 
-      await identityLinks.unlink(command.user_id);
+      await identityLinks.unlink("slack", command.user_id);
       await ack({ response_type: "ephemeral", text: "Account unlinked." });
       return;
     }
@@ -248,7 +249,7 @@ export function createSlackWorker(
     const slackUserId = event.user;
     if (!slackUserId) return;
 
-    const keycloakSub = await identityLinks.resolve(slackUserId);
+    const keycloakSub = await identityLinks.resolve("slack", slackUserId);
     if (!keycloakSub) {
       await app.client.chat.postEphemeral({
         channel: event.channel,
@@ -391,8 +392,9 @@ export function createSlackWorker(
   return {
     type: ChannelType.Slack,
 
-    async start(instanceName: string, channel: ChannelConfig) {
-      const { slackChannelId } = channel as SlackChannel;
+    async start(instanceName: string, channel: StoredChannelConfig) {
+      if (channel.type !== ChannelType.Slack) return;
+      const { slackChannelId } = channel;
       registerMapping(slackChannelId, instanceName);
       const started = await ensureApp();
       if (!started) {

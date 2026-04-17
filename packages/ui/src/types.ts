@@ -59,6 +59,13 @@ export interface AgentView {
 
 export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
 
+export type UnifiedBackend = "slack" | "telegram";
+
+export type InstanceChannelView =
+  | { type: "slack"; slackChannelId: string }
+  | { type: "telegram"; telegramChatId: string }
+  | { type: "unified"; backend: UnifiedBackend; slackChannelId?: string; telegramChatId?: string };
+
 export interface InstanceView {
   id: string;
   name: string;
@@ -66,7 +73,7 @@ export interface InstanceView {
   description?: string;
   state: InstanceState;
   error?: string;
-  channels: { type: string; slackChannelId: string }[];
+  channels: InstanceChannelView[];
   allowedUsers: string[];
 }
 
