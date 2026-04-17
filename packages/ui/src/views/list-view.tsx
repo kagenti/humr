@@ -5,7 +5,7 @@ import { isMcpSecret } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
-import { RefreshCw, Plus, Trash2, KeyRound } from "lucide-react";
+import { RefreshCw, Plus, Trash2, KeyRound, Check } from "lucide-react";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
 
 export function ListView() {
@@ -76,7 +76,7 @@ export function ListView() {
     <>
       <div>
         {/* Page header — hidden during onboarding empty state */}
-        {(agents.length > 0 || hasProvider) && (
+        {agents.length > 0 && (
           <div className="flex items-center gap-3 mb-8">
             <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
             <div className="ml-auto flex items-center gap-2 md:gap-3">
@@ -107,13 +107,27 @@ export function ListView() {
           </div>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — always show 2-step flow when no agents */}
         {initialLoaded && !busyAgent && agents.length === 0 && (
-          !hasProvider ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <h2 className="text-[20px] font-bold text-text mb-2">Get started</h2>
-              <p className="text-[13px] text-text-muted mb-8">Two steps to your first AI agent</p>
-              <div className="flex flex-col gap-4 w-full max-w-md">
+          <div className="flex flex-col items-center justify-center py-20">
+            <h2 className="text-[20px] font-bold text-text mb-2">Get started</h2>
+            <p className="text-[13px] text-text-muted mb-8">Two steps to your first AI agent</p>
+            <div className="flex flex-col gap-4 w-full max-w-md">
+              {/* Step 1 — provider */}
+              {hasProvider ? (
+                <div
+                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
+                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
+                    <Check size={20} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-bold text-text">Set up a provider</div>
+                    <div className="text-[12px] text-text-muted">Provider connected</div>
+                  </div>
+                </div>
+              ) : (
                 <button
                   onClick={() => setView("providers")}
                   className="btn-brutal rounded-xl border-2 border-warning bg-warning-light p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full"
@@ -127,28 +141,24 @@ export function ListView() {
                     <div className="text-[12px] text-text-muted">Your agents need an API key to reach an AI model</div>
                   </div>
                 </button>
-                <button
-                  onClick={() => setShowAddAgent(true)}
-                  className="btn-brutal rounded-xl border-2 border-border bg-surface p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                >
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-border-light flex items-center justify-center text-text-secondary text-[15px] font-bold">
-                    2
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-text">Add your first agent</div>
-                    <div className="text-[12px] text-text-muted">Pick a template or bring your own image</div>
-                  </div>
-                </button>
-              </div>
+              )}
+
+              {/* Step 2 — add agent (highlighted when provider is done) */}
+              <button
+                onClick={() => setShowAddAgent(true)}
+                className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${hasProvider ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
+                style={{ boxShadow: hasProvider ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
+              >
+                <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${hasProvider ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
+                  2
+                </div>
+                <div>
+                  <div className="text-[14px] font-bold text-text">Add your first agent</div>
+                  <div className="text-[12px] text-text-muted">Pick a template or bring your own image</div>
+                </div>
+              </button>
             </div>
-          ) : (
-            <div className="py-20 text-center">
-              <p className="text-[14px] text-text-secondary">
-                No agents yet — click <strong>+ Add Agent</strong> above to create one.
-              </p>
-            </div>
-          )
+          </div>
         )}
 
         {/* Agent cards */}
