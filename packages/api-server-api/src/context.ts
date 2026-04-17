@@ -1,5 +1,6 @@
 import type { AgentsService } from "./modules/agents/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
+import type { ConnectionsService } from "./modules/connections/types.js";
 import type { InstancesService } from "./modules/instances/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SecretsService } from "./modules/secrets/types.js";
@@ -19,5 +20,6 @@ export interface ApiContext {
   sessions: SessionsService;
   secrets: SecretsService;
   channels: ChannelsService;
+  connections: ConnectionsService;
   user: UserIdentity;
 }

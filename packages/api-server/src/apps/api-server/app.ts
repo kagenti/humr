@@ -18,6 +18,8 @@ import { createAuth, ForbiddenError } from "../../auth.js";
 import type { OnecliClient } from "../../onecli.js";
 import { createOnecliSecretsPort } from "./../../modules/secrets/infrastructure/onecli-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
+import { createOnecliConnectionsPort } from "./../../modules/connections/infrastructure/onecli-connections-port.js";
+import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
@@ -112,6 +114,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
     });
+    const connections = createConnectionsService({
+      port: createOnecliConnectionsPort(onecli, userJwt, user.sub),
+    });
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -125,6 +130,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         sessions,
         secrets,
         channels: { available: channelManager.availableChannels() },
+        connections,
         user,
       }),
     });
