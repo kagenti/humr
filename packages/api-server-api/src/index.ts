@@ -53,6 +53,13 @@ export type {
 
 export type { ChannelsService } from "./modules/channels/types.js";
 
+export type {
+  AgentAppConnections,
+  AppConnectionStatus,
+  AppConnectionView,
+  ConnectionsService,
+} from "./modules/connections/types.js";
+
 export { SessionType } from "./modules/sessions/types.js";
 export type {
   SessionView,

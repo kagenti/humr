@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
+import { platform } from "../platform.js";
 import type { McpConnection } from "../types.js";
+import type { AppConnectionView } from "api-server-api";
 import {
   RefreshCw,
   Lock,
@@ -31,6 +33,10 @@ export function ConnectionsView() {
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
+  // OneCLI app connections (OAuth apps: Google, GitHub, Slack, ...)
+  const [appConnections, setAppConnections] = useState<AppConnectionView[]>([]);
+  const [appsError, setAppsError] = useState<string | null>(null);
+
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
   const [secretForm, setSecretForm] = useState({
@@ -50,12 +56,23 @@ export function ConnectionsView() {
     } catch {}
   }, []);
 
+  const loadAppConnections = useCallback(async () => {
+    try {
+      const list = await platform.connections.list.query();
+      setAppConnections(list);
+      setAppsError(null);
+    } catch (err) {
+      console.warn("connections.list failed", err);
+      setAppsError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
   const load = useCallback(async () => {
     if (!loaded.current) setLoading(true);
-    await Promise.all([loadConnections(), fetchSecrets()]);
+    await Promise.all([loadConnections(), loadAppConnections(), fetchSecrets()]);
     loaded.current = true;
     setLoading(false);
-  }, [loadConnections, fetchSecrets]);
+  }, [loadConnections, loadAppConnections, fetchSecrets]);
 
   useEffect(() => {
     load();
@@ -164,28 +181,93 @@ export function ConnectionsView() {
             Apps
           </h2>
           <p className="text-[12px] text-text-muted mb-4">
-            OAuth apps like GitHub, Google, and Slack — set up and managed in OneCLI.
+            OAuth apps like GitHub, Google, and Slack — connect and manage in OneCLI.
           </p>
-          <a
-            href={`${onecliUrl}/connections`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] hover:border-accent"
-            style={{ boxShadow: "var(--shadow-brutal)" }}
-          >
-            <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-              <KeyRound size={16} />
+
+          {!loaded.current && (
+            <div className="flex flex-col gap-3">
+              <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[14px] font-semibold text-text">
-                GitHub, Google, Slack
+          )}
+
+          {loaded.current && appsError && (
+            <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in">
+              <div className="text-[13px] font-semibold text-danger">
+                Couldn't load app connections from OneCLI.
               </div>
-              <div className="text-[12px] text-text-muted">
-                Manage in OneCLI dashboard
+              <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
+                {appsError}
               </div>
             </div>
-            <ExternalLink size={14} className="text-text-muted shrink-0" />
-          </a>
+          )}
+
+          {loaded.current && !appsError && appConnections.length === 0 && (
+            <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+              No OAuth apps connected yet
+            </div>
+          )}
+
+          {loaded.current && !appsError && appConnections.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {appConnections.map((c, i) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
+                  style={{
+                    boxShadow: "var(--shadow-brutal)",
+                    animationDelay: `${i * 50}ms`,
+                  }}
+                >
+                  <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
+                    <KeyRound size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[14px] font-semibold text-text truncate">
+                      {c.label}
+                    </div>
+                    <div className="text-[12px] font-mono text-text-muted truncate">
+                      {c.identity
+                        ? c.identity
+                        : c.connectedAt
+                          ? `Connected ${new Date(c.connectedAt).toLocaleDateString()}`
+                          : c.provider}
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
+                      c.status === "expired"
+                        ? "bg-danger-light text-danger border-danger"
+                        : c.status === "connected"
+                          ? "bg-info-light text-info border-info"
+                          : "bg-surface-raised text-text-muted border-border-light"
+                    }`}
+                  >
+                    {c.status === "expired"
+                      ? "Expired"
+                      : c.status === "disconnected"
+                        ? "Disconnected"
+                        : c.status === "unknown"
+                          ? "Unknown"
+                          : "Connected"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {loaded.current && (
+            <div className="mt-4">
+              <a
+                href={`${onecliUrl}/connections`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-brutal h-9 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-text inline-flex items-center gap-1.5"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+              >
+                Manage in OneCLI <ExternalLink size={13} />
+              </a>
+            </div>
+          )}
         </section>
       )}
 

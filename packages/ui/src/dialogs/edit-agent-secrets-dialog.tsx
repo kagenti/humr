@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
-import type { SecretView, SecretMode } from "api-server-api";
+import type {
+  AppConnectionView,
+  SecretView,
+  SecretMode,
+} from "api-server-api";
 import { platform } from "../platform.js";
 import { AuthModeBadge } from "../components/auth-mode-badge.js";
-import { Lock, Sparkles, Globe, Search } from "lucide-react";
+import { KeyRound, Lock, Sparkles, Globe, Search } from "lucide-react";
 
 export function EditAgentSecretsDialog({
   agentId,
@@ -16,6 +20,8 @@ export function EditAgentSecretsDialog({
   const [secrets, setSecrets] = useState<SecretView[]>([]);
   const [mode, setMode] = useState<SecretMode>("selective");
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
+  const [apps, setApps] = useState<AppConnectionView[]>([]);
+  const [assignedAppIds, setAssignedAppIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
@@ -25,14 +31,20 @@ export function EditAgentSecretsDialog({
     let cancelled = false;
     (async () => {
       try {
-        const [secs, access] = await Promise.all([
+        const [secs, access, appList, agentApps] = await Promise.all([
           platform.secrets.list.query(),
           platform.secrets.getAgentAccess.query({ agentName: agentId }),
+          platform.connections.list.query().catch(() => [] as AppConnectionView[]),
+          platform.connections.getAgentConnections
+            .query({ agentName: agentId })
+            .catch(() => ({ connectionIds: [] as string[] })),
         ]);
         if (cancelled) return;
         setSecrets(secs);
         setMode(access.mode);
         setAssigned(new Set(access.secretIds));
+        setApps(appList);
+        setAssignedAppIds(new Set(agentApps.connectionIds));
       } catch (err: any) {
         if (!cancelled) setError(err?.message ?? "Failed to load");
       } finally {
@@ -216,6 +228,8 @@ export function EditAgentSecretsDialog({
           </>
         )}
 
+        {!loading && <AppsGroup apps={apps} assignedIds={assignedAppIds} />}
+
         <div className="flex justify-end gap-3 pt-1">
           <button
             className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
@@ -296,6 +310,76 @@ function AccessGroup({
             </label>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function AppsGroup({
+  apps,
+  assignedIds,
+}: {
+  apps: AppConnectionView[];
+  assignedIds: Set<string>;
+}) {
+  if (assignedIds.size === 0) return null;
+  const byId = new Map(apps.map((a) => [a.id, a]));
+  // Preserve the assignment order and surface any IDs we couldn't resolve
+  // (revoked connection, or /api/connections unavailable) so the user knows
+  // the agent has access to something we can't describe right now.
+  const rows = [...assignedIds].map((id) => ({ id, app: byId.get(id) }));
+  return (
+    <div>
+      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+        Apps
+      </div>
+      <p className="text-[11px] text-text-muted mb-2">
+        OAuth apps assigned to this agent. Manage assignment in OneCLI.
+      </p>
+      <div className="flex flex-col gap-2">
+        {rows.map(({ id, app }) => (
+          <div
+            key={id}
+            className="flex items-center gap-3 rounded-lg border-2 border-border-light bg-bg px-4 py-2.5"
+          >
+            <KeyRound size={14} className="text-text-secondary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-medium text-text truncate">
+                {app?.label ?? "Unavailable app"}
+              </div>
+              {app?.identity ? (
+                <div className="text-[11px] font-mono text-text-muted truncate">
+                  {app.identity}
+                </div>
+              ) : !app ? (
+                <div className="text-[11px] font-mono text-text-muted truncate">
+                  {id}
+                </div>
+              ) : null}
+            </div>
+            <span
+              className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
+                !app || app.status === "unknown"
+                  ? "bg-surface-raised text-text-muted border-border-light"
+                  : app.status === "expired"
+                    ? "bg-danger-light text-danger border-danger"
+                    : app.status === "disconnected"
+                      ? "bg-surface-raised text-text-muted border-border-light"
+                      : "bg-info-light text-info border-info"
+              }`}
+            >
+              {!app
+                ? "Unresolved"
+                : app.status === "expired"
+                  ? "Expired"
+                  : app.status === "disconnected"
+                    ? "Disconnected"
+                    : app.status === "unknown"
+                      ? "Unknown"
+                      : "Connected"}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
