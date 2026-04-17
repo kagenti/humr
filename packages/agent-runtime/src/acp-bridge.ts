@@ -23,7 +23,13 @@ export function spawnAcpSession(options: {
     Object.entries(process.env).filter(([k]) => !k.startsWith("npm_")),
   );
 
-  const agentEnv = { ...cleanEnv, CLAUDE_CODE_OAUTH_TOKEN: "placeholder" };
+  const agentEnv = {
+    ...cleanEnv,
+    ANTHROPIC_API_KEY: cleanEnv.ANTHROPIC_API_KEY ?? "placeholder",
+    CLAUDE_CODE_OAUTH_TOKEN: cleanEnv.CLAUDE_CODE_OAUTH_TOKEN ?? "placeholder",
+    CODEX_API_KEY: cleanEnv.CODEX_API_KEY ?? "placeholder",
+    OPENAI_API_KEY: cleanEnv.OPENAI_API_KEY ?? "placeholder",
+  };
 
   const child = isDev
     ? spawn("npx", ["tsx", agentScript], {

@@ -4,7 +4,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 
@@ -22,8 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
     && ARCH=$(dpkg --print-architecture) \
     && curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
        | tar -xz --strip-components=1 -C /usr/local
-
-RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
 

@@ -20,8 +20,9 @@ controller:
   agentImagePullPolicy: Never
 
 defaultTemplate:
+  description: "Default Codex agent"
   image:
-    repository: humr-claude-code
+    repository: humr-codex-agent
     tag: latest
     pullPolicy: Never
 

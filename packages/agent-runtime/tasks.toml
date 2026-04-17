@@ -1,0 +1,14 @@
+["agent-runtime:setup"]
+dir = "{{config_root}}"
+depends = ["common:setup:pnpm"]
+
+["agent-runtime:check"]
+depends = ["agent-runtime:check:*"]
+
+["agent-runtime:check:typecheck"]
+dir = "{{config_root}}/packages/agent-runtime"
+depends = ["agent-runtime:setup"]
+run = "pnpm exec tsc --noEmit"
+
+["agent-runtime:test"]
+run = "echo 'No tests for agent-runtime yet'"
