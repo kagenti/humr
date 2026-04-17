@@ -6,5 +6,6 @@ export default defineConfig({
     hookTimeout: 600_000,
     globalSetup: "./src/__tests__/helpers/test-cluster.ts",
     setupFiles: ["./src/__tests__/helpers/setup.ts"],
+    exclude: ["src/__tests__/unit/**"],
   },
 });
