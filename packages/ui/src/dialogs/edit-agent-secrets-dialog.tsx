@@ -100,12 +100,14 @@ export function EditAgentSecretsDialog({
           agentName: agentId,
           connectionIds: nextAppIds,
         });
+        initialAppIds.current = nextAppIds;
       } catch (err: any) {
         setError(`Secrets saved; apps failed: ${err?.message ?? String(err)}`);
         setSaving(false);
         return;
       }
     }
+    setSaving(false);
     onClose();
   };
 
