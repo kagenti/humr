@@ -1,10 +1,10 @@
-# Operations Guide
+# Guide
 
-Operational reference for [Humr](../README.md), a Kubernetes platform for running background coding agents.
+Reference for [Humr](../README.md), a Kubernetes platform for running background coding agents.
 
 ## Configuration
 
-Agents and other connections require API tokens to communicate with their providers. These secrets are managed through the OneCLI dashboard at **`onecli.localhost:4444`**.
+Agents and other connections require API tokens to communicate with their providers. These secrets are managed through the OneCLI dashboard at [onecli.localhost:4444](http://onecli.localhost:4444).
 
 OneCLI acts as a proxy — agents never see the secrets directly. Instead, OneCLI intercepts outgoing requests from agent pods and injects the appropriate credentials before forwarding them to the provider.
 

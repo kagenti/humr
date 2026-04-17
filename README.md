@@ -54,11 +54,9 @@ mise install                # install toolchain + deps
 mise run cluster:install    # create local k3s cluster + deploy Humr
 ```
 
-Open **`humr.localhost:4444`** (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [operations guide](docs/operations.md) for cluster commands, credential setup, and Slack integration.
+Open [humr.localhost:4444](http://humr.localhost:4444) (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [guide](docs/guide.md) for cluster commands, credential setup, and Slack integration.
 
 ## Learn more
 
-- **[Operations guide](docs/operations.md)** — credential setup (OneCLI), Slack integration, development workflow, architecture overview
+- **[Guide](docs/guide.md)** — credential setup, Slack integration, development workflow, architecture overview
 - **[Why Humr exists](PITCH.md)** — the three problems every agent hits in production, how Humr solves each, and a 5-minute walkthrough
-- **[Motivation](MOTIVATION.md)** — why Humr exists, the three abstraction levels, design beliefs
-- **[Architecture decisions](docs/adrs/)** — ADRs covering isolation, credentials, scheduling, auth, and more
