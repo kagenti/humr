@@ -144,31 +144,16 @@ async function requestAndConnect(
   return connectUpstream(`ws://${podIP}:8080/api/acp`);
 }
 
-/**
- * Atomically set the run-request annotation, retrying on conflict.
- * If another request already set active-job in the meantime, skip.
- */
 async function setRunRequest(
   k8s: K8sClient,
   instanceId: string,
-  retries = 3,
 ): Promise<void> {
-  for (let i = 0; i < retries; i++) {
-    const fresh = await k8s.getConfigMap(instanceId);
-    if (!fresh) throw new Error(`instance ${instanceId} not found`);
+  const cm = await k8s.getConfigMap(instanceId);
+  if (!cm) throw new Error(`instance ${instanceId} not found`);
+  if (cm.metadata?.annotations?.[ANN_ACTIVE_JOB]) return;
+  if (cm.metadata?.annotations?.[ANN_RUN_REQUEST]) return;
 
-    // Another request won the race — a Job is already being created
-    if (fresh.metadata?.annotations?.[ANN_ACTIVE_JOB]) return;
-    if (fresh.metadata?.annotations?.[ANN_RUN_REQUEST]) return;
-
-    if (!fresh.metadata!.annotations) fresh.metadata!.annotations = {};
-    fresh.metadata!.annotations[ANN_RUN_REQUEST] = new Date().toISOString();
-    try {
-      await k8s.replaceConfigMap(instanceId, fresh);
-      return;
-    } catch (err: any) {
-      if (err?.code === 409 && i < retries - 1) continue; // conflict — retry
-      throw err;
-    }
-  }
+  await k8s.patchConfigMap(instanceId, {
+    metadata: { annotations: { [ANN_RUN_REQUEST]: new Date().toISOString() } },
+  });
 }

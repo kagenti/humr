@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -10,6 +11,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
@@ -125,11 +127,12 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 
 		// Write active-job annotation and clear run-request + trigger
-		r.patchAnnotations(ctx, name, map[string]string{
-			AnnActiveJob:     created.Name,
-			AnnPodIP:         "",
-			AnnRunRequest:    "",
-			"humr.ai/trigger": "",
+		jobName := created.Name
+		r.patchAnnotations(ctx, name, map[string]*string{
+			AnnActiveJob:      &jobName,
+			AnnPodIP:          nil,
+			AnnRunRequest:     nil,
+			"humr.ai/trigger": nil,
 		})
 		slog.Info("job created", "instance", name, "job", created.Name)
 		return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("active", ""))
@@ -236,39 +239,32 @@ func (r *InstanceReconciler) getJobPodIP(ctx context.Context, jobName string) st
 	return ""
 }
 
-// patchAnnotation sets a single annotation on the instance ConfigMap.
 func (r *InstanceReconciler) patchAnnotation(ctx context.Context, name, key, value string) {
-	r.patchAnnotations(ctx, name, map[string]string{key: value})
+	r.patchAnnotations(ctx, name, map[string]*string{key: &value})
 }
 
-// patchAnnotations sets multiple annotations on the instance ConfigMap.
-func (r *InstanceReconciler) patchAnnotations(ctx context.Context, name string, anns map[string]string) {
-	retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cm, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if cm.Annotations == nil {
-			cm.Annotations = make(map[string]string)
-		}
-		for k, v := range anns {
-			if v == "" {
-				delete(cm.Annotations, k)
-			} else {
-				cm.Annotations[k] = v
-			}
-		}
-		_, err = r.client.CoreV1().ConfigMaps(r.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
-		return err
-	})
+// patchAnnotations uses JSON merge patch. Nil values remove keys.
+func (r *InstanceReconciler) patchAnnotations(ctx context.Context, name string, anns map[string]*string) {
+	patch := map[string]any{"metadata": map[string]any{"annotations": anns}}
+	patchBytes, err := json.Marshal(patch)
+	if err != nil {
+		slog.Error("marshaling annotation patch", "instance", name, "error", err)
+		return
+	}
+	_, err = r.client.CoreV1().ConfigMaps(r.config.Namespace).Patch(
+		ctx, name, k8stypes.MergePatchType, patchBytes, metav1.PatchOptions{},
+	)
+	if err != nil {
+		slog.Error("patching annotations", "instance", name, "error", err)
+	}
 }
 
-// clearJobAnnotations removes all Job-related annotations from the instance ConfigMap.
 func (r *InstanceReconciler) clearJobAnnotations(ctx context.Context, name string) {
-	r.patchAnnotations(ctx, name, map[string]string{
-		AnnActiveJob:  "",
-		AnnPodIP:      "",
-		AnnRunRequest: "",
+	r.patchAnnotations(ctx, name, map[string]*string{
+		AnnActiveJob:       nil,
+		AnnPodIP:           nil,
+		AnnRunRequest:      nil,
+		"humr.ai/trigger":  nil,
 	})
 }
 

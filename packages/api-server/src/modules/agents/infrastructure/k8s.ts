@@ -13,6 +13,7 @@ export interface K8sClient {
   getConfigMap(name: string): Promise<k8s.V1ConfigMap | null>;
   createConfigMap(body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
   replaceConfigMap(name: string, body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
+  patchConfigMap(name: string, body: object): Promise<k8s.V1ConfigMap>;
   deleteConfigMap(name: string): Promise<void>;
 
   listPods(labelSelector: string): Promise<k8s.V1Pod[]>;
@@ -57,6 +58,15 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
 
     async replaceConfigMap(name, body) {
       return api.replaceNamespacedConfigMap({ name, namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async patchConfigMap(name, body) {
+      return api.patchNamespacedConfigMap({
+        name,
+        namespace,
+        body,
+        contentType: "application/merge-patch+json",
+      } as any);
     },
 
     async deleteConfigMap(name) {
