@@ -28,8 +28,8 @@ type Config struct {
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
 	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 	APIServerHost        string // API server hostname (for NO_PROXY)
-	MCPServerURL         string // MCP server internal URL (separate port, agent-facing)
-	MCPServerPort        int    // MCP server port (for network policy egress rule)
+	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
+	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -60,8 +60,8 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.CACertInitImage = envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable")
 	cfg.APIServerHost = os.Getenv("HUMR_API_SERVER_HOST")
-	cfg.MCPServerURL = os.Getenv("HUMR_MCP_SERVER_URL")
-	cfg.MCPServerPort = envOrDefaultInt("HUMR_MCP_SERVER_PORT", 4001)
+	cfg.HarnessServerURL = os.Getenv("HUMR_HARNESS_SERVER_URL")
+	cfg.HarnessServerPort = envOrDefaultInt("HUMR_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {
@@ -86,10 +86,8 @@ func (c *Config) WebURL() string {
 	return fmt.Sprintf("http://%s:%d", c.GatewayFQDN(), c.WebPort)
 }
 
-// APIServerURL returns the in-cluster HTTP URL for the Humr API server.
-// Used by agent-runtime to persist schedule sessions via internal endpoints.
 func (c *Config) APIServerURL() string {
-	return fmt.Sprintf("http://%s-apiserver.%s.svc.cluster.local:4000", c.ReleaseName, c.ReleaseNamespace)
+	return fmt.Sprintf("http://%s-apiserver.%s.svc.cluster.local:%d", c.ReleaseName, c.ReleaseNamespace, c.HarnessServerPort)
 }
 
 func keycloakTokenURL() string {

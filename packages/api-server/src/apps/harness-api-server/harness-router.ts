@@ -1,0 +1,38 @@
+import { Hono } from "hono";
+import { mountMcpRoutes } from "./mcp-endpoint.js";
+import type { ChannelManager } from "../../modules/channels/services/ChannelManager.js";
+import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+
+export interface TriggerRequest {
+  instanceId: string;
+  schedule: string;
+  task: string;
+  sessionMode?: "continuous" | "fresh";
+  mcpServers?: unknown[];
+}
+
+export interface TriggerResult {
+  sessionId: string;
+  stopReason?: string;
+}
+
+export function createHarnessRouter(deps: {
+  channelManager: ChannelManager;
+  k8s: K8sClient;
+  handleTrigger: (req: TriggerRequest) => Promise<TriggerResult>;
+}) {
+  const app = new Hono();
+
+  app.post("/internal/trigger", async (c) => {
+    const body = await c.req.json<TriggerRequest>();
+    if (!body.instanceId || !body.schedule || !body.task) {
+      return c.json({ error: "instanceId, schedule, task required" }, 400);
+    }
+    const result = await deps.handleTrigger(body);
+    return c.json(result);
+  });
+
+  mountMcpRoutes(app, { channelManager: deps.channelManager, k8s: deps.k8s });
+
+  return app;
+}

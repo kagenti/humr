@@ -9,7 +9,7 @@
 
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import type { OnecliClient } from "./onecli.js";
+import type { OnecliClient } from "../../onecli.js";
 import type { UserIdentity } from "api-server-api";
 
 // --- In-memory state store (PoC — not persistent across restarts) ---

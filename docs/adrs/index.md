@@ -27,6 +27,7 @@ This directory contains ADRs for the Humr project.
 | [019](019-session-identity.md) | Scheduled session identity and lifecycle | @janjeliga |
 | [020](020-responsive-ui-pwa.md) | Responsive mobile UI, ACP session controls, PWA | @jezekra1 |
 | [021](021-slack-outbound.md) | Slack outbound messaging — MCP tool with per-agent token auth | @tomkis |
+| [022](022-harness-api-server.md) | Harness API server — separate port with restricted API surface | @tomkis |
 
 ## Drafts
 

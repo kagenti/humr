@@ -1,0 +1,175 @@
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { appRouter } from "api-server-api/router";
+import type { ApiContext, UserIdentity } from "api-server-api";
+import type { CoreV1Api } from "@kubernetes/client-node";
+import type { Db } from "db";
+import {
+  createK8sClient, podBaseUrl,
+} from "../../modules/agents/infrastructure/k8s.js";
+import { createInstancesRepository } from "../../modules/agents/infrastructure/InstancesRepository.js";
+import { composeAgentsModule } from "../../modules/agents/index.js";
+import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
+import { createAcpRelay } from "../../acp-relay.js";
+import { createOAuthRoutes } from "./oauth.js";
+import type { Config } from "../../config.js";
+import { createAuth, ForbiddenError } from "../../auth.js";
+import type { OnecliClient } from "../../onecli.js";
+import { createOnecliSecretsPort } from "../../modules/secrets/infrastructure/OnecliSecretsPort.js";
+import { createSecretsService } from "../../modules/secrets/services/SecretsService.js";
+import type { ChannelManager } from "../../modules/channels/services/ChannelManager.js";
+import type { IdentityLinkService } from "../../modules/channels/services/IdentityLinkService.js";
+import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
+
+export interface ApiServerAppDeps {
+  config: Config;
+  api: CoreV1Api;
+  db: Db;
+  onecli: OnecliClient;
+  channelManager: ChannelManager;
+  identityLinkService: IdentityLinkService;
+  pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
+}
+
+export function startApiServerApp(deps: ApiServerAppDeps) {
+  const { config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows } = deps;
+
+  const k8sClient = createK8sClient(api, config.namespace);
+  const instancesRepo = createInstancesRepository(k8sClient);
+
+  const auth = createAuth({
+    issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+    jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+    audience: config.keycloakApiAudience,
+    requiredRole: config.keycloakRequiredRole,
+  });
+
+  const slackOauthCallbackUrl = config.slackOauthCallbackUrl
+    ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+
+  const app = new Hono<{ Variables: { user: UserIdentity } }>();
+
+  app.get("/api/health", (c) => c.json({ status: "ok" }));
+  app.get("/api/auth/config", (c) =>
+    c.json({
+      issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+      clientId: config.keycloakClientId,
+      onecliUrl: config.onecliExternalUrl,
+    }),
+  );
+
+  app.use("/api/*", auth.middleware);
+
+  app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
+
+  if (config.slackBotToken && config.slackAppToken) {
+    app.route("/", createSlackOAuthRoutes({
+      pendingFlows: pendingSlackOAuthFlows,
+      identityLinks: identityLinkService,
+      keycloakUrl: config.keycloakUrl,
+      keycloakRealm: config.keycloakRealm,
+      keycloakClientId: config.keycloakClientId,
+      callbackUrl: slackOauthCallbackUrl,
+    }));
+  }
+
+  async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
+    return instancesRepo.isOwnedBy(instanceId, owner);
+  }
+
+  app.all("/api/instances/:id/trpc/*", async (c) => {
+    const user = c.get("user");
+    const instanceId = c.req.param("id")!;
+    if (!await verifyOwner(instanceId, user.sub)) {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
+    const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
+    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
+    try {
+      const headers = new Headers(c.req.raw.headers);
+      headers.delete("host");
+      const upstream = await fetch(upstreamUrl, {
+        method: c.req.method,
+        headers,
+        body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+        // @ts-expect-error -- node fetch supports duplex
+        duplex: "half",
+      });
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    } catch {
+      return c.json({ error: "instance unreachable" }, 502);
+    }
+  });
+
+  app.all("/api/trpc/*", (c) => {
+    const user = c.get("user");
+    const userJwt = c.req.header("authorization")!.slice(7);
+
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db);
+    const secrets = createSecretsService({
+      port: createOnecliSecretsPort(onecli, userJwt, user.sub),
+    });
+
+    return fetchRequestHandler({
+      endpoint: "/api/trpc",
+      req: c.req.raw,
+      router: appRouter,
+      createContext: (): ApiContext => ({
+        templates,
+        agents,
+        instances,
+        schedules,
+        sessions,
+        secrets,
+        channels: { available: channelManager.availableChannels() },
+        user,
+      }),
+    });
+  });
+
+  const acpRelay = createAcpRelay(config.namespace, instancesRepo);
+
+  const server = serve({ fetch: app.fetch, port: config.port }, () => {
+    process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
+  });
+
+  server.on("upgrade", async (req, socket, head) => {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+    const match = url.pathname.match(/^\/api\/instances\/([^/]+)\/acp$/);
+    if (!match) {
+      socket.destroy();
+      return;
+    }
+
+    const token = url.searchParams.get("token");
+    if (!token) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    let user: UserIdentity;
+    try {
+      user = await auth.verify(token);
+    } catch (err) {
+      const status = err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
+      socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
+      socket.destroy();
+      return;
+    }
+
+    const instanceId = decodeURIComponent(match[1]);
+    if (!await verifyOwner(instanceId, user.sub)) {
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    acpRelay.handleUpgrade(req, socket, head, instanceId);
+  });
+
+  return { server };
+}

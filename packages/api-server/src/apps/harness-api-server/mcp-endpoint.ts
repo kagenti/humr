@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { Hono } from "hono";
+import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import yaml from "js-yaml";
-import type { ChannelManager } from "./modules/channels/services/ChannelManager.js";
-import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "./modules/agents/infrastructure/labels.js";
+import type { ChannelManager } from "../../modules/channels/services/ChannelManager.js";
+import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -87,12 +87,10 @@ async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: strin
   return hash === status.accessTokenHash;
 }
 
-export function createMcpRoutes(deps: {
+export function mountMcpRoutes(app: Hono, deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
 }) {
-  const app = new Hono();
-
   app.all("/api/instances/:id/mcp", async (c) => {
     const authHeader = c.req.header("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -125,6 +123,4 @@ export function createMcpRoutes(deps: {
 
     return session.transport.handleRequest(c.req.raw);
   });
-
-  return app;
 }
