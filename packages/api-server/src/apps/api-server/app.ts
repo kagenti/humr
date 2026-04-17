@@ -8,7 +8,7 @@ import type { Db } from "db";
 import {
   createK8sClient, podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
-import { createInstancesRepository } from "../../modules/agents/infrastructure/InstancesRepository.js";
+import { createInstancesRepository } from "./../../modules/agents/infrastructure/instances-repository.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createAcpRelay } from "../../acp-relay.js";
@@ -16,10 +16,10 @@ import { createOAuthRoutes } from "./oauth.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "../../auth.js";
 import type { OnecliClient } from "../../onecli.js";
-import { createOnecliSecretsPort } from "../../modules/secrets/infrastructure/OnecliSecretsPort.js";
-import { createSecretsService } from "../../modules/secrets/services/SecretsService.js";
-import type { ChannelManager } from "../../modules/channels/services/ChannelManager.js";
-import type { IdentityLinkService } from "../../modules/channels/services/IdentityLinkService.js";
+import { createOnecliSecretsPort } from "./../../modules/secrets/infrastructure/onecli-secrets-port.js";
+import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
+import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
+import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 
 export interface ApiServerAppDeps {

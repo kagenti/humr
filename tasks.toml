@@ -6,8 +6,16 @@ depends = ["*:setup"]
 ["check"]
 depends = ["*:check"]
 
+["lint:check"]
+dir = "{{config_root}}"
+run = "pnpm exec eslint ."
+
 ["fix"]
 depends = ["*:fix"]
+
+["lint:fix"]
+dir = "{{config_root}}"
+run = "pnpm exec eslint --fix ."
 
 ["test"]
 depends = ["*:test"]

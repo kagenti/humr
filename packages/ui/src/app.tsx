@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useStore } from "./store.js";
-import { ListView } from "./views/ListView.js";
-import { ChatView } from "./views/ChatView.js";
-import { ProvidersView } from "./views/ProvidersView.js";
-import { ConnectionsView } from "./views/ConnectionsView.js";
+import { ListView } from "./views/list-view.js";
+import { ChatView } from "./views/chat-view.js";
+import { ProvidersView } from "./views/providers-view.js";
+import { ConnectionsView } from "./views/connections-view.js";
 import { Sun, Moon, Monitor, LogOut, Menu, X } from "lucide-react";
 import { getUser, logout } from "./auth.js";
-import { DialogOverlay } from "./components/DialogOverlay.js";
-import { Logo } from "./components/Logo.js";
+import { DialogOverlay } from "./components/dialog-overlay.js";
+import { Logo } from "./components/logo.js";
 
 export default function App() {
   const view = useStore((s) => s.view);

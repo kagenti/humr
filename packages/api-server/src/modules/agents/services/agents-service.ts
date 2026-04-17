@@ -4,7 +4,7 @@ import type {
   UpdateAgentInput,
   TemplateSpec,
 } from "api-server-api";
-import type { AgentsRepository } from "../infrastructure/AgentsRepository.js";
+import type { AgentsRepository } from "./../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
 export function createAgentsService(deps: {

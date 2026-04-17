@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
-import { AuthModeBadge } from "../components/AuthModeBadge.js";
+import { AuthModeBadge } from "../components/auth-mode-badge.js";
 import {
   Sparkles,
   RefreshCw,

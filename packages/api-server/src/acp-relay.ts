@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
-import type { InstancesRepository } from "./modules/agents/infrastructure/InstancesRepository.js";
+import type { InstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
 
 const DEBOUNCE_MS = 30_000;

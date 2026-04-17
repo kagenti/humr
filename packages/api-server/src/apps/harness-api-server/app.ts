@@ -6,7 +6,7 @@ import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createAcpClient } from "../../acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
-import type { ChannelManager } from "../../modules/channels/services/ChannelManager.js";
+import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;

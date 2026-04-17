@@ -6,7 +6,7 @@ import type {
   Agent,
 } from "api-server-api";
 import { SPEC_VERSION, ChannelType } from "api-server-api";
-import type { InstancesRepository } from "../infrastructure/InstancesRepository.js";
+import type { InstancesRepository } from "./../infrastructure/instances-repository.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit, EventType } from "../../../events.js";
 

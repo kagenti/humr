@@ -2,11 +2,11 @@ import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
 import { isMcpSecret } from "../types.js";
-import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/StatusIndicator.js";
-import { AddAgentDialog } from "../dialogs/AddAgentDialog.js";
-import { CreateInstanceDialog } from "../dialogs/CreateInstanceDialog.js";
+import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
+import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
+import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
 import { RefreshCw, Plus, Trash2, KeyRound } from "lucide-react";
-import { EditAgentSecretsDialog } from "../dialogs/EditAgentSecretsDialog.js";
+import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
 
 export function ListView() {
   const templates = useStore(s => s.templates);

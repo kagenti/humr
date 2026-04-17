@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
-import type { ChannelManager } from "../../modules/channels/services/ChannelManager.js";
+import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
 export interface TriggerRequest {

@@ -1,8 +1,8 @@
 import { useState, useCallback } from "react";
 import { useStore } from "../store.js";
 import { ArrowLeft, ChevronRight, ChevronDown, Folder, FileText, Eye, Code } from "lucide-react";
-import { Markdown } from "../components/Markdown.js";
-import { HighlightedCode } from "../components/HighlightedCode.js";
+import { Markdown } from "./../components/markdown.js";
+import { HighlightedCode } from "./../components/highlighted-code.js";
 
 function isDotName(path: string): boolean {
   return path.split("/").pop()!.startsWith(".");
