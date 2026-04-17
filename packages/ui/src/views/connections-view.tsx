@@ -61,7 +61,8 @@ export function ConnectionsView() {
       const list = await platform.connections.list.query();
       setAppConnections(list);
       setAppsError(false);
-    } catch {
+    } catch (err) {
+      console.warn("connections.list failed", err);
       setAppsError(true);
     }
   }, []);

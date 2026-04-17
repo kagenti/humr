@@ -38,10 +38,16 @@ function asStringArray(v: unknown): string[] | undefined {
 
 /**
  * Flattens OneCLI's app-list response into connected-app rows. Tolerates the
- * two most likely shapes: `[{ provider, connection: {...} }, ...]` and
- * `{ apps: [...] }` — plus a pass-through for any future flat shape.
+ * two documented shapes: `[{ id, name, connection: {...} | null }, ...]` and
+ * `{ apps: [...] }`.
+ *
+ * A row is emitted only when a per-app connection object exists with a
+ * `connectedAt` timestamp. We deliberately key on `connectedAt` rather than
+ * `status` — OneCLI's list endpoint strips app-level status into the top-level
+ * record, so a `status` presence alone cannot distinguish "connected app" from
+ * "registered but unconnected app".
  */
-function flattenApps(data: unknown): OnecliAppConnection[] {
+export function flattenApps(data: unknown): OnecliAppConnection[] {
   const list: unknown[] = Array.isArray(data)
     ? data
     : Array.isArray(asRecord(data)?.apps)
@@ -57,11 +63,9 @@ function flattenApps(data: unknown): OnecliAppConnection[] {
     if (!provider) continue;
 
     const connection =
-      asRecord(app.connection) ??
-      asRecord(app.connectedService) ??
-      // Flat shape: fields live directly on the app record.
-      (app.id && app.status ? app : null);
+      asRecord(app.connection) ?? asRecord(app.connectedService);
     if (!connection) continue;
+    if (!asString(connection.connectedAt)) continue;
 
     const id = asString(connection.id) ?? provider;
     const label =
