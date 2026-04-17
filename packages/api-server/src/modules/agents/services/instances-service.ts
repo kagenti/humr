@@ -151,7 +151,10 @@ export function createInstancesService(deps: {
     async delete(id) {
       const deleted = await deps.repo.delete(id, deps.owner);
       if (deleted) {
-        await deps.deleteAllowedUsersByInstanceIds([id]);
+        await Promise.all([
+          deps.deleteChannelsByInstanceIds([id]),
+          deps.deleteAllowedUsersByInstanceIds([id]),
+        ]);
         emit({ type: EventType.InstanceDeleted, instanceId: id });
       }
     },
