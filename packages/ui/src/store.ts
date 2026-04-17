@@ -108,6 +108,7 @@ export interface HumrStore {
     description?: string;
     secretMode?: "all" | "selective";
     secretIds?: string[];
+    appConnectionIds?: string[];
     autoCreateInstance?: boolean;
   }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
@@ -290,7 +291,7 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, agents: false } }));
   },
 
-  createAgent: async ({ secretMode, secretIds, autoCreateInstance, ...input }) => {
+  createAgent: async ({ secretMode, secretIds, appConnectionIds, autoCreateInstance, ...input }) => {
     try {
       const agent = await platform.agents.create.mutate(input);
       await get().fetchAgents();
@@ -310,20 +311,38 @@ export const useStore = create<HumrStore>((set, get) => ({
       // list, or all-credentials mode.
       const needsAccessUpdate =
         secretMode === "all" || (secretMode === "selective" && secretIds?.length);
-      if (needsAccessUpdate) {
-        // Controller registers the OneCLI agent asynchronously — retry assignment
+      // Controller registers the OneCLI agent asynchronously, so both
+      // setAgentAccess and setAgentConnections have to retry past the sync lag.
+      const withRetry = async (label: string, fn: () => Promise<void>) => {
         for (let attempt = 0; attempt < 5; attempt++) {
           try {
-            await platform.secrets.setAgentAccess.mutate({
-              agentName: agent.id,
-              mode: secretMode ?? "selective",
-              secretIds: secretIds ?? [],
-            });
+            await fn();
             return;
-          } catch {
+          } catch (err: any) {
+            if (attempt === 4) {
+              get().showAlert(err?.message ?? `Agent created but ${label} failed`);
+              return;
+            }
             await new Promise((r) => setTimeout(r, 2000));
           }
         }
+      };
+      if (needsAccessUpdate) {
+        await withRetry("secret assignment", () =>
+          platform.secrets.setAgentAccess.mutate({
+            agentName: agent.id,
+            mode: secretMode ?? "selective",
+            secretIds: secretIds ?? [],
+          }),
+        );
+      }
+      if (appConnectionIds?.length) {
+        await withRetry("app assignment", () =>
+          platform.connections.setAgentConnections.mutate({
+            agentName: agent.id,
+            connectionIds: appConnectionIds,
+          }),
+        );
       }
     } catch (err: any) {
       get().showAlert(err?.message ?? "Failed to create agent");
