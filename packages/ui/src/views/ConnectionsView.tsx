@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
+import type { McpConnection } from "../types.js";
 import {
   RefreshCw,
   Lock,
@@ -11,12 +12,6 @@ import {
   ExternalLink,
   X,
 } from "lucide-react";
-
-interface McpConnection {
-  hostname: string;
-  connectedAt: string;
-  expired: boolean;
-}
 
 export function ConnectionsView() {
   const secrets = useStore((s) => s.secrets);
@@ -159,7 +154,7 @@ export function ConnectionsView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        External services and credentials available to your agents. OneCLI injects these into outbound HTTP requests — agents never see raw tokens.
+        External services and credentials available to your agents. Injected into outbound HTTP requests — agents never see raw tokens.
       </p>
 
       {/* Apps */}
