@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 const configSchema = z.object({
   namespace: z.string().default("humr-agents"),
   port: z.coerce.number().default(4000),
-  mcpPort: z.coerce.number().default(4001),
+  harnessServerPort: z.coerce.number().default(4001),
   databaseUrl: z.string(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
   slackBotToken: z.string().nullable().default(null),
@@ -29,7 +29,7 @@ export function loadConfig(): Config {
   return configSchema.parse({
     namespace: process.env.NAMESPACE,
     port: process.env.PORT,
-    mcpPort: process.env.MCP_PORT,
+    harnessServerPort: process.env.MCP_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,
     slackBotToken: process.env.SLACK_BOT_TOKEN,

@@ -15,10 +15,10 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
-    - port: {{ .Values.apiServer.mcpPort }}
-      targetPort: mcp
+    - port: {{ .Values.apiServer.harnessServerPort }}
+      targetPort: harness
       protocol: TCP
-      name: mcp
+      name: harness
   selector:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -52,8 +52,8 @@ spec:
           ports:
             - containerPort: {{ .Values.apiServer.port }}
               name: http
-            - containerPort: {{ .Values.apiServer.mcpPort }}
-              name: mcp
+            - containerPort: {{ .Values.apiServer.harnessServerPort }}
+              name: harness
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -67,7 +67,7 @@ spec:
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
             - name: MCP_PORT
-              value: {{ .Values.apiServer.mcpPort | quote }}
+              value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.apiServer.slackBotToken }}

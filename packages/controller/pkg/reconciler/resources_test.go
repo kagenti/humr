@@ -21,7 +21,7 @@ var testConfig = &config.Config{
 	GatewayPort:      10255,
 	WebPort:          10254,
 	CACertInitImage:  "busybox:stable",
-	MCPServerPort:    4001,
+	HarnessServerPort:    4001,
 }
 
 var testAgent = &types.AgentSpec{
