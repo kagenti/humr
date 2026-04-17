@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
-import { isMcpSecret, isOpenAiSecret } from "../types.js";
+import { isMcpSecret, isOpenAiSecret, providerForImage } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
@@ -63,13 +63,14 @@ export function ListView() {
     const pool = !access || access.mode === "all"
       ? secrets
       : secrets.filter(s => access.secretIds.includes(s.id));
-    let anthropic = 0, mcp = 0, generic = 0;
+    let anthropic = 0, openai = 0, mcp = 0, generic = 0;
     for (const s of pool) {
       if (s.type === "anthropic") anthropic += 1;
+      else if (isOpenAiSecret(s)) openai += 1;
       else if (isMcpSecret(s)) mcp += 1;
       else generic += 1;
     }
-    return { mode: access?.mode, anthropic, mcp, generic };
+    return { mode: access?.mode, anthropic, openai, mcp, generic };
   };
 
   return (
@@ -180,6 +181,7 @@ export function ListView() {
                         )}
                         {(() => {
                           const c = countsFor(agent.id);
+                          const expectedProvider = providerForImage(agent.image);
                           if (c.mode === "all") {
                             return (
                               <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
@@ -195,6 +197,13 @@ export function ListView() {
                               </span>,
                             );
                           }
+                          if (c.openai > 0) {
+                            chips.push(
+                              <span key="o" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-info bg-info-light text-info rounded-full px-2.5 py-0.5">
+                                OpenAI
+                              </span>,
+                            );
+                          }
                           const otherSecrets = c.generic;
                           if (otherSecrets > 0) {
                             chips.push(
@@ -207,6 +216,20 @@ export function ListView() {
                             chips.push(
                               <span key="m" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
                                 {c.mcp} MCP
+                              </span>,
+                            );
+                          }
+                          if (expectedProvider === "anthropic" && c.anthropic === 0) {
+                            chips.push(
+                              <span key="ma" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-warning bg-warning-light text-warning rounded-full px-2.5 py-0.5">
+                                Needs Anthropic
+                              </span>,
+                            );
+                          }
+                          if (expectedProvider === "openai" && c.openai === 0) {
+                            chips.push(
+                              <span key="mo" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-info bg-info-light text-info rounded-full px-2.5 py-0.5">
+                                Needs OpenAI
                               </span>,
                             );
                           }

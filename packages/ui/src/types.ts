@@ -85,6 +85,7 @@ export interface Schedule {
 export type SecretType = "anthropic" | "generic";
 export type SecretMode = "all" | "selective";
 export type AnthropicAuthMode = "api-key" | "oauth";
+export type KnownProvider = "anthropic" | "openai";
 
 /** Prefix used for MCP OAuth secrets stored in OneCLI. */
 export const MCP_SECRET_PREFIX = "__humr_mcp:";
@@ -96,6 +97,13 @@ export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
 
 export function isOpenAiSecret(s: { type: SecretType; hostPattern: string }): boolean {
   return s.type === "generic" && s.hostPattern === OPENAI_HOST_PATTERN;
+}
+
+export function providerForImage(image: string): KnownProvider | null {
+  const normalized = image.toLowerCase();
+  if (normalized.includes("codex")) return "openai";
+  if (normalized.includes("claude")) return "anthropic";
+  return null;
 }
 
 export function mcpHostnameFromSecretName(name: string): string {

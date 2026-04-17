@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { TemplateView, SecretView, SecretMode } from "../types.js";
-import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
+import { isMcpSecret, isOpenAiSecret, mcpHostnameFromSecretName, providerForImage } from "../types.js";
 import { Globe, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
 import { AuthModeBadge } from "../components/auth-mode-badge.js";
@@ -65,8 +65,33 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
   const inp = "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
   const anthropicSecrets = secrets.filter(s => s.type === "anthropic");
+  const openAiSecrets = secrets.filter(s => isOpenAiSecret(s));
   const mcpSecrets = secrets.filter(s => isMcpSecret(s));
-  const genericSecrets = secrets.filter(s => s.type !== "anthropic" && !isMcpSecret(s));
+  const genericSecrets = secrets.filter(s => s.type !== "anthropic" && !isMcpSecret(s) && !isOpenAiSecret(s));
+  const selectedImage = selectedTemplate?.image ?? customImage.trim();
+  const expectedProvider = selectedImage ? providerForImage(selectedImage) : null;
+  const hasAnyProvider = anthropicSecrets.length > 0 || openAiSecrets.length > 0;
+  const isProviderReady =
+    expectedProvider === "anthropic"
+      ? anthropicSecrets.length > 0
+      : expectedProvider === "openai"
+        ? openAiSecrets.length > 0
+        : hasAnyProvider;
+  const providerWarning =
+    expectedProvider === "anthropic"
+      ? {
+          title: "No Anthropic provider configured",
+          body: "This Claude-backed agent won't be able to reach a model yet.",
+        }
+      : expectedProvider === "openai"
+        ? {
+            title: "No OpenAI provider configured",
+            body: "This Codex-backed agent won't be able to reach a model yet.",
+          }
+        : {
+            title: "No AI provider configured",
+            body: "This agent may not be able to reach a model yet.",
+          };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
@@ -147,11 +172,11 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
               <input className={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" />
             </label>
 
-            {!loadSecrets && anthropicSecrets.length === 0 && (
+            {!loadSecrets && !isProviderReady && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
                 <Sparkles size={16} className="text-warning shrink-0" />
                 <p className="text-[12px] text-text-secondary">
-                  No AI provider configured — this agent won't be able to reach a model yet.{" "}
+                  <strong>{providerWarning.title}</strong> {providerWarning.body}{" "}
                   <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>Set one up</button>
                 </p>
               </div>
@@ -204,7 +229,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
               {secretMode === "selective" && (
                 <div className="flex flex-col gap-4">
                   {/* Provider */}
-                  {anthropicSecrets.length > 0 && (
+                  {(anthropicSecrets.length > 0 || openAiSecrets.length > 0) && (
                     <div>
                       <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Provider</div>
                       <div className="flex flex-col gap-2">
@@ -217,6 +242,17 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                             <Sparkles size={14} className="text-warning" />
                             <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
                             <AuthModeBadge mode={s.authMode} />
+                          </label>
+                        ))}
+                        {openAiSecrets.map(s => (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                          >
+                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                            <Sparkles size={14} className="text-info" />
+                            <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
+                            <span className="text-[11px] font-mono text-text-muted">{s.hostPattern}</span>
                           </label>
                         ))}
                       </div>
