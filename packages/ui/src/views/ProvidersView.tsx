@@ -70,7 +70,7 @@ export function ProvidersView() {
   return (
     <div className="w-full max-w-2xl">
       <div className="flex items-center gap-3 mb-8">
-        <h1 className="text-[24px] font-bold text-text">Model Providers</h1>
+        <h1 className="text-[24px] font-bold text-text">Providers</h1>
         <button
           onClick={load}
           className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal"
