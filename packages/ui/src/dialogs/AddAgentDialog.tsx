@@ -3,15 +3,15 @@ import type { TemplateView, SecretView, SecretMode } from "../types.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import { Globe, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../views/ConnectorsView.js";
+import { AuthModeBadge } from "../components/AuthModeBadge.js";
 
 type Step = "pick" | "configure";
 
-export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors }: {
+export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders }: {
   templates: TemplateView[];
   onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; secretMode?: SecretMode; secretIds?: string[]; autoCreateInstance?: boolean }) => void;
   onCancel: () => void;
-  onGoToConnectors: () => void;
+  onGoToProviders: () => void;
 }) {
   const [step, setStep] = useState<Step>("pick");
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateView | null>(null);
@@ -147,23 +147,12 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
               <input className={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" />
             </label>
 
-            {/* Credential Injection */}
+            {/* Connections */}
             <div className="flex flex-col gap-3">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Credential Injection</span>
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Connections</span>
 
               {/* Mode toggle */}
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSecretMode("all")}
-                  className={`rounded-lg border-2 px-3 py-2.5 text-left transition-colors ${secretMode === "all" ? "border-accent bg-accent-light" : "border-border-light bg-bg hover:border-border"}`}
-                >
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <Globe size={12} className="text-text-secondary" />
-                    <span className="text-[12px] font-bold text-text">All credentials</span>
-                  </div>
-                  <span className="text-[11px] text-text-muted">Any matching credential, now or later</span>
-                </button>
                 <button
                   type="button"
                   onClick={() => setSecretMode("selective")}
@@ -173,67 +162,96 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToConnectors
                     <Lock size={12} className="text-text-secondary" />
                     <span className="text-[12px] font-bold text-text">Selective</span>
                   </div>
-                  <span className="text-[11px] text-text-muted">Only credentials you pick</span>
+                  <span className="text-[11px] text-text-muted">Only connections you pick</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecretMode("all")}
+                  className={`rounded-lg border-2 px-3 py-2.5 text-left transition-colors ${secretMode === "all" ? "border-accent bg-accent-light" : "border-border-light bg-bg hover:border-border"}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <Globe size={12} className="text-text-secondary" />
+                    <span className="text-[12px] font-bold text-text">All</span>
+                  </div>
+                  <span className="text-[11px] text-text-muted">Any connection, now or later</span>
                 </button>
               </div>
 
               <p className="text-[12px] text-text-muted leading-relaxed">
-                OneCLI injects credentials into this agent's outbound requests when the destination host matches. Values stay in OneCLI — the agent never sees them.{" "}
-                {secretMode === "all"
-                  ? "Any credential is eligible, including ones you add later."
-                  : "Only the credentials you pick are eligible."}
+                {secretMode === "selective"
+                  ? "Only the connections you pick below are available to this agent."
+                  : "This agent can use any connection, including ones you add later."}
               </p>
 
               {loadSecrets && <span className="text-[12px] text-text-muted">Loading...</span>}
               {!loadSecrets && secrets.length === 0 && (
                 <span className="text-[12px] text-text-muted">
-                  No credentials yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToConnectors}>add one</button>
+                  No connections yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>add one</button>
                 </span>
               )}
 
               {/* Selective list — only rendered in selective mode */}
               {secretMode === "selective" && (
-                <>
-                  {/* Anthropic */}
-                  {anthropicSecrets.map(s => (
-                    <label
-                      key={s.id}
-                      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                    >
-                      <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
-                      <Sparkles size={14} className="text-warning" />
-                      <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
-                      <AuthModeBadge mode={s.authMode} />
-                    </label>
-                  ))}
+                <div className="flex flex-col gap-4">
+                  {/* Provider */}
+                  {anthropicSecrets.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Provider</div>
+                      <div className="flex flex-col gap-2">
+                        {anthropicSecrets.map(s => (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                          >
+                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                            <Sparkles size={14} className="text-warning" />
+                            <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
+                            <AuthModeBadge mode={s.authMode} />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                  {/* MCP */}
-                  {mcpSecrets.map(s => (
-                    <label
-                      key={s.id}
-                      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                    >
-                      <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
-                      <Globe size={14} className="text-info" />
-                      <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 bg-info-light text-info border-info rounded-full px-2 py-0.5">MCP</span>
-                      <span className="text-[13px] font-medium text-text">{mcpHostnameFromSecretName(s.name)}</span>
-                    </label>
-                  ))}
+                  {/* MCP Servers */}
+                  {mcpSecrets.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">MCP Servers</div>
+                      <div className="flex flex-col gap-2">
+                        {mcpSecrets.map(s => (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                          >
+                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                            <Globe size={14} className="text-info" />
+                            <span className="text-[13px] font-medium text-text">{mcpHostnameFromSecretName(s.name)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Generic */}
-                  {genericSecrets.map(s => (
-                    <label
-                      key={s.id}
-                      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                    >
-                      <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
-                      <Lock size={14} className="text-text-secondary" />
-                      <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 bg-surface-raised text-text-muted border-border-light rounded-full px-2 py-0.5">Secret</span>
-                      <span className="text-[13px] font-medium text-text">{s.name}</span>
-                      <span className="ml-auto text-[11px] font-mono text-text-muted">{s.hostPattern}</span>
-                    </label>
-                  ))}
-                </>
+                  {/* Secrets */}
+                  {genericSecrets.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Secrets</div>
+                      <div className="flex flex-col gap-2">
+                        {genericSecrets.map(s => (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                          >
+                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
+                            <Lock size={14} className="text-text-secondary" />
+                            <span className="text-[13px] font-medium text-text">{s.name}</span>
+                            <span className="ml-auto text-[11px] font-mono text-text-muted">{s.hostPattern}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

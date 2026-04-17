@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { SecretView, SecretMode } from "api-server-api";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../views/ConnectorsView.js";
+import { AuthModeBadge } from "../components/AuthModeBadge.js";
 import { Lock, Sparkles, Globe, Search } from "lucide-react";
 
 export function EditAgentSecretsDialog({
@@ -69,7 +69,7 @@ export function EditAgentSecretsDialog({
     }
   };
 
-  // Classify each secret — renders consistently with the Connectors page
+  // Classify each secret — renders consistently with the Connections page
   const classify = (s: SecretView): "anthropic" | "mcp" | "secret" => {
     if (s.type === "anthropic") return "anthropic";
     if (s.name.startsWith("__humr_mcp:")) return "mcp";
@@ -102,30 +102,29 @@ export function EditAgentSecretsDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h2 className="text-[20px] font-bold text-text">Credential Injection</h2>
+          <h2 className="text-[20px] font-bold text-text">Connections</h2>
           <p className="text-[12px] text-text-muted mt-1">
-            OneCLI injects credentials into{" "}
-            <span className="font-semibold text-text-secondary">{agentName}</span>'s
-            outbound requests when the destination host matches. Values stay in
-            OneCLI — the agent never sees them.
+            Choose which connections{" "}
+            <span className="font-semibold text-text-secondary">{agentName}</span>{" "}
+            can use. The agent never sees raw credentials.
           </p>
         </div>
 
         {/* Mode tabs */}
         <div className="grid grid-cols-2 gap-3">
           <ModeCard
-            active={mode === "all"}
-            icon={<Globe size={16} />}
-            title="All credentials"
-            description="Any matching credential"
-            onClick={() => setMode("all")}
-          />
-          <ModeCard
             active={mode === "selective"}
             icon={<Lock size={16} />}
             title="Selective"
-            description="Only credentials you pick"
+            description="Only connections you pick"
             onClick={() => setMode("selective")}
+          />
+          <ModeCard
+            active={mode === "all"}
+            icon={<Globe size={16} />}
+            title="All"
+            description="Any connection, now or later"
+            onClick={() => setMode("all")}
           />
         </div>
 
@@ -144,27 +143,28 @@ export function EditAgentSecretsDialog({
         ) : mode === "all" ? (
           <div className="rounded-lg border-2 border-border-light bg-surface-raised px-5 py-6 text-center">
             <p className="text-[13px] text-text-secondary">
-              OneCLI may inject any of your <strong>{secrets.length} credentials</strong>{" "}
-              when the destination host matches.
+              This agent can use any of your <strong>{secrets.length} connections</strong>.
             </p>
             <p className="text-[11px] text-text-muted mt-1">
-              Switch to <em>Selective</em> to restrict the set.
+              Switch to <em>Selective</em> to restrict which ones.
             </p>
           </div>
         ) : (
           <>
             {/* Filter + select-all */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                <input
-                  className="w-full h-9 rounded-lg border-2 border-border-light bg-bg pl-9 pr-4 text-[13px] text-text outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
-                  placeholder="Filter credentials..."
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                />
+            {secrets.length >= 6 && (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                  <input
+                    className="w-full h-9 rounded-lg border-2 border-border-light bg-bg pl-9 pr-4 text-[13px] text-text outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+                    placeholder="Filter connections..."
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex items-center text-[11px] text-text-muted">
               <span>
                 <strong className="text-text">{counts.selected}</strong> of {counts.total} selected
@@ -180,50 +180,39 @@ export function EditAgentSecretsDialog({
               </span>
             </div>
 
-            {/* Secrets list */}
             {filtered.length === 0 && (
               <span className="text-[12px] text-text-muted text-center py-4">
-                {q ? "No matching credentials" : "No credentials yet — add some on the Connectors page"}
+                {q ? "No matches" : "No connections yet — add some on the Connections page"}
               </span>
             )}
-            <div className="flex flex-col gap-2">
-              {filtered.map((s) => {
-                const kind = classify(s);
-                return (
-                  <label
-                    key={s.id}
-                    className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-2.5 cursor-pointer transition-colors hover:border-accent ${assigned.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="accent-[var(--color-accent)] w-4 h-4"
-                      checked={assigned.has(s.id)}
-                      onChange={() => toggle(s.id)}
-                    />
-                    {kind === "anthropic" && <Sparkles size={14} className="text-warning shrink-0" />}
-                    {kind === "mcp" && <Globe size={14} className="text-info shrink-0" />}
-                    {kind === "secret" && <Lock size={14} className="text-text-secondary shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium text-text truncate">{displayName(s)}</div>
-                      <div className="text-[11px] font-mono text-text-muted truncate">{s.hostPattern}</div>
-                    </div>
-                    {kind === "anthropic" ? (
-                      <AuthModeBadge mode={s.authMode} />
-                    ) : (
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
-                          kind === "mcp"
-                            ? "bg-info-light text-info border-info"
-                            : "bg-surface-raised text-text-muted border-border-light"
-                        }`}
-                      >
-                        {kind === "mcp" ? "MCP" : "Secret"}
-                      </span>
-                    )}
-                  </label>
-                );
-              })}
-            </div>
+            {filtered.length > 0 && (
+              <div className="flex flex-col gap-4">
+                <AccessGroup
+                  label="Provider"
+                  items={filtered.filter((s) => classify(s) === "anthropic")}
+                  assigned={assigned}
+                  onToggle={toggle}
+                  classify={classify}
+                  displayName={displayName}
+                />
+                <AccessGroup
+                  label="MCP Servers"
+                  items={filtered.filter((s) => classify(s) === "mcp")}
+                  assigned={assigned}
+                  onToggle={toggle}
+                  classify={classify}
+                  displayName={displayName}
+                />
+                <AccessGroup
+                  label="Secrets"
+                  items={filtered.filter((s) => classify(s) === "secret")}
+                  assigned={assigned}
+                  onToggle={toggle}
+                  classify={classify}
+                  displayName={displayName}
+                />
+              </div>
+            )}
           </>
         )}
 
@@ -244,6 +233,69 @@ export function EditAgentSecretsDialog({
             {saving ? "..." : "Save"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AccessGroup({
+  label,
+  items,
+  assigned,
+  onToggle,
+  classify,
+  displayName,
+}: {
+  label: string;
+  items: SecretView[];
+  assigned: Set<string>;
+  onToggle: (id: string) => void;
+  classify: (s: SecretView) => "anthropic" | "mcp" | "secret";
+  displayName: (s: SecretView) => string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+        {label}
+      </div>
+      <div className="flex flex-col gap-2">
+        {items.map((s) => {
+          const kind = classify(s);
+          return (
+            <label
+              key={s.id}
+              className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-2.5 cursor-pointer transition-colors hover:border-accent ${assigned.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+            >
+              <input
+                type="checkbox"
+                className="accent-[var(--color-accent)] w-4 h-4"
+                checked={assigned.has(s.id)}
+                onChange={() => onToggle(s.id)}
+              />
+              {kind === "anthropic" && <Sparkles size={14} className="text-warning shrink-0" />}
+              {kind === "mcp" && <Globe size={14} className="text-info shrink-0" />}
+              {kind === "secret" && <Lock size={14} className="text-text-secondary shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-text truncate">{displayName(s)}</div>
+                <div className="text-[11px] font-mono text-text-muted truncate">{s.hostPattern}</div>
+              </div>
+              {kind === "anthropic" ? (
+                <AuthModeBadge mode={s.authMode} />
+              ) : (
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
+                    kind === "mcp"
+                      ? "bg-info-light text-info border-info"
+                      : "bg-surface-raised text-text-muted border-border-light"
+                  }`}
+                >
+                  {kind === "mcp" ? "MCP" : "Secret"}
+                </span>
+              )}
+            </label>
+          );
+        })}
       </div>
     </div>
   );
