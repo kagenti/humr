@@ -50,7 +50,7 @@ Your agent has full context of the codebase, architecture decisions, and cluster
 
 ## Quick Start
 
-Prerequisites: [mise](https://mise.jdx.dev), Docker, macOS or Linux.
+Prerequisites: [mise](https://mise.jdx.dev), a Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.), macOS or Linux.
 
 ```sh
 mise install                # install deps, configure git hooks
