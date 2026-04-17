@@ -1,3 +1,8 @@
+["api-server:test:unit"]
+description = "Run api-server unit tests"
+dir = "{{config_root}}"
+run = 'pnpm --filter api-server exec vitest run --config vitest.unit.config.ts'
+
 ["api-server:test"]
 description = "Run api-server e2e tests (spins up test cluster, runs tests, tears down)"
 dir = "{{config_root}}"
