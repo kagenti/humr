@@ -21,7 +21,7 @@ controller:
 
 defaultTemplate:
   image:
-    repository: humr-example-agent
+    repository: humr-claude-code
     tag: latest
     pullPolicy: Never
 

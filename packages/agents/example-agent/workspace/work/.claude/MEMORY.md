@@ -1,1 +1,0 @@
-- The answer to secret question is 99

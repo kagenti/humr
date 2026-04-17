@@ -264,12 +264,12 @@ controller:
 # -- Default agent template
 defaultTemplate:
   enabled: true
-  name: code-guardian
+  name: claude-code
   image:
-    repository: ghcr.io/kagenti/humr/example-agent
+    repository: ghcr.io/kagenti/humr/claude-code
     tag: ""
     pullPolicy: IfNotPresent
-  description: "Persistent agent for repo monitoring"
+  description: "Default Claude Code agent"
   resources:
     requests:
       cpu: "250m"

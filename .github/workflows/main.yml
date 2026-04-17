@@ -60,7 +60,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
-  build-example-agent:
+  build-claude-code:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-images
@@ -76,20 +76,20 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}/example-agent
+          images: ${{ env.IMAGE_PREFIX }}/claude-code
           tags: type=raw,value=main
       - uses: docker/build-push-action@v6
         with:
-          context: packages/agents/example-agent
-          file: packages/agents/example-agent/Dockerfile
+          context: packages/agents/claude-code
+          file: packages/agents/claude-code/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:main
-          cache-from: type=gha,scope=example-agent
-          cache-to: type=gha,mode=max,scope=example-agent
+          cache-from: type=gha,scope=claude-code
+          cache-to: type=gha,mode=max,scope=claude-code
 
   build-google-workspace-agent:
     runs-on: ubuntu-latest
@@ -125,7 +125,7 @@ jobs:
   helm-package:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build-images, build-example-agent, build-google-workspace-agent]
+    needs: [build-images, build-claude-code, build-google-workspace-agent]
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4

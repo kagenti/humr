@@ -33,12 +33,12 @@ func runningInstanceCM(name, lastActivity string, annotations map[string]string)
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
 				"humr.ai/type":     "agent-instance",
-				"humr.ai/agent": "code-guardian",
+				"humr.ai/agent": "claude-code",
 			},
 			Annotations: annotations,
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\nagentId: code-guardian\n",
+			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\nagentId: claude-code\n",
 		},
 	}
 }
@@ -99,7 +99,7 @@ func TestIdleChecker_SkipsNoLastActivity(t *testing.T) {
 func TestIdleChecker_SkipsAlreadyHibernated(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	cm := runningInstanceCM("hibernated-agent", staleTime, nil)
-	cm.Data["spec.yaml"] = "version: humr.ai/v1\ndesiredState: hibernated\nagentId: code-guardian\n"
+	cm.Data["spec.yaml"] = "version: humr.ai/v1\ndesiredState: hibernated\nagentId: claude-code\n"
 	client := fake.NewSimpleClientset(cm)
 	checker := NewIdleChecker(client, idleCheckerCfg(1*time.Hour))
 

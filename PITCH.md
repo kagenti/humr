@@ -56,7 +56,7 @@ Here's the mapping to the three problems:
 
 Humr runs agents using three K8s primitives.
 
-**Template** — a blueprint for a kind of agent. A ConfigMap that says *"use this image, mount these paths, run this init script, allocate this much CPU/memory."* The template is the class. `code-guardian` is the one Humr ships.
+**Template** — a blueprint for a kind of agent. A ConfigMap that says *"use this image, mount these paths, run this init script, allocate this much CPU/memory."* The template is the class. `claude-code` is the one Humr ships.
 
 **Instance** — a specific agent you've spun up from a template. Also a ConfigMap. Carries the instance name, the secret reference, any per-instance overrides. Template is the class; instance is the object. Ten users, ten instances, one template.
 
@@ -84,11 +84,11 @@ mise run cluster:install    # k3s in lima, deploys Humr
 export KUBECONFIG="$(mise run cluster:kubeconfig)"
 ```
 
-That booted a local k3s cluster and deployed the whole stack: OneCLI, Keycloak, Postgres, controller, API server, UI, and a default Claude Code template called `code-guardian`.
+That booted a local k3s cluster and deployed the whole stack: OneCLI, Keycloak, Postgres, controller, API server, UI, and a default Claude Code template called `claude-code`.
 
 **Log in.** Everything uses `dev` / `dev` for local installs (seeded by `values-local.yaml`). Same login for both UIs.
 
-**Create an instance.** Open `http://humr.localhost:4444`, pick the `code-guardian` template, give it a name (e.g. `demo`). In ~20 seconds the pod is ready.
+**Create an instance.** Open `http://humr.localhost:4444`, pick the `claude-code` template, give it a name (e.g. `demo`). In ~20 seconds the pod is ready.
 
 **Drop a credential into OneCLI.** Open `http://onecli.localhost:4444` → Connections → Secrets → Add Secret. Pick **Anthropic**, paste the output of `claude setup-token`. Save.
 
