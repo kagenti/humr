@@ -6,6 +6,7 @@ import type { InstancesService } from "api-server-api";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
+const CHANNEL_TIMEOUT_MS = 600_000; // 10 min — channel relay tasks can run long
 const WAKE_POLL_INTERVAL_MS = 2_000;
 const WAKE_TIMEOUT_MS = 60_000;
 
@@ -84,6 +85,7 @@ async function withAcpConnection<T>(
   clientName: string,
   handlers: { sessionUpdate?: (params: any) => Promise<void> },
   fn: (connection: ClientSideConnection) => Promise<T>,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
   const connection = new ClientSideConnection(
@@ -98,7 +100,7 @@ async function withAcpConnection<T>(
     stream,
   );
 
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(timeoutMs);
   const cleanup = () => {
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
   };
@@ -110,7 +112,20 @@ async function withAcpConnection<T>(
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
-    return await fn(connection);
+    return await Promise.race([
+      fn(connection),
+      new Promise<never>((_, reject) => {
+        if (timeout.aborted) {
+          reject(new Error(`ACP connection timed out after ${timeoutMs / 1000}s`));
+          return;
+        }
+        timeout.addEventListener(
+          "abort",
+          () => reject(new Error(`ACP connection timed out after ${timeoutMs / 1000}s`)),
+          { once: true },
+        );
+      }),
+    ]);
   } finally {
     timeout.removeEventListener("abort", cleanup);
     cleanup();
@@ -174,7 +189,7 @@ export function createAcpClient(opts: {
         const { sessionId } = await connection.newSession({ cwd: ".", mcpServers: [] });
         await opts.onSessionCreated(sessionId);
         await connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt }] });
-      });
+      }, CHANNEL_TIMEOUT_MS);
 
       return responseChunks.join("");
     },
