@@ -152,17 +152,19 @@ export function EditAgentSecretsDialog({
         ) : (
           <>
             {/* Filter + select-all */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                <input
-                  className="w-full h-9 rounded-lg border-2 border-border-light bg-bg pl-9 pr-4 text-[13px] text-text outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
-                  placeholder="Filter connections..."
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                />
+            {secrets.length >= 6 && (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                  <input
+                    className="w-full h-9 rounded-lg border-2 border-border-light bg-bg pl-9 pr-4 text-[13px] text-text outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+                    placeholder="Filter connections..."
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex items-center text-[11px] text-text-muted">
               <span>
                 <strong className="text-text">{counts.selected}</strong> of {counts.total} selected
