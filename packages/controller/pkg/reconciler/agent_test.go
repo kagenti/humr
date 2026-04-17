@@ -51,15 +51,15 @@ func (f *fakeGetter) Get(name string) (*corev1.ConfigMap, error) {
 
 func TestResolveAgent(t *testing.T) {
 	getter := &fakeGetter{cms: map[string]*corev1.ConfigMap{
-		"claude-code": {
-			ObjectMeta: metav1.ObjectMeta{Name: "claude-code", Namespace: "test-agents", UID: "agent-uid"},
+		"coding-agent": {
+			ObjectMeta: metav1.ObjectMeta{Name: "coding-agent", Namespace: "test-agents", UID: "agent-uid"},
 			Data:       map[string]string{"spec.yaml": fixtureAgentYAML},
 		},
 	}}
 	resolver := NewAgentResolver(getter)
-	cm, spec, err := resolver.Resolve("claude-code")
+	cm, spec, err := resolver.Resolve("coding-agent")
 	require.NoError(t, err)
-	assert.Equal(t, "claude-code", cm.Name)
+	assert.Equal(t, "coding-agent", cm.Name)
 	assert.EqualValues(t, "agent-uid", cm.UID)
 	assert.Equal(t, "ghcr.io/myorg/claude-code:latest", spec.Image)
 	assert.Len(t, spec.Mounts, 2)

@@ -90,7 +90,7 @@ mounts:
 func TestParseInstanceSpec(t *testing.T) {
 	spec, err := ParseInstanceSpec(`version: humr.ai/v1
 desiredState: running
-agentId: claude-code
+agentId: coding-agent
 env:
   - name: GITHUB_ORG
     value: "team-alpha"
@@ -99,7 +99,7 @@ secretRef: cg-team-alpha-secrets
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "running", spec.DesiredState)
-	assert.Equal(t, "claude-code", spec.AgentName)
+	assert.Equal(t, "coding-agent", spec.AgentName)
 	assert.Equal(t, "cg-team-alpha-secrets", spec.SecretRef)
 	assert.Len(t, spec.Env, 1)
 }

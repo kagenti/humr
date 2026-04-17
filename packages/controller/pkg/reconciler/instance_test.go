@@ -35,7 +35,7 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 func agentCM() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "claude-code", Namespace: "test-agents", UID: "agent-uid",
+			Name: "coding-agent", Namespace: "test-agents", UID: "agent-uid",
 			Labels: map[string]string{"humr.ai/type": "agent"},
 		},
 		Data: map[string]string{"spec.yaml": fixtureAgentYAML},
@@ -48,11 +48,11 @@ func instanceCM(desiredState string) *corev1.ConfigMap {
 			Name: "my-instance", Namespace: "test-agents", UID: "uid-1",
 			Labels: map[string]string{
 				"humr.ai/type":  "agent-instance",
-				"humr.ai/agent": "claude-code",
+				"humr.ai/agent": "coding-agent",
 			},
 		},
 		Data: map[string]string{
-			"spec.yaml": fmt.Sprintf("version: humr.ai/v1\ndesiredState: %s\nagentId: claude-code\n", desiredState),
+			"spec.yaml": fmt.Sprintf("version: humr.ai/v1\ndesiredState: %s\nagentId: coding-agent\n", desiredState),
 		},
 	}
 }
@@ -60,7 +60,7 @@ func instanceCM(desiredState string) *corev1.ConfigMap {
 func TestReconcile_CreateResources(t *testing.T) {
 	cm := instanceCM("running")
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm,
 	)
 
@@ -95,7 +95,7 @@ func TestReconcile_CreateResources(t *testing.T) {
 func TestReconcile_Hibernate(t *testing.T) {
 	cm := instanceCM("hibernated")
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm,
 	)
 
@@ -116,7 +116,7 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
 	}
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm, existingSS,
 	)
 
@@ -145,7 +145,7 @@ func TestReconcile_AgentNotFound(t *testing.T) {
 func TestReconcile_Idempotent(t *testing.T) {
 	cm := instanceCM("running")
 	r, _ := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm,
 	)
 
@@ -159,7 +159,7 @@ func TestReconcile_Idempotent(t *testing.T) {
 func TestReconcile_SetsAgentOwnerReference(t *testing.T) {
 	cm := instanceCM("running")
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm,
 	)
 
@@ -170,14 +170,14 @@ func TestReconcile_SetsAgentOwnerReference(t *testing.T) {
 	require.Len(t, updated.OwnerReferences, 1)
 	ref := updated.OwnerReferences[0]
 	assert.Equal(t, "ConfigMap", ref.Kind)
-	assert.Equal(t, "claude-code", ref.Name)
+	assert.Equal(t, "coding-agent", ref.Name)
 	assert.EqualValues(t, "agent-uid", ref.UID)
 }
 
 func TestReconcile_OwnerReferenceIdempotent(t *testing.T) {
 	cm := instanceCM("running")
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm,
 	)
 
@@ -195,7 +195,7 @@ func TestReconcile_PreservesExistingOwnerReferences(t *testing.T) {
 		{APIVersion: "v1", Kind: "ConfigMap", Name: "other-owner", UID: "other-uid"},
 	}
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm,
 	)
 
@@ -220,7 +220,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 		},
 	}
 	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"coding-agent": agentCM()},
 		cm, pvc,
 	)
 

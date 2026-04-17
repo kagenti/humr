@@ -214,7 +214,7 @@ describe("e2e: controller reconciliation", () => {
   beforeAll(async () => {
     const agent = await client.agents.create.mutate({
       name: "e2e-agent",
-      templateId: "claude-code",
+      templateId: "coding-agent",
     });
     e2eAgentId = agent.id;
     const inst = await client.instances.create.mutate({

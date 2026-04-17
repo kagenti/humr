@@ -20,7 +20,7 @@ controller:
   agentImagePullPolicy: Never
 
 defaultTemplate:
-  description: "Default Codex agent"
+  description: "Default coding agent powered by Codex"
   image:
     repository: humr-codex-agent
     tag: latest
