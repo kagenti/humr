@@ -36,4 +36,5 @@ context/
 
 # Worktrees
 .worktrees/
+.claude/worktrees/
 .context/
