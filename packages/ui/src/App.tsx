@@ -48,7 +48,7 @@ export default function App() {
         useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
       } else if (path === "/providers") {
         useStore.setState({ view: "providers" });
-      } else if (path === "/connections" || path === "/connectors" || path === "/mcp") {
+      } else if (path === "/connections") {
         useStore.setState({ view: "connections" });
       } else {
         useStore.setState({ selectedInstance: null, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "list" });

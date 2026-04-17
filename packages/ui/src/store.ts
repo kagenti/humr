@@ -172,7 +172,7 @@ function viewToPath(view: View, instance?: string | null): string {
 function pathToState(path: string): { view: View; instance?: string } {
   if (path.startsWith("/chat/")) return { view: "chat", instance: decodeURIComponent(path.slice(6)) };
   if (path === "/providers") return { view: "providers" };
-  if (path === "/connections" || path === "/connectors" || path === "/mcp") return { view: "connections" };
+  if (path === "/connections") return { view: "connections" };
   return { view: "list" };
 }
 
