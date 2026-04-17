@@ -39,7 +39,10 @@ export function useFileTree(selectedInstance: string | null) {
         if (cur) {
           try {
             const d = await instanceTrpc.files.read.query({ path: cur.path });
-            setOpenFile({ path: d.path, content: d.content ?? "", binary: d.binary, mimeType: d.mimeType });
+            const next = { path: d.path, content: d.content ?? "", binary: d.binary, mimeType: d.mimeType };
+            // Skip if nothing meaningful changed — avoids recreating blob URLs and flashing previews.
+            if (cur.path === next.path && cur.content === next.content && cur.binary === next.binary && cur.mimeType === next.mimeType) return;
+            setOpenFile(next);
           } catch { setOpenFile(null); }
         }
       } catch {}
