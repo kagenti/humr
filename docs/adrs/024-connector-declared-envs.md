@@ -75,7 +75,7 @@ New Anthropic connectors auto-attach `{envName: "ANTHROPIC_API_KEY", placeholder
 ## Consequences
 
 - **Template migration.** `pi-agent-template.yaml`, `google-workspace-template.yaml`, and the `GH_TOKEN` platform env in `resources.go` were stripped. Existing agents created before this change retain the old envs in their agent CM (frozen at creation) — new agents created from templates receive only `PORT`.
-- **Two-repo PR.** OneCLI fork at `/Users/tomas2d/Desktop/apoco/onecli_kagenti` was patched and must be built/deployed alongside Humr. Image tag: `humr-onecli:dev` (local dev via `values-local.yaml`).
+- **Two-repo PR.** OneCLI fork at `kagenti/onecli` was patched and must be built/deployed alongside Humr. Image tag: `humr-onecli:dev` (local dev via `values-local.yaml`).
 - **Extra OneCLI round-trips on reconcile.** Every instance reconcile now calls `ListSecretsForAgent` (up to 3 HTTP hops: list agents, list secrets, get grants). Follow-up candidate: cache per-owner with a short TTL.
 - **Change propagation.** Envs picked up on next pod restart. Editing an agent's envs updates the StatefulSet pod-template hash, which triggers K8s rolling restart; editing a connector's envs does not automatically roll instances — users must restart the pod. Follow-up: controller could watch secret metadata changes and re-reconcile affected instances.
 - **Client-bypass risk on PORT.** Defense-in-depth via server-side merge. If future protected names expand (e.g. `ONECLI_ACCESS_TOKEN`), add them to `PROTECTED_AGENT_ENV_NAMES`.
