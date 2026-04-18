@@ -50,7 +50,7 @@ Here's the mapping to the three problems:
 | Can't leave your laptop | Cron lives on the platform, not your laptop. Schedules fire as trigger files in `/workspace/.triggers/` — the harness can't tell a cron fire from a human message. Workspace persists on a PVC across hibernation; conversation history comes back on wake. Slack is a first-class channel. |
 | Can't become a product | Every instance is a ConfigMap. Multi-tenant by construction. Harness-agnostic and model-agnostic — anything that speaks ACP works. No CRDs, so no cluster-admin required. |
 
-**Humr has no opinions about your agent.** No memory format, no skill system, no prompt templates, no dashboards for tuning. Opinions belong in the product layer — that's where things like [humr-claw](https://github.com/kagenti/humr-claw) live. Humr is the platform. humr-claw is one app that runs on it. This document is about the platform.
+**Humr has no opinions about your agent.** No memory format, no skill system, no prompt templates, no dashboards for tuning. Opinions belong in the product layer — that's where things like humr-claw live. Humr is the platform. humr-claw is one app that runs on it. This document is about the platform.
 
 ## The mental model
 
@@ -155,7 +155,7 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
 
 Four things that become possible once the floor is there.
 
-**1. Personal AI employees.** Non-technical users "hire" opinionated templates — a trip planner, a family assistant, a meal planner — the way you'd hire a human. Conversation happens wherever they already are — Telegram, Slack, whatever — not a dashboard. Each hire runs permanently, remembers you across sessions, and acts proactively on a schedule. This is what [humr-claw](https://github.com/kagenti/humr-claw) is being built to do.
+**1. Personal AI employees.** Non-technical users "hire" opinionated templates — a trip planner, a family assistant, a meal planner — the way you'd hire a human. Conversation happens wherever they already are — Telegram, Slack, whatever — not a dashboard. Each hire runs permanently, remembers you across sessions, and acts proactively on a schedule. This is what humr-claw is being built to do.
 
 **2. The morning team brief.** A scheduled agent that scans Slack and GitHub every morning and sends a team lead their situational awareness DM: who's unblocked, who's stuck, what's at risk. Read-only. Replaces a workflow that experienced PMs do manually — except this one runs at 7am whether you're online or not.
 
