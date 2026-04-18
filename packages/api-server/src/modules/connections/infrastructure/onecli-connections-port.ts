@@ -1,12 +1,15 @@
 import type { OnecliClient } from "../../../onecli.js";
 
 /**
- * Row shape of OneCLI's `GET /api/connections` (>= onecli 0.0.12). Optional
- * fields are not narrowed — the service layer normalizes.
+ * Row shape of OneCLI's `GET /api/connections` (>= onecli 0.0.14). Optional
+ * fields are not narrowed — the service layer normalizes. `providerName` is
+ * the app's display name from the registry (e.g. "Google Drive"); `label` is
+ * the user's *identity* (email/username from metadata).
  */
 export interface OnecliAppConnection {
   id: string;
   provider: string;
+  providerName?: string | null;
   label?: string | null;
   status?: string | null;
   scopes?: string[] | null;

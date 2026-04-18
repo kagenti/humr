@@ -76,6 +76,7 @@ describe("ConnectionsService.list", () => {
   const conn: OnecliAppConnection = {
     id: "c-1",
     provider: "gmail",
+    providerName: "Gmail",
     label: "user@example.com",
     status: "connected",
     scopes: ["openid"],
@@ -83,7 +84,7 @@ describe("ConnectionsService.list", () => {
     connectedAt: "2026-04-17T00:00:00Z",
   };
 
-  it("maps a single connection row through all normalizers", async () => {
+  it("uses OneCLI's providerName as the label, with identity as subtitle", async () => {
     const svc = createConnectionsService({
       port: makePort({ listAppConnections: async () => [conn] }),
     });
@@ -92,7 +93,7 @@ describe("ConnectionsService.list", () => {
       {
         id: "c-1",
         provider: "gmail",
-        label: "user@example.com",
+        label: "Gmail",
         status: "connected",
         identity: "user@example.com",
         scopes: ["openid"],
@@ -101,18 +102,23 @@ describe("ConnectionsService.list", () => {
     ]);
   });
 
-  it("falls back to provider when label is missing or whitespace", async () => {
+  it("falls back to OneCLI label then provider id when providerName is missing", async () => {
     const svc = createConnectionsService({
       port: makePort({
         listAppConnections: async () => [
-          { ...conn, label: null },
-          { ...conn, id: "c-2", label: "   " },
+          // older OneCLI (<0.0.14) — providerName absent entirely
+          { ...conn, providerName: undefined, label: "user@example.com" },
+          // registry orphan — providerName explicitly null
+          { ...conn, id: "c-2", providerName: null, label: null },
+          // providerName whitespace-only
+          { ...conn, id: "c-3", providerName: "   ", label: "   " },
         ],
       }),
     });
     const rows = await svc.list();
-    expect(rows[0].label).toBe("gmail");
+    expect(rows[0].label).toBe("user@example.com");
     expect(rows[1].label).toBe("gmail");
+    expect(rows[2].label).toBe("gmail");
   });
 
   it("omits optional scopes and connectedAt when absent", async () => {
