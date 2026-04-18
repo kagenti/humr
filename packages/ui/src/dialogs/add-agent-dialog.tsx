@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import type { TemplateView, SecretView, SecretMode } from "../types.js";
+import type { AppConnectionView } from "api-server-api";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import { Globe, KeyRound, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
@@ -9,7 +10,7 @@ type Step = "pick" | "configure";
 
 export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders }: {
   templates: TemplateView[];
-  onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; secretMode?: SecretMode; secretIds?: string[]; autoCreateInstance?: boolean }) => void;
+  onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; secretMode?: SecretMode; secretIds?: string[]; appConnectionIds?: string[]; autoCreateInstance?: boolean }) => void;
   onCancel: () => void;
   onGoToProviders: () => void;
 }) {
@@ -24,13 +25,17 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
   const [selSecrets, setSelSecrets] = useState<Set<string>>(new Set());
   const [loadSecrets, setLoadSecrets] = useState(true);
   const [secretMode, setSecretMode] = useState<SecretMode>("selective");
+  const [apps, setApps] = useState<AppConnectionView[]>([]);
+  const [selApps, setSelApps] = useState<Set<string>>(new Set());
   const [autoCreateInstance, setAutoCreateInstance] = useState(true);
 
   useEffect(() => {
     platform.secrets.list.query().then(setSecrets).catch(() => {}).finally(() => setLoadSecrets(false));
+    platform.connections.list.query().then(setApps).catch(() => {});
   }, []);
 
   const toggleSecret = (id: string) => setSelSecrets(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleApp = (id: string) => setSelApps(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -58,6 +63,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
       description: desc.trim() || undefined,
       secretMode,
       secretIds: secretMode === "selective" && selSecrets.size ? [...selSecrets] : undefined,
+      appConnectionIds: selApps.size ? [...selApps] : undefined,
       autoCreateInstance,
     });
   };
@@ -272,6 +278,39 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Apps — not mode-gated; OneCLI's agent-app grant is an explicit list */}
+              {apps.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Apps</div>
+                  <div className="flex flex-col gap-2">
+                    {apps.map(a => (
+                      <label
+                        key={a.id}
+                        className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selApps.has(a.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
+                      >
+                        <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selApps.has(a.id)} onChange={() => toggleApp(a.id)} />
+                        <KeyRound size={14} className="text-text-secondary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-medium text-text truncate">{a.label}</div>
+                          {a.identity && <div className="text-[11px] font-mono text-text-muted truncate">{a.identity}</div>}
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
+                            a.status === "expired"
+                              ? "bg-danger-light text-danger border-danger"
+                              : a.status === "connected"
+                                ? "bg-info-light text-info border-info"
+                                : "bg-surface-raised text-text-muted border-border-light"
+                          }`}
+                        >
+                          {a.status === "expired" ? "Expired" : a.status === "disconnected" ? "Disconnected" : a.status === "unknown" ? "Unknown" : "Connected"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
