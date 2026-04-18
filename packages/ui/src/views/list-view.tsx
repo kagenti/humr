@@ -240,18 +240,18 @@ export function ListView() {
                 </div>
               ) : (
                 <div
-                  className={`btn-brutal rounded-xl border-2 p-4 flex items-center gap-4 w-full hover:border-accent transition-colors ${firstPendingStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
+                  className={`rounded-xl border-2 p-4 flex items-center gap-4 w-full transition-colors ${firstPendingStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
                   style={{ boxShadow: firstPendingStep === "connections" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
                 >
                   <button
                     onClick={() => setView("connections")}
-                    className="flex-1 min-w-0 flex items-center gap-4 text-left"
+                    className="btn-brutal group flex-1 min-w-0 flex items-center gap-4 text-left rounded-lg"
                   >
                     <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${firstPendingStep === "connections" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
                       2
                     </div>
                     <div className="min-w-0">
-                      <div className="step-title text-[14px] font-bold text-text">
+                      <div className="text-[14px] font-bold text-text transition-colors group-hover:text-accent">
                         Set up connections
                       </div>
                       <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets</div>
