@@ -1,7 +1,10 @@
 # Local dev: images built with docker and loaded into k3s directly.
 # Used via: helm install -f values-local.yaml
 onecli:
-  image: humr-onecli:dev
+  # Use plain "localhost" for OneCLI so Google OAuth redirect URIs work.
+  # Google exempts http://localhost from HTTPS requirements but rejects
+  # subdomain URLs like http://onecli.localhost. See #154.
+  externalHostname: localhost
 
 ui:
   image:
@@ -41,12 +44,6 @@ piAgentTemplate:
     repository: humr-pi-agent
     tag: latest
     pullPolicy: Never
-
-# Use plain "localhost" for OneCLI so Google OAuth redirect URIs work.
-# Google exempts http://localhost from HTTPS requirements but rejects
-# subdomain URLs like http://onecli.localhost. See #154.
-onecli:
-  externalHostname: localhost
 
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
 keycloak:
