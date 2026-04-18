@@ -1,9 +1,36 @@
-import { useState, useRef, useCallback, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Send as SendIcon, Square, Paperclip, X, FileText as FileIcon } from "lucide-react";
 import type { Attachment } from "../types.js";
 import { useAutoResize } from "../hooks/use-auto-resize.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+const BUSY_VERBS = [
+  "Clawing", "Pinching", "Molting", "Shellscheming", "Pincerpondering",
+  "Lobstering", "Buttermusing", "Antennawaving", "Tailflicking", "Carapacing",
+  "Crustaceating", "Clawfiddling", "Brinebrewing", "Shellshocking", "Clawmarinating",
+  "Pincernoodling", "Clawculating", "Crustigitating", "Claberating", "Lobstrifying",
+];
+
+function BusyIndicator() {
+  const [verb, setVerb] = useState(() => BUSY_VERBS[Math.floor(Math.random() * BUSY_VERBS.length)]);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setVerb(BUSY_VERBS[Math.floor(Math.random() * BUSY_VERBS.length)]);
+    }, 2500);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+      <span className="inline-flex gap-0.5">
+        <span className="w-1 h-1 rounded-full bg-accent anim-pulse" style={{ animationDelay: "0ms" }} />
+        <span className="w-1 h-1 rounded-full bg-accent anim-pulse" style={{ animationDelay: "200ms" }} />
+        <span className="w-1 h-1 rounded-full bg-accent anim-pulse" style={{ animationDelay: "400ms" }} />
+      </span>
+      {verb}…
+    </span>
+  );
+}
 
 interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement>;
@@ -153,8 +180,9 @@ export function ChatInput({
             </button>
           )}
         </div>
-        <div className="flex items-center min-h-[24px]">
+        <div className="flex items-center gap-3 min-h-[24px]">
           {footer}
+          {isComputing && <BusyIndicator />}
           {queuedMessage && (
             <span className="ml-auto text-[11px] text-text-muted">
               1 queued

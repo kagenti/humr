@@ -27,12 +27,19 @@ export interface ImagePart {
 export interface FilePart {
   kind: "file";
   name: string;
-  data: string;       // base64-encoded
   mimeType: string;
+  /** Absent when the part is a replayed reference rather than a fresh upload — */
+  /** the actual bytes only exist on the agent side. */
+  data?: string;      // base64-encoded
+  size?: number;
+}
+
+export interface UploadedFilePart extends FilePart {
+  data: string;
   size: number;
 }
 
-export type Attachment = ImagePart | FilePart;
+export type Attachment = ImagePart | UploadedFilePart;
 
 export type MessagePart = TextPart | ImagePart | FilePart | ToolChip;
 

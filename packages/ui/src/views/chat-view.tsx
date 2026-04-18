@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
-import { ArrowLeft, Settings2, FileText as FileIcon } from "lucide-react";
+import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon } from "lucide-react";
 import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
 import { ResizeHandle } from "./../components/resize-handle.js";
@@ -34,7 +34,9 @@ export function ChatView() {
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   // ── Hooks ──
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
@@ -45,10 +47,32 @@ export function ChatView() {
 
   const { openFileHandler } = useFileTree(selectedInstance);
 
-  // Scroll to bottom on new messages
+  // Track "is the bottom sentinel in view" via IntersectionObserver.
+  // Scroll events race badly with programmatic smooth-scroll during streaming
+  // (the autoscroll itself looks like user activity and re-enables itself);
+  // observer fires only on real visibility transitions and ignores our own
+  // scrollIntoView calls.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const target = bottomRef.current;
+    const root = messagesRef.current;
+    if (!target || !root) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setIsAtBottom(entry?.isIntersecting ?? false),
+      { root, threshold: 0 },
+    );
+    obs.observe(target);
+    return () => obs.disconnect();
+  }, []);
+
+  // Auto-scroll only if the user hasn't detached. Instant (not smooth) so a
+  // fast stream can't be "outrun" by the user trying to scroll up.
+  useEffect(() => {
+    if (isAtBottom) bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, isAtBottom]);
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, []);
 
   const mobileResumeSession = useCallback((sid: string) => {
     setMobileScreen("chat");
@@ -119,7 +143,7 @@ export function ChatView() {
       <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("humr-left-w", String(v)); return v; })} />
 
       {/* Main chat column */}
-      <div className={`flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}>
+      <div className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}>
         {/* Header */}
         <header className="flex items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0">
           <button className="flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors" onClick={handleBack}>
@@ -140,7 +164,7 @@ export function ChatView() {
         </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={messagesRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
             {loadingSession && (
               <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
@@ -182,7 +206,9 @@ export function ChatView() {
                       <div key={i} className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2">
                         <FileIcon size={14} className="text-text-muted shrink-0" />
                         <span className="text-[12px] text-text-secondary">{p.name}</span>
-                        <span className="text-[10px] text-text-muted">{p.size < 1024 ? `${p.size} B` : `${(p.size / 1024).toFixed(1)} KB`}</span>
+                        {p.size !== undefined && (
+                          <span className="text-[10px] text-text-muted">{p.size < 1024 ? `${p.size} B` : `${(p.size / 1024).toFixed(1)} KB`}</span>
+                        )}
                       </div>
                     ) : <ToolChip key={i} chip={p} />
                   )}
@@ -193,6 +219,16 @@ export function ChatView() {
             <div ref={bottomRef} />
           </div>
         </div>
+
+        {!isAtBottom && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute left-1/2 -translate-x-1/2 bottom-[110px] z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
+          >
+            <ArrowDown size={12} />
+            Jump to latest
+          </button>
+        )}
 
         <ChatInput
           textareaRef={textareaRef}

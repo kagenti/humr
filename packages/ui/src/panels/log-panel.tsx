@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useStore } from "../store.js";
 
 const badgeStyle: Record<string, string> = {
@@ -12,11 +12,22 @@ const badgeStyle: Record<string, string> = {
 
 export function LogPanel() {
   const log = useStore(s => s.log);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.scrollIntoView({ behavior: "smooth" }); }, [log]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    if (isAtBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [log]);
+
+  const onScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
+    <div ref={containerRef} onScroll={onScroll} className="flex flex-1 flex-col overflow-y-auto">
       {log.length === 0 && <p className="px-4 py-5 text-[12px] text-text-muted">No events yet</p>}
       {log.map(e => (
         <div key={e.id} className="flex flex-col gap-1 border-b border-border-light px-4 py-3">
@@ -27,7 +38,7 @@ export function LogPanel() {
           <pre className="text-[11px] font-mono text-text-muted whitespace-pre-wrap break-all leading-[1.5] max-h-[100px] overflow-y-auto">{JSON.stringify(e.payload, null, 2)}</pre>
         </div>
       ))}
-      <div ref={ref} />
+      <div ref={bottomRef} />
     </div>
   );
 }
