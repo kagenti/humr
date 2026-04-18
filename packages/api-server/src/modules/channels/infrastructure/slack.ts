@@ -168,7 +168,7 @@ export function createSlackWorker(
         thread_ts: ctx.threadTs,
         text: response || "(no response)",
         blocks: [
-          { type: "section", text: { type: "mrkdwn", text: response || "(no response)" } },
+          { type: "markdown", text: response || "(no response)" },
           { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
         ],
       });
@@ -434,7 +434,7 @@ export function createSlackWorker(
           channel: slackChannelId,
           text,
           blocks: [
-            { type: "section", text: { type: "mrkdwn", text } },
+            { type: "markdown", text },
             { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
           ],
         });
