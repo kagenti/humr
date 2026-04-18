@@ -3,6 +3,9 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config([
   {
+    ignores: [".claude/worktrees/**", ".worktrees/**"],
+  },
+  {
     files: ["packages/**/*.{ts,tsx}"],
     extends: [tseslint.configs.base],
     plugins: { unicorn },

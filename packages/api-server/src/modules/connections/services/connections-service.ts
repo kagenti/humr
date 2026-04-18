@@ -65,5 +65,14 @@ export function createConnectionsService(deps: {
       const connectionIds = await deps.port.getAgentAppConnectionIds(agent.id);
       return { connectionIds };
     },
+
+    async setAgentConnections(agentName: string, connectionIds: string[]) {
+      const agent = await deps.port.findAgentByIdentifier(agentName);
+      // Write path fails loud when the agent isn't synced to OneCLI yet:
+      // a silent no-op would confuse users who just checked a box.
+      if (!agent) throw new Error(`Agent "${agentName}" not found in OneCLI`);
+      const deduped = Array.from(new Set(connectionIds));
+      await deps.port.setAgentAppConnectionIds(agent.id, deduped);
+    },
   };
 }
