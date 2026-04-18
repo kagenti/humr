@@ -126,38 +126,13 @@ export function createAcpClient(opts: {
 
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
-      let stream: Stream;
-      let ws: WebSocket;
       try {
-        ({ stream, ws } = await wsStream(url));
-      } catch {
-        return [];
-      }
-
-      const connection = new ClientSideConnection(
-        () => ({
-          async requestPermission() { return { outcome: { outcome: "selected" as const, optionId: "" } }; },
-          async sessionUpdate() {},
-          async writeTextFile() { return {}; },
-          async readTextFile() { return { content: "" }; },
-        }),
-        stream,
-      );
-
-      try {
-        await connection.initialize({
-          protocolVersion: 1,
-          clientCapabilities: {},
-          clientInfo: { name: "humr-sessions", version: "1.0.0" },
+        return await withAcpConnection(url, "humr-sessions", {}, async (connection) => {
+          const r = await connection.listSessions({ cwd: "." });
+          return (r.sessions ?? []) as AcpSessionInfo[];
         });
-        const r = await connection.listSessions({ cwd: "." });
-        return (r.sessions ?? []) as AcpSessionInfo[];
       } catch {
         return [];
-      } finally {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-        }
       }
     },
 
