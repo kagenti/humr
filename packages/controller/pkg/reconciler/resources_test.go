@@ -102,9 +102,10 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
-	// GH_TOKEN must come from a connector envMapping, not a platform default.
-	_, hasGH := envMap["GH_TOKEN"]
-	assert.False(t, hasGH, "GH_TOKEN must not be a platform env")
+	// GH_TOKEN is a platform env: GitHub auth rides on a OneCLI OAuth app
+	// connection (not a user-declared secret with envMappings) so every agent
+	// needs the sentinel present for `gh`/octokit tooling to authenticate.
+	assert.Equal(t, "humr:sentinel", envMap["GH_TOKEN"])
 	// Template env
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	// Instance env
@@ -191,12 +192,12 @@ func TestBuildStatefulSet_ConnectorEnvs(t *testing.T) {
 	}
 	connectorEnvs := []corev1.EnvVar{
 		{Name: "GH_TOKEN", Value: onecli.DefaultEnvPlaceholder},
-		{Name: "ANTHROPIC_API_KEY", Value: onecli.DefaultEnvPlaceholder},
+		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: onecli.DefaultEnvPlaceholder},
 	}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, connectorEnvs)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Equal(t, onecli.DefaultEnvPlaceholder, envMap["ANTHROPIC_API_KEY"])
+	assert.Equal(t, onecli.DefaultEnvPlaceholder, envMap["CLAUDE_CODE_OAUTH_TOKEN"])
 	// K8s takes the last EnvVar with a given name; instance env is appended
 	// after connector env so user override wins.
 	assert.Equal(t, "override", envMap["GH_TOKEN"])

@@ -42,7 +42,9 @@ export function createSecretsService(deps: {
       const secrets = await deps.port.listSecrets();
 
       // Anthropic secrets predating envMappings get the default mapping attached
-      // so the controller can inject ANTHROPIC_API_KEY without a migration job.
+      // so the controller can inject CLAUDE_CODE_OAUTH_TOKEN without a migration job.
+      // Awaited so the response and OneCLI state agree — the controller reads
+      // OneCLI directly and cannot observe a fire-and-forget PATCH in flight.
       for (const s of secrets) {
         if (
           s.type !== "anthropic" ||
@@ -52,13 +54,17 @@ export function createSecretsService(deps: {
           continue;
         }
         backfilled.add(s.id);
-        deps.port
-          .updateSecret(s.id, { envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING] })
-          .catch(() => backfilled.delete(s.id));
-        s.metadata = {
-          ...(s.metadata ?? {}),
-          envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING],
-        };
+        try {
+          await deps.port.updateSecret(s.id, {
+            envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING],
+          });
+          s.metadata = {
+            ...(s.metadata ?? {}),
+            envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING],
+          };
+        } catch {
+          backfilled.delete(s.id);
+        }
       }
 
       return secrets.map(toSecretView);
