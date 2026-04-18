@@ -24,9 +24,16 @@ export function isValidEnvName(name: string): boolean {
   return name.length > 0 && ENV_NAME_RE.test(name);
 }
 
-/** Default env mapping auto-attached to new Anthropic connectors. */
+/**
+ * Default env mapping auto-attached to new Anthropic connectors.
+ *
+ * Uses `CLAUDE_CODE_OAUTH_TOKEN` so the Claude Code SDK sends the sentinel in
+ * `Authorization: Bearer …`, matching the routing OneCLI's MITM gateway is set
+ * up to swap. Routing via `ANTHROPIC_API_KEY` (`x-api-key`) does not work for
+ * OAuth-type credentials, which is the common case here.
+ */
 export const ANTHROPIC_DEFAULT_ENV_MAPPING: EnvMapping = {
-  envName: "ANTHROPIC_API_KEY",
+  envName: "CLAUDE_CODE_OAUTH_TOKEN",
   placeholder: DEFAULT_ENV_PLACEHOLDER,
 };
 

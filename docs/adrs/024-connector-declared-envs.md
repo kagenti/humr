@@ -60,7 +60,7 @@ Connector-declared envs also render on each connector row in the Connectors view
 
 ### Anthropic defaults
 
-New Anthropic connectors auto-attach `{envName: "ANTHROPIC_API_KEY", placeholder: "humr:sentinel"}` at create time (`ANTHROPIC_DEFAULT_ENV_MAPPING` in `api-server-api`). Existing Anthropic connectors get a lazy backfill on first `list()` call — gated by an in-memory `Set<id>` so each secret is PATCHed at most once per server process.
+New Anthropic connectors auto-attach `{envName: "CLAUDE_CODE_OAUTH_TOKEN", placeholder: "humr:sentinel"}` at create time (`ANTHROPIC_DEFAULT_ENV_MAPPING` in `api-server-api`). The Claude Code SDK sends `CLAUDE_CODE_OAUTH_TOKEN` in `Authorization: Bearer …`, which matches the header OneCLI's MITM gateway already swaps for both API-key and OAuth-type Anthropic credentials — `ANTHROPIC_API_KEY` (routed via `x-api-key`) is not used because it doesn't carry OAuth tokens. Existing Anthropic connectors get a lazy backfill on first `list()` call — gated by an in-memory `Set<id>` so each secret is PATCHed at most once per server process.
 
 ## Alternatives Considered
 
