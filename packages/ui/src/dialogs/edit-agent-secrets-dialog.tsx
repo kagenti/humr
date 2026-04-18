@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { SecretView, SecretMode } from "api-server-api";
 import { platform } from "../platform.js";
+import { isOpenAiSecret } from "../types.js";
 import { AuthModeBadge } from "../components/auth-mode-badge.js";
 import { Lock, Sparkles, Globe, Search } from "lucide-react";
 
@@ -69,9 +70,9 @@ export function EditAgentSecretsDialog({
     }
   };
 
-  // Classify each secret — renders consistently with the Connections page
-  const classify = (s: SecretView): "anthropic" | "mcp" | "secret" => {
-    if (s.type === "anthropic") return "anthropic";
+  // Classify each secret so provider credentials stay grouped together.
+  const classify = (s: SecretView): "provider" | "mcp" | "secret" => {
+    if (s.type === "anthropic" || isOpenAiSecret(s)) return "provider";
     if (s.name.startsWith("__humr_mcp:")) return "mcp";
     return "secret";
   };
@@ -182,14 +183,14 @@ export function EditAgentSecretsDialog({
 
             {filtered.length === 0 && (
               <span className="text-[12px] text-text-muted text-center py-4">
-                {q ? "No matches" : "No connections yet — add some on the Connections page"}
+                {q ? "No matches" : "No connections yet — add some on the Providers or Connections pages"}
               </span>
             )}
             {filtered.length > 0 && (
               <div className="flex flex-col gap-4">
                 <AccessGroup
-                  label="Provider"
-                  items={filtered.filter((s) => classify(s) === "anthropic")}
+                  label="Providers"
+                  items={filtered.filter((s) => classify(s) === "provider")}
                   assigned={assigned}
                   onToggle={toggle}
                   classify={classify}
@@ -250,7 +251,7 @@ function AccessGroup({
   items: SecretView[];
   assigned: Set<string>;
   onToggle: (id: string) => void;
-  classify: (s: SecretView) => "anthropic" | "mcp" | "secret";
+  classify: (s: SecretView) => "provider" | "mcp" | "secret";
   displayName: (s: SecretView) => string;
 }) {
   if (items.length === 0) return null;
@@ -273,24 +274,26 @@ function AccessGroup({
                 checked={assigned.has(s.id)}
                 onChange={() => onToggle(s.id)}
               />
-              {kind === "anthropic" && <Sparkles size={14} className="text-warning shrink-0" />}
+              {kind === "provider" && <Sparkles size={14} className="text-warning shrink-0" />}
               {kind === "mcp" && <Globe size={14} className="text-info shrink-0" />}
               {kind === "secret" && <Lock size={14} className="text-text-secondary shrink-0" />}
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-medium text-text truncate">{displayName(s)}</div>
                 <div className="text-[11px] font-mono text-text-muted truncate">{s.hostPattern}</div>
               </div>
-              {kind === "anthropic" ? (
+              {s.type === "anthropic" ? (
                 <AuthModeBadge mode={s.authMode} />
               ) : (
                 <span
                   className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
-                    kind === "mcp"
-                      ? "bg-info-light text-info border-info"
-                      : "bg-surface-raised text-text-muted border-border-light"
+                    kind === "provider"
+                      ? "bg-warning-light text-warning border-warning"
+                      : kind === "mcp"
+                        ? "bg-info-light text-info border-info"
+                        : "bg-surface-raised text-text-muted border-border-light"
                   }`}
                 >
-                  {kind === "mcp" ? "MCP" : "Secret"}
+                  {kind === "provider" ? "Provider" : kind === "mcp" ? "MCP" : "Secret"}
                 </span>
               )}
             </label>

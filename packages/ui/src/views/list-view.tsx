@@ -46,6 +46,10 @@ export function ListView() {
     for (const i of instances) m.set(i.agentId, [...(m.get(i.agentId) ?? []), i]);
     return m;
   }, [instances]);
+  const templateNames = useMemo(
+    () => new Map(templates.map((template) => [template.id, template.name])),
+    [templates],
+  );
 
   // Fetch secrets + per-agent access once we have the agent list
   useEffect(() => { fetchSecrets().finally(() => setSecretsLoaded(true)); }, [fetchSecrets]);
@@ -156,6 +160,7 @@ export function ListView() {
         <div className="flex flex-col gap-6">
           {initialLoaded && agents.map(agent => {
             const insts = byAgent.get(agent.id) ?? [];
+            const templateLabel = agent.templateId ? templateNames.get(agent.templateId) ?? agent.templateId : null;
             return (
               <div
                 key={agent.id}
@@ -173,9 +178,15 @@ export function ListView() {
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-info bg-info-light text-info rounded-full px-2.5 py-0.5">
-                          {agent.image}
-                        </span>
+                        {templateLabel ? (
+                          <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-info bg-info-light text-info rounded-full px-2.5 py-0.5">
+                            {templateLabel}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-info bg-info-light text-info rounded-full px-2.5 py-0.5">
+                            {agent.image}
+                          </span>
+                        )}
                         {agent.description && (
                           <span className="text-[13px] text-text-secondary">{agent.description}</span>
                         )}

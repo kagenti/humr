@@ -81,12 +81,12 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
     expectedProvider === "anthropic"
       ? {
           title: "No Anthropic provider configured",
-          body: "This Claude-backed agent won't be able to reach a model yet.",
+          body: "This coding agent won't be able to reach a model until Anthropic credentials are available.",
         }
       : expectedProvider === "openai"
         ? {
             title: "No OpenAI provider configured",
-            body: "This Codex-backed agent won't be able to reach a model yet.",
+            body: "This coding agent won't be able to reach a model until OpenAI credentials are available.",
           }
         : {
             title: "No AI provider configured",
@@ -118,9 +118,6 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                       <div className="text-[14px] font-semibold text-text">{tmpl.name}</div>
                       {tmpl.description && <div className="text-[12px] text-text-muted truncate">{tmpl.description}</div>}
                     </div>
-                    <span className="text-[11px] font-bold text-info border-2 border-info bg-info-light rounded-full px-2.5 py-0.5 shrink-0">
-                      {tmpl.image}
-                    </span>
                   </button>
                 ))}
               </div>
@@ -221,7 +218,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
               {loadSecrets && <span className="text-[12px] text-text-muted">Loading...</span>}
               {!loadSecrets && secrets.length === 0 && (
                 <span className="text-[12px] text-text-muted">
-                  No connections yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>add one</button>
+                  No providers or connections yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>add a provider</button>
                 </span>
               )}
 

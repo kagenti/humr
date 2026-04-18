@@ -131,7 +131,7 @@ export function ProvidersView() {
                   <AuthModeBadge mode={anthropic.authMode} />
                 </div>
                 <div className="text-[12px] text-text-muted">
-                  Connected — available to agents that use Anthropic-backed harnesses
+                  Connected — available to agents that use Anthropic
                 </div>
               </div>
               <button
@@ -228,7 +228,7 @@ export function ProvidersView() {
                   <span className="text-[15px] font-bold text-text">OpenAI</span>
                 </div>
                 <div className="text-[12px] text-text-muted">
-                  Connected — available to agents that use OpenAI-backed harnesses
+                  Connected — available to agents that use OpenAI
                 </div>
               </div>
               <button
@@ -253,7 +253,7 @@ export function ProvidersView() {
               <div>
                 <div className="text-[15px] font-bold text-text">OpenAI</div>
                 <div className="text-[12px] text-text-muted">
-                  Use this with agents that talk to OpenAI, including Codex-backed harnesses. The key is injected for{" "}
+                  Use this with agents that talk to OpenAI. The key is injected for{" "}
                   <span className="font-mono">{OPENAI_HOST_PATTERN}</span>.
                 </div>
               </div>

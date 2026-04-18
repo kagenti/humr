@@ -29,6 +29,7 @@ export function useAcpSession(
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
   const instances = useStore((s) => s.instances);
+  const instancesLoaded = useStore((s) => s.loadedOnce.instances);
   const sessionId = useStore((s) => s.sessionId);
   const busy = useStore((s) => s.busy);
   const setSessionId = useStore((s) => s.setSessionId);
@@ -44,11 +45,14 @@ export function useAcpSession(
   const setQueuedMessage = useStore((s) => s.setQueuedMessage);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const includeChannelSessions = useStore((s) => s.includeChannelSessions);
+  const showAlert = useStore((s) => s.showAlert);
 
   const connectionRef = useRef<{ connection: ClientSideConnection; ws: WebSocket } | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const currentAssistantIdRef = useRef<string | null>(null);
   const ensureConnectionInFlight = useRef<Promise<ClientSideConnection | null> | null>(null);
+  const sessionListAttemptsRef = useRef(0);
+  const lastSessionListErrorRef = useRef<string | null>(null);
 
   // Cleanup refs on unmount
   useEffect(() => () => {
@@ -112,8 +116,8 @@ export function useAcpSession(
       if (raw) { applyConfig(JSON.parse(raw)); return; }
     } catch {}
 
-    // Fetch from throwaway session (retry up to 3 times — the ACP server
-    // inside the pod may not be ready immediately after state flips to running)
+  // Fetch from throwaway session (retry up to 3 times — the ACP server
+  // inside the pod may not be ready immediately after state flips to running)
     if (instanceRunState !== "running") return;
     let cancelled = false;
 
@@ -127,21 +131,23 @@ export function useAcpSession(
             clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
           });
           const s = await connection.newSession({ cwd: ".", mcpServers: [] });
-          try { await connection.unstable_closeSession?.({ sessionId: s.sessionId }); } catch {}
           ws.close();
           if (cancelled) return;
           const data = { modes: s.modes, models: s.models, configOptions: s.configOptions };
           try { localStorage.setItem(`humr-cached-config:${selectedInstance}`, JSON.stringify(data)); } catch {}
           applyConfig(data);
           return; // success
-        } catch {
+        } catch (err: any) {
+          addLog("error", {
+            message: err?.message ?? "Failed to fetch session configuration",
+          });
           if (!cancelled) await new Promise(r => setTimeout(r, 2000));
         }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [selectedInstance, sessionId, instanceRunState, setSessionModes, setSessionModels, setSessionConfigOptions]);
+  }, [selectedInstance, sessionId, instanceRunState, setSessionModes, setSessionModels, setSessionConfigOptions, addLog]);
 
   // Wake hibernated instance on entry
   useEffect(() => {
@@ -157,29 +163,57 @@ export function useAcpSession(
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
     const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
-    if (inst?.state !== "running") return false;
+    if (!inst) {
+      lastSessionListErrorRef.current = useStore.getState().loadedOnce.instances
+        ? `Instance "${selectedInstance}" was not found`
+        : null;
+      return false;
+    }
+    if (inst.state !== "running") {
+      lastSessionListErrorRef.current = null;
+      return false;
+    }
     try {
       const list = await platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions });
       setSessions(list);
+      lastSessionListErrorRef.current = null;
       return true;
-    } catch { return false; }
+    } catch (err: any) {
+      lastSessionListErrorRef.current = err?.message ?? "Failed to load sessions";
+      return false;
+    }
   }, [selectedInstance, includeChannelSessions, setSessions]);
 
   useEffect(() => {
     if (!selectedInstance) return;
     setLoadingSessions(true);
+    sessionListAttemptsRef.current = 0;
+    lastSessionListErrorRef.current = null;
     let stopped = false;
     const attempt = () => {
       if (stopped) return;
       fetchSessions().then((ok) => {
         if (stopped) return;
         if (ok) { setLoadingSessions(false); return; }
+        sessionListAttemptsRef.current += 1;
+        const instanceMissing = instancesLoaded && !instances.some((i) => i.id === selectedInstance);
+        const maxAttemptsReached = sessionListAttemptsRef.current >= 10;
+        if (instanceMissing || maxAttemptsReached) {
+          setLoadingSessions(false);
+          const message = lastSessionListErrorRef.current
+            ?? (instanceMissing
+              ? `Instance "${selectedInstance}" was not found`
+              : "Failed to load sessions for this instance");
+          addLog("error", { message });
+          showAlert(message, "Session List Failed").catch(() => {});
+          return;
+        }
         setTimeout(attempt, 3000);
       });
     };
     attempt();
     return () => { stopped = true; };
-  }, [selectedInstance, fetchSessions, setLoadingSessions]);
+  }, [selectedInstance, fetchSessions, setLoadingSessions, instancesLoaded, instances, addLog, showAlert]);
 
   // ── Streaming update handler (shared between live prompts) ──
 
@@ -331,6 +365,7 @@ export function useAcpSession(
 
     const mm = new Map<string, Message>();
     const mo: string[] = [];
+    let loadFailed = false;
 
     const currentAssistant = (): Message => {
       let lastUserIdx = -1;
@@ -406,12 +441,25 @@ export function useAcpSession(
           setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
         }
       }
-    } catch {}
+    } catch (err: any) {
+      loadFailed = true;
+      const errMsg = err?.message ?? "Failed to load session";
+      addLog("error", { message: errMsg });
+      setMessages([{
+        id: crypto.randomUUID(),
+        role: "assistant",
+        parts: [{ kind: "text", text: `Failed to load session: ${errMsg}` }],
+        streaming: false,
+      }]);
+      showAlert(errMsg, "Session Load Failed").catch(() => {});
+    }
 
-    setMessages(mo.map((id) => mm.get(id)!));
+    if (!loadFailed) {
+      setMessages(mo.map((id) => mm.get(id)!));
+    }
     setLoadingSession(false);
     setBusy(false);
-  }, [selectedInstance, selectedMcpServers, setBusy, setLoadingSession, setMessages, setSessionId, setMobileScreen, captureSessionConfig, handleConfigUpdate]);
+  }, [selectedInstance, selectedMcpServers, setBusy, setLoadingSession, setMessages, setSessionId, setMobileScreen, captureSessionConfig, handleConfigUpdate, addLog, showAlert]);
 
   // ── Send prompt ──
 

@@ -6,7 +6,8 @@ export interface OnecliSecret {
   type: string;
   hostPattern: string;
   createdAt: string;
-  /** For type="anthropic", OneCLI stores { authMode: "api-key" | "oauth" }. */
+  injectionConfig?: { headerName?: string; valueFormat?: string } | null;
+  /** Legacy OneCLI anthropic secrets store { authMode: "api-key" | "oauth" }. */
   metadata?: { authMode?: "api-key" | "oauth" } | null;
 }
 
@@ -39,6 +40,34 @@ export function createOnecliSecretsPort(
   userJwt: string,
   userSub: string,
 ): OnecliSecretsPort {
+  function buildInjectionConfig(input: {
+    type: string;
+    value: string;
+  }): { headerName: string; valueFormat: string } | undefined {
+    if (input.type === "generic") {
+      return {
+        headerName: "authorization",
+        valueFormat: "Bearer {value}",
+      };
+    }
+
+    if (input.type === "anthropic") {
+      const trimmed = input.value.trim();
+      const isOAuthToken = trimmed.startsWith("sk-ant-oat");
+      return isOAuthToken
+        ? {
+            headerName: "authorization",
+            valueFormat: "Bearer {value}",
+          }
+        : {
+            headerName: "x-api-key",
+            valueFormat: "{value}",
+          };
+    }
+
+    return undefined;
+  }
+
   async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await oc.onecliFetch(userJwt, userSub, path, init);
     if (!res.ok) {
@@ -83,21 +112,21 @@ export function createOnecliSecretsPort(
     listSecrets: () => fetchJson<OnecliSecret[]>("/api/secrets"),
 
     createSecret: (input) =>
-      fetchJson<OnecliSecret>("/api/secrets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...input,
-          // OneCLI requires injectionConfig for generic secrets — default to
-          // Authorization: Bearer which matches the UI description.
-          ...(input.type === "generic" && {
-            injectionConfig: {
-              headerName: "authorization",
-              valueFormat: "Bearer {value}",
-            },
+      {
+        const injectionConfig = buildInjectionConfig(input);
+        return fetchJson<OnecliSecret>("/api/secrets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...input,
+            // OneCLI's gateway only honors explicit injection rules on generic
+            // secrets. Store Anthropic credentials as generic host-bound
+            // secrets, then map them back to "anthropic" in Humr's API layer.
+            type: input.type === "anthropic" ? "generic" : input.type,
+            ...(injectionConfig && { injectionConfig }),
           }),
-        }),
-      }),
+        });
+      },
 
     updateSecret: (id, input) =>
       fetchVoid(`/api/secrets/${encodeURIComponent(id)}`, {

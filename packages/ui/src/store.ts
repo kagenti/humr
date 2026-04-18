@@ -287,11 +287,9 @@ export const useStore = create<HumrStore>((set, get) => ({
         }
       }
 
-      // Only call setAgentAccess if the user deviates from the controller's default
-      // ("selective" + auto-assigned anthropic) — i.e. selective with an explicit
-      // list, or all-credentials mode.
-      const needsAccessUpdate =
-        secretMode === "all" || (secretMode === "selective" && secretIds?.length);
+      // Always persist the user's chosen access mode and selections. This
+      // avoids relying on any OneCLI-side default secret assignment.
+      const needsAccessUpdate = true;
       if (needsAccessUpdate) {
         // Controller registers the OneCLI agent asynchronously — retry assignment
         for (let attempt = 0; attempt < 5; attempt++) {

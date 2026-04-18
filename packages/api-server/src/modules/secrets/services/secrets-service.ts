@@ -3,10 +3,35 @@ import type {
   CreateSecretInput,
   UpdateSecretInput,
   SecretType,
+  AnthropicAuthMode,
   AgentAccess,
 } from "api-server-api";
 import type { OnecliSecretsPort } from "./../infrastructure/onecli-secrets-port.js";
-import { hostPatternFor } from "../domain/types.js";
+import { ANTHROPIC_HOST_PATTERN, hostPatternFor } from "../domain/types.js";
+
+function secretTypeFor(input: {
+  type: string;
+  hostPattern: string;
+}): SecretType {
+  if (input.type === "anthropic" || input.hostPattern === ANTHROPIC_HOST_PATTERN) {
+    return "anthropic";
+  }
+  return "generic";
+}
+
+function authModeFor(input: {
+  hostPattern: string;
+  metadata?: { authMode?: AnthropicAuthMode } | null;
+  injectionConfig?: { headerName?: string; valueFormat?: string } | null;
+}): AnthropicAuthMode | undefined {
+  if (input.hostPattern !== ANTHROPIC_HOST_PATTERN) return undefined;
+  if (input.metadata?.authMode) return input.metadata.authMode;
+
+  const headerName = input.injectionConfig?.headerName?.toLowerCase();
+  if (headerName === "authorization") return "oauth";
+  if (headerName === "x-api-key") return "api-key";
+  return undefined;
+}
 
 export function createSecretsService(deps: {
   port: OnecliSecretsPort;
@@ -15,16 +40,15 @@ export function createSecretsService(deps: {
     async list() {
       const secrets = await deps.port.listSecrets();
       return secrets.map((s) => {
-        const type = (s.type === "anthropic" ? "anthropic" : "generic") as SecretType;
+        const type = secretTypeFor(s);
+        const authMode = authModeFor(s);
         return {
           id: s.id,
           name: s.name,
           type,
           hostPattern: s.hostPattern,
           createdAt: s.createdAt,
-          ...(type === "anthropic" && s.metadata?.authMode
-            ? { authMode: s.metadata.authMode }
-            : {}),
+          ...(type === "anthropic" && authMode ? { authMode } : {}),
         };
       });
     },
@@ -43,8 +67,8 @@ export function createSecretsService(deps: {
         type: input.type,
         hostPattern: created.hostPattern,
         createdAt: created.createdAt,
-        ...(input.type === "anthropic" && created.metadata?.authMode
-          ? { authMode: created.metadata.authMode }
+        ...(input.type === "anthropic" && authModeFor(created)
+          ? { authMode: authModeFor(created) }
           : {}),
       };
     },
