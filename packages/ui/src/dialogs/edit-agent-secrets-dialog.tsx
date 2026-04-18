@@ -123,6 +123,12 @@ export function EditAgentSecretsDialog({
     return current.some((id, i) => id !== initialAssigned[i]);
   }, [mode, initialMode, assigned, initialAssigned]);
 
+  const appsChanged = useMemo(() => {
+    const current = [...assignedAppIds].sort();
+    if (current.length !== initialAppIds.current.length) return true;
+    return current.some((id, i) => id !== initialAppIds.current[i]);
+  }, [assignedAppIds]);
+
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
     const items: InheritedEnv[] = initialEnv
       .filter((e) => isProtectedAgentEnvName(e.name))
@@ -145,9 +151,6 @@ export function EditAgentSecretsDialog({
   const save = async () => {
     if (!envValid) return;
     const nextAppIds = [...assignedAppIds].sort();
-    const appsChanged =
-      nextAppIds.length !== initialAppIds.current.length ||
-      nextAppIds.some((id, i) => id !== initialAppIds.current[i]);
     if (!credsChanged && !envChanged && !appsChanged) {
       onClose();
       return;
@@ -211,7 +214,8 @@ export function EditAgentSecretsDialog({
   const grantedCount = mode === "all" ? secrets.length : assigned.size;
   const userEnvCount = sanitizedEnv.length;
 
-  const canSave = !saving && !loading && envValid && (credsChanged || envChanged);
+  const canSave =
+    !saving && !loading && envValid && (credsChanged || envChanged || appsChanged);
 
   return (
     <Modal onClose={onClose} widthClass="w-[640px]">
@@ -292,7 +296,7 @@ export function EditAgentSecretsDialog({
             style={{ boxShadow: "var(--shadow-brutal-accent)" }}
             onClick={save}
             disabled={!canSave}
-            title={!credsChanged && !envChanged ? "Nothing to save" : undefined}
+            title={!credsChanged && !envChanged && !appsChanged ? "Nothing to save" : undefined}
           >
             {saving ? "..." : "Save"}
           </button>
