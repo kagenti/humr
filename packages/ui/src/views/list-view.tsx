@@ -205,8 +205,9 @@ export function ListView() {
 
               {/* Step 2 — connections (optional) */}
               {onboarding.connections === "done" ? (
-                <div
-                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
+                <button
+                  onClick={() => setView("connections")}
+                  className="btn-brutal rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full text-left hover:border-accent transition-colors"
                   style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                 >
                   <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
@@ -216,19 +217,24 @@ export function ListView() {
                     <div className="text-[14px] font-bold text-text">Set up connections</div>
                     <div className="text-[12px] text-text-muted">Apps, MCP servers or secrets configured</div>
                   </div>
-                </div>
+                </button>
               ) : onboarding.connections === "skipped" ? (
                 <div
-                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
+                  className="btn-brutal rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full hover:border-accent transition-colors"
                   style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                 >
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
-                    <Check size={20} strokeWidth={3} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[14px] font-bold text-text">Set up connections</div>
-                    <div className="text-[12px] text-text-muted">Skipped — you can add later</div>
-                  </div>
+                  <button
+                    onClick={() => setView("connections")}
+                    className="flex-1 min-w-0 flex items-center gap-4 text-left"
+                  >
+                    <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
+                      <Check size={20} strokeWidth={3} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-bold text-text">Set up connections</div>
+                      <div className="text-[12px] text-text-muted">Skipped — you can add later</div>
+                    </div>
+                  </button>
                   <button
                     onClick={unskipConnections}
                     className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2"
