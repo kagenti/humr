@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config([
   {
-    ignores: [".claude/worktrees/**", ".worktrees/**"],
+    ignores: [".claude/worktrees/**", ".worktrees/**", "context/**"],
   },
   {
     files: ["packages/**/*.{ts,tsx}"],
