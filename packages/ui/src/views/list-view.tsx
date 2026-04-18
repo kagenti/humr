@@ -1,10 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
-import type { InstanceView, McpConnection } from "../types.js";
+import type { InstanceView } from "../types.js";
 import { isMcpSecret } from "../types.js";
-import type { AppConnectionView } from "api-server-api";
-import { platform } from "../platform.js";
-import { authFetch } from "../auth.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
@@ -35,6 +32,10 @@ export function ListView() {
   const fetchSecrets = useStore(s => s.fetchSecrets);
   const agentAccess = useStore(s => s.agentAccess);
   const fetchAgentAccess = useStore(s => s.fetchAgentAccess);
+  const appConnections = useStore(s => s.appConnections);
+  const mcpConnections = useStore(s => s.mcpConnections);
+  const fetchAppConnections = useStore(s => s.fetchAppConnections);
+  const fetchMcpConnections = useStore(s => s.fetchMcpConnections);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [busyAgent, setBusyAgent] = useState(false);
@@ -44,9 +45,7 @@ export function ListView() {
   const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
   const [secretsLoaded, setSecretsLoaded] = useState(false);
 
-  // Onboarding — connections signals for the empty-state step card
-  const [appConnections, setAppConnections] = useState<AppConnectionView[]>([]);
-  const [mcpConnections, setMcpConnections] = useState<McpConnection[]>([]);
+  // Onboarding — connections-skipped flag (localStorage-backed)
   const [connectionsSkipped, setConnectionsSkippedState] = useState(() => isConnectionsSkipped());
 
   // Persisted across mount in the store — ensures skeleton doesn't reappear
@@ -97,23 +96,14 @@ export function ListView() {
     }
   }, [agents, agentAccess, fetchAgentAccess]);
 
-  // Onboarding — fetch OneCLI app + MCP connections to know whether step 2 is done.
-  // Only runs in the empty state; view remounts when user navigates back from
-  // connections, so no manual refresh is needed.
+  // Onboarding — refresh OneCLI app + MCP connections when in the empty state.
+  // Shared via the store so the SetupProgressBar on Providers/Connections views
+  // sees the same data. Remounts on return from /connections refresh the signal.
   useEffect(() => {
     if (!isEmpty) return;
-    let cancelled = false;
-    (async () => {
-      const [apps, mcp] = await Promise.all([
-        platform.connections.list.query().catch(() => [] as AppConnectionView[]),
-        authFetch("/api/mcp/connections").then(r => r.ok ? r.json() : []).catch(() => [] as McpConnection[]),
-      ]);
-      if (cancelled) return;
-      setAppConnections(Array.isArray(apps) ? apps : []);
-      setMcpConnections(Array.isArray(mcp) ? mcp : []);
-    })();
-    return () => { cancelled = true; };
-  }, [isEmpty]);
+    fetchAppConnections();
+    fetchMcpConnections();
+  }, [isEmpty, fetchAppConnections, fetchMcpConnections]);
 
   // Count by category for a given agent based on its access mode.
   // "all" mode: counts = totals across all user secrets.

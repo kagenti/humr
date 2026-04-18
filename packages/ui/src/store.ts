@@ -14,7 +14,10 @@ import type {
   SecretMode,
   EnvMapping,
   EnvVar,
+  McpConnection,
 } from "./types.js";
+import type { AppConnectionView } from "api-server-api";
+import { authFetch } from "./auth.js";
 import type {
   SessionModeState,
   SessionModelState,
@@ -149,6 +152,13 @@ export interface HumrStore {
 
   // Right tab
   setRightTab: (tab: "files" | "log" | "configuration") => void;
+
+  // OneCLI app connections + MCP connections — shared across list/providers/connections views
+  appConnections: AppConnectionView[];
+  appConnectionsError: string | null;
+  mcpConnections: McpConnection[];
+  fetchAppConnections: () => Promise<void>;
+  fetchMcpConnections: () => Promise<void>;
 
   // Secrets
   secrets: SecretView[];
@@ -524,6 +534,33 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Right tab
   setRightTab: (tab) => set({ rightTab: tab }),
+
+  // OneCLI app connections + MCP connections
+  appConnections: [],
+  appConnectionsError: null,
+  mcpConnections: [],
+  fetchAppConnections: async () => {
+    try {
+      const list = await platform.connections.list.query();
+      set({
+        appConnections: Array.isArray(list) ? list : [],
+        appConnectionsError: null,
+      });
+    } catch (err) {
+      console.warn("connections.list failed", err);
+      set({
+        appConnectionsError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+  fetchMcpConnections: async () => {
+    try {
+      const r = await authFetch("/api/mcp/connections");
+      if (!r.ok) return;
+      const d = await r.json();
+      set({ mcpConnections: Array.isArray(d) ? d : [] });
+    } catch {}
+  },
 
   // Secrets
   secrets: [],

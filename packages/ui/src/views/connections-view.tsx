@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
-import { platform } from "../platform.js";
-import type { EnvMapping, McpConnection, SecretView } from "../types.js";
-import type { AppConnectionView } from "api-server-api";
+import type { EnvMapping, SecretView } from "../types.js";
 import {
   EnvMappingsEditor,
   allEnvMappingsValid,
@@ -29,20 +27,20 @@ export function ConnectionsView() {
   const deleteSecret = useStore((s) => s.deleteSecret);
   const showAlert = useStore((s) => s.showAlert);
   const showConfirm = useStore((s) => s.showConfirm);
+  const connections = useStore((s) => s.mcpConnections);
+  const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
+  const appConnections = useStore((s) => s.appConnections);
+  const appsError = useStore((s) => s.appConnectionsError);
+  const fetchAppConnections = useStore((s) => s.fetchAppConnections);
 
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
 
   // MCP state
-  const [connections, setConnections] = useState<McpConnection[]>([]);
   const [showAddMcp, setShowAddMcp] = useState(false);
   const [mcpUrl, setMcpUrl] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
-
-  // OneCLI app connections (OAuth apps: Google, GitHub, Slack, ...)
-  const [appConnections, setAppConnections] = useState<AppConnectionView[]>([]);
-  const [appsError, setAppsError] = useState<string | null>(null);
 
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
@@ -57,31 +55,12 @@ export function ConnectionsView() {
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
 
-  const loadConnections = useCallback(async () => {
-    try {
-      const r = await authFetch("/api/mcp/connections");
-      const d = await r.json();
-      if (Array.isArray(d)) setConnections(d);
-    } catch {}
-  }, []);
-
-  const loadAppConnections = useCallback(async () => {
-    try {
-      const list = await platform.connections.list.query();
-      setAppConnections(list);
-      setAppsError(null);
-    } catch (err) {
-      console.warn("connections.list failed", err);
-      setAppsError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
   const load = useCallback(async () => {
     if (!loaded.current) setLoading(true);
-    await Promise.all([loadConnections(), loadAppConnections(), fetchSecrets()]);
+    await Promise.all([fetchMcpConnections(), fetchAppConnections(), fetchSecrets()]);
     loaded.current = true;
     setLoading(false);
-  }, [loadConnections, loadAppConnections, fetchSecrets]);
+  }, [fetchMcpConnections, fetchAppConnections, fetchSecrets]);
 
   useEffect(() => {
     load();

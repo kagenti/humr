@@ -11,12 +11,10 @@ import {
 
 export function ProvidersView() {
   const secrets = useStore((s) => s.secrets);
-  const agents = useStore((s) => s.agents);
   const fetchSecrets = useStore((s) => s.fetchSecrets);
   const createSecret = useStore((s) => s.createSecret);
   const deleteSecret = useStore((s) => s.deleteSecret);
   const showConfirm = useStore((s) => s.showConfirm);
-  const setView = useStore((s) => s.setView);
 
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
@@ -41,7 +39,6 @@ export function ProvidersView() {
 
   const saveAnthropic = async () => {
     if (!anthropicKey.trim()) return;
-    const isFirst = !anthropic && agents.length === 0;
     setSavingAnthropic(true);
     try {
       await createSecret({
@@ -50,7 +47,6 @@ export function ProvidersView() {
         value: anthropicKey.trim(),
       });
       setAnthropicKey("");
-      if (isFirst) setView("list");
     } finally {
       setSavingAnthropic(false);
     }

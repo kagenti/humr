@@ -43,3 +43,16 @@ export function computeOnboardingState(s: OnboardingSignals): OnboardingState {
     agent: s.hasAgent ? "done" : "pending",
   };
 }
+
+export const STEP_KEYS = ["provider", "connections", "agent"] as const;
+export type StepKey = (typeof STEP_KEYS)[number];
+
+export const stepLabels: Record<StepKey, string> = {
+  provider: "Set up a provider",
+  connections: "Set up connections",
+  agent: "Add your first agent",
+};
+
+export function firstPendingStep(state: OnboardingState): StepKey | undefined {
+  return STEP_KEYS.find((k) => state[k] === "pending");
+}
