@@ -11,6 +11,12 @@ const WAKE_TIMEOUT_MS = 120_000;
 
 const lastActivityTimestamps = new Map<string, number>();
 
+function sanitizeCloseCode(code: number): number {
+  if (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006)) return code;
+  if (code >= 3000 && code <= 4999) return code;
+  return 1011;
+}
+
 function shouldUpdateActivity(instanceId: string): boolean {
   const now = Date.now();
   const last = lastActivityTimestamps.get(instanceId) ?? 0;
@@ -102,13 +108,21 @@ export function createAcpRelay(namespace: string, repo: InstancesRepository) {
 
           upstream.on("close", (code, reason) => {
             if (client.readyState === WebSocket.OPEN) {
-              client.close(code || 1011, reason.toString() || "upstream closed");
+              try {
+                client.close(sanitizeCloseCode(code), reason.toString() || "upstream closed");
+              } catch {
+                client.terminate();
+              }
             }
           });
 
           upstream.on("error", () => {
             if (client.readyState === WebSocket.OPEN) {
-              client.close(1011, "upstream error");
+              try {
+                client.close(1011, "upstream error");
+              } catch {
+                client.terminate();
+              }
             }
           });
 
