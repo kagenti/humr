@@ -175,8 +175,9 @@ export function ListView() {
             <div className="flex flex-col gap-4 w-full max-w-md">
               {/* Step 1 — provider */}
               {onboarding.provider === "done" ? (
-                <div
-                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
+                <button
+                  onClick={() => setView("providers")}
+                  className="btn-brutal rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full text-left hover:border-accent transition-colors"
                   style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                 >
                   <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
@@ -186,7 +187,7 @@ export function ListView() {
                     <div className="text-[14px] font-bold text-text">Set up a provider</div>
                     <div className="text-[12px] text-text-muted">Provider connected</div>
                   </div>
-                </div>
+                </button>
               ) : (
                 <button
                   onClick={() => setView("providers")}
