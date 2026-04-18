@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-17
 **Status:** Accepted
-**Owner:** @tomas
+**Owner:** @tomas2d
 
 ## Context
 
