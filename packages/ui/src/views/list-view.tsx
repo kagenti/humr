@@ -240,12 +240,12 @@ export function ListView() {
                 </div>
               ) : (
                 <div
-                  className={`rounded-xl border-2 p-4 flex items-center gap-4 w-full ${firstPendingStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
+                  className={`btn-brutal rounded-xl border-2 p-4 flex items-center gap-4 w-full hover:border-accent transition-colors ${firstPendingStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
                   style={{ boxShadow: firstPendingStep === "connections" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
                 >
                   <button
                     onClick={() => setView("connections")}
-                    className="flex-1 min-w-0 flex items-center gap-4 text-left hover:[&_.step-title]:text-accent transition-colors"
+                    className="flex-1 min-w-0 flex items-center gap-4 text-left"
                   >
                     <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${firstPendingStep === "connections" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
                       2
@@ -255,19 +255,24 @@ export function ListView() {
                         Set up connections
                       </div>
                       <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets</div>
-                      <div className="text-[11px] text-text-muted/80 italic mt-1">
-                        Fine to skip if your agent doesn't need external tools
-                      </div>
                     </div>
                   </button>
-                  <button
-                    onClick={skipConnections}
-                    className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2 self-start"
-                    title="Skip — you can add connections later"
-                    aria-label="Skip setting up connections"
-                  >
-                    Skip
-                  </button>
+                  <div className="relative group shrink-0">
+                    <button
+                      onClick={skipConnections}
+                      className="text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2"
+                      aria-label="Skip setting up connections"
+                    >
+                      Skip
+                    </button>
+                    <div
+                      className="pointer-events-none absolute top-full right-0 mt-2 w-56 rounded-lg border-2 border-border-light bg-bg px-3 py-2 text-[11px] text-text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 z-10"
+                      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                      role="tooltip"
+                    >
+                      Fine to skip if your agent doesn't need external tools
+                    </div>
+                  </div>
                 </div>
               )}
 
