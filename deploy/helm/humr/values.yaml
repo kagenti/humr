@@ -40,7 +40,7 @@ postgres:
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
-  image: ghcr.io/kagenti/onecli:0.0.12
+  image: ghcr.io/kagenti/onecli:0.0.13
   replicas: 1
 
   # -- Override the external hostname for OneCLI (empty = onecli.{{ domain }}).
@@ -293,6 +293,23 @@ googleWorkspaceTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Google Workspace agent with Drive and Gmail via gws CLI"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
+# -- Pi coding agent template
+piAgentTemplate:
+  enabled: false
+  name: pi-agent
+  image:
+    repository: ghcr.io/kagenti/humr/pi-agent
+    tag: ""
+    pullPolicy: IfNotPresent
+  description: "Pi coding agent with multi-LLM support"
   resources:
     requests:
       cpu: "250m"

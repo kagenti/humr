@@ -20,6 +20,10 @@ export type {
   CreateAgentInput,
   UpdateAgentInput,
 } from "./modules/agents/types.js";
+export {
+  PROTECTED_AGENT_ENV_NAMES,
+  isProtectedAgentEnvName,
+} from "./modules/agents/types.js";
 
 export type {
   Instance,
@@ -49,6 +53,13 @@ export type {
   UpdateSecretInput,
   AgentAccess,
   SecretsService,
+  EnvMapping,
+} from "./modules/secrets/types.js";
+export {
+  DEFAULT_ENV_PLACEHOLDER,
+  ENV_NAME_RE,
+  isValidEnvName,
+  ANTHROPIC_DEFAULT_ENV_MAPPING,
 } from "./modules/secrets/types.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";

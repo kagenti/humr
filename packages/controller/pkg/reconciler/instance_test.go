@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 )
 
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
@@ -28,7 +29,7 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 		WebPort:          10254,
 	}
 	getter := &fakeGetter{cms: agents}
-	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
+	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter), nil)
 	return r, client
 }
 
@@ -240,6 +241,45 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Empty(t, pvcs.Items)
+}
+
+func TestEnvMappingsToEnvVars(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		assert.Nil(t, envMappingsToEnvVars(nil))
+	})
+	t.Run("skips secrets without metadata", func(t *testing.T) {
+		secrets := []onecli.Secret{{ID: "a"}}
+		assert.Nil(t, envMappingsToEnvVars(secrets))
+	})
+	t.Run("flattens envMappings", func(t *testing.T) {
+		secrets := []onecli.Secret{
+			{ID: "b", Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
+				{EnvName: "GH_TOKEN", Placeholder: onecli.DefaultEnvPlaceholder},
+			}}},
+		}
+		envs := envMappingsToEnvVars(secrets)
+		require.Len(t, envs, 1)
+		assert.Equal(t, "GH_TOKEN", envs[0].Name)
+		assert.Equal(t, onecli.DefaultEnvPlaceholder, envs[0].Value)
+	})
+	t.Run("dedupes by envName, smallest ID wins", func(t *testing.T) {
+		secrets := []onecli.Secret{
+			{ID: "z", Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
+				{EnvName: "GH_TOKEN", Placeholder: "from-z"},
+			}}},
+			{ID: "a", Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
+				{EnvName: "GH_TOKEN", Placeholder: "from-a"},
+			}}},
+		}
+		envs := envMappingsToEnvVars(secrets)
+		require.Len(t, envs, 1)
+		assert.Equal(t, "from-a", envs[0].Value)
+	})
+	t.Run("does not mutate caller slice", func(t *testing.T) {
+		secrets := []onecli.Secret{{ID: "z"}, {ID: "a"}}
+		envMappingsToEnvVars(secrets)
+		assert.Equal(t, "z", secrets[0].ID)
+	})
 }
 
 func int32Ptr(i int32) *int32 { return &i }

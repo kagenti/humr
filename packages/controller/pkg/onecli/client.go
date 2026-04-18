@@ -19,6 +19,10 @@ type Client interface {
 	ListSecrets(ctx context.Context) ([]Secret, error)
 	GetAgentSecrets(ctx context.Context, agentID string) ([]string, error)
 	SetAgentSecrets(ctx context.Context, agentID string, secretIDs []string) error
+	// ListSecretsForAgent returns the secrets an agent has access to. For
+	// agents with secretMode="all", this is every secret in the account; for
+	// "selective", only the explicitly granted ones.
+	ListSecretsForAgent(ctx context.Context, identifier string) ([]Secret, error)
 }
 
 type Agent struct {
@@ -30,15 +34,35 @@ type Agent struct {
 }
 
 type Secret struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	HostPattern string `json:"hostPattern"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Type        string          `json:"type"`
+	HostPattern string          `json:"hostPattern"`
+	Metadata    *SecretMetadata `json:"metadata,omitempty"`
 }
 
 type InjectionConfig struct {
 	HeaderName  string `json:"headerName"`
 	ValueFormat string `json:"valueFormat,omitempty"`
+}
+
+// DefaultEnvPlaceholder is the literal value that OneCLI's gateway recognizes
+// and swaps for the real credential on matching outbound requests.
+const DefaultEnvPlaceholder = "humr:sentinel"
+
+// EnvMapping declares a pod env var to inject for any instance with access to
+// this secret.
+type EnvMapping struct {
+	EnvName     string `json:"envName"`
+	Placeholder string `json:"placeholder"`
+}
+
+// SecretMetadata is the type-specific metadata OneCLI stores alongside a
+// secret. Client-settable keys: EnvMappings. Server-owned keys: AuthMode
+// (anthropic only).
+type SecretMetadata struct {
+	AuthMode    string       `json:"authMode,omitempty"`
+	EnvMappings []EnvMapping `json:"envMappings,omitempty"`
 }
 
 type CreateSecretInput struct {
@@ -47,6 +71,7 @@ type CreateSecretInput struct {
 	Value           string           `json:"value"`
 	HostPattern     string           `json:"hostPattern"`
 	InjectionConfig *InjectionConfig `json:"injectionConfig,omitempty"`
+	Metadata        *SecretMetadata  `json:"metadata,omitempty"`
 }
 
 type httpClient struct {
@@ -363,6 +388,38 @@ func (c *httpClient) GetAgentSecrets(ctx context.Context, agentID string) ([]str
 	return ids, nil
 }
 
+func (c *httpClient) ListSecretsForAgent(ctx context.Context, identifier string) ([]Secret, error) {
+	if err := c.ensureAPIKey(ctx); err != nil {
+		return nil, err
+	}
+	agent, err := c.findAgentByIdentifier(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+	allSecrets, err := c.ListSecrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if agent.SecretMode == "all" {
+		return allSecrets, nil
+	}
+	grantedIDs, err := c.GetAgentSecrets(ctx, agent.ID)
+	if err != nil {
+		return nil, err
+	}
+	grant := make(map[string]struct{}, len(grantedIDs))
+	for _, id := range grantedIDs {
+		grant[id] = struct{}{}
+	}
+	filtered := make([]Secret, 0, len(grantedIDs))
+	for _, s := range allSecrets {
+		if _, ok := grant[s.ID]; ok {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered, nil
+}
+
 func (c *httpClient) SetAgentSecrets(ctx context.Context, agentID string, secretIDs []string) error {
 	if err := c.ensureAPIKey(ctx); err != nil {
 		return err
@@ -410,3 +467,7 @@ func (n *NoopClient) GetAgentSecrets(_ context.Context, _ string) ([]string, err
 }
 
 func (n *NoopClient) SetAgentSecrets(_ context.Context, _ string, _ []string) error { return nil }
+
+func (n *NoopClient) ListSecretsForAgent(_ context.Context, _ string) ([]Secret, error) {
+	return nil, nil
+}

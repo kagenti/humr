@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { TemplateView, SecretView, SecretMode } from "../types.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
-import { Globe, Lock, Sparkles } from "lucide-react";
+import { Globe, KeyRound, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
 import { AuthModeBadge } from "../components/auth-mode-badge.js";
 
@@ -67,6 +67,17 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
   const anthropicSecrets = secrets.filter(s => s.type === "anthropic");
   const mcpSecrets = secrets.filter(s => isMcpSecret(s));
   const genericSecrets = secrets.filter(s => s.type !== "anthropic" && !isMcpSecret(s));
+
+  const inheritedEnvs = useMemo(() => {
+    const granted = secretMode === "all" ? secrets : secrets.filter(s => selSecrets.has(s.id));
+    const out: { name: string; value: string; secretName: string }[] = [];
+    for (const s of granted) {
+      for (const m of s.envMappings ?? []) {
+        out.push({ name: m.envName, value: m.placeholder, secretName: s.name });
+      }
+    }
+    return out;
+  }, [secretMode, secrets, selSecrets]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
@@ -264,6 +275,31 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                 </div>
               )}
             </div>
+
+            {inheritedEnvs.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Environment</span>
+                  <span className="text-[10px] text-text-muted">· inherited from connections</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {inheritedEnvs.map((e, i) => (
+                    <div
+                      key={`${e.name}:${i}`}
+                      className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]"
+                    >
+                      <span className="shrink-0 text-accent" title={`From connector: ${e.secretName}`}>
+                        <KeyRound size={12} />
+                      </span>
+                      <span className="font-mono font-semibold text-text truncate">{e.name}</span>
+                      <span className="text-text-muted">=</span>
+                      <span className="font-mono text-text-muted truncate flex-1" title={e.value}>{e.value}</span>
+                      <span className="text-[10px] text-text-muted italic truncate max-w-[160px]">{e.secretName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none sm:mr-auto" title="Start a running instance of this agent right away">

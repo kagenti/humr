@@ -5,6 +5,31 @@ export type AnthropicAuthMode = "api-key" | "oauth";
 
 export type SecretMode = "all" | "selective";
 
+/**
+ * Declares a pod env var to inject into every agent instance that has access
+ * to this secret. `placeholder` is the literal value written into the env
+ * (typically "humr:sentinel") — OneCLI's gateway swaps it for the real
+ * credential on outbound requests matching the secret's host pattern.
+ */
+export interface EnvMapping {
+  envName: string;
+  placeholder: string;
+}
+
+export const DEFAULT_ENV_PLACEHOLDER = "humr:sentinel";
+
+export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+
+export function isValidEnvName(name: string): boolean {
+  return name.length > 0 && ENV_NAME_RE.test(name);
+}
+
+/** Default env mapping auto-attached to new Anthropic connectors. */
+export const ANTHROPIC_DEFAULT_ENV_MAPPING: EnvMapping = {
+  envName: "ANTHROPIC_API_KEY",
+  placeholder: DEFAULT_ENV_PLACEHOLDER,
+};
+
 export interface SecretView {
   id: string;
   name: string;
@@ -13,6 +38,7 @@ export interface SecretView {
   createdAt: string;
   /** Only set for type="anthropic" — reflects the OneCLI-detected auth mode. */
   authMode?: AnthropicAuthMode;
+  envMappings?: EnvMapping[];
 }
 
 export interface CreateSecretInput {
@@ -20,12 +46,14 @@ export interface CreateSecretInput {
   name: string;
   value: string;
   hostPattern?: string;
+  envMappings?: EnvMapping[];
 }
 
 export interface UpdateSecretInput {
   id: string;
   name?: string;
   value?: string;
+  envMappings?: EnvMapping[];
 }
 
 export interface AgentAccess {

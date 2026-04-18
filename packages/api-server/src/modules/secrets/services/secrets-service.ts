@@ -1,12 +1,38 @@
-import type {
-  SecretsService,
-  CreateSecretInput,
-  UpdateSecretInput,
-  SecretType,
-  AgentAccess,
+import {
+  ANTHROPIC_DEFAULT_ENV_MAPPING,
+  type SecretsService,
+  type CreateSecretInput,
+  type UpdateSecretInput,
+  type SecretType,
+  type SecretView,
+  type AgentAccess,
+  type EnvMapping,
 } from "api-server-api";
-import type { OnecliSecretsPort } from "./../infrastructure/onecli-secrets-port.js";
+import type {
+  OnecliSecret,
+  OnecliSecretsPort,
+} from "./../infrastructure/onecli-secrets-port.js";
 import { hostPatternFor } from "../domain/types.js";
+
+/** Once per process: Anthropic secret IDs we've already attempted to backfill. Prevents N writes per list() call. */
+const backfilled = new Set<string>();
+
+function toSecretView(s: OnecliSecret): SecretView {
+  const type = (s.type === "anthropic" ? "anthropic" : "generic") as SecretType;
+  return {
+    id: s.id,
+    name: s.name,
+    type,
+    hostPattern: s.hostPattern,
+    createdAt: s.createdAt,
+    ...(type === "anthropic" && s.metadata?.authMode
+      ? { authMode: s.metadata.authMode }
+      : {}),
+    ...(s.metadata?.envMappings
+      ? { envMappings: s.metadata.envMappings }
+      : {}),
+  };
+}
 
 export function createSecretsService(deps: {
   port: OnecliSecretsPort;
@@ -14,45 +40,58 @@ export function createSecretsService(deps: {
   return {
     async list() {
       const secrets = await deps.port.listSecrets();
-      return secrets.map((s) => {
-        const type = (s.type === "anthropic" ? "anthropic" : "generic") as SecretType;
-        return {
-          id: s.id,
-          name: s.name,
-          type,
-          hostPattern: s.hostPattern,
-          createdAt: s.createdAt,
-          ...(type === "anthropic" && s.metadata?.authMode
-            ? { authMode: s.metadata.authMode }
-            : {}),
+
+      // Anthropic secrets predating envMappings get the default mapping attached
+      // so the controller can inject ANTHROPIC_API_KEY without a migration job.
+      for (const s of secrets) {
+        if (
+          s.type !== "anthropic" ||
+          s.metadata?.envMappings ||
+          backfilled.has(s.id)
+        ) {
+          continue;
+        }
+        backfilled.add(s.id);
+        deps.port
+          .updateSecret(s.id, { envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING] })
+          .catch(() => backfilled.delete(s.id));
+        s.metadata = {
+          ...(s.metadata ?? {}),
+          envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING],
         };
-      });
+      }
+
+      return secrets.map(toSecretView);
     },
 
     async create(input: CreateSecretInput) {
       const hp = hostPatternFor(input.type, input.hostPattern);
+      const envMappings =
+        input.envMappings ??
+        (input.type === "anthropic" ? [ANTHROPIC_DEFAULT_ENV_MAPPING] : undefined);
       const created = await deps.port.createSecret({
         name: input.name,
         type: input.type,
         value: input.value,
         hostPattern: hp,
+        ...(envMappings ? { envMappings } : {}),
       });
-      return {
-        id: created.id,
-        name: created.name,
-        type: input.type,
-        hostPattern: created.hostPattern,
-        createdAt: created.createdAt,
-        ...(input.type === "anthropic" && created.metadata?.authMode
-          ? { authMode: created.metadata.authMode }
-          : {}),
-      };
+      // OneCLI may not echo metadata on create; fall back to the request's envMappings.
+      if (!created.metadata?.envMappings && envMappings) {
+        created.metadata = { ...(created.metadata ?? {}), envMappings };
+      }
+      return toSecretView(created);
     },
 
     async update(input: UpdateSecretInput) {
-      const patch: Record<string, string> = {};
+      const patch: {
+        name?: string;
+        value?: string;
+        envMappings?: EnvMapping[];
+      } = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.value !== undefined) patch.value = input.value;
+      if (input.envMappings !== undefined) patch.envMappings = input.envMappings;
       await deps.port.updateSecret(input.id, patch);
     },
 

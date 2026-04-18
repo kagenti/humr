@@ -14,7 +14,7 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap) *appsv1.StatefulSet {
+func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap, connectorEnvs []corev1.EnvVar) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
@@ -47,12 +47,14 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "GH_TOKEN", Value: "humr:sentinel"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: "/home/agent"},
 		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 	}
+	// Order matters: K8s resolves duplicate env names by keeping the last
+	// occurrence, so connector < template < instance — user overrides win.
+	env = append(env, connectorEnvs...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}

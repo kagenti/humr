@@ -1,8 +1,8 @@
-{{- if .Values.googleWorkspaceTemplate.enabled }}
+{{- if .Values.piAgentTemplate.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.googleWorkspaceTemplate.name }}
+  name: {{ .Values.piAgentTemplate.name }}
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "humr.labels" . | nindent 4 }}
@@ -10,8 +10,8 @@ metadata:
 data:
   spec.yaml: |
     version: humr.ai/v1
-    image: "{{ .Values.googleWorkspaceTemplate.image.repository }}:{{ .Values.googleWorkspaceTemplate.image.tag | default .Chart.AppVersion }}"
-    description: {{ .Values.googleWorkspaceTemplate.description | quote }}
+    image: "{{ .Values.piAgentTemplate.image.repository }}:{{ .Values.piAgentTemplate.image.tag | default .Chart.AppVersion }}"
+    description: {{ .Values.piAgentTemplate.description | quote }}
     mounts:
       - path: /home/agent
         persist: true
@@ -30,11 +30,11 @@ data:
         value: "8080"
     resources:
       requests:
-        cpu: {{ .Values.googleWorkspaceTemplate.resources.requests.cpu | quote }}
-        memory: {{ .Values.googleWorkspaceTemplate.resources.requests.memory | quote }}
+        cpu: {{ .Values.piAgentTemplate.resources.requests.cpu | quote }}
+        memory: {{ .Values.piAgentTemplate.resources.requests.memory | quote }}
       limits:
-        cpu: {{ .Values.googleWorkspaceTemplate.resources.limits.cpu | quote }}
-        memory: {{ .Values.googleWorkspaceTemplate.resources.limits.memory | quote }}
+        cpu: {{ .Values.piAgentTemplate.resources.limits.cpu | quote }}
+        memory: {{ .Values.piAgentTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
 {{- end }}

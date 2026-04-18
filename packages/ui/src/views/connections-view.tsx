@@ -2,8 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
 import { platform } from "../platform.js";
-import type { McpConnection } from "../types.js";
+import type { EnvMapping, McpConnection, SecretView } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
+import {
+  EnvMappingsEditor,
+  allEnvMappingsValid,
+  sanitizeEnvMappings,
+} from "../components/env-mappings-editor.js";
+import { EditSecretDialog } from "../dialogs/edit-secret-dialog.js";
 import {
   RefreshCw,
   Lock,
@@ -11,6 +17,7 @@ import {
   Globe,
   Unplug,
   Plus,
+  Pencil,
   ExternalLink,
   X,
 } from "lucide-react";
@@ -44,7 +51,9 @@ export function ConnectionsView() {
     value: "",
     hostPattern: "",
   });
+  const [secretEnvMappings, setSecretEnvMappings] = useState<EnvMapping[]>([]);
   const [savingSecret, setSavingSecret] = useState(false);
+  const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
 
@@ -132,15 +141,19 @@ export function ConnectionsView() {
       !secretForm.hostPattern.trim()
     )
       return;
+    if (!allEnvMappingsValid(secretEnvMappings)) return;
     setSavingSecret(true);
     try {
+      const mappings = sanitizeEnvMappings(secretEnvMappings);
       await createSecret({
         type: "generic",
         name: secretForm.name.trim(),
         value: secretForm.value.trim(),
         hostPattern: secretForm.hostPattern.trim(),
+        ...(mappings.length > 0 && { envMappings: mappings }),
       });
       setSecretForm({ name: "", value: "", hostPattern: "" });
+      setSecretEnvMappings([]);
       setShowAddSecret(false);
     } finally {
       setSavingSecret(false);
@@ -405,11 +418,27 @@ export function ConnectionsView() {
                   </div>
                   <div className="text-[12px] font-mono text-text-muted truncate">
                     {s.hostPattern}
+                    {s.envMappings && s.envMappings.length > 0 && (
+                      <>
+                        {" · "}
+                        <span className="text-accent">
+                          {s.envMappings.map((m) => m.envName).join(", ")}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-surface-raised text-text-muted border-border-light">
                   Secret
                 </span>
+                <button
+                  onClick={() => setEditingSecret(s)}
+                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-accent hover:border-accent"
+                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                  title="Edit"
+                >
+                  <Pencil size={13} />
+                </button>
                 <button
                   onClick={() => removeSecret(s.id, s.name)}
                   className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger"
@@ -554,6 +583,23 @@ export function ConnectionsView() {
               </p>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Pod Env Vars (optional)
+              </label>
+              <p className="text-[11px] text-text-muted">
+                Inject env vars into every agent instance granted this secret.
+                The placeholder (typically{" "}
+                <span className="font-mono">humr:sentinel</span>) is swapped
+                for the real value on the wire by OneCLI.
+              </p>
+              <EnvMappingsEditor
+                value={secretEnvMappings}
+                onChange={setSecretEnvMappings}
+                disabled={savingSecret}
+              />
+            </div>
+
             <div className="flex justify-end gap-3">
               <button
                 className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
@@ -570,7 +616,8 @@ export function ConnectionsView() {
                   savingSecret ||
                   !secretForm.name.trim() ||
                   !secretForm.value.trim() ||
-                  !secretForm.hostPattern.trim()
+                  !secretForm.hostPattern.trim() ||
+                  !allEnvMappingsValid(secretEnvMappings)
                 }
               >
                 {savingSecret ? "..." : "Add Secret"}
@@ -578,6 +625,13 @@ export function ConnectionsView() {
             </div>
           </div>
         </div>
+      )}
+
+      {editingSecret && (
+        <EditSecretDialog
+          secret={editingSecret}
+          onClose={() => setEditingSecret(null)}
+        />
       )}
     </div>
   );

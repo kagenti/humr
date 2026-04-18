@@ -99,7 +99,7 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	cmInformer := factory.Core().V1().ConfigMaps()
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver)
+	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver, onecliFactory)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()

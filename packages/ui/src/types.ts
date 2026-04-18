@@ -71,6 +71,7 @@ export interface AgentView {
   templateId: string | null;
   image: string;
   description?: string;
+  env?: import("api-server-api").EnvVar[];
 }
 
 export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
@@ -113,6 +114,13 @@ export function mcpHostnameFromSecretName(name: string): string {
   return name.startsWith(MCP_SECRET_PREFIX) ? name.slice(MCP_SECRET_PREFIX.length) : name;
 }
 
+export type { EnvMapping, EnvVar } from "api-server-api";
+export {
+  DEFAULT_ENV_PLACEHOLDER,
+  isValidEnvName,
+  ANTHROPIC_DEFAULT_ENV_MAPPING,
+} from "api-server-api";
+
 export interface SecretView {
   id: string;
   name: string;
@@ -120,6 +128,7 @@ export interface SecretView {
   hostPattern: string;
   createdAt: string;
   authMode?: AnthropicAuthMode;
+  envMappings?: import("api-server-api").EnvMapping[];
 }
 
 export interface McpConnection {

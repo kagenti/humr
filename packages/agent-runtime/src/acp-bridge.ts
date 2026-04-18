@@ -12,30 +12,25 @@ export interface AcpSession {
 }
 
 export function spawnAcpSession(options: {
-  agentScript: string;
+  command: string[];
   workingDir: string;
-  isDev: boolean;
+  env?: Record<string, string | undefined>;
 }): AcpSession {
-  const { agentScript, workingDir, isDev } = options;
+  const { command, workingDir } = options;
+  const [cmd, ...args] = command;
 
   // Strip pnpm-injected npm_config_* vars so npx doesn't emit warnings
   const cleanEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !k.startsWith("npm_")),
+    Object.entries(options.env ?? process.env).filter(
+      ([k]) => !k.startsWith("npm_"),
+    ),
   );
 
-  const agentEnv = { ...cleanEnv, CLAUDE_CODE_OAUTH_TOKEN: "placeholder" };
-
-  const child = isDev
-    ? spawn("npx", ["tsx", agentScript], {
-        stdio: ["pipe", "pipe", "inherit"],
-        cwd: workingDir,
-        env: agentEnv,
-      })
-    : spawn("node", [agentScript], {
-        stdio: ["pipe", "pipe", "inherit"],
-        cwd: workingDir,
-        env: agentEnv,
-      });
+  const child = spawn(cmd, args, {
+    stdio: ["pipe", "pipe", "inherit"],
+    cwd: workingDir,
+    env: cleanEnv,
+  });
 
   child.on("error", (err) => {
     process.stderr.write(`[acp-bridge] Spawn error: ${err.message}\n`);
