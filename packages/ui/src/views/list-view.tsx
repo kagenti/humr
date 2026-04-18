@@ -213,7 +213,7 @@ export function ListView() {
                     <Check size={20} strokeWidth={3} />
                   </div>
                   <div>
-                    <div className="text-[14px] font-bold text-text">Set up connections (optional)</div>
+                    <div className="text-[14px] font-bold text-text">Set up connections</div>
                     <div className="text-[12px] text-text-muted">Apps, MCP servers or secrets configured</div>
                   </div>
                 </div>
@@ -226,7 +226,7 @@ export function ListView() {
                     <Check size={20} strokeWidth={3} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[14px] font-bold text-text">Set up connections (optional)</div>
+                    <div className="text-[14px] font-bold text-text">Set up connections</div>
                     <div className="text-[12px] text-text-muted">Skipped — you can add later</div>
                   </div>
                   <button
@@ -252,7 +252,7 @@ export function ListView() {
                     </div>
                     <div className="min-w-0">
                       <div className="step-title text-[14px] font-bold text-text">
-                        Set up connections (optional)
+                        Set up connections
                       </div>
                       <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets</div>
                     </div>
