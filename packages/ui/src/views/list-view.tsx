@@ -232,10 +232,10 @@ export function ListView() {
                   <button
                     onClick={unskipConnections}
                     className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2"
-                    title="Undo skip"
-                    aria-label="Undo skipping connections"
+                    title="Unskip this step"
+                    aria-label="Unskip connections step"
                   >
-                    Undo
+                    Unskip
                   </button>
                 </div>
               ) : (
@@ -255,12 +255,15 @@ export function ListView() {
                         Set up connections
                       </div>
                       <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets</div>
+                      <div className="text-[11px] text-text-muted/80 italic mt-1">
+                        Fine to skip if your agent doesn't need external tools
+                      </div>
                     </div>
                   </button>
                   <button
                     onClick={skipConnections}
                     className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2 self-start"
-                    title="Skip this step"
+                    title="Skip — you can add connections later"
                     aria-label="Skip setting up connections"
                   >
                     Skip
