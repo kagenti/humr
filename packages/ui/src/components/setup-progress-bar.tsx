@@ -7,9 +7,18 @@ import {
   isConnectionsSkipped,
   STEP_KEYS,
   stepLabels,
+  type StepKey,
   type StepStatus,
 } from "../lib/onboarding.js";
 import { Check, ArrowRight } from "lucide-react";
+
+type View = "list" | "providers" | "connections";
+
+const STEP_TARGET: Record<StepKey, View> = {
+  provider: "providers",
+  connections: "connections",
+  agent: "list",
+};
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
@@ -71,7 +80,7 @@ export function SetupProgressBar() {
       aria-label="Onboarding progress"
     >
       <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-2.5 md:py-3 flex items-center gap-3">
-        {/* Desktop: all three steps as pills */}
+        {/* Desktop: all three steps as pills — clickable to jump to that step */}
         <div className="hidden md:flex items-center gap-2 flex-1 min-w-0">
           {STEP_KEYS.map((key, i) => (
             <StepPill
@@ -80,6 +89,8 @@ export function SetupProgressBar() {
               label={stepLabels[key]}
               status={state[key]}
               isCurrent={key === current}
+              isActiveView={STEP_TARGET[key] === view}
+              onClick={() => setView(STEP_TARGET[key])}
             />
           ))}
         </div>
@@ -112,16 +123,23 @@ function StepPill({
   label,
   status,
   isCurrent,
+  isActiveView,
+  onClick,
 }: {
   index: number;
   label: string;
   status: StepStatus;
   isCurrent: boolean;
+  isActiveView: boolean;
+  onClick: () => void;
 }) {
   const done = status === "done" || status === "skipped";
   return (
-    <div
-      className={`flex items-center gap-2 rounded-lg border-2 px-2.5 py-1 min-w-0 ${
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={isActiveView ? "page" : undefined}
+      className={`btn-brutal flex items-center gap-2 rounded-lg border-2 px-2.5 py-1 min-w-0 transition-colors hover:border-accent ${
         isCurrent
           ? "border-warning bg-warning-light"
           : done
@@ -147,6 +165,6 @@ function StepPill({
       >
         {label}
       </span>
-    </div>
+    </button>
   );
 }
