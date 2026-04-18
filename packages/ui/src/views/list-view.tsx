@@ -230,13 +230,10 @@ export function ListView() {
                       2
                     </div>
                     <div className="min-w-0">
-                      <div className="step-title text-[14px] font-bold text-text flex items-center gap-2">
+                      <div className="step-title text-[14px] font-bold text-text">
                         Set up connections
-                        <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 border-border-light bg-surface-raised text-text-muted rounded-full px-2 py-0.5">
-                          Optional
-                        </span>
                       </div>
-                      <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets your agent should use</div>
+                      <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets</div>
                     </div>
                   </button>
                   <button
