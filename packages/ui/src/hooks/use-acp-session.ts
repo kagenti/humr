@@ -5,7 +5,7 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
-import type { Message, Attachment, ToolChip } from "../types.js";
+import type { Message, MessagePart, Attachment, ToolChip } from "../types.js";
 import { instanceState } from "./../components/status-indicator.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 
@@ -28,6 +28,37 @@ const TEXT_EXTENSIONS = new Set([
   ".py", ".rb", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".sh",
   ".toml", ".ini", ".env", ".log", ".sql", ".graphql", ".svg",
 ]);
+
+/**
+ * Parse a replayed user message into chip + text parts.
+ *
+ * The Claude SDK round-trips uploaded attachments back as text:
+ *  - text files become `<context ref="file:///NAME">FULL_BODY</context>`
+ *  - binary files become `[@NAME](file:///PATH)`
+ *
+ * Both should render as a file chip — we don't want to dump the whole file
+ * body into the user bubble.
+ */
+function parseUserText(text: string): MessagePart[] {
+  const parts: MessagePart[] = [];
+  const regex = /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) {
+      const seg = text.slice(last, m.index).trim();
+      if (seg) parts.push({ kind: "text", text: seg });
+    }
+    const name = m[1] ?? m[2] ?? m[3];
+    parts.push({ kind: "file", name, mimeType: "" });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) {
+    const seg = text.slice(last).trim();
+    if (seg) parts.push({ kind: "text", text: seg });
+  }
+  return parts.length > 0 ? parts : [{ kind: "text", text }];
+}
 
 function isTextMime(mime: string, name: string): boolean {
   if (mime.startsWith("text/")) return true;
@@ -293,7 +324,17 @@ export function useAcpSession(
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
-      ws.onclose = () => { connectionRef.current = null; };
+      // addEventListener (not onclose=) so we don't clobber the handler that
+      // closes the ACP ReadableStream controller inside openConnection.
+      // activeSessionIdRef must be reset too — otherwise the next call skips
+      // resume and the fresh agent process rejects with "Session not found".
+      ws.addEventListener("close", () => {
+        connectionRef.current = null;
+        activeSessionIdRef.current = null;
+      });
+      ws.addEventListener("error", () => {
+        addLog("error", { message: "WebSocket connection error" });
+      });
       connectionRef.current = { connection, ws };
     }
 
@@ -380,12 +421,19 @@ export function useAcpSession(
           const txt = cleanText(u.content.text as string);
           if (!txt) return;
           const mid = u.messageId ?? crypto.randomUUID();
+          const newParts = parseUserText(txt);
           const ex = mm.get(mid);
           if (ex) {
-            const l = ex.parts[ex.parts.length - 1];
-            l?.kind === "text" ? (l.text += txt) : ex.parts.push({ kind: "text", text: txt });
+            for (const p of newParts) {
+              const l = ex.parts[ex.parts.length - 1];
+              if (p.kind === "text" && l?.kind === "text") {
+                l.text += p.text;
+              } else {
+                ex.parts.push(p);
+              }
+            }
           } else {
-            mm.set(mid, { id: mid, role: "user", parts: [{ kind: "text", text: txt }], streaming: false });
+            mm.set(mid, { id: mid, role: "user", parts: newParts, streaming: false });
             mo.push(mid);
           }
         } else if (u.sessionUpdate === "user_message_chunk" && u.content.type === "image") {

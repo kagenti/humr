@@ -58,10 +58,15 @@ export async function openConnection(
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
+        const opts: Array<{ kind?: string; optionId: string }> = params.options ?? [];
+        const pick =
+          opts.find((o) => o.kind === "allow_always") ??
+          opts.find((o) => o.kind === "allow_once") ??
+          opts[0];
         return {
           outcome: {
             outcome: "selected" as const,
-            optionId: params.options[0].optionId,
+            optionId: pick.optionId,
           },
         };
       },
