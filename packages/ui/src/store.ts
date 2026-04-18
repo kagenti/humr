@@ -160,6 +160,12 @@ export interface HumrStore {
   fetchAppConnections: () => Promise<void>;
   fetchMcpConnections: () => Promise<void>;
 
+  // One-shot flag — when set, the list view opens the Add Agent dialog on mount.
+  // Used by the SetupProgressBar's agent pill so clicking it goes straight to
+  // the dialog rather than the list view's empty state.
+  pendingAddAgent: boolean;
+  setPendingAddAgent: (v: boolean) => void;
+
   // Secrets
   secrets: SecretView[];
   fetchSecrets: () => Promise<void>;
@@ -553,6 +559,9 @@ export const useStore = create<HumrStore>((set, get) => ({
       });
     }
   },
+  pendingAddAgent: false,
+  setPendingAddAgent: (v) => set({ pendingAddAgent: v }),
+
   fetchMcpConnections: async () => {
     try {
       const r = await authFetch("/api/mcp/connections");

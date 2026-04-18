@@ -3,7 +3,6 @@ import { useStore } from "../store.js";
 import { isCustomSecret } from "../types.js";
 import {
   computeOnboardingState,
-  firstPendingStep,
   isConnectionsSkipped,
   STEP_KEYS,
   stepLabels,
@@ -11,14 +10,6 @@ import {
   type StepStatus,
 } from "../lib/onboarding.js";
 import { Check, ArrowRight } from "lucide-react";
-
-type View = "list" | "providers" | "connections";
-
-const STEP_TARGET: Record<StepKey, View> = {
-  provider: "providers",
-  connections: "connections",
-  agent: "list",
-};
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
@@ -28,6 +19,7 @@ export function SetupProgressBar() {
   const mcpConnections = useStore((s) => s.mcpConnections);
   const loadedOnce = useStore((s) => s.loadedOnce);
   const setView = useStore((s) => s.setView);
+  const setPendingAddAgent = useStore((s) => s.setPendingAddAgent);
   const fetchAppConnections = useStore((s) => s.fetchAppConnections);
   const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
   const fetchSecrets = useStore((s) => s.fetchSecrets);
@@ -70,8 +62,21 @@ export function SetupProgressBar() {
     hasAgent: false,
     connectionsSkipped: skipped,
   });
-  const current = firstPendingStep(state) ?? "agent";
-  const currentIndex = STEP_KEYS.indexOf(current);
+
+  // "Active" = the pill that matches the current page. The agent step has no
+  // dedicated view — clicking it opens the Add Agent dialog on the list view.
+  const activeStep: StepKey | null =
+    view === "providers" ? "provider" : view === "connections" ? "connections" : null;
+  const activeIndex = activeStep ? STEP_KEYS.indexOf(activeStep) : 0;
+
+  const handlePillClick = (key: StepKey) => {
+    if (key === "agent") {
+      setPendingAddAgent(true);
+      setView("list");
+      return;
+    }
+    setView(key === "provider" ? "providers" : "connections");
+  };
 
   return (
     <div
@@ -88,20 +93,19 @@ export function SetupProgressBar() {
               index={i}
               label={stepLabels[key]}
               status={state[key]}
-              isCurrent={key === current}
-              isActiveView={STEP_TARGET[key] === view}
-              onClick={() => setView(STEP_TARGET[key])}
+              isActive={key === activeStep}
+              onClick={() => handlePillClick(key)}
             />
           ))}
         </div>
 
-        {/* Mobile: compact "Step N of 3: [Name]" */}
+        {/* Mobile: compact "Step N of 3: [Name]" for the current page */}
         <div className="md:hidden flex-1 min-w-0">
           <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-            Step {currentIndex + 1} of {STEP_KEYS.length}
+            Step {activeIndex + 1} of {STEP_KEYS.length}
           </div>
           <div className="text-[13px] font-semibold text-text truncate">
-            {stepLabels[current]}
+            {activeStep ? stepLabels[activeStep] : stepLabels.provider}
           </div>
         </div>
 
@@ -122,15 +126,13 @@ function StepPill({
   index,
   label,
   status,
-  isCurrent,
-  isActiveView,
+  isActive,
   onClick,
 }: {
   index: number;
   label: string;
   status: StepStatus;
-  isCurrent: boolean;
-  isActiveView: boolean;
+  isActive: boolean;
   onClick: () => void;
 }) {
   const done = status === "done" || status === "skipped";
@@ -138,10 +140,10 @@ function StepPill({
     <button
       type="button"
       onClick={onClick}
-      aria-current={isActiveView ? "page" : undefined}
+      aria-current={isActive ? "page" : undefined}
       className={`btn-brutal flex items-center gap-2 rounded-lg border-2 px-2.5 py-1 min-w-0 transition-colors hover:border-accent ${
-        isCurrent
-          ? "border-warning bg-warning-light"
+        isActive
+          ? "border-accent bg-accent-light"
           : done
             ? "border-border-light bg-surface-raised"
             : "border-border-light bg-surface"
@@ -151,8 +153,8 @@ function StepPill({
         className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-bold ${
           done
             ? "bg-surface-raised text-success"
-            : isCurrent
-              ? "bg-warning text-white"
+            : isActive
+              ? "bg-accent text-white"
               : "bg-border-light text-text-secondary"
         }`}
       >
@@ -160,7 +162,7 @@ function StepPill({
       </span>
       <span
         className={`text-[12px] font-semibold truncate ${
-          isCurrent ? "text-text" : done ? "text-text-muted" : "text-text-secondary"
+          isActive ? "text-text" : done ? "text-text-muted" : "text-text-secondary"
         }`}
       >
         {label}

@@ -37,6 +37,8 @@ export function ListView() {
   const mcpConnections = useStore(s => s.mcpConnections);
   const fetchAppConnections = useStore(s => s.fetchAppConnections);
   const fetchMcpConnections = useStore(s => s.fetchMcpConnections);
+  const pendingAddAgent = useStore(s => s.pendingAddAgent);
+  const setPendingAddAgent = useStore(s => s.setPendingAddAgent);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [busyAgent, setBusyAgent] = useState(false);
@@ -100,6 +102,13 @@ export function ListView() {
     fetchAppConnections();
     fetchMcpConnections();
   }, [isEmpty, fetchAppConnections, fetchMcpConnections]);
+
+  // Consume one-shot "open Add Agent" request from the SetupProgressBar.
+  useEffect(() => {
+    if (!pendingAddAgent || !isEmpty) return;
+    setShowAddAgent(true);
+    setPendingAddAgent(false);
+  }, [pendingAddAgent, isEmpty, setPendingAddAgent]);
 
   // Count by category for a given agent based on its access mode.
   // "all" mode: counts = totals across all user secrets.
