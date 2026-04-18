@@ -102,7 +102,7 @@ export function ListView() {
     (async () => {
       const [apps, mcp] = await Promise.all([
         platform.connections.list.query().catch(() => [] as AppConnectionView[]),
-        authFetch("/api/mcp/connections").then(r => r.json()).catch(() => [] as McpConnection[]),
+        authFetch("/api/mcp/connections").then(r => r.ok ? r.json() : []).catch(() => [] as McpConnection[]),
       ]);
       if (cancelled) return;
       setAppConnections(Array.isArray(apps) ? apps : []);
@@ -243,6 +243,7 @@ export function ListView() {
                     onClick={skipConnections}
                     className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2 self-start"
                     title="Skip this step"
+                    aria-label="Skip setting up connections"
                   >
                     Skip
                   </button>
