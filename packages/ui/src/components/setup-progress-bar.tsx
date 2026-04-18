@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store.js";
+import { isCustomSecret } from "../types.js";
 import {
   computeOnboardingState,
   firstPendingStep,
   isConnectionsSkipped,
   STEP_KEYS,
   stepLabels,
-  type StepKey,
   type StepStatus,
 } from "../lib/onboarding.js";
 import { Check, ArrowRight } from "lucide-react";
@@ -31,9 +31,13 @@ export function SetupProgressBar() {
     setSkipped(isConnectionsSkipped());
   }, [view]);
 
+  // Gate on both agents + secrets being loaded so `hasProvider` is accurate on
+  // first render — otherwise the bar briefly flashes step 1 as pending even
+  // when the user already has an Anthropic key.
   const shouldRender =
     (view === "providers" || view === "connections") &&
     loadedOnce.agents &&
+    loadedOnce.secrets &&
     agents.length === 0;
 
   useEffect(() => {
@@ -46,13 +50,10 @@ export function SetupProgressBar() {
   if (!shouldRender) return null;
 
   const hasProvider = secrets.some((s) => s.type === "anthropic");
-  const customSecrets = secrets.filter(
-    (s) => s.type !== "anthropic" && !s.name.startsWith("__humr_mcp:"),
-  );
   const hasConnections =
     appConnections.some((c) => c.status === "connected") ||
     mcpConnections.some((c) => !c.expired) ||
-    customSecrets.length > 0;
+    secrets.some(isCustomSecret);
 
   const state = computeOnboardingState({
     hasProvider,
@@ -94,6 +95,7 @@ export function SetupProgressBar() {
         </div>
 
         <button
+          type="button"
           onClick={() => setView("list")}
           className="btn-brutal shrink-0 h-8 md:h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-4 text-[12px] md:text-[13px] font-semibold text-white flex items-center gap-1.5"
           style={{ boxShadow: "var(--shadow-brutal-accent)" }}

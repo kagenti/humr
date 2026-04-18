@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
-import { isMcpSecret } from "../types.js";
+import { isMcpSecret, isCustomSecret } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
@@ -9,6 +9,7 @@ import { RefreshCw, Plus, Trash2, KeyRound, Check } from "lucide-react";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
 import {
   computeOnboardingState,
+  firstPendingStep,
   isConnectionsSkipped,
   setConnectionsSkipped,
   type OnboardingState,
@@ -43,7 +44,6 @@ export function ListView() {
   const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delAgent, setDelAgent] = useState<string | null>(null);
   const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
-  const [secretsLoaded, setSecretsLoaded] = useState(false);
 
   // Onboarding — connections-skipped flag (localStorage-backed)
   const [connectionsSkipped, setConnectionsSkippedState] = useState(() => isConnectionsSkipped());
@@ -52,12 +52,10 @@ export function ListView() {
   // when the user navigates away and back while data is already loaded.
   const loadedOnce = useStore(s => s.loadedOnce);
   const hasProvider = secrets.some(s => s.type === "anthropic");
-  const initialLoaded = loadedOnce.agents && loadedOnce.instances && secretsLoaded;
+  const initialLoaded = loadedOnce.agents && loadedOnce.instances && loadedOnce.secrets;
   const isEmpty = initialLoaded && agents.length === 0;
 
-  const customSecrets = secrets.filter(
-    s => s.type !== "anthropic" && !s.name.startsWith("__humr_mcp:"),
-  );
+  const customSecrets = secrets.filter(isCustomSecret);
   const hasConnections =
     appConnections.some(c => c.status === "connected") ||
     mcpConnections.some(c => !c.expired) ||
@@ -69,9 +67,7 @@ export function ListView() {
     hasAgent: agents.length > 0,
     connectionsSkipped,
   });
-  const firstPendingStep = (["provider", "connections", "agent"] as const).find(
-    k => onboarding[k] === "pending",
-  );
+  const currentStep = firstPendingStep(onboarding);
 
   const skipConnections = () => {
     setConnectionsSkipped(true);
@@ -89,7 +85,7 @@ export function ListView() {
   }, [instances]);
 
   // Fetch secrets + per-agent access once we have the agent list
-  useEffect(() => { fetchSecrets().finally(() => setSecretsLoaded(true)); }, [fetchSecrets]);
+  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
   useEffect(() => {
     for (const a of agents) {
       if (!agentAccess[a.id]) fetchAgentAccess(a.id);
@@ -180,10 +176,10 @@ export function ListView() {
               ) : (
                 <button
                   onClick={() => setView("providers")}
-                  className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${firstPendingStep === "provider" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
-                  style={{ boxShadow: firstPendingStep === "provider" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
+                  className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${currentStep === "provider" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
+                  style={{ boxShadow: currentStep === "provider" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
                 >
-                  <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${firstPendingStep === "provider" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
+                  <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${currentStep === "provider" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
                     1
                   </div>
                   <div>
@@ -230,14 +226,14 @@ export function ListView() {
                 </div>
               ) : (
                 <div
-                  className={`rounded-xl border-2 p-4 flex items-center gap-4 w-full transition-colors ${firstPendingStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
-                  style={{ boxShadow: firstPendingStep === "connections" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
+                  className={`rounded-xl border-2 p-4 flex items-center gap-4 w-full transition-colors ${currentStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
+                  style={{ boxShadow: currentStep === "connections" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
                 >
                   <button
                     onClick={() => setView("connections")}
                     className="btn-brutal group flex-1 min-w-0 flex items-center gap-4 text-left rounded-lg"
                   >
-                    <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${firstPendingStep === "connections" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
+                    <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${currentStep === "connections" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
                       2
                     </div>
                     <div className="min-w-0">
@@ -269,10 +265,10 @@ export function ListView() {
               {/* Step 3 — add agent (highlighted when it's the first pending step) */}
               <button
                 onClick={() => setShowAddAgent(true)}
-                className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${firstPendingStep === "agent" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
-                style={{ boxShadow: firstPendingStep === "agent" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
+                className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${currentStep === "agent" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
+                style={{ boxShadow: currentStep === "agent" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
               >
-                <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${firstPendingStep === "agent" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
+                <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${currentStep === "agent" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
                   3
                 </div>
                 <div>

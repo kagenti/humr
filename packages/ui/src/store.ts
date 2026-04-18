@@ -97,7 +97,7 @@ export interface HumrStore {
 
   // Persist-across-mount "we've fetched at least once" flags. Prevents the
   // list-view skeleton from reappearing when the user navigates away and back.
-  loadedOnce: { agents: boolean; instances: boolean };
+  loadedOnce: { agents: boolean; instances: boolean; secrets: boolean };
 
   // Template actions (read-only catalog)
   fetchTemplates: () => Promise<void>;
@@ -279,7 +279,7 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Loading states
   loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
-  loadedOnce: { agents: false, instances: false },
+  loadedOnce: { agents: false, instances: false, secrets: false },
 
   // Template actions (read-only catalog)
   fetchTemplates: async () => {
@@ -556,10 +556,15 @@ export const useStore = create<HumrStore>((set, get) => ({
   fetchMcpConnections: async () => {
     try {
       const r = await authFetch("/api/mcp/connections");
-      if (!r.ok) return;
+      if (!r.ok) {
+        console.warn("mcp/connections fetch failed", r.status);
+        return;
+      }
       const d = await r.json();
       set({ mcpConnections: Array.isArray(d) ? d : [] });
-    } catch {}
+    } catch (err) {
+      console.warn("mcp/connections fetch failed", err);
+    }
   },
 
   // Secrets
@@ -567,7 +572,7 @@ export const useStore = create<HumrStore>((set, get) => ({
   fetchSecrets: async () => {
     try {
       const list = await platform.secrets.list.query();
-      set({ secrets: list });
+      set((s) => ({ secrets: list, loadedOnce: { ...s.loadedOnce, secrets: true } }));
     } catch {}
   },
   createSecret: async (input) => {

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
 import type { EnvMapping, SecretView } from "../types.js";
+import { isCustomSecret } from "../types.js";
 import {
   EnvMappingsEditor,
   allEnvMappingsValid,
@@ -66,9 +67,7 @@ export function ConnectionsView() {
     load();
   }, [load]);
 
-  const customSecrets = secrets.filter(
-    (s) => s.type !== "anthropic" && !s.name.startsWith("__humr_mcp:"),
-  );
+  const customSecrets = secrets.filter(isCustomSecret);
 
   // --- MCP actions ---
 
