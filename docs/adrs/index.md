@@ -39,3 +39,4 @@ This directory contains ADRs for the Humr project.
 |-------|-------|-------|
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-slack-user-impersonation.md) | Slack per-turn user impersonation — outbound identity follows the replier | @tomkis |
