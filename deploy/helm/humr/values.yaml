@@ -40,7 +40,7 @@ postgres:
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
-  image: ghcr.io/kagenti/onecli:0.0.15
+  image: ghcr.io/kagenti/onecli:0.0.16
   replicas: 1
 
   # -- Override the external hostname for OneCLI (empty = onecli.{{ domain }}).
