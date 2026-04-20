@@ -7,6 +7,7 @@ import {
   type SecretView,
   type AgentAccess,
   type EnvMapping,
+  type InjectionConfig,
 } from "api-server-api";
 import type {
   OnecliSecret,
@@ -25,6 +26,9 @@ function toSecretView(s: OnecliSecret): SecretView {
     type,
     hostPattern: s.hostPattern,
     ...(s.pathPattern ? { pathPattern: s.pathPattern } : {}),
+    ...(type === "generic" && s.injectionConfig
+      ? { injectionConfig: s.injectionConfig }
+      : {}),
     createdAt: s.createdAt,
     ...(type === "anthropic" && s.metadata?.authMode
       ? { authMode: s.metadata.authMode }
@@ -82,6 +86,7 @@ export function createSecretsService(deps: {
         value: input.value,
         hostPattern: hp,
         ...(input.pathPattern ? { pathPattern: input.pathPattern } : {}),
+        ...(input.injectionConfig ? { injectionConfig: input.injectionConfig } : {}),
         ...(envMappings ? { envMappings } : {}),
       });
       // OneCLI may not echo metadata on create; fall back to the request's envMappings.
@@ -96,11 +101,13 @@ export function createSecretsService(deps: {
         name?: string;
         value?: string;
         pathPattern?: string | null;
+        injectionConfig?: InjectionConfig | null;
         envMappings?: EnvMapping[];
       } = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.value !== undefined) patch.value = input.value;
       if (input.pathPattern !== undefined) patch.pathPattern = input.pathPattern;
+      if (input.injectionConfig !== undefined) patch.injectionConfig = input.injectionConfig;
       if (input.envMappings !== undefined) patch.envMappings = input.envMappings;
       await deps.port.updateSecret(input.id, patch);
     },

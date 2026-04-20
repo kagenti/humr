@@ -121,9 +121,10 @@ export function mcpHostnameFromSecretName(name: string): string {
   return name.startsWith(MCP_SECRET_PREFIX) ? name.slice(MCP_SECRET_PREFIX.length) : name;
 }
 
-export type { EnvMapping, EnvVar } from "api-server-api";
+export type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
 export {
   DEFAULT_ENV_PLACEHOLDER,
+  DEFAULT_INJECTION_CONFIG,
   isValidEnvName,
   ANTHROPIC_DEFAULT_ENV_MAPPING,
 } from "api-server-api";
@@ -134,6 +135,7 @@ export interface SecretView {
   type: SecretType;
   hostPattern: string;
   pathPattern?: string;
+  injectionConfig?: import("api-server-api").InjectionConfig;
   createdAt: string;
   authMode?: AnthropicAuthMode;
   envMappings?: import("api-server-api").EnvMapping[];

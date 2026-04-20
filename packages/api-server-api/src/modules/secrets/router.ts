@@ -15,6 +15,11 @@ const envMappingSchema = z.object({
 
 const envMappingsSchema = z.array(envMappingSchema).max(32);
 
+const injectionConfigSchema = z.object({
+  headerName: z.string().min(1).max(255),
+  valueFormat: z.string().max(1000).optional(),
+});
+
 export const secretsRouter = t.router({
   list: t.procedure.query(({ ctx }) => ctx.secrets.list()),
 
@@ -27,6 +32,7 @@ export const secretsRouter = t.router({
           value: z.string().min(1),
           hostPattern: z.string().min(1).max(253).optional(),
           pathPattern: z.string().min(1).max(1000).optional(),
+          injectionConfig: injectionConfigSchema.optional(),
           envMappings: envMappingsSchema.optional(),
         })
         .refine(
@@ -40,6 +46,10 @@ export const secretsRouter = t.router({
         .refine(
           (d) => d.type !== "anthropic" || !d.pathPattern,
           { message: "pathPattern cannot be set for anthropic secrets", path: ["pathPattern"] },
+        )
+        .refine(
+          (d) => d.type !== "anthropic" || !d.injectionConfig,
+          { message: "injectionConfig cannot be set for anthropic secrets", path: ["injectionConfig"] },
         ),
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
@@ -51,6 +61,7 @@ export const secretsRouter = t.router({
         name: z.string().min(1).max(100).optional(),
         value: z.string().min(1).optional(),
         pathPattern: z.string().max(1000).nullable().optional(),
+        injectionConfig: injectionConfigSchema.nullable().optional(),
         envMappings: envMappingsSchema.optional(),
       }),
     )

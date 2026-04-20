@@ -18,25 +18,38 @@ export function EditSecretDialog({
   const updateSecret = useStore((s) => s.updateSecret);
   const [name, setName] = useState(secret.name);
   const [pathPattern, setPathPattern] = useState(secret.pathPattern ?? "");
+  const [headerName, setHeaderName] = useState(
+    secret.injectionConfig?.headerName ?? "",
+  );
+  const [valueFormat, setValueFormat] = useState(
+    secret.injectionConfig?.valueFormat ?? "",
+  );
   const [envMappings, setEnvMappings] = useState<EnvMapping[]>(
     secret.envMappings ?? [],
   );
   const [saving, setSaving] = useState(false);
 
-  const canEditPathPattern = secret.type !== "anthropic";
+  const isGeneric = secret.type !== "anthropic";
   const trimmed = name.trim();
   const trimmedPath = pathPattern.trim();
+  const trimmedHeader = headerName.trim();
+  const trimmedValueFormat = valueFormat.trim();
   const sanitized = sanitizeEnvMappings(envMappings);
   const nameChanged = trimmed !== secret.name;
-  const pathChanged =
-    canEditPathPattern && trimmedPath !== (secret.pathPattern ?? "");
+  const pathChanged = isGeneric && trimmedPath !== (secret.pathPattern ?? "");
+  const injectionChanged =
+    isGeneric &&
+    (trimmedHeader !== (secret.injectionConfig?.headerName ?? "") ||
+      trimmedValueFormat !== (secret.injectionConfig?.valueFormat ?? ""));
   const mappingsChanged =
     JSON.stringify(sanitized) !== JSON.stringify(secret.envMappings ?? []);
+  const injectionValid = !isGeneric || trimmedHeader.length > 0;
   const canSave =
     !saving &&
     trimmed.length > 0 &&
+    injectionValid &&
     allEnvMappingsValid(envMappings) &&
-    (nameChanged || pathChanged || mappingsChanged);
+    (nameChanged || pathChanged || injectionChanged || mappingsChanged);
 
   const save = async () => {
     if (!canSave) return;
@@ -45,6 +58,12 @@ export function EditSecretDialog({
       await updateSecret(secret.id, {
         ...(nameChanged && { name: trimmed }),
         ...(pathChanged && { pathPattern: trimmedPath === "" ? null : trimmedPath }),
+        ...(injectionChanged && {
+          injectionConfig: {
+            headerName: trimmedHeader,
+            ...(trimmedValueFormat.length > 0 && { valueFormat: trimmedValueFormat }),
+          },
+        }),
         ...(mappingsChanged && { envMappings: sanitized }),
       });
       onClose();
@@ -78,7 +97,7 @@ export function EditSecretDialog({
           />
         </label>
 
-        {canEditPathPattern && (
+        {isGeneric && (
           <label className="flex flex-col gap-1.5">
             <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
               Path Pattern
@@ -93,6 +112,44 @@ export function EditSecretDialog({
             <span className="text-[11px] text-text-muted">
               Restrict injection to URL paths matching this pattern. Leave blank
               to match every path on the host.
+            </span>
+          </label>
+        )}
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Header Name
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder="authorization"
+              value={headerName}
+              onChange={(e) => setHeaderName(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              HTTP header OneCLI writes the secret into.
+            </span>
+          </label>
+        )}
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Value Format
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder="Bearer {value}"
+              value={valueFormat}
+              onChange={(e) => setValueFormat(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              Template for the header value. Use{" "}
+              <span className="font-mono">{`{value}`}</span> as the token
+              placeholder.
             </span>
           </label>
         )}

@@ -54,9 +54,11 @@ export type {
   AgentAccess,
   SecretsService,
   EnvMapping,
+  InjectionConfig,
 } from "./modules/secrets/types.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
+  DEFAULT_INJECTION_CONFIG,
   ENV_NAME_RE,
   isValidEnvName,
   ANTHROPIC_DEFAULT_ENV_MAPPING,

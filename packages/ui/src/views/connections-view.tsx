@@ -51,6 +51,8 @@ export function ConnectionsView() {
     value: "",
     hostPattern: "",
     pathPattern: "",
+    headerName: "",
+    valueFormat: "",
   });
   const [secretEnvMappings, setSecretEnvMappings] = useState<EnvMapping[]>([]);
   const [savingSecret, setSavingSecret] = useState(false);
@@ -147,15 +149,30 @@ export function ConnectionsView() {
     try {
       const mappings = sanitizeEnvMappings(secretEnvMappings);
       const pathPattern = secretForm.pathPattern.trim();
+      const headerName = secretForm.headerName.trim();
+      const valueFormat = secretForm.valueFormat.trim();
       await createSecret({
         type: "generic",
         name: secretForm.name.trim(),
         value: secretForm.value.trim(),
         hostPattern: secretForm.hostPattern.trim(),
         ...(pathPattern.length > 0 && { pathPattern }),
+        ...(headerName.length > 0 && {
+          injectionConfig: {
+            headerName,
+            ...(valueFormat.length > 0 && { valueFormat }),
+          },
+        }),
         ...(mappings.length > 0 && { envMappings: mappings }),
       });
-      setSecretForm({ name: "", value: "", hostPattern: "", pathPattern: "" });
+      setSecretForm({
+        name: "",
+        value: "",
+        hostPattern: "",
+        pathPattern: "",
+        headerName: "",
+        valueFormat: "",
+      });
       setSecretEnvMappings([]);
       setShowAddSecret(false);
     } finally {
@@ -607,6 +624,50 @@ export function ConnectionsView() {
               <p className="text-[11px] text-text-muted">
                 Restrict injection to URL paths matching this pattern. Leave
                 blank to match every path on the host.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Header Name (optional)
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder="authorization"
+                value={secretForm.headerName}
+                onChange={(e) =>
+                  setSecretForm((p) => ({
+                    ...p,
+                    headerName: e.target.value,
+                  }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                HTTP header OneCLI writes the secret into. Defaults to{" "}
+                <span className="font-mono">authorization</span>.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Value Format (optional)
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder="Bearer {value}"
+                value={secretForm.valueFormat}
+                onChange={(e) =>
+                  setSecretForm((p) => ({
+                    ...p,
+                    valueFormat: e.target.value,
+                  }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                Template for the header value. Use{" "}
+                <span className="font-mono">{`{value}`}</span> as the token
+                placeholder. Defaults to{" "}
+                <span className="font-mono">Bearer {`{value}`}</span>.
               </p>
             </div>
 

@@ -37,12 +37,30 @@ export const ANTHROPIC_DEFAULT_ENV_MAPPING: EnvMapping = {
   placeholder: DEFAULT_ENV_PLACEHOLDER,
 };
 
+/**
+ * How OneCLI's gateway injects a generic secret into matching outbound
+ * requests. `valueFormat` may reference the literal token `{value}`;
+ * OneCLI defaults it to `{value}` when omitted.
+ */
+export interface InjectionConfig {
+  headerName: string;
+  valueFormat?: string;
+}
+
+/** Default used when the user doesn't override it: `Authorization: Bearer <value>`. */
+export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
+  headerName: "authorization",
+  valueFormat: "Bearer {value}",
+};
+
 export interface SecretView {
   id: string;
   name: string;
   type: SecretType;
   hostPattern: string;
   pathPattern?: string;
+  /** Only set for generic secrets. */
+  injectionConfig?: InjectionConfig;
   createdAt: string;
   /** Only set for type="anthropic" — reflects the OneCLI-detected auth mode. */
   authMode?: AnthropicAuthMode;
@@ -55,6 +73,7 @@ export interface CreateSecretInput {
   value: string;
   hostPattern?: string;
   pathPattern?: string;
+  injectionConfig?: InjectionConfig;
   envMappings?: EnvMapping[];
 }
 
@@ -64,6 +83,8 @@ export interface UpdateSecretInput {
   value?: string;
   /** `null` clears the path pattern; `undefined` leaves it unchanged. */
   pathPattern?: string | null;
+  /** `null` resets to the default; `undefined` leaves it unchanged. */
+  injectionConfig?: InjectionConfig | null;
   envMappings?: EnvMapping[];
 }
 

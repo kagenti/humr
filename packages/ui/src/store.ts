@@ -14,6 +14,7 @@ import type {
   SecretMode,
   EnvMapping,
   EnvVar,
+  InjectionConfig,
 } from "./types.js";
 import type {
   SessionModeState,
@@ -159,6 +160,7 @@ export interface HumrStore {
     value: string;
     hostPattern?: string;
     pathPattern?: string;
+    injectionConfig?: InjectionConfig;
     envMappings?: EnvMapping[];
   }) => Promise<void>;
   updateSecret: (
@@ -168,6 +170,8 @@ export interface HumrStore {
       value?: string;
       /** `null` clears the path pattern; `undefined` leaves it unchanged. */
       pathPattern?: string | null;
+      /** `null` resets to the default; `undefined` leaves it unchanged. */
+      injectionConfig?: InjectionConfig | null;
       envMappings?: EnvMapping[];
     },
   ) => Promise<void>;
