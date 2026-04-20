@@ -4,7 +4,6 @@ import type { AppConnectionView } from "api-server-api";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import { Globe, KeyRound, Lock, Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../components/auth-mode-badge.js";
 
 type Step = "pick" | "configure";
 
@@ -233,7 +232,6 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                             <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
                             <Sparkles size={14} className="text-warning" />
                             <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
-                            <AuthModeBadge mode={s.authMode} />
                           </label>
                         ))}
                       </div>

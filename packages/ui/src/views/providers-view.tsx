@@ -1,30 +1,68 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
-import { AuthModeBadge } from "../components/auth-mode-badge.js";
 import {
-  Sparkles,
-  RefreshCw,
-  X,
-  Copy,
-  Check,
-} from "lucide-react";
+  ANTHROPIC_OAUTH_ENV_MAPPING,
+  ANTHROPIC_API_KEY_ENV_MAPPING,
+  type EnvMapping,
+  type SecretView,
+} from "../types.js";
+import { Sparkles, RefreshCw, X, Copy, Check, Pencil } from "lucide-react";
+
+type Mode = "oauth" | "api-key";
+
+const MODES = {
+  oauth: {
+    label: "OAuth Token",
+    placeholder: "sk-ant-oat-…",
+    prefix: "sk-ant-oat-",
+    mapping: ANTHROPIC_OAUTH_ENV_MAPPING,
+    badgeTone: "bg-info-light text-info border-info",
+  },
+  "api-key": {
+    label: "API Key",
+    placeholder: "sk-ant-api-…",
+    prefix: "sk-ant-api-",
+    mapping: ANTHROPIC_API_KEY_ENV_MAPPING,
+    badgeTone: "bg-warning-light text-warning border-warning",
+  },
+} as const satisfies Record<
+  Mode,
+  {
+    label: string;
+    placeholder: string;
+    prefix: string;
+    mapping: EnvMapping;
+    badgeTone: string;
+  }
+>;
+
+function detectMode(envName?: string): Mode {
+  return envName === ANTHROPIC_API_KEY_ENV_MAPPING.envName ? "api-key" : "oauth";
+}
+
+function mismatchError(value: string, mode: Mode): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  for (const m of Object.keys(MODES) as Mode[]) {
+    if (m !== mode && v.startsWith(MODES[m].prefix)) {
+      return `This looks like ${MODES[m].label.toLowerCase()} — switch tabs.`;
+    }
+  }
+  return null;
+}
 
 export function ProvidersView() {
   const secrets = useStore((s) => s.secrets);
   const agents = useStore((s) => s.agents);
   const fetchSecrets = useStore((s) => s.fetchSecrets);
   const createSecret = useStore((s) => s.createSecret);
+  const updateSecret = useStore((s) => s.updateSecret);
   const deleteSecret = useStore((s) => s.deleteSecret);
   const showConfirm = useStore((s) => s.showConfirm);
   const setView = useStore((s) => s.setView);
 
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
-
-  // Anthropic form
-  const [anthropicKey, setAnthropicKey] = useState("");
-  const [savingAnthropic, setSavingAnthropic] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     if (!loaded.current) setLoading(true);
@@ -38,38 +76,6 @@ export function ProvidersView() {
   }, [load]);
 
   const anthropic = secrets.find((s) => s.type === "anthropic");
-
-  const saveAnthropic = async () => {
-    if (!anthropicKey.trim()) return;
-    const isFirst = !anthropic && agents.length === 0;
-    setSavingAnthropic(true);
-    try {
-      await createSecret({
-        type: "anthropic",
-        name: "Anthropic API Key",
-        value: anthropicKey.trim(),
-      });
-      setAnthropicKey("");
-      if (isFirst) setView("list");
-    } finally {
-      setSavingAnthropic(false);
-    }
-  };
-
-  const removeAnthropic = async () => {
-    if (!anthropic) return;
-    if (!(await showConfirm("Remove Anthropic API key?", "Remove Key"))) return;
-    await deleteSecret(anthropic.id);
-  };
-
-  const copySetupToken = () => {
-    navigator.clipboard.writeText("claude setup-token");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const inp =
-    "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
   return (
     <div className="w-full max-w-2xl">
@@ -90,105 +96,41 @@ export function ProvidersView() {
         API keys for the AI harnesses that power your agents.
       </p>
 
-      {/* Anthropic */}
       <section className="mb-8">
         {!loaded.current ? (
           <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />
         ) : anthropic ? (
-          <div
-            className="rounded-xl border-2 border-accent bg-accent-light p-5 anim-in"
-            style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-accent flex items-center justify-center text-white">
-                <Sparkles size={18} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[15px] font-bold text-text">Anthropic</span>
-                  <AuthModeBadge mode={anthropic.authMode} />
-                </div>
-                <div className="text-[12px] text-text-muted">
-                  Connected — powers Claude Code agents
-                </div>
-              </div>
-              <button
-                onClick={removeAnthropic}
-                className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                title="Remove"
-              >
-                <X size={13} />
-              </button>
-            </div>
-          </div>
+          <AnthropicConnected
+            secret={anthropic}
+            onRemove={async () => {
+              if (!(await showConfirm("Remove Anthropic API key?", "Remove Key"))) return;
+              await deleteSecret(anthropic.id);
+            }}
+            onSave={async ({ mode, value }) => {
+              await updateSecret(anthropic.id, {
+                value,
+                envMappings: [MODES[mode].mapping],
+              });
+            }}
+          />
         ) : (
-          <div
-            className="rounded-xl border-2 border-warning bg-warning-light p-5 anim-in flex flex-col gap-4"
-            style={{ boxShadow: "var(--shadow-brutal)" }}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-warning flex items-center justify-center text-white">
-                <Sparkles size={18} />
-              </div>
-              <div>
-                <div className="text-[15px] font-bold text-text">Anthropic</div>
-                <div className="text-[12px] text-text-muted">
-                  Required for Claude Code agents. Paste an API key (
-                  <span className="font-mono">sk-ant-api…</span>) or an OAuth
-                  token (<span className="font-mono">sk-ant-oat…</span>) — the
-                  type is detected automatically.
-                </div>
-              </div>
-            </div>
-
-            {/* setup-token helper */}
-            <div className="rounded-lg border-2 border-border-light bg-bg px-4 py-3 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-1">
-                  Quick setup
-                </div>
-                <div className="text-[13px] text-text-secondary">
-                  Run this inside a Claude Code agent to generate a token:
-                </div>
-                <code className="text-[13px] font-mono font-semibold text-accent mt-1 block">
-                  claude setup-token
-                </code>
-              </div>
-              <button
-                onClick={copySetupToken}
-                className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shrink-0"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                title="Copy command"
-              >
-                {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </div>
-
-            <div className="flex gap-3">
-              <input
-                className={inp}
-                type="password"
-                placeholder="sk-ant-api… or sk-ant-oat…"
-                value={anthropicKey}
-                onChange={(e) => setAnthropicKey(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveAnthropic()}
-              />
-              <button
-                className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                onClick={saveAnthropic}
-                disabled={!anthropicKey.trim() || savingAnthropic}
-              >
-                {savingAnthropic ? "..." : "Save"}
-              </button>
-            </div>
-          </div>
+          <AnthropicForm
+            variant="wizard"
+            initialMode="oauth"
+            onSave={async ({ mode, value }) => {
+              const isFirst = agents.length === 0;
+              await createSecret({
+                type: "anthropic",
+                name: "Anthropic API Key",
+                value,
+                envMappings: [MODES[mode].mapping],
+              });
+              if (isFirst) setView("list");
+            }}
+          />
         )}
       </section>
 
-      {/* Coming Soon providers */}
       <section>
         <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-4">
           Coming Soon
@@ -199,6 +141,261 @@ export function ProvidersView() {
         </div>
       </section>
     </div>
+  );
+}
+
+function AnthropicConnected({
+  secret,
+  onRemove,
+  onSave,
+}: {
+  secret: SecretView;
+  onRemove: () => Promise<void>;
+  onSave: (input: { mode: Mode; value: string }) => Promise<void>;
+}) {
+  const currentMode = detectMode(secret.envMappings?.[0]?.envName);
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <AnthropicForm
+        variant="edit"
+        initialMode={currentMode}
+        onCancel={() => setEditing(false)}
+        onSave={async (input) => {
+          await onSave(input);
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="rounded-xl border-2 border-accent bg-accent-light p-5 anim-in"
+      style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+    >
+      <div className="flex items-center gap-4">
+        <CardIcon variant="accent" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[15px] font-bold text-text">Anthropic</span>
+            <ModeBadge mode={currentMode} />
+          </div>
+          <div className="text-[12px] text-text-muted">
+            Injected as{" "}
+            <span className="font-mono text-text-secondary">
+              {MODES[currentMode].mapping.envName}
+            </span>
+          </div>
+        </div>
+        <IconButton onClick={() => setEditing(true)} title="Edit" hoverTone="accent">
+          <Pencil size={13} />
+        </IconButton>
+        <IconButton onClick={onRemove} title="Remove" hoverTone="danger">
+          <X size={13} />
+        </IconButton>
+      </div>
+    </div>
+  );
+}
+
+function AnthropicForm({
+  variant,
+  initialMode,
+  onSave,
+  onCancel,
+}: {
+  variant: "wizard" | "edit";
+  initialMode: Mode;
+  onSave: (input: { mode: Mode; value: string }) => Promise<void>;
+  onCancel?: () => void;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const error = mismatchError(value, mode);
+  const canSave = value.trim().length > 0 && !error && !saving;
+
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await onSave({ mode, value: value.trim() });
+      setValue("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isEdit = variant === "edit";
+  const envName = MODES[mode].mapping.envName;
+
+  return (
+    <div
+      className={`rounded-xl border-2 p-5 anim-in flex flex-col gap-4 ${
+        isEdit ? "border-accent bg-accent-light" : "border-warning bg-warning-light"
+      }`}
+      style={{
+        boxShadow: isEdit ? "var(--shadow-brutal-accent)" : "var(--shadow-brutal)",
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <CardIcon variant={isEdit ? "accent" : "warning"} />
+        <div className="flex-1 min-w-0">
+          <div className="text-[15px] font-bold text-text">Anthropic</div>
+          <div className="text-[12px] text-text-muted">
+            {isEdit
+              ? "Pick mode and paste a new credential to replace the existing one."
+              : "Required for Claude Code agents. Pick the mode that matches your credential."}
+          </div>
+        </div>
+        {onCancel && (
+          <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
+            <X size={13} />
+          </IconButton>
+        )}
+      </div>
+
+      <ModeToggle mode={mode} onChange={setMode} />
+
+      <div className="text-[12px] text-text-secondary leading-relaxed">
+        Paste a{mode === "api-key" ? "n" : ""}{" "}
+        <span className="font-mono">{MODES[mode].placeholder}</span> — injected as{" "}
+        <span className="font-mono">{envName}</span>.
+      </div>
+
+      {mode === "oauth" && !isEdit && <QuickSetupHint />}
+
+      <div className="flex gap-3">
+        <input
+          className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+          type="password"
+          placeholder={MODES[mode].placeholder}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+        <button
+          className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
+          style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+          onClick={save}
+          disabled={!canSave}
+        >
+          {saving ? "..." : isEdit ? "Replace" : "Save"}
+        </button>
+      </div>
+
+      {error && <div className="text-[12px] font-medium text-danger">{error}</div>}
+    </div>
+  );
+}
+
+function QuickSetupHint() {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText("claude setup-token");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="rounded-lg border-2 border-border-light bg-bg px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-1">
+          Quick setup
+        </div>
+        <div className="text-[13px] text-text-secondary">
+          Run this inside a Claude Code agent to generate a token:
+        </div>
+        <code className="text-[13px] font-mono font-semibold text-accent mt-1 block">
+          claude setup-token
+        </code>
+      </div>
+      <button
+        onClick={copy}
+        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shrink-0"
+        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+        title="Copy command"
+      >
+        {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div className="flex gap-1 p-1 rounded-lg bg-bg border-2 border-border-light">
+      {(Object.keys(MODES) as Mode[]).map((m) => {
+        const active = mode === m;
+        return (
+          <button
+            key={m}
+            type="button"
+            onClick={() => onChange(m)}
+            className={`flex-1 h-9 rounded-md text-[12px] font-semibold transition-colors ${
+              active
+                ? "bg-surface text-text border-2 border-accent"
+                : "text-text-secondary hover:text-text border-2 border-transparent"
+            }`}
+            style={active ? { boxShadow: "var(--shadow-brutal-sm)" } : undefined}
+          >
+            {MODES[m].label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModeBadge({ mode }: { mode: Mode }) {
+  return (
+    <span
+      className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${MODES[mode].badgeTone}`}
+    >
+      {MODES[mode].label}
+    </span>
+  );
+}
+
+function CardIcon({ variant }: { variant: "accent" | "warning" }) {
+  return (
+    <div
+      className={`w-10 h-10 shrink-0 rounded-lg ${variant === "accent" ? "bg-accent" : "bg-warning"} flex items-center justify-center text-white`}
+    >
+      <Sparkles size={18} />
+    </div>
+  );
+}
+
+function IconButton({
+  onClick,
+  title,
+  hoverTone,
+  children,
+}: {
+  onClick: () => void | Promise<void>;
+  title: string;
+  hoverTone: "accent" | "danger" | "neutral";
+  children: React.ReactNode;
+}) {
+  const hover =
+    hoverTone === "accent"
+      ? "hover:text-accent hover:border-accent"
+      : hoverTone === "danger"
+        ? "hover:text-danger hover:border-danger"
+        : "hover:text-text hover:border-border";
+  return (
+    <button
+      onClick={onClick}
+      className={`btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted ${hover}`}
+      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+      title={title}
+    >
+      {children}
+    </button>
   );
 }
 

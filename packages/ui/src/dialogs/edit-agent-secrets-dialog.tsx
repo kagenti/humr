@@ -8,7 +8,6 @@ import {
 import { useStore } from "../store.js";
 import type { AgentView, EnvVar } from "../types.js";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../components/auth-mode-badge.js";
 import { Modal } from "../components/modal.js";
 import {
   EnvVarsEditor,
@@ -508,9 +507,7 @@ function CredentialsTab({
                       )}
                     </div>
                   </div>
-                  {kind === "anthropic" ? (
-                    <AuthModeBadge mode={s.authMode} />
-                  ) : (
+                  {kind !== "anthropic" && (
                     <span
                       className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
                         kind === "mcp"

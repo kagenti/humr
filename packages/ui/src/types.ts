@@ -108,7 +108,6 @@ export interface Schedule {
 
 export type SecretType = "anthropic" | "generic";
 export type SecretMode = "all" | "selective";
-export type AnthropicAuthMode = "api-key" | "oauth";
 
 /** Prefix used for MCP OAuth secrets stored in OneCLI. */
 export const MCP_SECRET_PREFIX = "__humr_mcp:";
@@ -125,7 +124,8 @@ export type { EnvMapping, EnvVar } from "api-server-api";
 export {
   DEFAULT_ENV_PLACEHOLDER,
   isValidEnvName,
-  ANTHROPIC_DEFAULT_ENV_MAPPING,
+  ANTHROPIC_OAUTH_ENV_MAPPING,
+  ANTHROPIC_API_KEY_ENV_MAPPING,
 } from "api-server-api";
 
 export interface SecretView {
@@ -134,7 +134,6 @@ export interface SecretView {
   type: SecretType;
   hostPattern: string;
   createdAt: string;
-  authMode?: AnthropicAuthMode;
   envMappings?: import("api-server-api").EnvMapping[];
 }
 

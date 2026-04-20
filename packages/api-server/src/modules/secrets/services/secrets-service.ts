@@ -1,5 +1,6 @@
 import {
-  ANTHROPIC_DEFAULT_ENV_MAPPING,
+  ANTHROPIC_API_KEY_ENV_MAPPING,
+  ANTHROPIC_OAUTH_ENV_MAPPING,
   type SecretsService,
   type CreateSecretInput,
   type UpdateSecretInput,
@@ -25,9 +26,6 @@ function toSecretView(s: OnecliSecret): SecretView {
     type,
     hostPattern: s.hostPattern,
     createdAt: s.createdAt,
-    ...(type === "anthropic" && s.metadata?.authMode
-      ? { authMode: s.metadata.authMode }
-      : {}),
     ...(s.metadata?.envMappings
       ? { envMappings: s.metadata.envMappings }
       : {}),
@@ -41,10 +39,9 @@ export function createSecretsService(deps: {
     async list() {
       const secrets = await deps.port.listSecrets();
 
-      // Anthropic secrets predating envMappings get the default mapping attached
-      // so the controller can inject CLAUDE_CODE_OAUTH_TOKEN without a migration job.
-      // Awaited so the response and OneCLI state agree — the controller reads
-      // OneCLI directly and cannot observe a fire-and-forget PATCH in flight.
+      // One-shot migration for Anthropic secrets predating explicit env picking:
+      // backfill envMappings based on OneCLI's detected authMode so legacy
+      // secrets keep working without a migration job.
       for (const s of secrets) {
         if (
           s.type !== "anthropic" ||
@@ -54,13 +51,15 @@ export function createSecretsService(deps: {
           continue;
         }
         backfilled.add(s.id);
+        const mapping =
+          s.metadata?.authMode === "api-key"
+            ? ANTHROPIC_API_KEY_ENV_MAPPING
+            : ANTHROPIC_OAUTH_ENV_MAPPING;
         try {
-          await deps.port.updateSecret(s.id, {
-            envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING],
-          });
+          await deps.port.updateSecret(s.id, { envMappings: [mapping] });
           s.metadata = {
             ...(s.metadata ?? {}),
-            envMappings: [ANTHROPIC_DEFAULT_ENV_MAPPING],
+            envMappings: [mapping],
           };
         } catch {
           backfilled.delete(s.id);
@@ -72,19 +71,19 @@ export function createSecretsService(deps: {
 
     async create(input: CreateSecretInput) {
       const hp = hostPatternFor(input.type, input.hostPattern);
-      const envMappings =
-        input.envMappings ??
-        (input.type === "anthropic" ? [ANTHROPIC_DEFAULT_ENV_MAPPING] : undefined);
       const created = await deps.port.createSecret({
         name: input.name,
         type: input.type,
         value: input.value,
         hostPattern: hp,
-        ...(envMappings ? { envMappings } : {}),
+        ...(input.envMappings ? { envMappings: input.envMappings } : {}),
       });
       // OneCLI may not echo metadata on create; fall back to the request's envMappings.
-      if (!created.metadata?.envMappings && envMappings) {
-        created.metadata = { ...(created.metadata ?? {}), envMappings };
+      if (!created.metadata?.envMappings && input.envMappings) {
+        created.metadata = {
+          ...(created.metadata ?? {}),
+          envMappings: input.envMappings,
+        };
       }
       return toSecretView(created);
     },
