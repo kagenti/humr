@@ -87,9 +87,11 @@ interface OutboundMapping {
   /** Non-null when this outbound id was allocated for a session/prompt so the
    * queue advances when the response comes back. */
   promptSessionId: string | null;
-  /** Non-null for a `session/load` so we can cache the response metadata and
-   * fan out to any queued waiters once the bootstrap completes. */
-  loadSessionId: string | null;
+  /** Session id this request attaches the channel to, when the method is
+   * session-scoped but the response body doesn't echo the sid back
+   * (session/load, session/resume). Used to cache metadata on response and,
+   * for session/load specifically, to fan out to bootstrap waiters. */
+  attachSessionId: string | null;
 }
 
 interface PendingAgentRequest {
@@ -595,21 +597,35 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (mapping) {
         outboundIdToClient.delete(outboundId);
 
-        // Engage the originating channel with a session returned in the
-        // result. Covers session/new (new sid), session/fork (new sid), and
-        // is a harmless no-op for session/load and session/resume (client
-        // already engaged on forward).
-        const resultSid = extractResultSessionId(frame);
-        if (resultSid) engage(mapping.channel, resultSid);
+        // Engage the originating channel with a session identified by the
+        // response. session/new and session/fork put the new sessionId in
+        // the result body; session/load and session/resume don't (the client
+        // already knows the sid from its request) — we recover it from the
+        // mapping's attachSessionId captured on forward.
+        const sidFromResult = extractResultSessionId(frame);
+        const sidForChannel = sidFromResult ?? mapping.attachSessionId;
+        if (sidForChannel) {
+          engage(mapping.channel, sidForChannel);
+          // Cache the response body as log metadata so a subsequent
+          // session/load for this sid is served from memory. Without this,
+          // a session created via session/new leaves metadata=null even
+          // though its log is populated by live events; a second viewer's
+          // session/load would miss the cache, cold-bootstrap the agent,
+          // and the agent's replaySessionHistory would append duplicate
+          // entries to the already-populated log.
+          const log = getOrCreateLog(sidForChannel);
+          if (log.metadata === null) {
+            log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+          }
+        }
 
-        // `session/load` cold-bootstrap response: cache the metadata on the
-        // session log, then catch up any waiters that arrived during the
-        // bootstrap window.
-        if (mapping.method === "session/load" && mapping.loadSessionId) {
-          const sid = mapping.loadSessionId;
+        // `session/load` cold-bootstrap response: catch up any waiters that
+        // arrived during the bootstrap window. The initiator already
+        // received every replay event via appendAndFanOut (engaged on
+        // forward), so no catch-up is needed for it.
+        if (mapping.method === "session/load" && mapping.attachSessionId) {
+          const sid = mapping.attachSessionId;
           const log = getOrCreateLog(sid);
-          const result = (frame as { result?: unknown }).result ?? null;
-          log.metadata = result;
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
@@ -618,9 +634,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
             }
           }
-          // The initiator already received every replay event via
-          // appendAndFanOut (it was engaged on forward), so no catch-up is
-          // needed here — its cursor already tracks the tail.
         }
 
         // Rewrite the response id back to what the originating client used.
@@ -720,7 +733,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (paramsSid) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
-      const loadSessionId = method === "session/load" ? paramsSid : null;
+      // Methods whose response body doesn't echo the sid (session/load,
+      // session/resume) — we stash it from params to recover it when the
+      // response comes back.
+      const attachSessionId = (method === "session/load" || method === "session/resume")
+        ? paramsSid
+        : null;
 
       const rewritten = rewriteCwd({ ...frame, id: outboundId }, deps.workingDir);
       outboundIdToClient.set(outboundId, {
@@ -728,13 +746,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         originalId: frame.id,
         method,
         promptSessionId,
-        loadSessionId,
+        attachSessionId,
       });
 
       // Mark a cold bootstrap in flight so concurrent loads of the same sid
       // pile into `waiters` instead of double-forwarding.
-      if (loadSessionId) {
-        bootstrapBySession.set(loadSessionId, {
+      if (method === "session/load" && attachSessionId) {
+        bootstrapBySession.set(attachSessionId, {
           initiatorChannel: channel,
           initiatorOutboundId: outboundId,
           waiters: [],

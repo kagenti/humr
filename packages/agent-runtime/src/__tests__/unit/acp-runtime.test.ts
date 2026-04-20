@@ -764,6 +764,54 @@ describe("createAcpRuntime", () => {
     expect(a.sent.length).toBe(aBefore);
   });
 
+  it("caches session/new response metadata so a later session/load is served from memory (no re-replay)", () => {
+    // Regression: when a session is created via session/new and populated
+    // by live prompt events, the runtime used to leave log.metadata=null
+    // because metadata caching only fired on session/load responses. A
+    // second viewer's session/load would then miss the cache, cold-
+    // bootstrap the agent, and the agent's replaySessionHistory would
+    // append the same history AGAIN — duplicating every entry in the log
+    // and fanning the duplicates out to the originator (whose cursor
+    // was at the tail of the first copy).
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    // Tab A creates a new session and sends a prompt.
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(newSessionRequest(1));
+    const newOut = outboundId(fa.sent[0]);
+    fa.pushLine(newSessionResponse(newOut, SID));
+
+    a.pushMessage(promptRequest(2));
+    const promptOut = outboundId(fa.sent[1]);
+    fa.pushLine(JSON.stringify({
+      method: "session/update",
+      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi from A" } } },
+    }));
+    fa.pushLine(agentPromptResponse(promptOut));
+
+    const aBefore = a.sent.length;
+    const agentSentBefore = fa.sent.length;
+
+    // Tab B opens and loads the same session. Should be served from the
+    // runtime's in-memory log — no forward to the agent, no duplicate
+    // history events appended.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    // No additional forward to the agent.
+    expect(fa.sent.length).toBe(agentSentBefore);
+    // B got the history + synthetic response.
+    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).id === 42)).toBe(true);
+    // A did not receive any extra events — its cursor was at the tail.
+    expect(a.sent.length).toBe(aBefore);
+  });
+
   it("synthesizes user_message_chunk from session/prompt and fans it out to non-sender viewers", () => {
     // Claude Agent SDK drops plain-text user_message_chunk emissions in
     // live (see acp-agent.js: "Skip these user messages for now..."), so a
