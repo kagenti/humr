@@ -2,7 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
 import { platform } from "../platform.js";
-import type { EnvMapping, McpConnection, SecretView } from "../types.js";
+import {
+  DEFAULT_INJECTION_CONFIG,
+  type EnvMapping,
+  type McpConnection,
+  type SecretView,
+} from "../types.js";
 import type { AppConnectionView } from "api-server-api";
 import {
   EnvMappingsEditor,
@@ -21,6 +26,15 @@ import {
   ExternalLink,
   X,
 } from "lucide-react";
+
+const emptySecretForm = {
+  name: "",
+  value: "",
+  hostPattern: "",
+  pathPattern: "",
+  headerName: "",
+  valueFormat: "",
+};
 
 export function ConnectionsView() {
   const secrets = useStore((s) => s.secrets);
@@ -46,14 +60,7 @@ export function ConnectionsView() {
 
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
-  const [secretForm, setSecretForm] = useState({
-    name: "",
-    value: "",
-    hostPattern: "",
-    pathPattern: "",
-    headerName: "",
-    valueFormat: "",
-  });
+  const [secretForm, setSecretForm] = useState(emptySecretForm);
   const [secretEnvMappings, setSecretEnvMappings] = useState<EnvMapping[]>([]);
   const [savingSecret, setSavingSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
@@ -165,14 +172,7 @@ export function ConnectionsView() {
         }),
         ...(mappings.length > 0 && { envMappings: mappings }),
       });
-      setSecretForm({
-        name: "",
-        value: "",
-        hostPattern: "",
-        pathPattern: "",
-        headerName: "",
-        valueFormat: "",
-      });
+      setSecretForm(emptySecretForm);
       setSecretEnvMappings([]);
       setShowAddSecret(false);
     } finally {
@@ -633,18 +633,18 @@ export function ConnectionsView() {
               </label>
               <input
                 className={`${inp} font-mono`}
-                placeholder="authorization"
+                placeholder={DEFAULT_INJECTION_CONFIG.headerName}
                 value={secretForm.headerName}
                 onChange={(e) =>
-                  setSecretForm((p) => ({
-                    ...p,
-                    headerName: e.target.value,
-                  }))
+                  setSecretForm((p) => ({ ...p, headerName: e.target.value }))
                 }
               />
               <p className="text-[11px] text-text-muted">
                 HTTP header OneCLI writes the secret into. Defaults to{" "}
-                <span className="font-mono">authorization</span>.
+                <span className="font-mono">
+                  {DEFAULT_INJECTION_CONFIG.headerName}
+                </span>
+                .
               </p>
             </div>
 
@@ -654,20 +654,20 @@ export function ConnectionsView() {
               </label>
               <input
                 className={`${inp} font-mono`}
-                placeholder="Bearer {value}"
+                placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
                 value={secretForm.valueFormat}
                 onChange={(e) =>
-                  setSecretForm((p) => ({
-                    ...p,
-                    valueFormat: e.target.value,
-                  }))
+                  setSecretForm((p) => ({ ...p, valueFormat: e.target.value }))
                 }
               />
               <p className="text-[11px] text-text-muted">
                 Template for the header value. Use{" "}
                 <span className="font-mono">{`{value}`}</span> as the token
                 placeholder. Defaults to{" "}
-                <span className="font-mono">Bearer {`{value}`}</span>.
+                <span className="font-mono">
+                  {DEFAULT_INJECTION_CONFIG.valueFormat}
+                </span>
+                .
               </p>
             </div>
 

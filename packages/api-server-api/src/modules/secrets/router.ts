@@ -35,22 +35,25 @@ export const secretsRouter = t.router({
           injectionConfig: injectionConfigSchema.optional(),
           envMappings: envMappingsSchema.optional(),
         })
-        .refine(
-          (d) => d.type === "anthropic" || !!d.hostPattern,
-          { message: "hostPattern is required for generic secrets", path: ["hostPattern"] },
-        )
-        .refine(
-          (d) => d.type !== "anthropic" || !d.hostPattern,
-          { message: "hostPattern cannot be set for anthropic secrets", path: ["hostPattern"] },
-        )
-        .refine(
-          (d) => d.type !== "anthropic" || !d.pathPattern,
-          { message: "pathPattern cannot be set for anthropic secrets", path: ["pathPattern"] },
-        )
-        .refine(
-          (d) => d.type !== "anthropic" || !d.injectionConfig,
-          { message: "injectionConfig cannot be set for anthropic secrets", path: ["injectionConfig"] },
-        ),
+        .superRefine((d, ctx) => {
+          if (d.type === "anthropic") {
+            for (const field of ["hostPattern", "pathPattern", "injectionConfig"] as const) {
+              if (d[field] != null) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: `${field} cannot be set for anthropic secrets`,
+                  path: [field],
+                });
+              }
+            }
+          } else if (!d.hostPattern) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "hostPattern is required for generic secrets",
+              path: ["hostPattern"],
+            });
+          }
+        }),
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
 

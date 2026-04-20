@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useStore } from "../store.js";
-import type { EnvMapping, SecretView } from "../types.js";
+import {
+  DEFAULT_INJECTION_CONFIG,
+  type EnvMapping,
+  type SecretView,
+} from "../types.js";
 import {
   EnvMappingsEditor,
   allEnvMappingsValid,
@@ -123,7 +127,7 @@ export function EditSecretDialog({
             </span>
             <input
               className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
-              placeholder="authorization"
+              placeholder={DEFAULT_INJECTION_CONFIG.headerName}
               value={headerName}
               onChange={(e) => setHeaderName(e.target.value)}
               disabled={saving}
@@ -141,7 +145,7 @@ export function EditSecretDialog({
             </span>
             <input
               className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
-              placeholder="Bearer {value}"
+              placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
               value={valueFormat}
               onChange={(e) => setValueFormat(e.target.value)}
               disabled={saving}
