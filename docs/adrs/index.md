@@ -37,3 +37,4 @@ This directory contains ADRs for the Humr project.
 |-------|-------|-------|
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-thread-session.md) | Persistent ACP session per Slack thread | @tomkis |
