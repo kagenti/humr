@@ -30,6 +30,7 @@ This directory contains ADRs for the Humr project.
 | [022](022-harness-api-server.md) | Harness API server — separate port with restricted API surface | @tomkis |
 | [023](023-harness-agnostic-base-image.md) | Harness-agnostic agent base image (`humr-base` + `AGENT_COMMAND`) | @tomas |
 | [024](024-connector-declared-envs.md) | Connector-declared pod envs + per-agent env overrides | @tomas |
+| [025](025-thread-session.md) | Persistent ACP session per Slack thread | @tomkis |
 
 ## Drafts
 
@@ -37,4 +38,3 @@ This directory contains ADRs for the Humr project.
 |-------|-------|-------|
 | [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
-| [DRAFT](DRAFT-thread-session.md) | Persistent ACP session per Slack thread | @tomkis |
