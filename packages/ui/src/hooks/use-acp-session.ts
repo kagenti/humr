@@ -8,6 +8,7 @@ import { platform } from "../platform.js";
 import type { Message, MessagePart, Attachment, ToolChip } from "../types.js";
 import { instanceState } from "./../components/status-indicator.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
+import { createMessageThread } from "../lib/message-thread.js";
 
 // ── Shared helpers ──
 
@@ -394,24 +395,7 @@ export function useAcpSession(
     connectionRef.current = null;
     activeSessionIdRef.current = null;
 
-    const mm = new Map<string, Message>();
-    const mo: string[] = [];
-
-    const currentAssistant = (): Message => {
-      let lastUserIdx = -1;
-      for (let i = mo.length - 1; i >= 0; i--) {
-        if (mm.get(mo[i])?.role === "user") { lastUserIdx = i; break; }
-      }
-      for (let i = lastUserIdx + 1; i < mo.length; i++) {
-        const m = mm.get(mo[i]);
-        if (m?.role === "assistant") return m;
-      }
-      const id = crypto.randomUUID();
-      const m: Message = { id, role: "assistant", parts: [], streaming: false };
-      mm.set(id, m);
-      mo.push(id);
-      return m;
-    };
+    const thread = createMessageThread();
 
     try {
       const { connection, ws } = await openConnection(selectedInstance, (u) => {
@@ -420,54 +404,24 @@ export function useAcpSession(
         if (u.sessionUpdate === "user_message_chunk" && u.content.type === "text") {
           const txt = cleanText(u.content.text as string);
           if (!txt) return;
-          const mid = u.messageId ?? crypto.randomUUID();
-          const newParts = parseUserText(txt);
-          const ex = mm.get(mid);
-          if (ex) {
-            for (const p of newParts) {
-              const l = ex.parts[ex.parts.length - 1];
-              if (p.kind === "text" && l?.kind === "text") {
-                l.text += p.text;
-              } else {
-                ex.parts.push(p);
-              }
-            }
-          } else {
-            mm.set(mid, { id: mid, role: "user", parts: newParts, streaming: false });
-            mo.push(mid);
+          for (const p of parseUserText(txt)) {
+            // Text resources replay as both `[@name]` and `<context ref>` — dedupe by name per turn.
+            if (p.kind === "file" && thread.hasFilePart("user", p.name)) continue;
+            if (p.kind === "text") thread.appendText("user", p.text);
+            else thread.appendPart("user", p);
           }
         } else if (u.sessionUpdate === "user_message_chunk" && u.content.type === "image") {
-          const mid = u.messageId ?? crypto.randomUUID();
-          const ex = mm.get(mid);
-          const part = { kind: "image" as const, data: u.content.data as string, mimeType: u.content.mimeType as string };
-          if (ex) {
-            ex.parts.push(part);
-          } else {
-            mm.set(mid, { id: mid, role: "user", parts: [part], streaming: false });
-            mo.push(mid);
-          }
+          thread.appendPart("user", { kind: "image", data: u.content.data as string, mimeType: u.content.mimeType as string });
         } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
           const txt = cleanText(u.content.text as string);
           if (!txt) return;
-          const target = currentAssistant();
-          const l = target.parts[target.parts.length - 1];
-          l?.kind === "text" ? (l.text += txt) : target.parts.push({ kind: "text", text: txt });
+          thread.appendText("assistant", txt);
         } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "image") {
-          const target = currentAssistant();
-          target.parts.push({ kind: "image", data: u.content.data as string, mimeType: u.content.mimeType as string });
+          thread.appendPart("assistant", { kind: "image", data: u.content.data as string, mimeType: u.content.mimeType as string });
         } else if (u.sessionUpdate === "tool_call") {
-          const target = currentAssistant();
-          target.parts.push({ kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content: mapToolContent(u.content) });
+          thread.appendPart("assistant", { kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content: mapToolContent(u.content) });
         } else if (u.sessionUpdate === "tool_call_update") {
-          for (const [, m] of mm) {
-            const chip = m.parts.find((p): p is ToolChip => p.kind === "tool" && p.toolCallId === u.toolCallId);
-            if (chip) {
-              if (u.status) chip.status = u.status;
-              if (u.title) chip.title = u.title;
-              if (u.content) chip.content = mapToolContent(u.content);
-              break;
-            }
-          }
+          thread.updateTool(u.toolCallId, { status: u.status, title: u.title, content: u.content ? mapToolContent(u.content) : undefined });
         }
       });
 
@@ -493,7 +447,7 @@ export function useAcpSession(
       }
     } catch {}
 
-    setMessages(mo.map((id) => mm.get(id)!));
+    setMessages(thread.toArray());
     setLoadingSession(false);
     setBusy(false);
   }, [selectedInstance, selectedMcpServers, setBusy, setLoadingSession, setMessages, setSessionId, setMobileScreen, captureSessionConfig, handleConfigUpdate]);
