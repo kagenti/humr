@@ -1,12 +1,8 @@
 /**
- * Thin K8s client — generic ConfigMap / Pod / PVC operations only.
+ * Thin K8s client — generic CRUD for cluster resources used by the platform.
  * No domain types, no YAML parsing, no label constants.
  */
 import * as k8s from "@kubernetes/client-node";
-
-// ---------------------------------------------------------------------------
-// K8sClient interface
-// ---------------------------------------------------------------------------
 
 export interface K8sClient {
   listConfigMaps(labelSelector: string): Promise<k8s.V1ConfigMap[]>;
@@ -20,12 +16,21 @@ export interface K8sClient {
   patchPod(name: string, body: object): Promise<void>;
 
   listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
+  createPVC(body: k8s.V1PersistentVolumeClaim): Promise<k8s.V1PersistentVolumeClaim>;
   deletePVC(name: string): Promise<void>;
-}
 
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
+  getSecret(name: string): Promise<k8s.V1Secret | null>;
+  createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
+  deleteSecret(name: string): Promise<void>;
+
+  createNetworkPolicy(body: k8s.V1NetworkPolicy): Promise<k8s.V1NetworkPolicy>;
+  getNetworkPolicy(name: string): Promise<k8s.V1NetworkPolicy | null>;
+
+  createJob(body: k8s.V1Job): Promise<k8s.V1Job>;
+  getJob(name: string): Promise<k8s.V1Job | null>;
+  deleteJob(name: string): Promise<void>;
+  listJobs(labelSelector: string): Promise<k8s.V1Job[]>;
+}
 
 function is404(err: unknown): boolean {
   return (
@@ -35,7 +40,12 @@ function is404(err: unknown): boolean {
   );
 }
 
-export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClient {
+export function createK8sClient(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  batchApi?: k8s.BatchV1Api,
+  networkingApi?: k8s.NetworkingV1Api,
+): K8sClient {
   return {
     async listConfigMaps(labelSelector) {
       const res = await api.listNamespacedConfigMap({ namespace, labelSelector });
@@ -86,22 +96,85 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
       return res.items ?? [];
     },
 
+    async createPVC(body) {
+      return api.createNamespacedPersistentVolumeClaim({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
     async deletePVC(name) {
       await api.deleteNamespacedPersistentVolumeClaim({ name, namespace });
     },
+
+    async getSecret(name) {
+      try {
+        return await api.readNamespacedSecret({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async createSecret(body) {
+      return api.createNamespacedSecret({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async deleteSecret(name) {
+      try {
+        await api.deleteNamespacedSecret({ name, namespace });
+      } catch (err) {
+        if (!is404(err)) throw err;
+      }
+    },
+
+    async createNetworkPolicy(body) {
+      if (!networkingApi) throw new Error("NetworkingV1Api not configured");
+      return networkingApi.createNamespacedNetworkPolicy({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async getNetworkPolicy(name) {
+      if (!networkingApi) throw new Error("NetworkingV1Api not configured");
+      try {
+        return await networkingApi.readNamespacedNetworkPolicy({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async createJob(body) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      return batchApi.createNamespacedJob({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async getJob(name) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      try {
+        return await batchApi.readNamespacedJob({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async deleteJob(name) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      await batchApi.deleteNamespacedJob({ name, namespace, body: { propagationPolicy: "Background" } });
+    },
+
+    async listJobs(labelSelector) {
+      if (!batchApi) throw new Error("BatchV1Api not configured");
+      const res = await batchApi.listNamespacedJob({ namespace, labelSelector });
+      return res.items ?? [];
+    },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-export function podBaseUrl(instanceId: string, namespace: string): string {
-  return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
 }
 
 export function createApi(namespace: string) {
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
-  return { api: kc.makeApiClient(k8s.CoreV1Api), namespace };
+  return {
+    api: kc.makeApiClient(k8s.CoreV1Api),
+    batchApi: kc.makeApiClient(k8s.BatchV1Api),
+    networkingApi: kc.makeApiClient(k8s.NetworkingV1Api),
+    namespace,
+  };
 }

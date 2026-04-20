@@ -1,143 +1,103 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
-import type { InstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
-import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
+import { eq } from "drizzle-orm";
+import type { Db } from "db";
+import { instances, agents } from "db";
+import type { K8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { buildJob, type JobBuilderConfig, type AgentSpec } from "./modules/agents/infrastructure/job-builder.js";
 
-const DEBOUNCE_MS = 30_000;
-const WAKE_POLL_MS = 1_000;
-const WAKE_TIMEOUT_MS = 120_000;
+const POLL_MS = 500;
+const POLL_TIMEOUT_MS = 120_000;
 
-const lastActivityTimestamps = new Map<string, number>();
-
-function sanitizeCloseCode(code: number): number {
-  if (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006)) return code;
-  if (code >= 3000 && code <= 4999) return code;
-  return 1011;
-}
-
-function shouldUpdateActivity(instanceId: string): boolean {
-  const now = Date.now();
-  const last = lastActivityTimestamps.get(instanceId) ?? 0;
-  if (now - last < DEBOUNCE_MS) return false;
-  lastActivityTimestamps.set(instanceId, now);
-  return true;
-}
-
-async function waitForPodReady(
-  repo: InstancesRepository,
-  instanceId: string,
-): Promise<boolean> {
-  const deadline = Date.now() + WAKE_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (await repo.isPodReady(instanceId)) return true;
-    await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
-  }
-  return false;
+function isPodReady(pod: { status?: { conditions?: { type: string; status: string }[]; podIP?: string } }): boolean {
+  return pod.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false;
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.on("open", () => resolve(ws));
-    ws.on("error", (err) => {
-      ws.close();
-      reject(err);
-    });
+    ws.on("error", (err) => { ws.close(); reject(err); });
   });
 }
 
-export function createAcpRelay(namespace: string, repo: InstancesRepository) {
+async function waitForJobPodIP(k8s: K8sClient, jobName: string): Promise<string | null> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const pods = await k8s.listPods(`job-name=${jobName}`);
+    const pod = pods[0];
+    if (pod && isPodReady(pod) && pod.status?.podIP) return pod.status.podIP;
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  return null;
+}
+
+export function createAcpRelay(k8s: K8sClient, jobCfg: JobBuilderConfig, db: Db) {
   const wss = new WebSocketServer({ noServer: true });
 
-  function handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    instanceId: string,
-  ) {
+  function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string) {
     wss.handleUpgrade(req, socket, head, (client) => {
-      const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
-
-      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
-
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
-      client.on("message", (data, isBinary) => {
-        pending.push({ data: data as Buffer, isBinary });
-      });
+      client.on("message", (data, isBinary) => { pending.push({ data: data as Buffer, isBinary }); });
 
-      connectUpstream(upstreamUrl)
-        .catch(async () => {
-          const woken = await repo.wakeIfHibernated(instanceId);
-          if (woken) {
-            const ready = await waitForPodReady(repo, instanceId);
-            if (!ready) throw new Error("pod did not become ready after wake");
-          }
-          return connectUpstream(upstreamUrl);
-        })
+      createJobAndConnect(k8s, jobCfg, db, instanceId)
         .then((upstream) => {
-          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
-
           for (const msg of pending) {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(msg.data, { binary: msg.isBinary });
-            }
+            if (upstream.readyState === WebSocket.OPEN) upstream.send(msg.data, { binary: msg.isBinary });
           }
           pending.length = 0;
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(data, { binary: isBinary });
-
-              if (shouldUpdateActivity(instanceId)) {
-                repo.patchAnnotation(
-                  instanceId,
-                  LAST_ACTIVITY_KEY, new Date().toISOString(),
-                ).catch(() => {});
-              }
-            }
+            if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
           });
-
           upstream.on("message", (data, isBinary) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(data, { binary: isBinary });
-            }
+            if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
           });
-
           upstream.on("close", (code, reason) => {
-            if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(sanitizeCloseCode(code), reason.toString() || "upstream closed");
-              } catch {
-                client.terminate();
-              }
-            }
+            if (client.readyState === WebSocket.OPEN) client.close(code || 1011, reason.toString() || "upstream closed");
           });
-
           upstream.on("error", () => {
-            if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(1011, "upstream error");
-              } catch {
-                client.terminate();
-              }
-            }
+            if (client.readyState === WebSocket.OPEN) client.close(1011, "upstream error");
           });
-
           client.on("close", () => {
-            repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.close();
-            }
+            if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });
         })
-        .catch(() => {
-          client.close(1011, "failed to connect to agent");
+        .catch((err) => {
+          process.stderr.write(`[acp-relay] failed: ${err}\n`);
+          client.close(1011, "failed to start agent job");
         });
     });
   }
 
   return { handleUpgrade };
+}
+
+async function createJobAndConnect(
+  k8s: K8sClient,
+  jobCfg: JobBuilderConfig,
+  db: Db,
+  instanceId: string,
+): Promise<WebSocket> {
+  const [inst] = await db.select().from(instances).where(eq(instances.id, instanceId));
+  if (!inst) throw new Error(`instance ${instanceId} not found`);
+
+  const [agent] = await db.select().from(agents).where(eq(agents.id, inst.agentId));
+  if (!agent) throw new Error(`agent ${inst.agentId} not found`);
+
+  const job = buildJob({
+    instanceId,
+    agentId: agent.id,
+    agentSpec: agent.spec as AgentSpec,
+    cfg: jobCfg,
+  });
+  const created = await k8s.createJob(job);
+  const jobName = created.metadata!.name!;
+
+  const podIP = await waitForJobPodIP(k8s, jobName);
+  if (!podIP) throw new Error(`Job ${jobName} pod did not become ready within ${POLL_TIMEOUT_MS / 1000}s`);
+
+  return connectUpstream(`ws://${podIP}:8080/api/acp`);
 }

@@ -34,9 +34,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         resumeSessionId = found?.sessionId;
       }
 
+      // Trigger handler is called by the agent runtime from within the pod — connect back to localhost
       const acp = createAcpClient({
-        namespace: config.namespace,
-        instanceName: body.instanceId,
+        podUrl: "ws://127.0.0.1:8080/api/acp",
         onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
       });
 

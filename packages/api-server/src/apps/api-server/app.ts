@@ -3,12 +3,13 @@ import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import type { ApiContext, UserIdentity } from "api-server-api";
-import type { CoreV1Api } from "@kubernetes/client-node";
+import type { CoreV1Api, BatchV1Api, NetworkingV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import {
-  createK8sClient, podBaseUrl,
+  createK8sClient,
 } from "../../modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./../../modules/agents/infrastructure/instances-repository.js";
+import { loadJobBuilderConfig } from "./../../modules/agents/infrastructure/job-builder.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createAcpRelay } from "../../acp-relay.js";
@@ -27,6 +28,8 @@ import type { SlackOAuthPending } from "../../modules/channels/infrastructure/sl
 export interface ApiServerAppDeps {
   config: Config;
   api: CoreV1Api;
+  batchApi: BatchV1Api;
+  networkingApi: NetworkingV1Api;
   db: Db;
   onecli: OnecliClient;
   channelManager: ChannelManager;
@@ -35,10 +38,11 @@ export interface ApiServerAppDeps {
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows } = deps;
+  const { config, api, batchApi, networkingApi, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows } = deps;
 
-  const k8sClient = createK8sClient(api, config.namespace);
-  const instancesRepo = createInstancesRepository(k8sClient);
+  const k8sClient = createK8sClient(api, config.namespace, batchApi, networkingApi);
+  const instancesRepo = createInstancesRepository(db);
+  const jobCfg = loadJobBuilderConfig();
 
   const auth = createAuth({
     issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
@@ -87,30 +91,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return c.json({ error: "not found" }, 404);
     }
 
-    const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
-    const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
-    try {
-      const headers = new Headers(c.req.raw.headers);
-      headers.delete("host");
-      const upstream = await fetch(upstreamUrl, {
-        method: c.req.method,
-        headers,
-        body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
-        // @ts-expect-error -- node fetch supports duplex
-        duplex: "half",
-      });
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-    } catch {
-      return c.json({ error: "instance unreachable" }, 502);
-    }
+    // One-shot Job model: no persistent pod for tRPC relay
+    return c.json({ error: "instance idle — no active agent pod" }, 503);
   });
 
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
     const userJwt = c.req.header("authorization")!.slice(7);
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db);
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(
+      api, config.namespace, user.sub, db,
+      { onecli, userJwt, batchApi, networkingApi },
+    );
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
     });
@@ -136,7 +128,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
   });
 
-  const acpRelay = createAcpRelay(config.namespace, instancesRepo);
+  const acpRelay = createAcpRelay(k8sClient, jobCfg, db);
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);

@@ -21,24 +21,39 @@ import { createAgentsService } from "./services/agents-service.js";
 import { createInstancesService } from "./services/instances-service.js";
 import { createSchedulesService } from "./services/schedules-service.js";
 import { createSessionsService } from "./services/sessions-service.js";
+import { createAgentProvisioner } from "./infrastructure/agent-provisioner.js";
+import { createInstanceProvisioner } from "./infrastructure/instance-provisioner.js";
+import type { OnecliClient } from "../../onecli.js";
 
-export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
+export function composeAgentsModule(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  owner: string,
+  db: Db,
+  opts?: { onecli?: OnecliClient; userJwt?: string; batchApi?: k8s.BatchV1Api; networkingApi?: k8s.NetworkingV1Api },
+): {
   templates: TemplatesService;
   agents: AgentsService;
   instances: InstancesService;
   schedules: SchedulesService;
   sessions: SessionsApiService;
 } {
-  const k8s = createK8sClient(api, namespace);
-  const templatesRepo = createTemplatesRepository(k8s);
-  const agentsRepo = createAgentsRepository(k8s);
-  const instancesRepo = createInstancesRepository(k8s);
-  const schedulesRepo = createSchedulesRepository(k8s);
+  const k8s = createK8sClient(api, namespace, opts?.batchApi, opts?.networkingApi);
+  const templatesRepo = createTemplatesRepository(db);
+  const agentsRepo = createAgentsRepository(db);
+  const instancesRepo = createInstancesRepository(db);
+  const schedulesRepo = createSchedulesRepository(db);
+
+  const agentProvisioner = opts?.onecli && opts?.userJwt
+    ? createAgentProvisioner(k8s, opts.onecli, opts.userJwt, owner)
+    : undefined;
+  const instanceProvisioner = createInstanceProvisioner(k8s, db);
 
   const agents = createAgentsService({
     repo: agentsRepo,
     owner,
     readTemplateSpec: (id) => templatesRepo.readSpec(id),
+    provisioner: agentProvisioner,
   });
 
   return {
@@ -47,6 +62,7 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
     instances: createInstancesService({
       repo: instancesRepo,
       owner,
+      provisioner: instanceProvisioner,
       getAgent: (id) => agents.get(id),
       listChannelsByOwner: listChannelsByOwner(db, owner),
       listChannelsByInstance: listChannelsByInstance(db, owner),
@@ -74,10 +90,9 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
 }
 
 export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db: Db): InstancesService {
-  const k8s = createK8sClient(api, namespace);
-  const templatesRepo = createTemplatesRepository(k8s);
-  const agentsRepo = createAgentsRepository(k8s);
-  const instancesRepo = createInstancesRepository(k8s);
+  const templatesRepo = createTemplatesRepository(db);
+  const agentsRepo = createAgentsRepository(db);
+  const instancesRepo = createInstancesRepository(db);
 
   const agents = createAgentsService({
     repo: agentsRepo,
