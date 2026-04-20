@@ -23,6 +23,7 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 |------|-----------|
 | Channel | An external communication pathway connecting users to an agent instance (e.g., Slack) |
 | Channel Worker | A long-running process that bridges an external service to an agent instance |
+| Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Instance |
 
 ## Secrets (bounded context)
 

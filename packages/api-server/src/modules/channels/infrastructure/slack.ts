@@ -62,7 +62,7 @@ export function createSlackWorker(
   botToken: string,
   appToken: string,
   instances: () => InstancesService,
-  persistSession: (sessionId: string, instanceId: string, type: SessionType) => Promise<void>,
+  persistSession: (sessionId: string, instanceId: string, type: SessionType, threadTs?: string) => Promise<void>,
   identityLinks: IdentityLinkService,
   oauthConfig: {
     keycloakExternalUrl: string;
@@ -71,6 +71,10 @@ export function createSlackWorker(
     callbackUrl: string;
   },
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
+  threadSessions: {
+    find: (instanceId: string, threadTs: string) => Promise<{ sessionId: string } | null>;
+    touch: (sessionId: string) => Promise<void>;
+  },
 ): SlackWorker {
   const channelMap = new Map<string, Set<string>>();
   const instanceChannels = new Map<string, Set<string>>();
@@ -141,28 +145,30 @@ export function createSlackWorker(
       name: "eyes",
     });
 
-    const contextMessages = await getContextMessages(
-      app,
-      ctx.channel,
-      ctx.eventTs,
-      ctx.hasThread ? ctx.threadTs : undefined,
-    );
-
-    const parts: string[] = [];
-    if (contextMessages.length > 0) {
-      parts.push(`<context>\n${contextMessages.join("\n")}\n</context>`);
-    }
-    parts.push(ctx.text);
-    const prompt = parts.join("\n\n");
-
     try {
       await ensureRunning(instances(), instanceName);
       const acp = createAcpClient({
         namespace,
         instanceName,
-        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelSlack),
+        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelSlack, ctx.threadTs),
       });
-      const response = await acp.sendPrompt(prompt);
+
+      let response: string;
+      const existing = await threadSessions.find(instanceName, ctx.threadTs);
+
+      if (existing) {
+        try {
+          response = await acp.sendPrompt(ctx.text, { resumeSessionId: existing.sessionId });
+          await threadSessions.touch(existing.sessionId);
+        } catch {
+          const prompt = await buildThreadPrompt(app, ctx);
+          response = await acp.sendPrompt(prompt);
+        }
+      } else {
+        const prompt = await buildThreadPrompt(app, ctx);
+        response = await acp.sendPrompt(prompt);
+      }
+
       await app.client.chat.postMessage({
         channel: ctx.channel,
         thread_ts: ctx.threadTs,
@@ -180,6 +186,27 @@ export function createSlackWorker(
         text: `Error: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
+  }
+
+  async function buildThreadPrompt(boltApp: BoltApp, ctx: {
+    channel: string;
+    threadTs: string;
+    eventTs: string;
+    text: string;
+    hasThread: boolean;
+  }): Promise<string> {
+    const contextMessages = await getContextMessages(
+      boltApp,
+      ctx.channel,
+      ctx.eventTs,
+      ctx.hasThread ? ctx.threadTs : undefined,
+    );
+    const parts: string[] = [];
+    if (contextMessages.length > 0) {
+      parts.push(`<context>\n${contextMessages.join("\n")}\n</context>`);
+    }
+    parts.push(ctx.text);
+    return parts.join("\n\n");
   }
 
   function buildLoginUrl(state: string, codeChallenge: string): string {

@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import { sessions, eq, and, desc } from "db";
+import { sessions, eq, and, desc, sql } from "db";
 import { SessionType } from "api-server-api";
 
 export function listSessionsByInstance(db: Db) {
@@ -43,17 +43,38 @@ export function deactivateByScheduleId(db: Db) {
   };
 }
 
+export function findByInstanceAndThreadTs(db: Db) {
+  return async (instanceId: string, threadTs: string) => {
+    const rows = await db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.instanceId, instanceId), eq(sessions.threadTs, threadTs)))
+      .limit(1);
+    return rows[0] ?? null;
+  };
+}
+
 export function upsertSession(db: Db) {
   return async (
     sessionId: string,
     instanceId: string,
     type: SessionType = SessionType.Regular,
     scheduleId?: string,
+    threadTs?: string,
   ) => {
     await db
       .insert(sessions)
-      .values({ sessionId, instanceId, type, scheduleId })
+      .values({ sessionId, instanceId, type, scheduleId, threadTs })
       .onConflictDoNothing();
+  };
+}
+
+export function touchSession(db: Db) {
+  return async (sessionId: string) => {
+    await db
+      .update(sessions)
+      .set({ updatedAt: sql`now()` })
+      .where(eq(sessions.sessionId, sessionId));
   };
 }
 
