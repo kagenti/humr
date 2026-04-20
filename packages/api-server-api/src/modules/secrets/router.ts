@@ -26,6 +26,7 @@ export const secretsRouter = t.router({
           name: z.string().min(1).max(100),
           value: z.string().min(1),
           hostPattern: z.string().min(1).max(253).optional(),
+          pathPattern: z.string().min(1).max(1000).optional(),
           envMappings: envMappingsSchema.optional(),
         })
         .refine(
@@ -35,6 +36,10 @@ export const secretsRouter = t.router({
         .refine(
           (d) => d.type !== "anthropic" || !d.hostPattern,
           { message: "hostPattern cannot be set for anthropic secrets", path: ["hostPattern"] },
+        )
+        .refine(
+          (d) => d.type !== "anthropic" || !d.pathPattern,
+          { message: "pathPattern cannot be set for anthropic secrets", path: ["pathPattern"] },
         ),
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
@@ -45,6 +50,7 @@ export const secretsRouter = t.router({
         id: z.string().min(1),
         name: z.string().min(1).max(100).optional(),
         value: z.string().min(1).optional(),
+        pathPattern: z.string().max(1000).nullable().optional(),
         envMappings: envMappingsSchema.optional(),
       }),
     )

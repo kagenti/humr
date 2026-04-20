@@ -206,7 +206,8 @@ export function EditAgentSecretsDialog({
   const filtered = q
     ? secrets.filter((s) =>
         displayName(s).toLowerCase().includes(q) ||
-        s.hostPattern.toLowerCase().includes(q),
+        s.hostPattern.toLowerCase().includes(q) ||
+        (s.pathPattern?.toLowerCase().includes(q) ?? false),
       )
     : secrets;
 
@@ -498,6 +499,11 @@ function CredentialsTab({
                     </div>
                     <div className="text-[11px] font-mono text-text-muted truncate">
                       {s.hostPattern}
+                      {s.pathPattern && (
+                        <span className="text-text-secondary">
+                          {s.pathPattern}
+                        </span>
+                      )}
                       {s.envMappings && s.envMappings.length > 0 && (
                         <>
                           {" · "}

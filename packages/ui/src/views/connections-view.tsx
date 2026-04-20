@@ -50,6 +50,7 @@ export function ConnectionsView() {
     name: "",
     value: "",
     hostPattern: "",
+    pathPattern: "",
   });
   const [secretEnvMappings, setSecretEnvMappings] = useState<EnvMapping[]>([]);
   const [savingSecret, setSavingSecret] = useState(false);
@@ -145,14 +146,16 @@ export function ConnectionsView() {
     setSavingSecret(true);
     try {
       const mappings = sanitizeEnvMappings(secretEnvMappings);
+      const pathPattern = secretForm.pathPattern.trim();
       await createSecret({
         type: "generic",
         name: secretForm.name.trim(),
         value: secretForm.value.trim(),
         hostPattern: secretForm.hostPattern.trim(),
+        ...(pathPattern.length > 0 && { pathPattern }),
         ...(mappings.length > 0 && { envMappings: mappings }),
       });
-      setSecretForm({ name: "", value: "", hostPattern: "" });
+      setSecretForm({ name: "", value: "", hostPattern: "", pathPattern: "" });
       setSecretEnvMappings([]);
       setShowAddSecret(false);
     } finally {
@@ -418,6 +421,9 @@ export function ConnectionsView() {
                   </div>
                   <div className="text-[12px] font-mono text-text-muted truncate">
                     {s.hostPattern}
+                    {s.pathPattern && (
+                      <span className="text-text-secondary">{s.pathPattern}</span>
+                    )}
                     {s.envMappings && s.envMappings.length > 0 && (
                       <>
                         {" · "}
@@ -580,6 +586,27 @@ export function ConnectionsView() {
               <p className="text-[11px] text-text-muted">
                 Hostname the token applies to. Supports wildcards (e.g.{" "}
                 <span className="font-mono">*.example.com</span>).
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Path Pattern (optional)
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder="e.g. /v1/*"
+                value={secretForm.pathPattern}
+                onChange={(e) =>
+                  setSecretForm((p) => ({
+                    ...p,
+                    pathPattern: e.target.value,
+                  }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                Restrict injection to URL paths matching this pattern. Leave
+                blank to match every path on the host.
               </p>
             </div>
 

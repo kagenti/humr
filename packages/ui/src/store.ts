@@ -158,11 +158,18 @@ export interface HumrStore {
     name: string;
     value: string;
     hostPattern?: string;
+    pathPattern?: string;
     envMappings?: EnvMapping[];
   }) => Promise<void>;
   updateSecret: (
     id: string,
-    patch: { name?: string; value?: string; envMappings?: EnvMapping[] },
+    patch: {
+      name?: string;
+      value?: string;
+      /** `null` clears the path pattern; `undefined` leaves it unchanged. */
+      pathPattern?: string | null;
+      envMappings?: EnvMapping[];
+    },
   ) => Promise<void>;
   deleteSecret: (id: string) => Promise<void>;
 

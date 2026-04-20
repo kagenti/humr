@@ -42,6 +42,7 @@ export interface SecretView {
   name: string;
   type: SecretType;
   hostPattern: string;
+  pathPattern?: string;
   createdAt: string;
   /** Only set for type="anthropic" — reflects the OneCLI-detected auth mode. */
   authMode?: AnthropicAuthMode;
@@ -53,6 +54,7 @@ export interface CreateSecretInput {
   name: string;
   value: string;
   hostPattern?: string;
+  pathPattern?: string;
   envMappings?: EnvMapping[];
 }
 
@@ -60,6 +62,8 @@ export interface UpdateSecretInput {
   id: string;
   name?: string;
   value?: string;
+  /** `null` clears the path pattern; `undefined` leaves it unchanged. */
+  pathPattern?: string | null;
   envMappings?: EnvMapping[];
 }
 

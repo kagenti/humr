@@ -24,6 +24,7 @@ function toSecretView(s: OnecliSecret): SecretView {
     name: s.name,
     type,
     hostPattern: s.hostPattern,
+    ...(s.pathPattern ? { pathPattern: s.pathPattern } : {}),
     createdAt: s.createdAt,
     ...(type === "anthropic" && s.metadata?.authMode
       ? { authMode: s.metadata.authMode }
@@ -80,6 +81,7 @@ export function createSecretsService(deps: {
         type: input.type,
         value: input.value,
         hostPattern: hp,
+        ...(input.pathPattern ? { pathPattern: input.pathPattern } : {}),
         ...(envMappings ? { envMappings } : {}),
       });
       // OneCLI may not echo metadata on create; fall back to the request's envMappings.
@@ -93,10 +95,12 @@ export function createSecretsService(deps: {
       const patch: {
         name?: string;
         value?: string;
+        pathPattern?: string | null;
         envMappings?: EnvMapping[];
       } = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.value !== undefined) patch.value = input.value;
+      if (input.pathPattern !== undefined) patch.pathPattern = input.pathPattern;
       if (input.envMappings !== undefined) patch.envMappings = input.envMappings;
       await deps.port.updateSecret(input.id, patch);
     },

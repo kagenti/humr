@@ -6,6 +6,8 @@ export interface OnecliSecret {
   name: string;
   type: string;
   hostPattern: string;
+  /** Optional URL-path filter applied on top of hostPattern. `null` when unset. */
+  pathPattern?: string | null;
   createdAt: string;
   /** Type-specific metadata. `authMode` is server-owned (Anthropic only); `envMappings` is client-settable. */
   metadata?: {
@@ -29,6 +31,7 @@ export interface OnecliSecretsPort {
     type: string;
     value: string;
     hostPattern: string;
+    pathPattern?: string;
     envMappings?: EnvMapping[];
   }): Promise<OnecliSecret>;
   updateSecret(
@@ -36,6 +39,8 @@ export interface OnecliSecretsPort {
     input: {
       name?: string;
       value?: string;
+      /** `null` clears the path pattern; `undefined` leaves it unchanged. */
+      pathPattern?: string | null;
       envMappings?: EnvMapping[];
     },
   ): Promise<void>;
@@ -95,7 +100,7 @@ export function createOnecliSecretsPort(
     listSecrets: () => fetchJson<OnecliSecret[]>("/api/secrets"),
 
     createSecret: (input) => {
-      const { envMappings, ...rest } = input;
+      const { envMappings, pathPattern, ...rest } = input;
       return fetchJson<OnecliSecret>("/api/secrets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,18 +114,20 @@ export function createOnecliSecretsPort(
               valueFormat: "Bearer {value}",
             },
           }),
+          ...(pathPattern !== undefined && { pathPattern }),
           ...(envMappings !== undefined && { metadata: { envMappings } }),
         }),
       });
     },
 
     updateSecret: (id, input) => {
-      const { envMappings, ...rest } = input;
+      const { envMappings, pathPattern, ...rest } = input;
       return fetchVoid(`/api/secrets/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...rest,
+          ...(pathPattern !== undefined && { pathPattern }),
           ...(envMappings !== undefined && { metadata: { envMappings } }),
         }),
       });

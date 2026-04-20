@@ -133,6 +133,7 @@ export interface SecretView {
   name: string;
   type: SecretType;
   hostPattern: string;
+  pathPattern?: string;
   createdAt: string;
   authMode?: AnthropicAuthMode;
   envMappings?: import("api-server-api").EnvMapping[];

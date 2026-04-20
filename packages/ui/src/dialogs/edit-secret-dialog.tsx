@@ -17,21 +17,26 @@ export function EditSecretDialog({
 }) {
   const updateSecret = useStore((s) => s.updateSecret);
   const [name, setName] = useState(secret.name);
+  const [pathPattern, setPathPattern] = useState(secret.pathPattern ?? "");
   const [envMappings, setEnvMappings] = useState<EnvMapping[]>(
     secret.envMappings ?? [],
   );
   const [saving, setSaving] = useState(false);
 
+  const canEditPathPattern = secret.type !== "anthropic";
   const trimmed = name.trim();
+  const trimmedPath = pathPattern.trim();
   const sanitized = sanitizeEnvMappings(envMappings);
   const nameChanged = trimmed !== secret.name;
+  const pathChanged =
+    canEditPathPattern && trimmedPath !== (secret.pathPattern ?? "");
   const mappingsChanged =
     JSON.stringify(sanitized) !== JSON.stringify(secret.envMappings ?? []);
   const canSave =
     !saving &&
     trimmed.length > 0 &&
     allEnvMappingsValid(envMappings) &&
-    (nameChanged || mappingsChanged);
+    (nameChanged || pathChanged || mappingsChanged);
 
   const save = async () => {
     if (!canSave) return;
@@ -39,6 +44,7 @@ export function EditSecretDialog({
     try {
       await updateSecret(secret.id, {
         ...(nameChanged && { name: trimmed }),
+        ...(pathChanged && { pathPattern: trimmedPath === "" ? null : trimmedPath }),
         ...(mappingsChanged && { envMappings: sanitized }),
       });
       onClose();
@@ -53,6 +59,9 @@ export function EditSecretDialog({
         <h2 className="text-[20px] font-bold text-text">Edit Connector</h2>
         <p className="text-[12px] text-text-muted mt-1 font-mono">
           {secret.hostPattern}
+          {secret.pathPattern && (
+            <span className="text-text-secondary">{secret.pathPattern}</span>
+          )}
         </p>
       </div>
 
@@ -68,6 +77,25 @@ export function EditSecretDialog({
             autoFocus
           />
         </label>
+
+        {canEditPathPattern && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Path Pattern
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder="e.g. /v1/*"
+              value={pathPattern}
+              onChange={(e) => setPathPattern(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              Restrict injection to URL paths matching this pattern. Leave blank
+              to match every path on the host.
+            </span>
+          </label>
+        )}
 
         <div className="flex flex-col gap-2">
           <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">

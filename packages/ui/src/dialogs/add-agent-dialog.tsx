@@ -272,7 +272,7 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                             <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
                             <Lock size={14} className="text-text-secondary" />
                             <span className="text-[13px] font-medium text-text">{s.name}</span>
-                            <span className="ml-auto text-[11px] font-mono text-text-muted">{s.hostPattern}</span>
+                            <span className="ml-auto text-[11px] font-mono text-text-muted">{s.hostPattern}{s.pathPattern && <span className="text-text-secondary">{s.pathPattern}</span>}</span>
                           </label>
                         ))}
                       </div>
