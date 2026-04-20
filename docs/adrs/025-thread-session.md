@@ -1,7 +1,7 @@
 # ADR-025: Persistent ACP session per Slack thread
 
 **Date:** 2026-04-20
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @tomkis
 
 ## Context
@@ -24,7 +24,7 @@ The first message in a Slack thread creates a new ACP session. All subsequent me
 
 ### 2. Thread-to-session mapping in PostgreSQL
 
-Add a `threadTs` column to the existing `sessions` table. When a Slack-originated session is created, store the `thread_ts` alongside the session ID. On follow-up messages, look up the existing session by `thread_ts` before creating a new one.
+Add `threadTs` (nullable text) and `updatedAt` (timestamp) columns to the existing `sessions` table with a partial unique index on `(instanceId, threadTs)` excluding NULLs. When a Slack-originated session is created, store the `thread_ts` alongside the session ID. On follow-up messages, look up the existing session by `(instanceId, threadTs)` before creating a new one. On successful resume, touch `updatedAt`.
 
 The in-memory `threadRoutes` map continues to handle thread → instance routing but is no longer the only state. The DB is the source of truth for thread → session mapping.
 
@@ -36,7 +36,7 @@ This mirrors the collaborative nature of Slack threads: participants already see
 
 ### 4. Graceful fallback on resume failure
 
-If `unstable_resumeSession` fails (pod restarted and PVC lost, session expired, agent runtime error), fall back to creating a new session with thread context injected from Slack API (current behavior). Update the `threadTs` mapping to point to the new session ID.
+If `unstable_resumeSession` fails (pod restarted and PVC lost, session expired, agent runtime error), fall back to creating a new session with thread context injected from Slack API (current behavior). The old session's `threadTs` mapping is not updated — subsequent messages will attempt to resume the stale session, fail, and fall back again. This degrades to pre-feature behavior for that thread (each message gets a fresh session). A future cleanup mechanism can remove stale mappings.
 
 This means the worst case is identical to today's behavior — no regression.
 
@@ -60,7 +60,7 @@ When resuming an existing session, send only the new user message as the prompt 
 
 - Agent gets true conversational continuity within a Slack thread — tool results, reasoning, and in-flight work persist across messages
 - Eliminates per-message context re-injection cost on the happy path
-- DB schema migration required (`threadTs` column on sessions)
+- DB schema migration required (`threadTs`, `updatedAt` columns + partial unique index on sessions)
 - Session lifetime now tied to thread activity — need a cleanup strategy for orphaned sessions (threads that go silent)
 - If the agent pod's PVC is lost, session state is gone and fallback kicks in — the user sees a "fresh start" mid-thread, which is visible but not breaking
 - Supersedes ADR-018 section 6 ("each thread is a new ACP session")
