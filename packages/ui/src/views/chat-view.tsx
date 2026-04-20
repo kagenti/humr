@@ -198,7 +198,13 @@ export function ChatView() {
                 <p className="text-[14px] text-text-muted">Send a message to begin a new session with this agent</p>
               </div>
             )}
-            {messages.map((m) => (
+            {messages.map((m) => m.notice ? (
+              <div key={m.id} className="flex justify-center anim-in">
+                <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
+                  {m.parts.find((p) => p.kind === "text")?.kind === "text" ? (m.parts.find((p) => p.kind === "text") as { text: string }).text : "…"}
+                </span>
+              </div>
+            ) : (
               <div key={m.id} className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}>
                 <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
                   {m.role === "user" ? "You" : "Agent"}

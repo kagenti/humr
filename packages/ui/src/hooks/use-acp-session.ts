@@ -10,8 +10,6 @@ import type { Message, Attachment } from "../types.js";
 import { instanceState } from "./../components/status-indicator.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 
-const TERMINAL_TOOL_STATUSES = new Set(["completed", "failed", "canceled", "cancelled", "rejected"]);
-
 // ── Hook ──
 
 export function useAcpSession(
@@ -42,9 +40,10 @@ export function useAcpSession(
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
   const reconnectFnRef = useRef<(() => void) | null>(null);
-  // Late-bound so `makeUpdateHandler` (declared earlier in this hook) can
-  // call `scheduleRehydrate` without a declaration-order cycle.
-  const scheduleRehydrateFnRef = useRef<(() => void) | null>(null);
+  // Session IDs already persisted to the platform DB. We only upsert after a
+  // prompt actually succeeds, so opening the app without sending anything
+  // (or StrictMode double-mount) doesn't leave empty rows in the sidebar.
+  const persistedSessionsRef = useRef<Set<string>>(new Set());
 
   // Derive busy from the projection instead of tracking it with explicit
   // setBusy calls scattered across sendPrompt/resume/disconnect paths. The
@@ -58,10 +57,6 @@ export function useAcpSession(
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
-    }
-    if (rehydrateTimerRef.current) {
-      clearTimeout(rehydrateTimerRef.current);
-      rehydrateTimerRef.current = null;
     }
     connectionRef.current?.ws.close();
     connectionRef.current = null;
@@ -202,20 +197,11 @@ export function useAcpSession(
 
   /** Build an update handler that feeds every sessionUpdate through the
    *  pure projection and fires a couple of side effects (log entries,
-   *  permission-dialog cleanup, late-joiner rehydrate) that aren't about
-   *  message shape. */
+   *  permission-dialog cleanup) that aren't about message shape. */
   const makeUpdateHandler = useCallback(() => {
     return (u: any) => {
       handleConfigUpdate(u);
 
-      // `user_message_chunk` only makes sense during history replay — in
-      // the live stream the agent echoes the just-sent prompt back as one,
-      // which would duplicate the optimistic user bubble `sendPrompt`
-      // already added. Trigger/scheduled prompts are the edge case where a
-      // live user_message_chunk carries new info, but the agent response
-      // still renders through the projection's on-demand assistant bubble,
-      // so dropping it here doesn't lose the conversation thread.
-      if (u?.sessionUpdate === "user_message_chunk") return;
 
       if ((u?.sessionUpdate === "tool_call" || u?.sessionUpdate === "tool_call_update")
           && u.status && u.status !== "pending") {
@@ -227,22 +213,6 @@ export function useAcpSession(
         else if (u.content?.type === "image") addLog("image", { mimeType: u.content.mimeType });
       } else if (u?.sessionUpdate === "tool_call") {
         addLog("tool", { title: u.title, status: u.status });
-      }
-
-      // Late-joiner rehydrate: a `tool_call_update` with terminal status
-      // for a chip we never opened means we missed the `tool_call` frame
-      // (notifications aren't replayed by the runtime and the SDK hasn't
-      // persisted in-flight tools yet). On completion the SDK has written
-      // the tool to history, so `loadSession` will now see it — schedule
-      // a debounced reload.
-      if (u?.sessionUpdate === "tool_call_update"
-          && u.toolCallId
-          && TERMINAL_TOOL_STATUSES.has(u.status)) {
-        const messages = useStore.getState().messages;
-        const hasChip = messages.some((m) =>
-          m.parts.some((p) => p.kind === "tool" && p.toolCallId === u.toolCallId),
-        );
-        if (!hasChip) scheduleRehydrateFnRef.current?.();
       }
 
       setMessages((prev) => applyUpdate(prev, u));
@@ -320,7 +290,6 @@ export function useAcpSession(
         setSessionId(s.sessionId);
         activeSessionIdRef.current = s.sessionId;
         addLog("session", { sessionId: s.sessionId });
-        platform.sessions.create.mutate({ sessionId: s.sessionId, instanceId: selectedInstance }).catch(() => {});
         await applySavedPreferences(conn, s.sessionId, s);
       }
     }
@@ -413,45 +382,6 @@ export function useAcpSession(
     setLoadingSession(false);
   }, [selectedInstance, loadHistoryInto, setLoadingSession, setMessages, setSessionId, setMobileScreen]);
 
-  // ── Rehydrate on missed context ──
-
-  /**
-   * When a `tool_call_update` arrives with terminal status for a
-   * `toolCallId` we never received the opening `tool_call` for, we missed
-   * the announcement (multi-viewer joined mid-turn). The SDK persists
-   * tool calls on completion, so `loadSession` now has the chip we need.
-   *
-   * Debounced so a burst of late updates triggers one reload. Skipped
-   * while the user has an in-flight `sendPrompt` — closing the live WS
-   * would reject their prompt promise even though the agent is still
-   * processing the request.
-   */
-  const rehydrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rehydratingRef = useRef(false);
-  const inFlightPromptsRef = useRef(0);
-
-  useEffect(() => {
-    scheduleRehydrateFnRef.current = () => {
-      if (rehydrateTimerRef.current) clearTimeout(rehydrateTimerRef.current);
-      rehydrateTimerRef.current = setTimeout(async () => {
-        rehydrateTimerRef.current = null;
-        if (rehydratingRef.current) return;
-        if (inFlightPromptsRef.current > 0) return;
-        const sid = useStore.getState().sessionId;
-        if (!sid) return;
-        if (useStore.getState().loading.session) return;
-
-        rehydratingRef.current = true;
-        try {
-          const fresh = await loadHistoryInto(sid);
-          setMessages(fresh);
-        } finally {
-          rehydratingRef.current = false;
-        }
-      }, 1_000);
-    };
-  }, [loadHistoryInto, setMessages]);
-
   // ── Send prompt ──
 
   const sendPrompt = useCallback(async (text: string, attachments?: Attachment[]) => {
@@ -473,7 +403,6 @@ export function useAcpSession(
     setMessages((p) => [...p, uMsg, aMsg]);
     addLog("prompt", { text });
 
-    inFlightPromptsRef.current += 1;
     try {
       const conn = await ensureConnection();
       if (!conn) throw new Error("Failed to establish connection");
@@ -498,8 +427,16 @@ export function useAcpSession(
       }
       if (text) promptBlocks.push({ type: "text", text });
 
-      const r = await conn.prompt({ sessionId: activeSessionIdRef.current!, prompt: promptBlocks });
+      const sid = activeSessionIdRef.current!;
+      const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
       addLog("done", { stopReason: r.stopReason });
+      // Persist to the platform DB lazily, only once the session has real
+      // content. Prevents empty rows from appearing in the sidebar when the
+      // user opens the app and closes it without sending anything.
+      if (!persistedSessionsRef.current.has(sid)) {
+        persistedSessionsRef.current.add(sid);
+        platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance }).catch(() => {});
+      }
       // Belt-and-braces: if humr_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
       setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
@@ -510,7 +447,6 @@ export function useAcpSession(
         m.id === aId ? { ...m, streaming: false, queued: false, parts: [{ kind: "text" as const, text: errMsg }] } : m,
       ));
     } finally {
-      inFlightPromptsRef.current -= 1;
       fetchSessions();
       textareaRef.current?.focus();
     }

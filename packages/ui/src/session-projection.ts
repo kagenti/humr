@@ -81,6 +81,9 @@ export function applyUpdate(messages: Message[], update: any): Message[] {
     case "humr_turn_ended":
       return closeActiveAssistant(messages);
 
+    case "humr_clipped_replay":
+      return appendNotice(messages, "Older conversation not loaded");
+
     case "user_message_chunk":
       return handleUserChunk(messages, update);
 
@@ -97,6 +100,16 @@ export function applyUpdate(messages: Message[], update: any): Message[] {
     default:
       return messages;
   }
+}
+
+function appendNotice(messages: Message[], text: string): Message[] {
+  return [...messages, {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [{ kind: "text", text }],
+    streaming: false,
+    notice: true,
+  }];
 }
 
 /**
