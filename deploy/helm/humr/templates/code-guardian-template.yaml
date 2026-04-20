@@ -1,0 +1,44 @@
+{{- if .Values.codeGuardianTemplate.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.codeGuardianTemplate.name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    humr.ai/type: agent-template
+data:
+  spec.yaml: |
+    version: humr.ai/v1
+    image: "{{ .Values.codeGuardianTemplate.image.repository }}:{{ .Values.codeGuardianTemplate.image.tag | default .Chart.AppVersion }}"
+    description: {{ .Values.codeGuardianTemplate.description | quote }}
+    mounts:
+      - path: /home/agent
+        persist: true
+      - path: /tmp
+        persist: false
+    init: |
+      #!/bin/bash
+      # Seed home from image on first boot
+      if [ ! -f /home/agent/.initialized ]; then
+        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
+        touch /home/agent/.initialized
+      fi
+      mkdir -p /home/agent/work
+    env:
+      - name: PORT
+        value: "8080"
+      {{- with .Values.codeGuardianTemplate.githubRepo }}
+      - name: GITHUB_REPO
+        value: {{ . | quote }}
+      {{- end }}
+    resources:
+      requests:
+        cpu: {{ .Values.codeGuardianTemplate.resources.requests.cpu | quote }}
+        memory: {{ .Values.codeGuardianTemplate.resources.requests.memory | quote }}
+      limits:
+        cpu: {{ .Values.codeGuardianTemplate.resources.limits.cpu | quote }}
+        memory: {{ .Values.codeGuardianTemplate.resources.limits.memory | quote }}
+    securityContext:
+      readOnlyRootFilesystem: false
+{{- end }}
