@@ -24,6 +24,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      IS_SANDBOX: "1"
     steps:
       # Initial checkout required to resolve the local maximize-build-space action.
       - uses: actions/checkout@v4
@@ -43,13 +45,6 @@ jobs:
       # replacing the earlier checkout contents.
       - uses: actions/checkout@v4
 
-      - name: Enable KVM + install QEMU
-        run: |
-          sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
       - uses: jdx/mise-action@v2
         env:
           MISE_NODE_VERIFY: "false"
@@ -62,4 +57,4 @@ jobs:
 
       - name: Teardown test cluster
         if: always()
-        run: mise run cluster:delete -- --vm-name=humr-k3s-test --force
+        run: mise run cluster:delete -- --force
