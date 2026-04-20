@@ -147,6 +147,7 @@ echo "Loading images into k3s..."
 tar="/tmp/humr-images.tar"
 docker save -o "$tar" humr-controller:latest humr-api-server:latest humr-ui:latest humr-claude-code:latest humr-google-workspace-agent:latest humr-pi-agent:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
+  docker image prune --all --force >/dev/null 2>&1 || true
   sudo k3s ctr images import "$tar"
 else
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
