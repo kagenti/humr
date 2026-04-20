@@ -4,7 +4,8 @@
   "defaultModel": "gpt-5.4-mini",
   "defaultThinkingModel": "medium",
   "packages": [
-    "npm:@zhafron/pi-memory"
+    "npm:@zhafron/pi-memory",
+    "npm:@humr/pi-rits"
   ],
   "pi-memory": {
     "dashboard": false,

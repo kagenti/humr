@@ -1,0 +1,8 @@
+{
+  "name": "@humr/pi-rits",
+  "version": "0.1.0",
+  "private": true,
+  "description": "pi extension that registers the RITS provider from env vars",
+  "main": "index.js",
+  "license": "MIT"
+}

@@ -16,10 +16,34 @@ Default model: `openai / gpt-5.4-mini`. Change in `workspace/.pi/agent/settings.
 ```
 workspace/
   .pi/agent/
-    settings.json        ← pi config + extension registration (→ ~/.pi/agent/)
+    settings.json        ← pi config (→ ~/.pi/agent/)
   work/
     .pi/
       APPEND_SYSTEM.md   ← appended to the system prompt (project-scoped)
+extension/
+  package.json           ← @humr/pi-rits (installed globally in the image)
+  index.js               ← registers the RITS provider via pi.registerProvider()
+```
+
+## RITS (custom OpenAI-compatible provider)
+
+The [`@humr/pi-rits`](extension/) extension is loaded by pi on startup (via `packages` in `settings.json`) and calls `pi.registerProvider("rits", …)` only when both `RITS_URL` and `RITS_MODEL` are set — otherwise the image is a no-op drop-in. Everything is driven by pod env vars.
+
+RITS exposes one model per base URL, so each pi-agent pod targets a single endpoint. Authentication uses a `RITS_API_KEY` header (not `Authorization`) — the extension passes `apiKey: "RITS_API_KEY"` and `headers.RITS_API_KEY: "RITS_API_KEY"` (env-var names), so pi resolves the live secret from the pod env at **request time**. `authHeader: true` makes pi also send `Authorization: Bearer $RITS_API_KEY`, which RITS ignores.
+
+| Env var | Required | Default | Purpose |
+|---|---|---|---|
+| `RITS_URL` | yes | — | Full endpoint URL for the chosen RITS model. The extension appends `/v1` if not already present. |
+| `RITS_MODEL` | yes | — | Model identifier (the string passed as `model` in chat-completions requests). |
+| `RITS_API_KEY` | yes | — | Sent verbatim in the `RITS_API_KEY` header. Inject via an OneCLI secret with `envMappings: [{ envName: RITS_API_KEY }]`. |
+| `RITS_CONTEXT_WINDOW` | no | `128000` | Context window in tokens. |
+| `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
+
+To make RITS the default, edit `settings.json`:
+
+```json
+"defaultProvider": "rits",
+"defaultModel": "<value of RITS_MODEL>"
 ```
 
 Pi system prompt conventions:
