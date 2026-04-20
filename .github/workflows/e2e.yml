@@ -27,23 +27,12 @@ jobs:
     env:
       IS_SANDBOX: "1"
     steps:
-      # Initial checkout required to resolve the local maximize-build-space action.
       - uses: actions/checkout@v4
 
-      - name: Maximize build disk space
-        uses: ./.github/actions/maximize-build-space
-        with:
-          root-reserve-mb: 15360
-          temp-reserve-mb: 2048
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-
-      # Re-checkout — maximize-build-space mounts an LVM volume at $GITHUB_WORKSPACE,
-      # replacing the earlier checkout contents.
-      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
 
       - uses: jdx/mise-action@v2
         env:
