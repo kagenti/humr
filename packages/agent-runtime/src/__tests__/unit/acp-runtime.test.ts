@@ -724,6 +724,266 @@ describe("createAcpRuntime", () => {
     expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
   });
 
+  it("serves subsequent session/load from the in-memory log instead of forwarding to the agent", () => {
+    // Viewer A cold-bootstraps the session: forwards session/load to the
+    // agent, receives history + response, engages live. Viewer B opens a
+    // second tab and issues session/load for the same sid. With the log
+    // already populated, the runtime synthesises the response from cached
+    // metadata and replays the log to B directly — no second agent round-
+    // trip, and A doesn't see anything because the log isn't fanning out
+    // to cursors that are already at the tail.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+    const aLoadOut = outboundId(fa.sent[0]);
+    fa.pushLine(sessionUpdate(SID));
+    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+
+    const aBefore = a.sent.length;
+    const agentSentBefore = fa.sent.length;
+
+    // Viewer B joins and loads — should be served from memory.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    // Runtime did not forward to the agent.
+    expect(fa.sent.length).toBe(agentSentBefore);
+    // B got the history (session/update) and the synthetic response.
+    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).id === 42)).toBe(true);
+    // A did not receive anything new — its cursor was already at the tail.
+    expect(a.sent.length).toBe(aBefore);
+  });
+
+  it("synthesizes user_message_chunk from session/prompt and fans it out to non-sender viewers", () => {
+    // Claude Agent SDK drops plain-text user_message_chunk emissions in
+    // live (see acp-agent.js: "Skip these user messages for now..."), so a
+    // non-originating viewer would never see the user's message. The
+    // runtime synthesizes it from the session/prompt payload and appends
+    // it to the log, fanning out to every engaged channel EXCEPT the
+    // sender (which already rendered an optimistic bubble). On reconnect
+    // the sender still gets it via catch-up from the log.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    const b = makeFakeChannel();
+    runtime.attach(a.channel);
+    runtime.attach(b.channel);
+    a.pushMessage(resumeSessionRequest(1));
+    b.pushMessage(resumeSessionRequest(1));
+
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/prompt",
+      params: { sessionId: SID, prompt: [{ type: "text", text: "hello from A" }] },
+    }));
+
+    const echoes = (ch: ReturnType<typeof makeFakeChannel>) =>
+      ch.sent.filter((f) => {
+        try {
+          const p = JSON.parse(f);
+          return p.method === "session/update"
+            && p.params?.update?.sessionUpdate === "user_message_chunk"
+            && p.params?.update?.content?.text === "hello from A";
+        } catch { return false; }
+      });
+
+    // Sender skipped, other viewer receives.
+    expect(echoes(a).length).toBe(0);
+    expect(echoes(b).length).toBe(1);
+  });
+
+  it("delivers a skipped echo to the same user's new channel via catch-up", () => {
+    // Sender sends a prompt, then reconnects (old channel closes, new one
+    // opens). The new channel has cursor=0 and a fresh session/load catch-
+    // up should stream the synthesized user_message_chunk to it, so the
+    // user doesn't lose their own message on reload.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    // Cold-load the session to give the log cached metadata.
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+    const loadOut = outboundId(fa.sent[0]);
+    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: loadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 2, method: "session/prompt",
+      params: { sessionId: SID, prompt: [{ type: "text", text: "my message" }] },
+    }));
+    a.remoteClose();
+
+    // Reconnect as a fresh channel.
+    const a2 = makeFakeChannel();
+    runtime.attach(a2.channel);
+    a2.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    const echo = a2.sent.find((f) => {
+      try {
+        const p = JSON.parse(f);
+        return p.params?.update?.sessionUpdate === "user_message_chunk"
+          && p.params?.update?.content?.text === "my message";
+      } catch { return false; }
+    });
+    expect(echo).toBeDefined();
+  });
+
+  it("fans out live session/update to engaged channels via per-channel cursors", () => {
+    // With the log model, a live notification gets appended and fanned out
+    // to every engaged channel whose cursor is behind. Cursors advance so a
+    // channel cannot receive the same line twice.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    const b = makeFakeChannel();
+    runtime.attach(a.channel);
+    runtime.attach(b.channel);
+    a.pushMessage(resumeSessionRequest(1));
+    b.pushMessage(resumeSessionRequest(1));
+
+    const liveChunk = JSON.stringify({
+      method: "session/update",
+      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } } },
+    });
+    fa.pushLine(liveChunk);
+
+    expect(a.sent.filter((f) => f === liveChunk).length).toBe(1);
+    expect(b.sent.filter((f) => f === liveChunk).length).toBe(1);
+  });
+
+  it("coalesces concurrent cold-bootstrap loads: only one forward, both served", () => {
+    // Two viewers open brand-new tabs and hit session/load at the same
+    // time. Without coalescing, both requests would forward to the agent
+    // and the history would be appended to the log twice. The runtime
+    // parks the second load as a waiter on the in-flight bootstrap and
+    // serves it from the populated log once the first response arrives.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    const b = makeFakeChannel();
+    runtime.attach(a.channel);
+    runtime.attach(b.channel);
+
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+    // Snapshot: only one forward to the agent at this point.
+    const forwardsAfterA = fa.sent.filter((f: any) => f.method === "session/load").length;
+
+    // B's load arrives while A's bootstrap is still in flight.
+    b.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 99, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    // No second forward — B is parked as a waiter.
+    expect(fa.sent.filter((f: any) => f.method === "session/load").length).toBe(forwardsAfterA);
+
+    // Agent replies to A's load with history + response.
+    const aLoadOut = outboundId(fa.sent.filter((f: any) => f.method === "session/load")[0]);
+    fa.pushLine(sessionUpdate(SID));
+    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+
+    // Both A and B received the history and their own response ids.
+    expect(a.sent.some((f) => JSON.parse(f).id === 1)).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).id === 99)).toBe(true);
+    expect(a.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+  });
+
+  it("does not replay an answered permission request on a fresh session/load", () => {
+    // Regression: permission prompts are agent→client JSON-RPC requests.
+    // If the runtime logged them into the session log, catchUp would ship
+    // the frame again when a new viewer (or the same viewer in a new tab)
+    // loads the session — the client's requestPermission handler would
+    // fire a second time and re-open the dialog the user already answered.
+    // Fix: agent requests are live-only, tracked in pendingFromAgent and
+    // redelivered by engage(); never in the log.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+    const aLoadOut = outboundId(fa.sent[0]);
+    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+
+    // Agent asks for permission; A receives and answers it.
+    fa.pushLine(permissionRequest(7));
+    expect(a.sent.some((f) => f === permissionRequest(7))).toBe(true);
+    a.pushMessage(permissionResponse(7));
+    expect(runtime.status().pendingRequestCount).toBe(0);
+
+    // Fresh viewer B loads the same session. Served from cached metadata.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    // B must not receive the answered permission request — the log has no
+    // entry for it, and engage() finds pendingFromAgent empty.
+    const gotPermission = b.sent.some((f) => {
+      try { return JSON.parse(f).method === "session/request_permission"; }
+      catch { return false; }
+    });
+    expect(gotPermission).toBe(false);
+  });
+
+  it("prepends a <clipped-conversation> sentinel when the log has been truncated", () => {
+    // Tiny log cap forces eviction on the second entry. A fresh loader's
+    // catch-up prepends a synthetic `humr_clipped_replay` notification so
+    // the UI can render a "older messages not loaded" placeholder.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp", logBytesCap: 10 });
+
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+    const aLoadOut = outboundId(fa.sent[0]);
+
+    // Two large-ish updates to trigger eviction.
+    const big1 = JSON.stringify({ method: "session/update", params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "aaaaaaaaaaaaaaa" } } } });
+    const big2 = JSON.stringify({ method: "session/update", params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "bbbbbbbbbbbbbbb" } } } });
+    fa.pushLine(big1);
+    fa.pushLine(big2);
+    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID } }));
+
+    // B loads — catch-up should prepend the sentinel.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 2, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    const sentinel = b.sent.find((f) => {
+      try { return JSON.parse(f).params?.update?.sessionUpdate === "humr_clipped_replay"; }
+      catch { return false; }
+    });
+    expect(sentinel).toBeDefined();
+  });
+
   it("does not close a session while a queued prompt is waiting", () => {
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });

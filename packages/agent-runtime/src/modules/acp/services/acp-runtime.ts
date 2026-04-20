@@ -15,6 +15,15 @@ const PROMPT_QUEUE_CAP = 32;
  */
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * Soft cap on per-session log size. Once an append would push the log past
+ * this, we drop the oldest entry and mark the log as `truncated` — future
+ * catch-ups (session/load replays) prepend a `<clipped-conversation>`
+ * sentinel so the UI can show that older history isn't available without a
+ * forced full reload.
+ */
+const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
+
 export interface AcpRuntimeStatus {
   activeClientCount: number;
   pendingRequestCount: number;
@@ -49,6 +58,8 @@ export interface AcpRuntimeDeps {
   log?: (msg: string) => void;
   /** Override the orphan TTL — exposed for tests; production defaults to 10 min. */
   orphanTtlMs?: number;
+  /** Override the log size cap — exposed for tests. */
+  logBytesCap?: number;
 }
 
 interface ActivePrompt {
@@ -76,6 +87,9 @@ interface OutboundMapping {
   /** Non-null when this outbound id was allocated for a session/prompt so the
    * queue advances when the response comes back. */
   promptSessionId: string | null;
+  /** Non-null for a `session/load` so we can cache the response metadata and
+   * fan out to any queued waiters once the bootstrap completes. */
+  loadSessionId: string | null;
 }
 
 interface PendingAgentRequest {
@@ -85,24 +99,160 @@ interface PendingAgentRequest {
   frame: string;
 }
 
+interface LogEntry {
+  /** Monotonic sequence within the session. Consumers tail by cursor > seq. */
+  seq: number;
+  /** The raw JSON-RPC line to send to consumers. */
+  line: string;
+  /** Approx byte cost — used for the soft cap. */
+  bytes: number;
+}
+
+interface SessionLog {
+  entries: LogEntry[];
+  nextSeq: number;
+  totalBytes: number;
+  /** True once the soft cap has evicted at least one entry. */
+  truncated: boolean;
+  /** Cached `session/load` response metadata, captured from the first
+   * (cold) bootstrap response. Used to synthesize responses to subsequent
+   * `session/load` requests without forwarding to the agent. */
+  metadata: unknown | null;
+}
+
+interface BootstrapWaiter {
+  channel: ClientChannel;
+  originalId: JsonRpcId;
+}
+
+/**
+ * Max-1-in-flight bootstrap state per session. A `session/load` request
+ * received while a cold bootstrap is already running for the same sid is
+ * not forwarded again — the bootstrap's agent response fills the log for
+ * everyone, and the waiter is then served from memory.
+ */
+interface BootstrapState {
+  initiatorChannel: ClientChannel;
+  initiatorOutboundId: number;
+  waiters: BootstrapWaiter[];
+}
+
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const orphanTtlMs = deps.orphanTtlMs ?? DEFAULT_ORPHAN_TTL_MS;
+  const logBytesCap = deps.logBytesCap ?? DEFAULT_LOG_BYTES_CAP;
   let agent: AgentProcess | null = null;
   let agentExited = false;
   /**
    * Every attached channel → set of sessions it is engaged with. Used both
    * as the source of truth for "who's attached" (Map.size) and to decide
-   * which channels receive scoped broadcasts.
+   * which channels receive fan-out broadcasts.
    */
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const pendingFromAgent = new Map<JsonRpcId, PendingAgentRequest>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
   const activePromptBySession = new Map<string, ActivePrompt>();
   const promptQueueBySession = new Map<string, QueuedPrompt[]>();
+
+  /**
+   * Append-only per-session log of `session/update` notifications and our
+   * synthetic turn-end marker. Agent→client JSON-RPC requests (permission
+   * prompts, fs reads, …) are *not* logged — they're live-only, tracked in
+   * `pendingFromAgent`, and redelivered to fresh engagers from there. Logging
+   * them would cause catchUp to re-emit resolved permission prompts and the
+   * UI would re-show dialogs the user already answered.
+   */
+  const sessionLogs = new Map<string, SessionLog>();
+
+  /**
+   * Per-channel cursor tracking: for each engaged session, the last seq the
+   * channel has received. An append past the cursor extends the cursor and
+   * ships the line; a catch-up replays everything between cursor and latest
+   * seq in one burst.
+   */
+  const channelCursors = new Map<ClientChannel, Map<string, number>>();
+
+  /** Cold-bootstrap coordination — see `BootstrapState`. */
+  const bootstrapBySession = new Map<string, BootstrapState>();
+
   let nextOutboundId = 1;
   /** Per-session orphan timers. A session is orphaned when it has pending
    * agent-initiated requests but no channel engaged with it. */
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // ── Session log ──
+
+  function getOrCreateLog(sessionId: string): SessionLog {
+    let log = sessionLogs.get(sessionId);
+    if (!log) {
+      log = { entries: [], nextSeq: 1, totalBytes: 0, truncated: false, metadata: null };
+      sessionLogs.set(sessionId, log);
+    }
+    return log;
+  }
+
+  /** Append a fanout-ready line to the session log, evicting oldest entries
+   * to stay under the byte cap. Returns the assigned seq. */
+  function appendToLog(sessionId: string, line: string): number {
+    const log = getOrCreateLog(sessionId);
+    const bytes = line.length;
+    const seq = log.nextSeq++;
+    log.entries.push({ seq, line, bytes });
+    log.totalBytes += bytes;
+    while (log.totalBytes > logBytesCap && log.entries.length > 1) {
+      const evicted = log.entries.shift()!;
+      log.totalBytes -= evicted.bytes;
+      log.truncated = true;
+    }
+    return seq;
+  }
+
+  function cursorFor(channel: ClientChannel, sessionId: string): number {
+    const map = channelCursors.get(channel);
+    return map?.get(sessionId) ?? 0;
+  }
+
+  function setCursor(channel: ClientChannel, sessionId: string, seq: number): void {
+    let map = channelCursors.get(channel);
+    if (!map) {
+      map = new Map();
+      channelCursors.set(channel, map);
+    }
+    map.set(sessionId, seq);
+  }
+
+  /** Sentinel notification prepended to a catch-up when the log has been
+   * truncated. Clients render a system-style "older messages not loaded"
+   * placeholder. */
+  function truncationSentinel(sessionId: string): string {
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: { sessionUpdate: "humr_clipped_replay" },
+      },
+    });
+  }
+
+  /** Stream every log entry past `channel`'s cursor for this session. The
+   * channel's cursor is advanced to the latest seq. Prepends the truncation
+   * sentinel on the first send after eviction has occurred. */
+  function catchUp(channel: ClientChannel, sessionId: string): void {
+    const log = sessionLogs.get(sessionId);
+    if (!log) return;
+    const current = cursorFor(channel, sessionId);
+    if (current === 0 && log.truncated && channel.isOpen()) {
+      channel.send(truncationSentinel(sessionId));
+    }
+    let lastSeq = current;
+    for (const entry of log.entries) {
+      if (entry.seq <= current) continue;
+      if (!channel.isOpen()) return;
+      channel.send(rewriteAuthError(entry.line));
+      lastSeq = entry.seq;
+    }
+    if (lastSeq !== current) setCursor(channel, sessionId, lastSeq);
+  }
 
   // ── Engagement ──
 
@@ -131,12 +281,65 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  // ── Broadcast ──
+  // ── Fan-out ──
 
-  function broadcastToSession(sessionId: string, line: string): void {
+  /** Append `line` to the session's log and ship it to every engaged channel
+   * whose cursor is behind the new seq. Each recipient's cursor advances so
+   * it can't receive the same line twice.
+   *
+   * `skipChannel` lets a caller append a line to the log (and advance that
+   * channel's cursor) without actually sending to it — used when the client
+   * already has the content locally (e.g. the sender of `session/prompt`
+   * which rendered an optimistic user bubble before forwarding). The entry
+   * is still in the log, so on reconnect that same client catches up to it
+   * through a new channel with cursor=0.
+   */
+  function appendAndFanOut(
+    sessionId: string,
+    line: string,
+    options?: { skipChannel?: ClientChannel },
+  ): void {
+    const seq = appendToLog(sessionId, line);
     const out = rewriteAuthError(line);
     for (const [channel, sessions] of engagedSessions) {
-      if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
+      if (!sessions.has(sessionId) || !channel.isOpen()) continue;
+      if (cursorFor(channel, sessionId) >= seq) continue;
+      if (channel === options?.skipChannel) {
+        setCursor(channel, sessionId, seq);
+        continue;
+      }
+      channel.send(out);
+      setCursor(channel, sessionId, seq);
+    }
+  }
+
+  /**
+   * Synthesize `session/update` notifications for a client's `session/prompt`
+   * payload and append them to the log. The Claude Agent SDK drops plain-text
+   * user_message_chunk emissions in live (see acp-agent.js: "Skip these user
+   * messages for now"), so without this, viewers other than the sender never
+   * see the user's message. Running this through the log means it's captured
+   * for catch-up too, so any later loader reconstructs the turn correctly.
+   *
+   * Skips the originating channel at fan-out — the sender's UI already
+   * rendered the message as an optimistic bubble. The sender's cursor is
+   * still advanced, so subsequent fan-outs don't re-deliver this entry,
+   * but a fresh channel (after reload) will catch it through the normal
+   * catch-up from cursor=0.
+   */
+  function appendUserPromptToLog(sessionId: string, prompt: unknown, originator: ClientChannel): void {
+    if (!Array.isArray(prompt)) return;
+    for (const block of prompt) {
+      if (!block || typeof block !== "object") continue;
+      const line = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId,
+          update: { sessionUpdate: "user_message_chunk", content: block },
+        },
+      });
+      appendAndFanOut(sessionId, line, { skipChannel: originator });
     }
   }
 
@@ -206,6 +409,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         channel.close(1011, "agent exited");
       }
       engagedSessions.clear();
+      channelCursors.clear();
+      sessionLogs.clear();
+      bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
       pendingFromAgent.clear();
@@ -218,12 +424,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);
     engagedSessions.delete(channel);
+    channelCursors.delete(channel);
 
     // Drop any prompts this channel had queued but not yet sent to the agent.
     for (const [sid, queue] of promptQueueBySession) {
       const kept = queue.filter((q) => q.channel !== channel);
       if (kept.length) promptQueueBySession.set(sid, kept);
       else promptQueueBySession.delete(sid);
+    }
+
+    // Drop bootstrap waiters from this channel, and clear bootstrap state
+    // if this channel was the initiator (the agent response will still
+    // arrive but we won't have anyone to deliver it to — the mapping
+    // cleanup below handles that).
+    for (const [sid, state] of bootstrapBySession) {
+      if (state.initiatorChannel === channel) {
+        bootstrapBySession.delete(sid);
+        continue;
+      }
+      const keptWaiters = state.waiters.filter((w) => w.channel !== channel);
+      if (keptWaiters.length !== state.waiters.length) {
+        state.waiters = keptWaiters;
+      }
     }
 
     // If this channel owns the currently active prompt, leave the slot occupied
@@ -283,6 +505,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       params: { sessionId },
     });
     deps.log?.(`closing idle session ${sessionId}`);
+    // Drop the log + any lingering cursors for this session. Next load for
+    // this sid will cold-bootstrap via the agent again.
+    sessionLogs.delete(sessionId);
+    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
   }
 
   function sendErrorResponse(channel: ClientChannel, id: JsonRpcId, message: string): void {
@@ -316,6 +542,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     forwardPromptToAgent(a, sessionId, next);
   }
 
+  // ── session/load serve-from-memory ──
+
+  /** Serve a `session/load` from the in-memory log without forwarding to
+   * the agent. Stream the catch-up first, then engage the channel and
+   * deliver the synthetic response — mirroring the agent's own order
+   * (notifications → response). */
+  function serveLoadFromLog(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    log: SessionLog,
+  ): void {
+    catchUp(channel, sessionId);
+    engage(channel, sessionId);
+    const response = JSON.stringify({
+      jsonrpc: "2.0",
+      id: originalId,
+      result: log.metadata ?? { sessionId },
+    });
+    sendToChannel(channel, rewriteAuthError(response));
+  }
+
   // ── Agent → client traffic ──
 
   function handleAgentLine(line: string): void {
@@ -325,7 +573,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const sessionId = extractParamsSessionId(frame);
       pendingFromAgent.set(frame.id, { sessionId, frame: line });
       if (sessionId) {
-        broadcastToSession(sessionId, line);
+        // Live-fan-out only — never log agent→client requests. Once the
+        // client responds, pendingFromAgent drops the entry; a logged copy
+        // would get replayed on the next catchUp and re-trigger the
+        // permission dialog. Fresh engagers still pick up currently-pending
+        // requests via engage()'s replay from pendingFromAgent.
+        const out = rewriteAuthError(line);
+        for (const [channel, sessions] of engagedSessions) {
+          if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
+        }
         updateOrphanTimerForSession(sessionId);
       } else {
         broadcastToAll(line);
@@ -346,6 +602,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const resultSid = extractResultSessionId(frame);
         if (resultSid) engage(mapping.channel, resultSid);
 
+        // `session/load` cold-bootstrap response: cache the metadata on the
+        // session log, then catch up any waiters that arrived during the
+        // bootstrap window.
+        if (mapping.method === "session/load" && mapping.loadSessionId) {
+          const sid = mapping.loadSessionId;
+          const log = getOrCreateLog(sid);
+          const result = (frame as { result?: unknown }).result ?? null;
+          log.metadata = result;
+          const boot = bootstrapBySession.get(sid);
+          if (boot) {
+            bootstrapBySession.delete(sid);
+            for (const waiter of boot.waiters) {
+              if (!waiter.channel.isOpen()) continue;
+              serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
+            }
+          }
+          // The initiator already received every replay event via
+          // appendAndFanOut (it was engaged on forward), so no catch-up is
+          // needed here — its cursor already tracks the tail.
+        }
+
         // Rewrite the response id back to what the originating client used.
         const out = JSON.stringify({ ...(frame as object), id: mapping.originalId });
         if (mapping.channel.isOpen()) mapping.channel.send(rewriteAuthError(out));
@@ -365,7 +642,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             activePromptBySession.delete(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
           }
-          broadcastToSession(sid, JSON.stringify({
+          appendAndFanOut(sid, JSON.stringify({
             jsonrpc: "2.0",
             method: "humr/turnEnded",
             params: { sessionId: sid },
@@ -381,9 +658,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return;
     }
 
-    // Notification — scope by sessionId when present; otherwise broadcast.
+    // Notification — append to the session's log and fan out to engaged
+    // channels by cursor. Notifications without a sessionId (rare) go to
+    // every attached channel.
     const sessionId = extractParamsSessionId(frame);
-    if (sessionId) broadcastToSession(sessionId, line);
+    if (sessionId) appendAndFanOut(sessionId, line);
     else broadcastToAll(line);
   }
 
@@ -409,25 +688,69 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isRequest(frame)) {
-      const outboundId = nextOutboundId++;
       const method = typeof (frame as { method?: unknown }).method === "string"
         ? (frame as { method: string }).method
         : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      // `session/load` short-circuit: if the runtime already has a log with
+      // cached metadata for this session, serve the entire history (plus any
+      // future live events) from memory. The agent is never involved.
+      if (method === "session/load" && paramsSid) {
+        const existing = sessionLogs.get(paramsSid);
+        if (existing && existing.metadata !== null) {
+          serveLoadFromLog(channel, frame.id, paramsSid, existing);
+          return;
+        }
+        // Cold-bootstrap coalescing: if a bootstrap is already in flight for
+        // this session, park this channel as a waiter — the in-flight load's
+        // response will populate the log, then we serve all waiters from it.
+        // This prevents two concurrent `session/load`s from double-forwarding
+        // and appending two copies of the same history to the log.
+        const boot = bootstrapBySession.get(paramsSid);
+        if (boot) {
+          boot.waiters.push({ channel, originalId: frame.id });
+          return;
+        }
+      }
+
+      const outboundId = nextOutboundId++;
+
       // Engage forward so subsequent updates for this session reach this channel.
       if (paramsSid) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
+      const loadSessionId = method === "session/load" ? paramsSid : null;
+
       const rewritten = rewriteCwd({ ...frame, id: outboundId }, deps.workingDir);
       outboundIdToClient.set(outboundId, {
         channel,
         originalId: frame.id,
         method,
         promptSessionId,
+        loadSessionId,
       });
 
+      // Mark a cold bootstrap in flight so concurrent loads of the same sid
+      // pile into `waiters` instead of double-forwarding.
+      if (loadSessionId) {
+        bootstrapBySession.set(loadSessionId, {
+          initiatorChannel: channel,
+          initiatorOutboundId: outboundId,
+          waiters: [],
+        });
+      }
+
       if (promptSessionId !== null) {
+        // Synthesize user_message_chunk(s) from the prompt payload and
+        // append them to the log. The SDK drops plain-text user_message_chunk
+        // emissions in live, so without this, viewers other than the sender
+        // never see the user's message. The runtime fans out to everyone
+        // including the sender; the sending client's UI reconciles the echo
+        // against its optimistic bubble.
+        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params?.prompt;
+        appendUserPromptToLog(promptSessionId, promptBlocks, channel);
+
         if (activePromptBySession.has(promptSessionId)) {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
           if (queue.length >= PROMPT_QUEUE_CAP) {
@@ -481,6 +804,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     shutdown() {
       for (const channel of engagedSessions.keys()) channel.close(1000, "shutdown");
       engagedSessions.clear();
+      channelCursors.clear();
+      sessionLogs.clear();
+      bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
       if (agent && !agentExited) agent.kill();
