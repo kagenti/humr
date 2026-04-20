@@ -131,10 +131,14 @@ jobs:
       - uses: azure/setup-helm@v4
       - name: Log in to GHCR OCI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
-      - name: Package Helm chart
+      - name: Package Helm chart (SHA-pinned)
         run: helm package deploy/helm/humr --version 0.0.0-${{ github.sha }} --app-version ${{ github.sha }}
-      - name: Push to OCI registry
+      - name: Push SHA-pinned chart
         run: helm push humr-0.0.0-${{ github.sha }}.tgz oci://ghcr.io/kagenti/humr/charts
+      - name: Package Helm chart (main floating tag)
+        run: helm package deploy/helm/humr --version 0.0.0-main --app-version ${{ github.sha }}
+      - name: Push main-floating chart
+        run: helm push humr-0.0.0-main.tgz oci://ghcr.io/kagenti/humr/charts
 
   deploy:
     runs-on: arc-runner-set
