@@ -37,11 +37,8 @@ interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement>;
   busy: boolean;
   loadingSession: boolean;
-  queuedMessage: string | null;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
-  onQueue: (text: string) => void;
-  onClearQueue: () => void;
   footer?: ReactNode;
 }
 
@@ -49,11 +46,8 @@ export function ChatInput({
   textareaRef,
   busy,
   loadingSession,
-  queuedMessage,
   onSend,
   onStop,
-  onQueue,
-  onClearQueue,
   footer,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
@@ -106,21 +100,23 @@ export function ChatInput({
   const isComputing = busy && !loadingSession;
   const hasInput = input.trim().length > 0;
   const hasContent = hasInput || attachments.length > 0;
-  const showStop = isComputing && !hasContent;
+  // Always show the stop affordance while busy so the user is never stranded
+  // without a way to interrupt. When they also have content typed, keep the
+  // send button alongside it so pressing the button queues the follow-up.
+  const showStop = isComputing;
+  const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
 
+  // Always dispatch — the server-side runtime queues prompts per session, so
+  // sending while busy just parks the prompt behind the active one.
   const send = useCallback(() => {
     const text = input.trim();
     const files = attachments.length > 0 ? attachments : undefined;
     if (!text && !files) return;
     setInput("");
     setAttachments([]);
-    if (busy) {
-      onQueue(text);
-      return;
-    }
     onSend(text, files);
-  }, [input, attachments, busy, onSend, onQueue]);
+  }, [input, attachments, onSend]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Mobile: Enter inserts newline (send via the button). Desktop: Enter sends, Shift+Enter newlines.
@@ -170,14 +166,15 @@ export function ChatInput({
               rows={1} disabled={loadingSession}
             />
           )}
-          {showStop ? (
+          {showStop && (
             <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center"
               style={{ boxShadow: "3px 3px 0 var(--c-danger)" }} onClick={onStop} title="Stop">
               <Square size={16} />
             </button>
-          ) : (
+          )}
+          {showSend && (
             <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }} onClick={send} disabled={sendDisabled || loadingSession} title="Send">
+              style={{ boxShadow: "var(--shadow-brutal-accent)" }} onClick={send} disabled={sendDisabled || loadingSession} title={isComputing ? "Queue" : "Send"}>
               <SendIcon size={16} />
             </button>
           )}
@@ -185,12 +182,6 @@ export function ChatInput({
         <div className="flex items-center gap-3 min-h-[24px]">
           {footer}
           {isComputing && <BusyIndicator />}
-          {queuedMessage && (
-            <span className="ml-auto text-[11px] text-text-muted">
-              1 queued
-              <button className="ml-1.5 text-danger hover:text-danger/80 font-semibold" onClick={onClearQueue}>x</button>
-            </span>
-          )}
         </div>
       </div>
     </div>

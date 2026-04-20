@@ -48,6 +48,10 @@ export interface Message {
   role: Role;
   parts: MessagePart[];
   streaming: boolean;
+  /** True while this assistant message is waiting behind an earlier in-flight
+   *  prompt on the server queue. Flipped to false when the server starts
+   *  streaming content to it. */
+  queued?: boolean;
 }
 
 export interface LogEntry {

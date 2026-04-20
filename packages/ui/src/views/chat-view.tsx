@@ -6,6 +6,7 @@ import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
 import { ResizeHandle } from "./../components/resize-handle.js";
 import { ChatInput } from "./../components/chat-input.js";
+import { PermissionPrompt } from "./../components/permission-prompt.js";
 import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
 import { FilesPanel } from "./../panels/files-panel.js";
 import { LogPanel } from "./../panels/log-panel.js";
@@ -25,8 +26,9 @@ export function ChatView() {
   const loadingSession = useStore((s) => s.loading.session);
   const goBack = useStore((s) => s.goBack);
   const setRightTab = useStore((s) => s.setRightTab);
-  const queuedMessage = useStore((s) => s.queuedMessage);
-  const setQueuedMessage = useStore((s) => s.setQueuedMessage);
+  const hasPendingPermission = useStore((s) =>
+    s.sessionId ? s.pendingPermissions.some((p) => p.sessionId === s.sessionId) : false,
+  );
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const showMobilePanel = useStore((s) => s.showMobilePanel);
@@ -230,7 +232,11 @@ export function ChatView() {
                       </div>
                     ) : <ToolChip key={i} chip={p} />
                   )}
-                  {m.streaming && m.parts.length === 0 && <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />}
+                  {m.streaming && m.parts.length === 0 && (
+                    m.queued
+                      ? <span className="text-[12px] text-text-muted italic">Waiting for previous prompt…</span>
+                      : <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
+                  )}
                 </div>
               </div>
             ))}
@@ -248,19 +254,20 @@ export function ChatView() {
         )}
         </div>
 
-        <ChatInput
-          textareaRef={textareaRef}
-          busy={busy}
-          loadingSession={loadingSession}
-          queuedMessage={queuedMessage}
-          onSend={sendPrompt}
-          onStop={stopAgent}
-          onQueue={setQueuedMessage}
-          onClearQueue={() => setQueuedMessage(null)}
-          footer={!loadingSession && (
-            <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
-          )}
-        />
+        {hasPendingPermission ? (
+          <PermissionPrompt />
+        ) : (
+          <ChatInput
+            textareaRef={textareaRef}
+            busy={busy}
+            loadingSession={loadingSession}
+            onSend={sendPrompt}
+            onStop={stopAgent}
+            footer={!loadingSession && (
+              <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
+            )}
+          />
+        )}
       </div>
 
       {/* Right panel: desktop */}

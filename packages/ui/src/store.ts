@@ -40,6 +40,24 @@ export interface DialogState {
   resolve: (ok: boolean) => void;
 }
 
+export interface PermissionOption {
+  optionId: string;
+  name: string;
+  kind?: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
+}
+
+export interface PermissionOutcome {
+  outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
+}
+
+export interface PendingPermission {
+  toolCallId: string;
+  sessionId: string;
+  toolCall: unknown;
+  options: PermissionOption[];
+  resolve: (outcome: PermissionOutcome) => void;
+}
+
 export interface HumrStore {
   // Dialog
   dialog: DialogState | null;
@@ -79,9 +97,18 @@ export interface HumrStore {
   setSessionModels: (models: SessionModelState | null) => void;
   setSessionConfigOptions: (options: SessionConfigOption[]) => void;
 
-  // Message queue (for queuing messages while agent is busy)
-  queuedMessage: string | null;
-  setQueuedMessage: (msg: string | null) => void;
+  // Pending tool-permission prompts from the agent. Replaces client-side
+  // auto-approve: the agent blocks until a human resolves the request, so
+  // unattended/disconnected sessions accumulate prompts here and the next
+  // connected client sees them.
+  pendingPermissions: PendingPermission[];
+  addPendingPermission: (p: PendingPermission) => void;
+  resolvePendingPermission: (toolCallId: string, outcome: PermissionOutcome) => void;
+  /** Local-only dismissal: remove the entry from store without resolving. The
+   *  agent's JSON-RPC call stays pending server-side and the UI re-shows the
+   *  prompt on the next attach. */
+  dismissPendingPermission: (toolCallId: string) => void;
+  clearPendingPermissions: () => void;
 
   // Mobile navigation
   mobileScreen: "sessions" | "chat";
@@ -257,9 +284,29 @@ export const useStore = create<HumrStore>((set, get) => ({
   setSessionModels: (models) => set({ sessionModels: models }),
   setSessionConfigOptions: (options) => set({ sessionConfigOptions: options }),
 
-  // Message queue
-  queuedMessage: null,
-  setQueuedMessage: (msg) => set({ queuedMessage: msg }),
+  // Pending permissions
+  pendingPermissions: [],
+  addPendingPermission: (p) =>
+    set((s) => {
+      // Replace any existing entry for the same toolCallId — this happens on
+      // reconnect when the agent-runtime replays pending requests to the new
+      // WebSocket, giving us a fresh resolver tied to the live connection.
+      const next = s.pendingPermissions.filter((x) => x.toolCallId !== p.toolCallId);
+      next.push(p);
+      return { pendingPermissions: next };
+    }),
+  resolvePendingPermission: (toolCallId, outcome) => {
+    const entry = get().pendingPermissions.find((p) => p.toolCallId === toolCallId);
+    if (!entry) return;
+    entry.resolve(outcome);
+    set((s) => ({ pendingPermissions: s.pendingPermissions.filter((p) => p.toolCallId !== toolCallId) }));
+  },
+  dismissPendingPermission: (toolCallId) => {
+    // Local-only — no resolve. The agent's request stays pending on the server
+    // until answered, and will be replayed to this client on the next attach.
+    set((s) => ({ pendingPermissions: s.pendingPermissions.filter((p) => p.toolCallId !== toolCallId) }));
+  },
+  clearPendingPermissions: () => set({ pendingPermissions: [] }),
 
   // Mobile navigation
   mobileScreen: "sessions",
@@ -454,7 +501,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       sessionModes: null,
       sessionModels: null,
       sessionConfigOptions: [],
-      queuedMessage: null,
+      pendingPermissions: [],
       mobileScreen: "sessions",
       showMobilePanel: false,
     });
@@ -474,7 +521,7 @@ export const useStore = create<HumrStore>((set, get) => ({
       sessionModes: null,
       sessionModels: null,
       sessionConfigOptions: [],
-      queuedMessage: null,
+      pendingPermissions: [],
       showMobilePanel: false,
     });
     get().fetchAgents();
@@ -497,9 +544,13 @@ export const useStore = create<HumrStore>((set, get) => ({
     set((s) => ({ loading: { ...s.loading, session: loading } })),
   addLog: (type, payload) => {
     const ts = new Date().toISOString().slice(11, 23);
-    set((s) => ({
-      log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }],
-    }));
+    set((s) => {
+      const next = [...s.log, { id: crypto.randomUUID(), ts, type, payload }];
+      // Cap so long-running sessions don't blow up memory — every agent
+      // text chunk is logged, and a long turn can emit hundreds.
+      const LOG_CAP = 500;
+      return { log: next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next };
+    });
   },
   deleteSession: async (sessionId) => {
     const instanceId = get().selectedInstance;
