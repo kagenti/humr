@@ -6,7 +6,7 @@
  * so a transient OneCLI startup delay does not permanently prevent account creation.
  */
 import type { Subscription } from "rxjs";
-import { defer, EMPTY, timer } from "rxjs";
+import { defer, timer } from "rxjs";
 import { catchError, filter, mergeMap, retry, tap } from "rxjs/operators";
 import { events$, ofType, EventType, type UserAuthenticated } from "../events.js";
 import type { OnecliClient } from "../onecli.js";
@@ -31,9 +31,10 @@ export function startOnecliSyncSaga(onecli: OnecliClient): Subscription {
         }),
         catchError((err) => {
           process.stderr.write(
-            `[onecli-sync] sync failed permanently for ${event.userSub} after ${MAX_RETRIES} retries: ${err}\n`,
+            `[onecli-sync] sync failed permanently for ${event.userSub} after ${MAX_RETRIES} retries: ${err}\n` +
+            `[onecli-sync] OneCLI sync is vital — shutting down server.\n`,
           );
-          return EMPTY;
+          process.exit(1);
         }),
       ),
     ),
