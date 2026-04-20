@@ -1,7 +1,8 @@
 import * as k8s from "@kubernetes/client-node";
 
-const LIMA_INSTANCE = "humr-k3s-test";
-const KUBECONFIG = `${process.env.HOME}/.lima/${LIMA_INSTANCE}/copied-from-guest/kubeconfig.yaml`;
+const KUBECONFIG = process.env.IS_SANDBOX
+  ? "/etc/rancher/k3s/k3s.yaml"
+  : `${process.env.HOME}/.lima/humr-k3s-test/copied-from-guest/kubeconfig.yaml`;
 const NAMESPACE = "humr-agents";
 
 function loadApi() {
