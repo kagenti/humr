@@ -14,6 +14,7 @@ import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
 import { useFileTree } from "./../hooks/use-file-tree.js";
+import { isMobile } from "./../lib/breakpoints.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -33,10 +34,8 @@ export function ChatView() {
 
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
 
   // ── Hooks ──
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
@@ -47,31 +46,49 @@ export function ChatView() {
 
   const { openFileHandler } = useFileTree(selectedInstance);
 
-  // Track "is the bottom sentinel in view" via IntersectionObserver.
-  // Scroll events race badly with programmatic smooth-scroll during streaming
-  // (the autoscroll itself looks like user activity and re-enables itself);
-  // observer fires only on real visibility transitions and ignores our own
-  // scrollIntoView calls.
-  useEffect(() => {
-    const target = bottomRef.current;
-    const root = messagesRef.current;
-    if (!target || !root) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setIsAtBottom(entry?.isIntersecting ?? false),
-      { root, threshold: 0 },
-    );
-    obs.observe(target);
-    return () => obs.disconnect();
-  }, []);
-
-  // Auto-scroll only if the user hasn't detached. Instant (not smooth) so a
-  // fast stream can't be "outrun" by the user trying to scroll up.
-  useEffect(() => {
-    if (isAtBottom) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, isAtBottom]);
+  // ── Scroll management ──
+  // Single source of truth: `stickRef` — "should we pin to the bottom?".
+  // Scroll events are the ONLY thing that flip it (user intent). ResizeObserver
+  // reacts to viewport shrinks (ChatInput grows) and content growth (streaming
+  // tokens) by re-pinning — it never toggles stick itself.
+  const stickRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const inner = el.firstElementChild;
+
+    const THRESHOLD = 30;
+    const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < THRESHOLD;
+
+    const onScroll = () => {
+      const near = nearBottom();
+      stickRef.current = near;
+      setShowJump(!near);
+    };
+
+    const ro = new ResizeObserver(() => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
+    });
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    ro.observe(el);
+    if (inner) ro.observe(inner);
+    onScroll();
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
   }, []);
 
   const mobileResumeSession = useCallback((sid: string) => {
@@ -86,7 +103,7 @@ export function ChatView() {
   }, [sessionId, messages.length, resetSession, setMobileScreen]);
 
   const handleBack = useCallback(() => {
-    if (window.innerWidth < 768 && mobileScreen === "chat") {
+    if (isMobile() && mobileScreen === "chat") {
       setMobileScreen("sessions");
       return;
     }
@@ -164,6 +181,7 @@ export function ChatView() {
         </header>
 
         {/* Messages */}
+        <div className="relative flex flex-1 flex-col min-h-0">
         <div ref={messagesRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
             {loadingSession && (
@@ -216,19 +234,19 @@ export function ChatView() {
                 </div>
               </div>
             ))}
-            <div ref={bottomRef} />
           </div>
         </div>
 
-        {!isAtBottom && (
+        {showJump && (
           <button
             onClick={scrollToBottom}
-            className="absolute left-1/2 -translate-x-1/2 bottom-[110px] z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
+            className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
           >
             <ArrowDown size={12} />
             Jump to latest
           </button>
         )}
+        </div>
 
         <ChatInput
           textareaRef={textareaRef}

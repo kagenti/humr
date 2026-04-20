@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type Reac
 import { Send as SendIcon, Square, Paperclip, X, FileText as FileIcon } from "lucide-react";
 import type { Attachment } from "../types.js";
 import { useAutoResize } from "../hooks/use-auto-resize.js";
+import { isMobile } from "../lib/breakpoints.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -122,7 +123,8 @@ export function ChatInput({
   }, [input, attachments, busy, onSend, onQueue]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+    // Mobile: Enter inserts newline (send via the button). Desktop: Enter sends, Shift+Enter newlines.
+    if (e.key === "Enter" && !e.shiftKey && !isMobile()) { e.preventDefault(); send(); }
   };
 
   const placeholder = isComputing ? "Queue a message..." : "Message agent...";
