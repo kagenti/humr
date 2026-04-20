@@ -30,6 +30,11 @@ export function createAgentProvisioner(
       const existing = await k8s.getSecret(secretName);
       if (existing) return; // already provisioned
 
+      // Ensure the user exists in OneCLI. The sync saga runs async on authentication
+      // and may not have completed when this request arrives — OneCLI returns 401
+      // on user-scoped endpoints like /api/agents until sync has run.
+      await onecli.syncUser(userJwt, userSub);
+
       // Register agent in OneCLI
       const createRes = await onecli.onecliFetch(userJwt, userSub, "/api/agents", {
         method: "POST",
