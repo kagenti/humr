@@ -23,9 +23,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - component: controller
-            dockerfile: packages/controller/Dockerfile
-            context: packages/controller
           - component: api-server
             dockerfile: packages/api-server/Dockerfile
             context: .
