@@ -83,3 +83,65 @@ To avoid per-turn init overhead, we restrict init scripts to persistable changes
 ## Implementation Plan
 
 This ADR is accepted but represents a significant rearchitecture of the current prototype (which uses keep-alive pods). Implementation will proceed on a **parallel track** and is **not a blocker for the initial release.** The current prototype will ship as-is; migration to single-use Jobs will happen incrementally once the caching layer and two-tier storage are in place.
+
+## Appendix: Implementation Notes (2026-04-16)
+
+The Job-based model was implemented as a full replacement of the StatefulSet model. This appendix documents deviations from the ADR and the current state.
+
+### What was implemented
+
+The controller now manages PVCs, NetworkPolicies, and Jobs. The API server coordinates via annotations on the instance ConfigMap:
+
+1. API server sets `humr.ai/run-request` annotation
+2. Controller's informer fires, creates a Job, writes `humr.ai/active-job` + `humr.ai/pod-ip`
+3. API server polls for `humr.ai/pod-ip`, connects upstream WebSocket
+4. When the Job finishes, controller clears annotations and sets status to `idle`
+
+Cron triggers use the same annotation flow: the scheduler sets `humr.ai/run-request` + `humr.ai/trigger` (JSON payload). The controller passes the trigger as a `HUMR_TRIGGER` env var on the Job pod. The agent-runtime reads it on startup.
+
+Idle checker, StatefulSet/Service creation, hibernation/wake lifecycle, and `kubectl exec` trigger delivery were all removed.
+
+### Deviation: Job reuse within a turn
+
+The ADR says "always creating a new Job" (section 1 — no "is it already running?" check). The implementation does check for an active Job and reuses it: if a second WebSocket connection arrives while a Job is running, it connects to the existing pod rather than creating a new Job. This is a pragmatic choice — the agent-runtime supports multiple concurrent WebSocket sessions (e.g., trigger + interactive), and the `activeDeadlineSeconds` safety net ensures Jobs don't run forever.
+
+Truly single-use "one Job per message" would require the agent-runtime to exit after each ACP session completes and the API server to create a fresh Job for every message. This can be revisited if stronger isolation between turns is needed.
+
+### Deviation: Single PVC instead of two-tier storage
+
+The ADR specifies per-session and shared volumes. The implementation uses a single PVC mounted at `/home/agent` that contains everything: workspace, agent memory, SOUL.md, learned preferences. This matches the existing home-directory-based persistence model and avoids the operational complexity of managing two volumes per instance. The two-tier split can be introduced later if cross-session shared state needs explicit separation from workspace state.
+
+### Deviation: No caching layer
+
+The ADR calls for Redis or equivalent to serve lightweight read operations (session listing, agent metadata) without spinning up a Job. This is not yet implemented — the tRPC relay returns 503 when no Job pod is active, and session listing requires an active pod. For now, the DB-backed session table in the API server provides basic session history without needing a running pod. A caching layer remains a future optimization for when the cost of cold reads becomes measurable.
+
+### Persistence conventions
+
+Agent pods start from a clean container image on every turn. Only `/home/agent` (the PVC) survives between turns. Everything else — `/tmp`, OS packages, system files — is ephemeral.
+
+Global tool installs should target the home directory (e.g., `pip install --user`, `cargo install`). In the future, `mise.toml` at the workspace root is the preferred mechanism — mise caches tools under `~/.local/share/mise` which lives on the persistent volume, making tool resolution instant on subsequent turns.
+
+These conventions should be communicated to the agent harness. For Claude Code agents, this means including them in the `CLAUDE.md` baked into the agent image. Example:
+
+```markdown
+## Runtime environment
+
+You are running inside an ephemeral container. A new container is created for
+each conversation turn — no process state carries over.
+
+### What persists (between turns)
+
+`/home/agent` is backed by a persistent volume. Everything under this path
+survives: workspace files, git checkouts, node_modules, .venv, tool caches,
+your memory files, and configuration.
+
+### What does NOT persist
+
+- OS packages installed via `apt`, `dnf`, etc.
+- Edits to `/etc/hosts`, `/etc/resolv.conf`, or other system files.
+- Anything in `/tmp` or outside `/home/agent`.
+
+If you need a tool that isn't in the base image, prefer installing it under
+your home directory (e.g., `pip install --user`, `cargo install`) or declaring
+it in a `mise.toml` at the workspace root.
+```

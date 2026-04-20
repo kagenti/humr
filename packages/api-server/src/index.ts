@@ -15,6 +15,9 @@ import { createOnecliClient } from "./onecli.js";
 import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { createCronScheduler } from "./cron-scheduler.js";
+import { loadJobBuilderConfig } from "./modules/agents/infrastructure/job-builder.js";
+import { seedTemplatesFromConfigMaps } from "./template-seeder.js";
 
 const config = loadConfig();
 
@@ -26,11 +29,14 @@ const onecli = createOnecliClient({
   onecliBaseUrl: config.onecliBaseUrl,
 });
 
-const { api } = createApi(config.namespace);
+const { api, batchApi, networkingApi } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
-const k8sCleanupSub = startK8sCleanupSaga(createK8sClient(api, config.namespace));
+const k8sClient = createK8sClient(api, config.namespace, batchApi, networkingApi);
+await seedTemplatesFromConfigMaps(k8sClient, db);
+
+const k8sCleanupSub = startK8sCleanupSaga(k8sClient);
 const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
 const onecliSyncSub = startOnecliSyncSaga(onecli);
 
@@ -69,7 +75,7 @@ const channelManager = createChannelManager({
 });
 
 const { server: apiServer } = startApiServerApp({
-  config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows,
+  config, api, batchApi, networkingApi, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -80,8 +86,16 @@ systemInstances.list().then((all) => {
   channelManager.bootstrap(all);
 }).catch(() => {});
 
+const cronScheduler = createCronScheduler(k8sClient, loadJobBuilderConfig(), db);
+const schedulePollTimer = setInterval(() => {
+  cronScheduler.syncAll().catch((err) => process.stderr.write(`[cron] sync: ${err}\n`));
+}, 30_000);
+cronScheduler.syncAll().catch(() => {});
+
 async function shutdown() {
   process.stderr.write("shutting down...\n");
+  clearInterval(schedulePollTimer);
+  cronScheduler.stop();
   k8sCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   onecliSyncSub.unsubscribe();

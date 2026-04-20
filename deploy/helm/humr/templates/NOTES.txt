@@ -24,7 +24,6 @@ Agent namespace: {{ .Values.agentNamespace }}
 CA cert: fetched by agent init container from OneCLI /api/container-config (via gateway proxy)
 
 RBAC:
-  Controller SA: {{ include "humr.controller.serviceAccountName" . }}
   API Server SA: {{ include "humr.apiserver.serviceAccountName" . }}
 
 To verify:

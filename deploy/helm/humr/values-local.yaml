@@ -19,10 +19,6 @@ apiServer:
     pullPolicy: Never
 
 controller:
-  image:
-    repository: humr-controller
-    tag: latest
-    pullPolicy: Never
   agentImagePullPolicy: Never
 
 defaultTemplate:

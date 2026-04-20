@@ -3,7 +3,6 @@ import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type { InstancesService } from "api-server-api";
-import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
 const WAKE_POLL_INTERVAL_MS = 2_000;
@@ -44,18 +43,6 @@ export async function ensureRunning(
 ): Promise<void> {
   const inst = await instances.get(name);
   if (!inst) throw new Error(`Instance "${name}" not found`);
-
-  if (inst.state === "hibernated") {
-    await instances.wake(name);
-  }
-
-  const deadline = Date.now() + WAKE_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const current = await instances.get(name);
-    if (current?.state === "running") return;
-    await sleep(WAKE_POLL_INTERVAL_MS);
-  }
-  throw new Error(`Instance "${name}" pod not ready within ${WAKE_TIMEOUT_MS / 1000}s`);
 }
 
 export interface AcpSessionInfo {
@@ -142,11 +129,10 @@ async function withAcpConnection<T>(
 }
 
 export function createAcpClient(opts: {
-  namespace: string;
-  instanceName: string;
+  podUrl: string;
   onSessionCreated: (sessionId: string) => Promise<void>;
 }): AcpClient {
-  const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
+  const url = opts.podUrl;
 
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {

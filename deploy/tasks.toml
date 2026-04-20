@@ -44,11 +44,6 @@ esac
 
 # -- Image builds (docker only, no k3s interaction) --
 
-["image:controller"]
-description = "Build controller Docker image"
-dir = "{{config_root}}"
-run = 'docker build -t humr-controller:latest packages/controller/'
-
 ["image:apiserver"]
 description = "Build api-server Docker image"
 dir = "{{config_root}}"
@@ -83,7 +78,7 @@ docker build -t humr-pi-agent:latest packages/agents/pi-agent
 
 ["cluster:install"]
 description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
-depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
+depends = ["image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -145,7 +140,7 @@ fi
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
 tar="/tmp/humr-images.tar"
-docker save -o "$tar" humr-controller:latest humr-api-server:latest humr-ui:latest humr-claude-code:latest humr-google-workspace-agent:latest humr-pi-agent:latest
+docker save -o "$tar" humr-api-server:latest humr-ui:latest humr-claude-code:latest humr-google-workspace-agent:latest humr-pi-agent:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
   docker image prune --all --force >/dev/null 2>&1 || true
   sudo k3s ctr images import "$tar"
@@ -174,7 +169,7 @@ if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-apiserver humr-ui
 fi
 
 # 6. Wait for all Humr deployments to become Available (replaces helm --wait,
