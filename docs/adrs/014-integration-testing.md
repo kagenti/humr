@@ -22,7 +22,7 @@ Full e2e tests that spin up a dedicated test cluster (`mise run cluster:install 
 
 - **Dedicated Lima VM** (`humr-k3s-test`) with separate ports (5555 Traefik, 16445 k8s API) to avoid collisions with dev cluster
 - **Full Humr chart** deployed (API server, controller, UI, OneCLI, PostgreSQL)
-- **`mise run api-server:test`** orchestrates: build images → create cluster → run vitest → tear down cluster
+- **`mise run api-server:e2e`** orchestrates: build images → create cluster → run vitest → tear down cluster
 - **Vitest** as test framework, `@trpc/client` for endpoint calls, `@kubernetes/client-node` for K8s assertions
 - **Cluster parameterization** via `--vm-name` and `--lima-template` flags on `cluster:install`/`cluster:delete`
 
