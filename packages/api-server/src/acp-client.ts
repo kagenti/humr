@@ -71,7 +71,7 @@ export interface TriggerSessionResult {
 
 export interface AcpClient {
   listSessions(): Promise<AcpSessionInfo[]>;
-  sendPrompt(prompt: string): Promise<string>;
+  sendPrompt(prompt: string, opts?: { resumeSessionId?: string }): Promise<string>;
   triggerSession(opts: {
     prompt: string;
     resumeSessionId?: string;
@@ -185,7 +185,7 @@ export function createAcpClient(opts: {
       }
     },
 
-    async sendPrompt(prompt: string): Promise<string> {
+    async sendPrompt(prompt: string, sendOpts?: { resumeSessionId?: string }): Promise<string> {
       const responseChunks: string[] = [];
 
       await withAcpConnection(url, "humr-acp", {
@@ -195,8 +195,19 @@ export function createAcpClient(opts: {
           }
         },
       }, async (connection) => {
-        const { sessionId } = await connection.newSession({ cwd: ".", mcpServers: [] });
-        await opts.onSessionCreated(sessionId);
+        let sessionId: string;
+        if (sendOpts?.resumeSessionId) {
+          await connection.unstable_resumeSession({
+            sessionId: sendOpts.resumeSessionId,
+            cwd: ".",
+            mcpServers: [],
+          });
+          sessionId = sendOpts.resumeSessionId;
+        } else {
+          const s = await connection.newSession({ cwd: ".", mcpServers: [] });
+          sessionId = s.sessionId;
+          await opts.onSessionCreated(sessionId);
+        }
         await connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt }] });
       });
 

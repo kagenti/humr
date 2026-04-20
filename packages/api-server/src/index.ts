@@ -3,7 +3,7 @@ import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
-import { upsertSession } from "./modules/agents/infrastructure/sessions-repository.js";
+import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
@@ -36,6 +36,8 @@ const onecliSyncSub = startOnecliSyncSaga(onecli);
 
 const systemInstances = composeSystemInstances(api, config.namespace, db);
 const persistSession = upsertSession(db);
+const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
+  persistSession(sessionId, instanceId, type, undefined, threadTs);
 
 const identityLinkService = createIdentityLinkService({
   findBySlackUser: findIdentityBySlackUser(db),
@@ -55,7 +57,7 @@ const channelManager = createChannelManager({
         config.slackBotToken,
         config.slackAppToken,
         () => systemInstances,
-        persistSession,
+        persistSlackSession,
         identityLinkService,
         {
           keycloakExternalUrl: config.keycloakExternalUrl,
@@ -64,6 +66,10 @@ const channelManager = createChannelManager({
           callbackUrl: slackOauthCallbackUrl,
         },
         pendingSlackOAuthFlows,
+        {
+          find: findByInstanceAndThreadTs(db),
+          touch: touchSession(db),
+        },
       )
     : undefined,
 });
