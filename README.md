@@ -16,7 +16,7 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 - **Slack-native channels** — One Slack app, unlimited agents. Per-thread routing, identity linking via `/humr login`, per-instance access control. Your agents live where your team already works.
 
-- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Gemini CLI, or anything that speaks [ACP](https://spec.agentcontrolprotocol.com) works too. No lock-in to one vendor's SDK or cloud.
+- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Gemini CLI, or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works too. No lock-in to one vendor's SDK or cloud.
 
 ![Humr UI — agent chatting with Google Drive access](docs/assets/hero.png)
 
