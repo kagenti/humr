@@ -146,6 +146,8 @@ jobs:
     needs: helm-package
     environment:
       name: Development
+    env:
+      HOME: /tmp
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
