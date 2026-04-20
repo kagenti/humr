@@ -30,7 +30,7 @@ Open your favorite AI coding agent in the repo and try:
 
 ```
 Walk me through how Humr works step by step. I want to do a demo for myself.
-Explain how things work on the way. Help me connect a model provider, create
+Explain how things work along the way. Help me connect a model provider, create
 an instance, add a connection to GitHub, and chat with an agent.
 ```
 
@@ -38,7 +38,7 @@ Once you're comfortable, go deeper:
 
 ```
 Now show me the advanced stuff. Set up a Slack channel integration, create a
-scheduled job, build a long-living agent with a heartbeat, and wire up an
+scheduled job, build a long-lived agent with a heartbeat, and wire up an
 MCP server.
 ```
 
