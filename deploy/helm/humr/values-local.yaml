@@ -45,6 +45,13 @@ piAgentTemplate:
     tag: latest
     pullPolicy: Never
 
+codeGuardianTemplate:
+  enabled: true
+  image:
+    repository: humr-code-guardian
+    tag: latest
+    pullPolicy: Never
+
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
 keycloak:
   testUser:

@@ -317,3 +317,22 @@ piAgentTemplate:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# -- Code Guardian agent template (PR code review bot built on Claude Code)
+codeGuardianTemplate:
+  enabled: false
+  name: code-guardian
+  image:
+    repository: ghcr.io/kagenti/humr/code-guardian
+    tag: ""
+    pullPolicy: IfNotPresent
+  description: "PR code review agent (gh + Claude Code)"
+  # -- owner/repo slug the agent reviews. Empty = detect via `gh repo view`.
+  githubRepo: ""
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
