@@ -5,18 +5,14 @@ export interface InfraInstance {
   name: string;
   agentId: string;
   description?: string;
-  desiredState: "running" | "hibernated";
-  currentState?: "running" | "hibernated" | "error";
+  currentState?: string;
   error?: string;
-  podReady: boolean;
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
   if (infra.currentState === "error") return "error";
-  if (infra.desiredState === "running" && infra.currentState !== "running") return "starting";
-  if (infra.desiredState === "hibernated" && infra.currentState === "running") return "hibernating";
-  if (infra.desiredState === "hibernated") return "hibernated";
-  if (!infra.podReady) return "starting";
+  // In the Job model, instances are always ready to accept work.
+  // "Running" is transient (a Job exists) and not tracked at the instance level.
   return "running";
 }
 

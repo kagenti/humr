@@ -79,6 +79,7 @@ export function buildJob(opts: {
     { name: "NODE_USE_ENV_PROXY", value: "1" },
     { name: "GIT_HTTP_PROXY_AUTHMETHOD", value: "basic" },
     { name: "GH_TOKEN", value: "humr:sentinel" },
+    { name: "CLAUDE_CODE_OAUTH_TOKEN", value: "humr:sentinel" },
     { name: "ADK_INSTANCE_ID", value: instanceId },
     { name: "API_SERVER_URL", value: `http://${cfg.releaseName}-apiserver.${cfg.releaseNamespace}.svc.cluster.local:4000` },
     { name: "HOME", value: "/home/agent" },
