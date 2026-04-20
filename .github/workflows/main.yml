@@ -149,8 +149,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
-      - name: Log in to GHCR OCI
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
       - name: Deploy via Helm
         run: |
           helm upgrade ${{ vars.HELM_RELEASE }} \
