@@ -19,3 +19,9 @@ run = "echo 'No tests for ui yet'"
 ["ui:run"]
 dir = "{{config_root}}"
 run = "pnpm ui"
+
+["ui:icons"]
+# Rasterize favicon.svg to PWA / apple-touch PNGs with safe-area padding.
+dir = "{{config_root}}/packages/ui"
+depends = ["ui:setup"]
+run = "pnpm exec node scripts/generate-icons.mjs"
