@@ -2,18 +2,6 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import { client } from "./helpers/trpc-client.js";
-import {
-  getConfigMap,
-  configMapExists,
-  patchConfigMapData,
-  waitForConfigMapKey,
-  waitForPodReady,
-  dumpPodLogs,
-  describePod,
-  describeConfigMap,
-  getEvents,
-} from "./helpers/kubectl.js";
-import yaml from "js-yaml";
 
 let AGENT_ID: string;
 let INSTANCE_ID: string;
@@ -158,39 +146,14 @@ describe("schedules: API server CRUD", () => {
       expect(list[0].name).toBe("health-check");
     });
 
-    it("ConfigMap is removed from cluster", async () => {
-      expect(await configMapExists(cronScheduleId)).toBe(false);
-    });
   });
 
   describe("read schedule status", () => {
-    it("returns null status when controller has not written status.yaml", async () => {
+    it("returns null status when cron has not fired", async () => {
       const sched = await client.schedules.get.query({
         id: secondCronScheduleId,
       });
       expect(sched.status).toBeNull();
-    });
-
-    it("returns status fields after controller writes status.yaml", async () => {
-      const statusYaml = [
-        "lastRun: '2026-04-08T09:00:00Z'",
-        "nextRun: '2026-04-08T09:05:00Z'",
-        "lastResult: success",
-      ].join("\n");
-      await patchConfigMapData(
-        secondCronScheduleId,
-        "status.yaml",
-        statusYaml,
-      );
-
-      const sched = await client.schedules.get.query({
-        id: secondCronScheduleId,
-      });
-      expect(sched.status).toMatchObject({
-        lastResult: "success",
-      });
-      expect(sched.status!.lastRun).toContain("2026-04-08T09:00:00");
-      expect(sched.status!.nextRun).toContain("2026-04-08T09:05:00");
     });
 
     it("returns NOT_FOUND for non-existent schedule", async () => {
@@ -206,81 +169,7 @@ describe("schedules: API server CRUD", () => {
 
 });
 
-describe("e2e: controller reconciliation", () => {
-  let e2eAgentId: string;
-  let e2eInstanceId: string;
-  let e2eScheduleId: string;
-
-  beforeAll(async () => {
-    const agent = await client.agents.create.mutate({
-      name: "e2e-agent",
-      templateId: "claude-code",
-    });
-    e2eAgentId = agent.id;
-    const inst = await client.instances.create.mutate({
-      name: "e2e-instance",
-      agentId: e2eAgentId,
-    });
-    e2eInstanceId = inst.id;
-    await waitForPodReady(`${e2eInstanceId}-0`, 180_000);
-  });
-
-  afterAll(async () => {
-    try {
-      if (e2eScheduleId) await client.schedules.delete.mutate({ id: e2eScheduleId });
-    } catch {}
-    try {
-      await client.instances.delete.mutate({ id: e2eInstanceId });
-    } catch {}
-    try {
-      await client.agents.delete.mutate({ id: e2eAgentId });
-    } catch {}
-  });
-
-  it("controller writes status.yaml after cron fires", async () => {
-    const sched = await client.schedules.createCron.mutate({
-      name: "e2e-cron",
-      instanceId: e2eInstanceId,
-      cron: "* * * * *",
-      task: "e2e test task",
-    });
-    e2eScheduleId = sched.id;
-
-    try {
-      const cm = await waitForConfigMapKey(e2eScheduleId, "status.yaml");
-      const status = yaml.load(cm.data!["status.yaml"]) as Record<
-        string,
-        unknown
-      >;
-
-      expect(status.lastResult).toBe("success");
-      expect(status.lastRun).toBeTruthy();
-      expect(status.nextRun).toBeTruthy();
-    } catch (e) {
-      const podName = `${e2eInstanceId}-0`;
-      const [ctrlLogs, podInfo, podLogs, podEvents, scheduleCm] =
-        await Promise.all([
-          dumpPodLogs("app.kubernetes.io/component=controller"),
-          describePod(podName),
-          dumpPodLogs(`humr.ai/instance=${e2eInstanceId}`, "humr-agents"),
-          getEvents(podName),
-          describeConfigMap(e2eScheduleId),
-        ]);
-      console.error(
-        [
-          "=== Controller Logs ===",
-          ctrlLogs,
-          "=== Agent Pod Describe ===",
-          podInfo,
-          "=== Agent Pod Logs (incl. init) ===",
-          podLogs,
-          "=== Agent Pod Events ===",
-          podEvents,
-          "=== Schedule ConfigMap ===",
-          scheduleCm,
-        ].join("\n"),
-      );
-      throw e;
-    }
-  });
-});
+// The controller-reconciliation e2e test was ConfigMap/status.yaml based.
+// TODO: rewrite against the in-process cron-scheduler once the Job model
+// stabilizes — needs to observe the DB-persisted lastRun/lastResult columns
+// and a spawned agent Job instead of polling a ConfigMap.
