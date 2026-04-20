@@ -86,33 +86,57 @@ async function withAcpConnection<T>(
   fn: (connection: ClientSideConnection) => Promise<T>,
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
+
+  const ac = new AbortController();
+  let timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const resetTimeout = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  };
+
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
         return { outcome: { outcome: "selected" as const, optionId: params.options[0].optionId } };
       },
-      async sessionUpdate(params: any) { await handlers.sessionUpdate?.(params); },
+      async sessionUpdate(params: any) {
+        resetTimeout();
+        await handlers.sessionUpdate?.(params);
+      },
       async writeTextFile() { return {}; },
       async readTextFile() { return { content: "" }; },
     }),
     stream,
   );
 
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
   const cleanup = () => {
+    clearTimeout(timer);
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
   };
 
   try {
-    timeout.addEventListener("abort", cleanup, { once: true });
+    ac.signal.addEventListener("abort", cleanup, { once: true });
     await connection.initialize({
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
-    return await fn(connection);
+    return await Promise.race([
+      fn(connection),
+      new Promise<never>((_, reject) => {
+        if (ac.signal.aborted) {
+          reject(new Error(`ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`));
+          return;
+        }
+        ac.signal.addEventListener(
+          "abort",
+          () => reject(new Error(`ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`)),
+          { once: true },
+        );
+      }),
+    ]);
   } finally {
-    timeout.removeEventListener("abort", cleanup);
+    ac.signal.removeEventListener("abort", cleanup);
     cleanup();
   }
 }
