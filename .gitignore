@@ -38,3 +38,7 @@ context/
 .worktrees/
 .claude/worktrees/
 .context/
+
+# Playwright
+.playwright-mcp
+
