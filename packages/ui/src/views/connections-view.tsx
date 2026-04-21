@@ -223,14 +223,6 @@ export function ConnectionsView() {
                         : c.connectedAt
                           ? `Connected ${new Date(c.connectedAt).toLocaleDateString()}`
                           : c.provider}
-                      {c.envMappings && c.envMappings.length > 0 && (
-                        <>
-                          {" · "}
-                          <span className="text-accent">
-                            {c.envMappings.map((m) => m.envName).join(", ")}
-                          </span>
-                        </>
-                      )}
                     </div>
                   </div>
                   <AppStatusPill status={c.status} size="md" />
@@ -389,14 +381,6 @@ export function ConnectionsView() {
                   </div>
                   <div className="text-[12px] font-mono text-text-muted truncate">
                     {s.hostPattern}
-                    {s.envMappings && s.envMappings.length > 0 && (
-                      <>
-                        {" · "}
-                        <span className="text-accent">
-                          {s.envMappings.map((m) => m.envName).join(", ")}
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-surface-raised text-text-muted border-border-light">
