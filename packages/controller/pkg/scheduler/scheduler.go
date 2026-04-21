@@ -212,10 +212,15 @@ func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (
 	return woke, err
 }
 
-// pollUntilReady polls isReady with exponential backoff + jitter until it
-// returns true, the context is cancelled, or the timeout elapses. Extracted
-// from waitForPodReady so it can be unit-tested with short intervals and
-// deterministic readiness signals.
+// pollUntilReady polls isReady with exponential backoff + jitter.
+//
+// Backoff: start fast so a quick wake is still detected quickly, then
+// slow down so a pod that takes longer doesn't get hammered for the
+// full deadline. Jitter: ±20% so many callers waking at once desync
+// within a few iterations instead of polling in lockstep bursts.
+//
+// Extracted from waitForPodReady so the loop can be unit-tested with
+// short intervals and a deterministic isReady.
 func pollUntilReady(
 	ctx context.Context,
 	isReady func(context.Context) bool,
@@ -227,7 +232,6 @@ func pollUntilReady(
 		if isReady(ctx) {
 			return true
 		}
-		// ±20% jitter so concurrent callers don't align their polls.
 		jittered := time.Duration(float64(interval) * (0.8 + 0.4*rand.Float64()))
 		select {
 		case <-ctx.Done():

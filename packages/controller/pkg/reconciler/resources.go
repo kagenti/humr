@@ -200,13 +200,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 						}},
 						Env:     env,
 						EnvFrom: envFrom,
-						// StartupProbe polls fast during initial pod startup so wake-up
-						// from hibernation is detected quickly. Once it succeeds, the
-						// steady-state ReadinessProbe takes over at a slower cadence so
-						// we don't keep every agent pod health-checked every second.
-						// FailureThreshold gives ~2 minutes of startup runway — enough
-						// for a cold image pull of a multi-hundred-MB agent image on a
-						// fresh node before the kubelet restarts the container.
+						// Fast (1s) during startup so wake-up is detected quickly, slow
+						// (10s) afterwards so we're not probing every agent pod every
+						// second forever. FailureThreshold=120 → ~2 min of startup
+						// runway, enough for a cold pull of a large agent image.
 						StartupProbe: &corev1.Probe{
 							ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 							PeriodSeconds:    1,

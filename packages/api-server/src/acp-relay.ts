@@ -27,9 +27,15 @@ function shouldUpdateActivity(instanceId: string): boolean {
 }
 
 /**
- * Poll `isReady` with exponential backoff + jitter until it returns true or
- * the deadline elapses. Extracted so it can be unit-tested with short
- * intervals and deterministic readiness signals.
+ * Poll `isReady` with exponential backoff + jitter.
+ *
+ * Backoff: start fast so a quick wake is still detected quickly, then
+ * slow down so a pod that takes longer doesn't get hammered for the
+ * full deadline. Jitter: ±20% so many callers waking at once desync
+ * within a few iterations instead of polling in lockstep bursts.
+ *
+ * Exported so the loop can be unit-tested with short intervals and a
+ * deterministic isReady.
  */
 export async function pollUntilReady(
   isReady: () => Promise<boolean>,
@@ -41,7 +47,6 @@ export async function pollUntilReady(
   let interval = initialMs;
   while (Date.now() < deadline) {
     if (await isReady()) return true;
-    // ±20% jitter so concurrent waiters on the same pod don't poll in lockstep.
     const jittered = interval * (0.8 + 0.4 * Math.random());
     await new Promise((r) => setTimeout(r, jittered));
     interval = Math.min(Math.floor(interval * 1.5), maxMs);
