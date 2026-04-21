@@ -2,7 +2,6 @@ import type { SecretView } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import { Globe, Info, KeyRound, Lock, Sparkles } from "lucide-react";
-import { AuthModeBadge } from "./auth-mode-badge.js";
 import { HoverTooltip } from "./hover-tooltip.js";
 import { AppStatusPill } from "./app-status-pill.js";
 
@@ -89,7 +88,6 @@ export function ConnectionsPicker({
                 onToggle={() => onToggleSecret(s.id)}
                 icon={<Sparkles size={14} className="text-warning" />}
                 label={s.name}
-                trailing={<AuthModeBadge mode={s.authMode} />}
               />
             ))}
           </Section>

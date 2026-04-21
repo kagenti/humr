@@ -47,7 +47,6 @@ export type {
 export type {
   SecretType,
   SecretMode,
-  AnthropicAuthMode,
   SecretView,
   CreateSecretInput,
   UpdateSecretInput,
@@ -59,7 +58,8 @@ export {
   DEFAULT_ENV_PLACEHOLDER,
   ENV_NAME_RE,
   isValidEnvName,
-  ANTHROPIC_DEFAULT_ENV_MAPPING,
+  ANTHROPIC_OAUTH_ENV_MAPPING,
+  ANTHROPIC_API_KEY_ENV_MAPPING,
 } from "./modules/secrets/types.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
