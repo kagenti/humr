@@ -62,6 +62,7 @@ interface Env {
   agentsGet: ReturnType<typeof vi.fn>;
   runtimeInstall: ReturnType<typeof vi.fn>;
   runtimeUninstall: ReturnType<typeof vi.fn>;
+  getAgentToken: ReturnType<typeof vi.fn>;
   svc: ReturnType<typeof createSkillsService>;
 }
 
@@ -89,16 +90,19 @@ function makeEnv(opts: {
     uninstall: runtimeUninstall,
   };
 
+  const getAgentToken = vi.fn<(agentId: string) => Promise<string>>().mockResolvedValue("agent-token-xyz");
+
   const svc = createSkillsService({
     repo: makeRepo(),
     instancesRepo,
     agentsRepo,
     runtimeClient,
+    getAgentToken,
     owner: OWNER,
     scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
   });
 
-  return { instancesGet, instancesUpdate, agentsGet, runtimeInstall, runtimeUninstall, svc };
+  return { instancesGet, instancesUpdate, agentsGet, runtimeInstall, runtimeUninstall, getAgentToken, svc };
 }
 
 const installInput = {
@@ -114,7 +118,7 @@ describe("skills-service install", () => {
     const result = await env.svc.installSkill(installInput);
 
     expect(env.runtimeInstall).toHaveBeenCalledTimes(1);
-    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, {
+    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", {
       source: SOURCE.gitUrl,
       name: "adr",
       version: "sha-v1",
@@ -147,7 +151,7 @@ describe("skills-service install", () => {
   it("falls back to the default skillPath when the agent has none", async () => {
     const env = makeEnv({ agent: makeAgent() });
     await env.svc.installSkill(installInput);
-    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, expect.objectContaining({
+    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", expect.objectContaining({
       skillPaths: ["/home/agent/.agents/skills/"],
     }));
   });
@@ -193,7 +197,7 @@ describe("skills-service uninstall", () => {
       name: "adr",
     });
 
-    expect(env.runtimeUninstall).toHaveBeenCalledWith(INSTANCE_ID, {
+    expect(env.runtimeUninstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", {
       name: "adr",
       skillPaths: ["/home/agent/.claude/skills/"],
     });
@@ -220,6 +224,7 @@ describe("skills-service deleteSource", () => {
       instancesRepo: {} as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
       runtimeClient: {} as AgentRuntimeSkillsClient,
+      getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
       scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
