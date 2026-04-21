@@ -100,6 +100,7 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
 	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver, onecliFactory)
+	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver, onecliFactory)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()
@@ -140,6 +141,8 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 				instanceReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":
 				sched.RemoveSchedule(cm.Name)
+			case "agent-fork":
+				forkReconciler.Delete(ctx, cm.Name)
 			}
 		},
 	})
@@ -187,6 +190,12 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 					return
 				}
 				slog.Info("synced schedule", "name", name)
+			case "agent-fork":
+				if err := forkReconciler.Reconcile(ctx, cm); err != nil {
+					slog.Error("reconcile fork", "name", name, "error", err)
+					queue.AddRateLimited(key)
+					return
+				}
 			}
 			queue.Forget(key)
 		}()
