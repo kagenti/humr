@@ -444,8 +444,13 @@ export function createSlackWorker(
   }) {
     if (!app) return;
 
-    const instance = await instances().get(args.instanceName);
-    if (instance && instance.allowedUsers.length > 0 && !instance.allowedUsers.includes(args.keycloakSub)) {
+    const [instance, ownerSub] = await Promise.all([
+      instances().get(args.instanceName),
+      getInstanceOwner(args.instanceName),
+    ]);
+    const isOwner = ownerSub !== null && ownerSub === args.keycloakSub;
+    const isAllowed = !!instance && instance.allowedUsers.includes(args.keycloakSub);
+    if (!isOwner && !isAllowed) {
       await app.client.chat.postEphemeral({
         channel: args.channel,
         user: args.slackUserId,
@@ -456,8 +461,7 @@ export function createSlackWorker(
 
     threadRoutes.set(args.threadTs, args.instanceName);
 
-    const ownerSub = await getInstanceOwner(args.instanceName);
-    if (ownerSub && ownerSub !== args.keycloakSub) {
+    if (!isOwner) {
       await beginForeignTurn(args);
       return;
     }
