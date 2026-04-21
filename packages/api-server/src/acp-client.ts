@@ -146,7 +146,27 @@ export function createAcpClient(opts: {
   instanceName: string;
   onSessionCreated: (sessionId: string) => Promise<void>;
 }): AcpClient {
-  const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
+  return createAcpClientForUrl({
+    url: `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
+    onSessionCreated: opts.onSessionCreated,
+  });
+}
+
+export function createForkAcpClient(opts: {
+  podIP: string;
+  onSessionCreated: (sessionId: string) => Promise<void>;
+}): AcpClient {
+  return createAcpClientForUrl({
+    url: `ws://${opts.podIP}:8080/api/acp`,
+    onSessionCreated: opts.onSessionCreated,
+  });
+}
+
+function createAcpClientForUrl(opts: {
+  url: string;
+  onSessionCreated: (sessionId: string) => Promise<void>;
+}): AcpClient {
+  const { url } = opts;
 
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {

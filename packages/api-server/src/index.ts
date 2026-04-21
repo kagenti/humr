@@ -2,6 +2,7 @@ import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
 import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
@@ -10,6 +11,17 @@ import { createIdentityLinkService } from "./modules/channels/services/identity-
 import {
   findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
+import {
+  startOnForkReadySaga,
+  startOnForkFailedSaga,
+} from "./modules/channels/index.js";
+import { composeConnectionsModule } from "./modules/connections/index.js";
+import {
+  composeForksModule,
+  startOnForeignReplySaga,
+  startOnSlackTurnRelayedSaga,
+} from "./modules/forks/index.js";
+import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { loadConfig } from "./config.js";
 import { createOnecliClient } from "./onecli.js";
 import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
@@ -34,6 +46,27 @@ const k8sCleanupSub = startK8sCleanupSaga(createK8sClient(api, config.namespace)
 const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
 const onecliSyncSub = startOnecliSyncSaga(onecli);
 
+const k8sClient = createK8sClient(api, config.namespace);
+const instancesRepo = createInstancesRepository(k8sClient);
+
+const { foreignCredentials } = composeConnectionsModule({
+  foreignCredentialsConfig: {
+    keycloakTokenUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`,
+    clientId: config.keycloakApiClientId,
+    clientSecret: config.keycloakApiClientSecret,
+    onecliAudience: config.onecliAudience,
+    onecliBaseUrl: config.onecliBaseUrl,
+  },
+});
+
+const { forks } = composeForksModule({
+  foreignCredentials,
+  orchestrator: createK8sForkOrchestrator({ api, namespace: config.namespace }),
+});
+
+const onForeignReplySub = startOnForeignReplySaga(forks);
+const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
+
 const systemInstances = composeSystemInstances(api, config.namespace, db);
 const persistSession = upsertSession(db);
 const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
@@ -50,29 +83,33 @@ const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
 const slackOauthCallbackUrl = config.slackOauthCallbackUrl
   ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
 
-const channelManager = createChannelManager({
-  slackWorker: config.slackBotToken && config.slackAppToken
-    ? createSlackWorker(
-        config.namespace,
-        config.slackBotToken,
-        config.slackAppToken,
-        () => systemInstances,
-        persistSlackSession,
-        identityLinkService,
-        {
-          keycloakExternalUrl: config.keycloakExternalUrl,
-          keycloakRealm: config.keycloakRealm,
-          keycloakClientId: config.keycloakClientId,
-          callbackUrl: slackOauthCallbackUrl,
-        },
-        pendingSlackOAuthFlows,
-        {
-          find: findByInstanceAndThreadTs(db),
-          touch: touchSession(db),
-        },
-      )
-    : undefined,
-});
+const slackWorker = config.slackBotToken && config.slackAppToken
+  ? createSlackWorker(
+      config.namespace,
+      config.slackBotToken,
+      config.slackAppToken,
+      () => systemInstances,
+      persistSlackSession,
+      identityLinkService,
+      {
+        keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakRealm: config.keycloakRealm,
+        keycloakClientId: config.keycloakClientId,
+        callbackUrl: slackOauthCallbackUrl,
+      },
+      pendingSlackOAuthFlows,
+      {
+        find: findByInstanceAndThreadTs(db),
+        touch: touchSession(db),
+      },
+      (instanceId) => instancesRepo.getOwner(instanceId),
+    )
+  : undefined;
+
+const channelManager = createChannelManager({ slackWorker });
+
+const onForkReadySub = slackWorker ? startOnForkReadySaga(slackWorker) : undefined;
+const onForkFailedSub = slackWorker ? startOnForkFailedSaga(slackWorker) : undefined;
 
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows,
@@ -91,6 +128,10 @@ async function shutdown() {
   k8sCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   onecliSyncSub.unsubscribe();
+  onForeignReplySub.unsubscribe();
+  onSlackTurnRelayedSub.unsubscribe();
+  onForkReadySub?.unsubscribe();
+  onForkFailedSub?.unsubscribe();
   await channelManager.stopAll();
   await sql.end();
   harnessApiServer.close();
