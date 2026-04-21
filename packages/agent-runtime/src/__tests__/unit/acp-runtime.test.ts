@@ -764,6 +764,50 @@ describe("createAcpRuntime", () => {
     expect(a.sent.length).toBe(aBefore);
   });
 
+  it("does NOT cache metadata on session/resume responses (preserves cold-bootstrap after reap)", () => {
+    // Regression: session/resume re-engages a channel without replaying
+    // history (unlike session/load, which calls replaySessionHistory).
+    // When all viewers briefly disconnect mid-prompt, maybeCloseIdleSession
+    // reaps the session and deletes the log. The same client reconnecting
+    // via unstable_resumeSession would then cause a fresh getOrCreateLog
+    // to populate metadata from the resume response — freezing an empty
+    // log as "complete". A later viewer's session/load would hit the
+    // cache and serve no history, even though the agent's on-disk store
+    // still has everything.
+    //
+    // Fix: only cache on session/new, session/fork, and session/load
+    // responses — paths that authoritatively produce a full log state.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    // Simulate post-reap state: a fresh channel issues session/resume for
+    // an sid the runtime has no log for.
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(resumeSessionRequest(1));
+    const resumeOut = outboundId(fa.sent[0]);
+    fa.pushLine(JSON.stringify({
+      jsonrpc: "2.0", id: resumeOut,
+      result: { modes: {}, models: {}, configOptions: [] },
+    }));
+
+    // A second viewer now loads the session. Because no metadata was
+    // cached on the resume, this MUST cold-bootstrap (forward to agent)
+    // rather than serve an empty log from memory.
+    const agentSentBefore = fa.sent.length;
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(JSON.stringify({
+      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
+    }));
+
+    // Forwarded to agent (cold bootstrap) — not served from memory.
+    const loadForwards = fa.sent
+      .slice(agentSentBefore)
+      .filter((f: any) => f.method === "session/load");
+    expect(loadForwards.length).toBe(1);
+  });
+
   it("caches session/new response metadata so a later session/load is served from memory (no re-replay)", () => {
     // Regression: when a session is created via session/new and populated
     // by live prompt events, the runtime used to leave log.metadata=null

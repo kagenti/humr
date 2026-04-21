@@ -606,16 +606,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const sidForChannel = sidFromResult ?? mapping.attachSessionId;
         if (sidForChannel) {
           engage(mapping.channel, sidForChannel);
-          // Cache the response body as log metadata so a subsequent
-          // session/load for this sid is served from memory. Without this,
-          // a session created via session/new leaves metadata=null even
-          // though its log is populated by live events; a second viewer's
-          // session/load would miss the cache, cold-bootstrap the agent,
-          // and the agent's replaySessionHistory would append duplicate
-          // entries to the already-populated log.
-          const log = getOrCreateLog(sidForChannel);
-          if (log.metadata === null) {
-            log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+          // Cache the response body as log metadata **only** on paths that
+          // produce authoritative log state: session/new and session/fork
+          // start an empty log that the creator's prompts will populate,
+          // and session/load populates it via replaySessionHistory. NEVER
+          // cache on session/resume — resume doesn't replay history, and
+          // may happen right after maybeCloseIdleSession reaped the log
+          // (e.g. brief WS drop during a prompt). Caching on resume would
+          // mark an empty log as "complete" and a later session/load from
+          // another tab would hit the cache and serve no history.
+          const cacheable = mapping.method === "session/new"
+            || mapping.method === "session/fork"
+            || mapping.method === "session/load";
+          if (cacheable) {
+            const log = getOrCreateLog(sidForChannel);
+            if (log.metadata === null) {
+              log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+            }
           }
         }
 
