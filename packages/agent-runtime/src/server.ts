@@ -7,6 +7,12 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
 import { createFilesService } from "./modules/files.js";
+import {
+  installSkill,
+  installSkillInputSchema,
+  uninstallSkill,
+  uninstallSkillInputSchema,
+} from "./modules/skills.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -43,6 +49,37 @@ const CORS = {
 // prevents partial reads before the service-level check kicks in.
 const TRPC_MAX_BODY_SIZE = 32 * 1024 * 1024;
 
+const MAX_BODY_BYTES = 1_000_000;
+
+function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on("data", (c: Buffer) => {
+      total += c.length;
+      if (total > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new Error("request body too large"));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      try {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve(body ? JSON.parse(body) : {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function writeJson(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(body));
+}
+
 const trpcHandler = createHTTPHandler({
   router: appRouter,
   createContext,
@@ -76,6 +113,42 @@ const server = http.createServer((req, res) => {
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
     };
     res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
+    return;
+  }
+
+  if (req.url === "/api/skills/install" && req.method === "POST") {
+    (async () => {
+      const body = await readJsonBody(req);
+      const parsed = installSkillInputSchema.safeParse(body);
+      if (!parsed.success) {
+        writeJson(res, 400, { error: parsed.error.message });
+        return;
+      }
+      try {
+        await installSkill(parsed.data);
+        writeJson(res, 200, { ok: true });
+      } catch (err) {
+        writeJson(res, 500, { error: (err as Error).message });
+      }
+    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
+    return;
+  }
+
+  if (req.url === "/api/skills/uninstall" && req.method === "POST") {
+    (async () => {
+      const body = await readJsonBody(req);
+      const parsed = uninstallSkillInputSchema.safeParse(body);
+      if (!parsed.success) {
+        writeJson(res, 400, { error: parsed.error.message });
+        return;
+      }
+      try {
+        await uninstallSkill(parsed.data);
+        writeJson(res, 200, { ok: true });
+      } catch (err) {
+        writeJson(res, 500, { error: (err as Error).message });
+      }
+    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
   }
 

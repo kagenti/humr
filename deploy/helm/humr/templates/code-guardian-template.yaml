@@ -41,4 +41,6 @@ data:
         memory: {{ .Values.codeGuardianTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
+    skillPaths:
+      - /home/agent/.claude/skills/
 {{- end }}
