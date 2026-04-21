@@ -20,31 +20,36 @@ workspace/
   work/
     .pi/
       APPEND_SYSTEM.md   ← appended to the system prompt (project-scoped)
-extension/
-  package.json           ← @humr/pi-rits (installed globally in the image)
-  index.js               ← registers the RITS provider via pi.registerProvider()
+  .pi/agent/extensions/pi-rits/
+    index.ts             ← auto-discovered by pi on startup; registers the RITS provider from env vars
 ```
 
 ## RITS (custom OpenAI-compatible provider)
 
-The [`@humr/pi-rits`](extension/) extension is loaded by pi on startup (via `packages` in `settings.json`) and calls `pi.registerProvider("rits", …)` only when both `RITS_URL` and `RITS_MODEL` are set — otherwise the image is a no-op drop-in. Everything is driven by pod env vars.
-
-RITS exposes one model per base URL, so each pi-agent pod targets a single endpoint. Authentication uses a `RITS_API_KEY` header (not `Authorization`) — the extension passes `apiKey: "RITS_API_KEY"` and `headers.RITS_API_KEY: "RITS_API_KEY"` (env-var names), so pi resolves the live secret from the pod env at **request time**. `authHeader: true` makes pi also send `Authorization: Bearer $RITS_API_KEY`, which RITS ignores.
+The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider tuned for vLLM (what RITS runs) and mirrors the config into `~/.pi/agent/models.json`.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|
-| `RITS_URL` | yes | — | Full endpoint URL for the chosen RITS model. The extension appends `/v1` if not already present. |
-| `RITS_MODEL` | yes | — | Model identifier (the string passed as `model` in chat-completions requests). |
-| `RITS_API_KEY` | yes | — | Sent verbatim in the `RITS_API_KEY` header. Inject via an OneCLI secret with `envMappings: [{ envName: RITS_API_KEY }]`. |
+| `RITS_URL` | yes | — | Endpoint URL; `/v1` is appended if missing. |
+| `RITS_MODEL` | yes | — | Model identifier. |
+| `RITS_REASONING` | no | `false` | Enable pi's thinking UI for reasoning-capable models. |
 | `RITS_CONTEXT_WINDOW` | no | `128000` | Context window in tokens. |
 | `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
+| `RITS_THINKING_FORMAT` | no | — | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
 
-To make RITS the default, edit `settings.json`:
+The API key is **not** a pod env var. Configure it as a OneCLI generic secret with `RITS_API_KEY` as the custom injection header and a host pattern matching your RITS deployment. OneCLI injects the header on outbound traffic at the proxy layer.
+
+To make RITS the default model, edit `settings.json`:
 
 ```json
 "defaultProvider": "rits",
 "defaultModel": "<value of RITS_MODEL>"
 ```
+
+### pi-acp auth-gate workarounds ([#15](https://github.com/svkozak/pi-acp/issues/15))
+
+1. *Startup gate* — `pi-acp` refuses to spawn `pi` unless a recognized credential exists. Satisfied by the dummy `ENV OPENCODE_API_KEY=pi-acp-auth-gate-bypass` in the Dockerfile (allow-listed name, unused by any pi provider).
+2. *Per-session gate* — `pi-acp` re-checks `models.json.providers[*].apiKey` on every `session/prompt`. Satisfied by the extension mirroring its `registerProvider` config to `models.json` on load; the `apiKey` value there is a placeholder.
 
 Pi system prompt conventions:
 
