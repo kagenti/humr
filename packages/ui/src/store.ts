@@ -124,7 +124,13 @@ export interface HumrStore {
 
   // Persist-across-mount "we've fetched at least once" flags. Prevents the
   // list-view skeleton from reappearing when the user navigates away and back.
-  loadedOnce: { agents: boolean; instances: boolean; secrets: boolean };
+  loadedOnce: {
+    agents: boolean;
+    instances: boolean;
+    secrets: boolean;
+    appConnections: boolean;
+    mcpConnections: boolean;
+  };
 
   // Template actions (read-only catalog)
   fetchTemplates: () => Promise<void>;
@@ -186,12 +192,6 @@ export interface HumrStore {
   mcpConnections: McpConnection[];
   fetchAppConnections: () => Promise<void>;
   fetchMcpConnections: () => Promise<void>;
-
-  // One-shot flag — when set, the list view opens the Add Agent dialog on mount.
-  // Used by the SetupProgressBar's agent pill so clicking it goes straight to
-  // the dialog rather than the list view's empty state.
-  pendingAddAgent: boolean;
-  setPendingAddAgent: (v: boolean) => void;
 
   // Secrets
   secrets: SecretView[];
@@ -332,7 +332,13 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Loading states
   loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
-  loadedOnce: { agents: false, instances: false, secrets: false },
+  loadedOnce: {
+    agents: false,
+    instances: false,
+    secrets: false,
+    appConnections: false,
+    mcpConnections: false,
+  },
 
   // Template actions (read-only catalog)
   fetchTemplates: async () => {
@@ -599,31 +605,36 @@ export const useStore = create<HumrStore>((set, get) => ({
   fetchAppConnections: async () => {
     try {
       const list = await platform.connections.list.query();
-      set({
+      set((s) => ({
         appConnections: Array.isArray(list) ? list : [],
         appConnectionsError: null,
-      });
+        loadedOnce: { ...s.loadedOnce, appConnections: true },
+      }));
     } catch (err) {
       console.warn("connections.list failed", err);
-      set({
+      set((s) => ({
         appConnectionsError: err instanceof Error ? err.message : String(err),
-      });
+        loadedOnce: { ...s.loadedOnce, appConnections: true },
+      }));
     }
   },
-  pendingAddAgent: false,
-  setPendingAddAgent: (v) => set({ pendingAddAgent: v }),
 
   fetchMcpConnections: async () => {
     try {
       const r = await authFetch("/api/mcp/connections");
       if (!r.ok) {
         console.warn("mcp/connections fetch failed", r.status);
+        set((s) => ({ loadedOnce: { ...s.loadedOnce, mcpConnections: true } }));
         return;
       }
       const d = await r.json();
-      set({ mcpConnections: Array.isArray(d) ? d : [] });
+      set((s) => ({
+        mcpConnections: Array.isArray(d) ? d : [],
+        loadedOnce: { ...s.loadedOnce, mcpConnections: true },
+      }));
     } catch (err) {
       console.warn("mcp/connections fetch failed", err);
+      set((s) => ({ loadedOnce: { ...s.loadedOnce, mcpConnections: true } }));
     }
   },
 
