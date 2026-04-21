@@ -1,19 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
-import { isMcpSecret, isCustomSecret } from "../types.js";
+import { isMcpSecret } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
-import { RefreshCw, Plus, Trash2, KeyRound, Check } from "lucide-react";
+import { RefreshCw, Plus, Trash2, KeyRound } from "lucide-react";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
-import {
-  computeOnboardingState,
-  firstPendingStep,
-  isConnectionsSkipped,
-  setConnectionsSkipped,
-  type OnboardingState,
-} from "../lib/onboarding.js";
 
 export function ListView() {
   const templates = useStore(s => s.templates);
@@ -30,15 +23,8 @@ export function ListView() {
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
   const secrets = useStore(s => s.secrets);
-  const fetchSecrets = useStore(s => s.fetchSecrets);
   const agentAccess = useStore(s => s.agentAccess);
   const fetchAgentAccess = useStore(s => s.fetchAgentAccess);
-  const appConnections = useStore(s => s.appConnections);
-  const mcpConnections = useStore(s => s.mcpConnections);
-  const fetchAppConnections = useStore(s => s.fetchAppConnections);
-  const fetchMcpConnections = useStore(s => s.fetchMcpConnections);
-  const pendingAddAgent = useStore(s => s.pendingAddAgent);
-  const setPendingAddAgent = useStore(s => s.setPendingAddAgent);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [busyAgent, setBusyAgent] = useState(false);
@@ -47,38 +33,10 @@ export function ListView() {
   const [delAgent, setDelAgent] = useState<string | null>(null);
   const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
 
-  // Onboarding — connections-skipped flag (localStorage-backed)
-  const [connectionsSkipped, setConnectionsSkippedState] = useState(() => isConnectionsSkipped());
-
   // Persisted across mount in the store — ensures skeleton doesn't reappear
   // when the user navigates away and back while data is already loaded.
   const loadedOnce = useStore(s => s.loadedOnce);
-  const hasProvider = secrets.some(s => s.type === "anthropic");
   const initialLoaded = loadedOnce.agents && loadedOnce.instances && loadedOnce.secrets;
-  const isEmpty = initialLoaded && agents.length === 0;
-
-  const customSecrets = secrets.filter(isCustomSecret);
-  const hasConnections =
-    appConnections.some(c => c.status === "connected") ||
-    mcpConnections.some(c => !c.expired) ||
-    customSecrets.length > 0;
-
-  const onboarding: OnboardingState = computeOnboardingState({
-    hasProvider,
-    hasConnections,
-    hasAgent: agents.length > 0,
-    connectionsSkipped,
-  });
-  const currentStep = firstPendingStep(onboarding);
-
-  const skipConnections = () => {
-    setConnectionsSkipped(true);
-    setConnectionsSkippedState(true);
-  };
-  const unskipConnections = () => {
-    setConnectionsSkipped(false);
-    setConnectionsSkippedState(false);
-  };
 
   const byAgent = useMemo(() => {
     const m = new Map<string, InstanceView[]>();
@@ -86,29 +44,13 @@ export function ListView() {
     return m;
   }, [instances]);
 
-  // Fetch secrets + per-agent access once we have the agent list
-  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
+  // Per-agent access — secrets are fetched by SetupProgressBar (when onboarding)
+  // or providers-view (which is the primary owner of that data).
   useEffect(() => {
     for (const a of agents) {
       if (!agentAccess[a.id]) fetchAgentAccess(a.id);
     }
   }, [agents, agentAccess, fetchAgentAccess]);
-
-  // Onboarding — refresh OneCLI app + MCP connections when in the empty state.
-  // Shared via the store so the SetupProgressBar on Providers/Connections views
-  // sees the same data. Remounts on return from /connections refresh the signal.
-  useEffect(() => {
-    if (!isEmpty) return;
-    fetchAppConnections();
-    fetchMcpConnections();
-  }, [isEmpty, fetchAppConnections, fetchMcpConnections]);
-
-  // Consume one-shot "open Add Agent" request from the SetupProgressBar.
-  useEffect(() => {
-    if (!pendingAddAgent || !isEmpty) return;
-    setShowAddAgent(true);
-    setPendingAddAgent(false);
-  }, [pendingAddAgent, isEmpty, setPendingAddAgent]);
 
   // Count by category for a given agent based on its access mode.
   // "all" mode: counts = totals across all user secrets.
@@ -130,29 +72,27 @@ export function ListView() {
   return (
     <>
       <div>
-        {/* Page header — hidden during onboarding empty state */}
-        {agents.length > 0 && (
-          <div className="flex items-center gap-3 mb-8">
-            <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
-            <div className="ml-auto flex items-center gap-2 md:gap-3">
-              <button
-                onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
-                className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-              >
-                <RefreshCw size={14} />
-              </button>
-              <button
-                onClick={() => setShowAddAgent(true)}
-                disabled={busyAgent}
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-              >
-                <Plus size={14} /> <span className="hidden sm:inline">Add</span> Agent
-              </button>
-            </div>
+        {/* Page header */}
+        <div className="flex items-center gap-3 mb-8">
+          <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
+          <div className="ml-auto flex items-center gap-2 md:gap-3">
+            <button
+              onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
+              className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
+              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              onClick={() => setShowAddAgent(true)}
+              disabled={busyAgent}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
+              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            >
+              <Plus size={14} /> <span className="hidden sm:inline">Add</span> Agent
+            </button>
           </div>
-        )}
+        </div>
 
         {/* Skeleton during initial load — only when we expect agents */}
         {!initialLoaded && agents.length > 0 && (
@@ -162,130 +102,10 @@ export function ListView() {
           </div>
         )}
 
-        {/* Empty state — 3-step onboarding when no agents */}
-        {isEmpty && !busyAgent && (
-          <div className="flex flex-col items-center justify-center py-20">
-            <h2 className="text-[20px] font-bold text-text mb-2">Get started</h2>
-            <p className="text-[13px] text-text-muted mb-8">Three steps to your first AI agent</p>
-            <div className="flex flex-col gap-4 w-full max-w-md">
-              {/* Step 1 — provider */}
-              {onboarding.provider === "done" ? (
-                <div
-                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                >
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
-                    <Check size={20} strokeWidth={3} />
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-text">Set up a provider</div>
-                    <div className="text-[12px] text-text-muted">Provider connected</div>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setView("providers")}
-                  className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${currentStep === "provider" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
-                  style={{ boxShadow: currentStep === "provider" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
-                >
-                  <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${currentStep === "provider" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
-                    1
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-text">Set up a provider</div>
-                    <div className="text-[12px] text-text-muted">Your agents need an API key to reach an AI model</div>
-                  </div>
-                </button>
-              )}
-
-              {/* Step 2 — connections (optional) */}
-              {onboarding.connections === "done" ? (
-                <div
-                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                >
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
-                    <Check size={20} strokeWidth={3} />
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-bold text-text">Set up connections</div>
-                    <div className="text-[12px] text-text-muted">Apps, MCP servers or secrets configured</div>
-                  </div>
-                </div>
-              ) : onboarding.connections === "skipped" ? (
-                <div
-                  className="rounded-xl border-2 border-border-light bg-surface p-4 flex items-center gap-4 w-full"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                >
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-surface-raised flex items-center justify-center text-success">
-                    <Check size={20} strokeWidth={3} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[14px] font-bold text-text">Set up connections</div>
-                    <div className="text-[12px] text-text-muted">Skipped — you can add later</div>
-                  </div>
-                  <button
-                    onClick={unskipConnections}
-                    className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2"
-                    title="Unskip this step"
-                    aria-label="Unskip connections step"
-                  >
-                    Unskip
-                  </button>
-                </div>
-              ) : (
-                <div
-                  className={`rounded-xl border-2 p-4 flex items-center gap-4 w-full transition-colors ${currentStep === "connections" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
-                  style={{ boxShadow: currentStep === "connections" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
-                >
-                  <button
-                    onClick={() => setView("connections")}
-                    className="btn-brutal group flex-1 min-w-0 flex items-center gap-4 text-left rounded-lg"
-                  >
-                    <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${currentStep === "connections" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
-                      2
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[14px] font-bold text-text transition-colors group-hover:text-accent">
-                        Set up connections
-                      </div>
-                      <div className="text-[12px] text-text-muted">Apps, MCP servers, or secrets</div>
-                    </div>
-                  </button>
-                  <div className="relative group shrink-0">
-                    <button
-                      onClick={skipConnections}
-                      className="text-[12px] font-semibold text-text-muted hover:text-text underline decoration-dotted underline-offset-2"
-                      aria-label="Skip setting up connections"
-                    >
-                      Skip
-                    </button>
-                    <div
-                      className="pointer-events-none absolute top-full right-0 mt-2 w-56 rounded-lg border-2 border-border-light bg-bg px-3 py-2 text-[11px] text-text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 z-10"
-                      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                      role="tooltip"
-                    >
-                      Fine to skip if your agent doesn't need external tools
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3 — add agent (highlighted when it's the first pending step) */}
-              <button
-                onClick={() => setShowAddAgent(true)}
-                className={`btn-brutal rounded-xl border-2 p-4 text-left flex items-center gap-4 hover:border-accent transition-colors w-full ${currentStep === "agent" ? "border-warning bg-warning-light" : "border-border bg-surface"}`}
-                style={{ boxShadow: currentStep === "agent" ? "var(--shadow-brutal)" : "var(--shadow-brutal-sm)" }}
-              >
-                <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-[15px] font-bold ${currentStep === "agent" ? "bg-warning text-white" : "bg-border-light text-text-secondary"}`}>
-                  3
-                </div>
-                <div>
-                  <div className="text-[14px] font-bold text-text">Add your first agent</div>
-                  <div className="text-[12px] text-text-muted">Pick a template or bring your own image</div>
-                </div>
-              </button>
-            </div>
+        {/* Empty state — consistent placeholder when no agents exist */}
+        {initialLoaded && agents.length === 0 && !busyAgent && (
+          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+            No agents yet
           </div>
         )}
 
