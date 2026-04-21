@@ -1,10 +1,11 @@
+import type { EnvMapping } from "api-server-api";
 import type { OnecliClient } from "../../../onecli.js";
 
 /**
- * Row shape of OneCLI's `GET /api/connections` (>= onecli 0.0.14). Optional
- * fields are not narrowed — the service layer normalizes. `providerName` is
- * the app's display name from the registry (e.g. "Google Drive"); `label` is
- * the user's *identity* (email/username from metadata).
+ * Row shape of OneCLI's `GET /api/connections`. Optional fields are not
+ * narrowed — the service layer normalizes. `providerName` and `envMappings`
+ * are both joined server-side from OneCLI's app registry (display name +
+ * pod-env contract); the consumer never writes them.
  */
 export interface OnecliAppConnection {
   id: string;
@@ -15,6 +16,7 @@ export interface OnecliAppConnection {
   scopes?: string[] | null;
   connectedAt?: string | null;
   metadata?: Record<string, unknown> | null;
+  envMappings?: EnvMapping[] | null;
 }
 
 export interface OnecliAgent {

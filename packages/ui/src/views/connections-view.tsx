@@ -223,6 +223,14 @@ export function ConnectionsView() {
                         : c.connectedAt
                           ? `Connected ${new Date(c.connectedAt).toLocaleDateString()}`
                           : c.provider}
+                      {c.envMappings && c.envMappings.length > 0 && (
+                        <>
+                          {" · "}
+                          <span className="text-accent">
+                            {c.envMappings.map((m) => m.envName).join(", ")}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <AppStatusPill status={c.status} size="md" />
