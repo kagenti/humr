@@ -88,19 +88,24 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
+			pvcSpec := corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("10Gi"),
+					},
+				},
+			}
+			if cfg.AgentStorageClass != "" {
+				sc := cfg.AgentStorageClass
+				pvcSpec.StorageClassName = &sc
+			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   volName,
 					Labels: labels,
 				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"),
-						},
-					},
-				},
+				Spec: pvcSpec,
 			})
 		} else {
 			volumes = append(volumes, corev1.Volume{
