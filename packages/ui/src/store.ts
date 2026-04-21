@@ -14,7 +14,10 @@ import type {
   SecretMode,
   EnvMapping,
   EnvVar,
+  McpConnection,
 } from "./types.js";
+import type { AppConnectionView } from "api-server-api";
+import { authFetch } from "./auth.js";
 import type {
   SessionModeState,
   SessionModelState,
@@ -121,7 +124,7 @@ export interface HumrStore {
 
   // Persist-across-mount "we've fetched at least once" flags. Prevents the
   // list-view skeleton from reappearing when the user navigates away and back.
-  loadedOnce: { agents: boolean; instances: boolean };
+  loadedOnce: { agents: boolean; instances: boolean; secrets: boolean };
 
   // Template actions (read-only catalog)
   fetchTemplates: () => Promise<void>;
@@ -176,6 +179,19 @@ export interface HumrStore {
 
   // Right tab
   setRightTab: (tab: "files" | "log" | "configuration") => void;
+
+  // OneCLI app connections + MCP connections — shared across list/providers/connections views
+  appConnections: AppConnectionView[];
+  appConnectionsError: string | null;
+  mcpConnections: McpConnection[];
+  fetchAppConnections: () => Promise<void>;
+  fetchMcpConnections: () => Promise<void>;
+
+  // One-shot flag — when set, the list view opens the Add Agent dialog on mount.
+  // Used by the SetupProgressBar's agent pill so clicking it goes straight to
+  // the dialog rather than the list view's empty state.
+  pendingAddAgent: boolean;
+  setPendingAddAgent: (v: boolean) => void;
 
   // Secrets
   secrets: SecretView[];
@@ -316,7 +332,7 @@ export const useStore = create<HumrStore>((set, get) => ({
 
   // Loading states
   loading: { templates: false, agents: false, instances: false, sessions: false, session: false },
-  loadedOnce: { agents: false, instances: false },
+  loadedOnce: { agents: false, instances: false, secrets: false },
 
   // Template actions (read-only catalog)
   fetchTemplates: async () => {
@@ -576,12 +592,47 @@ export const useStore = create<HumrStore>((set, get) => ({
   // Right tab
   setRightTab: (tab) => set({ rightTab: tab }),
 
+  // OneCLI app connections + MCP connections
+  appConnections: [],
+  appConnectionsError: null,
+  mcpConnections: [],
+  fetchAppConnections: async () => {
+    try {
+      const list = await platform.connections.list.query();
+      set({
+        appConnections: Array.isArray(list) ? list : [],
+        appConnectionsError: null,
+      });
+    } catch (err) {
+      console.warn("connections.list failed", err);
+      set({
+        appConnectionsError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+  pendingAddAgent: false,
+  setPendingAddAgent: (v) => set({ pendingAddAgent: v }),
+
+  fetchMcpConnections: async () => {
+    try {
+      const r = await authFetch("/api/mcp/connections");
+      if (!r.ok) {
+        console.warn("mcp/connections fetch failed", r.status);
+        return;
+      }
+      const d = await r.json();
+      set({ mcpConnections: Array.isArray(d) ? d : [] });
+    } catch (err) {
+      console.warn("mcp/connections fetch failed", err);
+    }
+  },
+
   // Secrets
   secrets: [],
   fetchSecrets: async () => {
     try {
       const list = await platform.secrets.list.query();
-      set({ secrets: list });
+      set((s) => ({ secrets: list, loadedOnce: { ...s.loadedOnce, secrets: true } }));
     } catch {}
   },
   createSecret: async (input) => {

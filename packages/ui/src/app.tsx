@@ -8,6 +8,7 @@ import { SettingsView } from "./views/settings-view.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { Sidebar } from "./components/sidebar.js";
 import { MobileNav } from "./components/mobile-nav.js";
+import { SetupProgressBar } from "./components/setup-progress-bar.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -87,6 +88,7 @@ export default function App() {
 
       <Sidebar />
       <main className="relative z-10 flex-1 overflow-y-auto">
+        <SetupProgressBar />
         <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
           {view === "settings" ? <SettingsView /> : view === "providers" ? <ProvidersView /> : view === "connections" ? <ConnectionsView /> : <ListView />}
         </div>

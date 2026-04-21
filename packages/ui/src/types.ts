@@ -126,6 +126,11 @@ export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
   return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
+/** User-visible "Secrets" — excludes the Anthropic key and MCP OAuth blobs. */
+export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
+  return s.type !== "anthropic" && !s.name.startsWith(MCP_SECRET_PREFIX);
+}
+
 export function mcpHostnameFromSecretName(name: string): string {
   return name.startsWith(MCP_SECRET_PREFIX) ? name.slice(MCP_SECRET_PREFIX.length) : name;
 }
