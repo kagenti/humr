@@ -36,6 +36,7 @@ export function ConfigurationPanel({
   onResumeSession,
   instanceId,
   instanceRunning,
+  onOpenFile,
 }: {
   mcpOptions: McpOption[];
   enabledMcps: Set<string>;
@@ -48,6 +49,7 @@ export function ConfigurationPanel({
   onResumeSession?: (sessionId: string) => void;
   instanceId: string | null;
   instanceRunning: boolean;
+  onOpenFile?: (path: string) => void;
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
@@ -72,7 +74,7 @@ export function ConfigurationPanel({
       </Section>
 
       <Section title="Skills">
-        <SkillsPanel instanceId={instanceId} isRunning={instanceRunning} />
+        <SkillsPanel instanceId={instanceId} isRunning={instanceRunning} onOpenFile={onOpenFile} />
       </Section>
     </div>
   );

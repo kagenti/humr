@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type {
   CreateSkillSourceInput,
   InstallSkillInput,
+  LocalSkill,
   Skill,
   SkillRef,
   SkillsService,
@@ -113,6 +114,21 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const updated = removeSkill(infra.skills, { source: input.source, name: input.name });
       await deps.instancesRepo.updateSpec(input.instanceId, deps.owner, { skills: updated });
       return updated;
+    },
+
+    async listLocal(instanceId: string): Promise<LocalSkill[]> {
+      const infra = await deps.instancesRepo.get(instanceId, deps.owner);
+      if (!infra) return [];
+      // No filesystem to read when the pod isn't running.
+      if (infra.currentState !== "running") return [];
+      const skillPaths = await resolveSkillPaths(deps, infra.agentId);
+      const token = await deps.getAgentToken(infra.agentId);
+      const all = await deps.runtimeClient.listLocal(instanceId, token, skillPaths);
+      // Subtract anything already tracked as installed-from-remote (by directory
+      // name). Matches behavior that the remote-installed entry is the canonical
+      // one when names collide.
+      const tracked = new Set(infra.skills.map((s) => s.name));
+      return all.filter((s) => !tracked.has(s.name));
     },
   };
 }

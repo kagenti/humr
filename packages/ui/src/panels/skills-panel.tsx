@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Plus, RefreshCw, X } from "lucide-react";
-import type { Skill, SkillRef, SkillSource } from "api-server-api";
+import { ExternalLink, Eye, Plus, RefreshCw, X } from "lucide-react";
+import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
 import { platform } from "../platform.js";
 import { ACTION_FAILED, runAction } from "../store/query-helpers.js";
 import { useStore } from "../store.js";
@@ -8,9 +8,16 @@ import { useStore } from "../store.js";
 interface SkillsPanelProps {
   instanceId: string | null;
   isRunning: boolean;
+  /** Opens a file in the Files tab. Threaded from useFileTree via ChatView. */
+  onOpenFile?: (path: string) => void;
 }
 
 const skillKey = (source: string, name: string) => `${source}::${name}`;
+
+function localSkillMdPath(skill: LocalSkill): string {
+  const base = skill.skillPath.endsWith("/") ? skill.skillPath : `${skill.skillPath}/`;
+  return `${base}${skill.name}/SKILL.md`;
+}
 
 /**
  * Best-effort URL to the skill's SKILL.md at the installed commit. Assumes
@@ -25,7 +32,7 @@ function skillSourceUrl(source: string, version: string, name: string): string {
   return base;
 }
 
-export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
+export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [sources, setSources] = useState<SkillSource[]>([]);
@@ -33,6 +40,7 @@ export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
   const [loadingBySource, setLoadingBySource] = useState<Record<string, boolean>>({});
   const [errorBySource, setErrorBySource] = useState<Record<string, string | null>>({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
+  const [localSkills, setLocalSkills] = useState<LocalSkill[]>([]);
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", gitUrl: "" });
@@ -58,12 +66,21 @@ export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
 
     const refreshInstalled = async () => {
       if (!instanceId) {
-        if (!cancelled) setInstalled([]);
+        if (!cancelled) {
+          setInstalled([]);
+          setLocalSkills([]);
+        }
         return;
       }
       try {
-        const inst = await platform.instances.get.query({ id: instanceId });
-        if (!cancelled) setInstalled(inst?.skills ?? []);
+        const [inst, local] = await Promise.all([
+          platform.instances.get.query({ id: instanceId }),
+          platform.skills.listLocal.query({ instanceId }).catch(() => [] as LocalSkill[]),
+        ]);
+        if (!cancelled) {
+          setInstalled(inst?.skills ?? []);
+          setLocalSkills(local);
+        }
       } catch {}
     };
 
@@ -171,6 +188,41 @@ export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
       {!isRunning && instanceId && (
         <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted bg-warning-light">
           Start the instance to manage skills.
+        </div>
+      )}
+
+      {localSkills.length > 0 && (
+        <div className="border-b border-border-light">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised">
+            <span className="text-[12px] font-bold text-text flex-1 truncate">Standalone</span>
+          </div>
+          {localSkills.map((skill) => (
+            <div
+              key={`${skill.skillPath}::${skill.name}`}
+              className="flex items-start gap-3 border-b border-border-light last:border-b-0 px-4 py-3"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
+                  {onOpenFile && (
+                    <button
+                      type="button"
+                      className="text-text-muted hover:text-accent transition-colors shrink-0"
+                      title="View SKILL.md in Files"
+                      onClick={() => onOpenFile(localSkillMdPath(skill))}
+                    >
+                      <Eye size={11} />
+                    </button>
+                  )}
+                </div>
+                {skill.description && (
+                  <div className="mt-0.5 text-[11px] text-text-muted line-clamp-2" title={skill.description}>
+                    {skill.description}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

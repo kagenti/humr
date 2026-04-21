@@ -1,3 +1,4 @@
+import type { LocalSkill } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface InstallSkillCall {
@@ -15,32 +16,45 @@ export interface UninstallSkillCall {
 export interface AgentRuntimeSkillsClient {
   install(instanceId: string, token: string, body: InstallSkillCall): Promise<void>;
   uninstall(instanceId: string, token: string, body: UninstallSkillCall): Promise<void>;
+  listLocal(instanceId: string, token: string, skillPaths: string[]): Promise<LocalSkill[]>;
 }
 
 async function post(url: string, token: string, body: unknown): Promise<void> {
-  let res: Response;
+  const res = await call(url, token, "POST", body);
+  await assertOk(res, url);
+}
+
+async function getJson<T>(url: string, token: string): Promise<T> {
+  const res = await call(url, token, "GET");
+  await assertOk(res, url);
+  return (await res.json()) as T;
+}
+
+async function call(url: string, token: string, method: "GET" | "POST", body?: unknown): Promise<Response> {
   try {
-    res = await fetch(url, {
-      method: "POST",
+    return await fetch(url, {
+      method,
       headers: {
-        "Content-Type": "application/json",
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(body),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
     throw new Error(`agent-runtime ${url} unreachable: ${(err as Error).message}`);
   }
-  if (!res.ok) {
-    let detail = "";
-    try {
-      const data = (await res.json()) as { error?: string };
-      detail = data.error ?? "";
-    } catch {
-      detail = await res.text().catch(() => "");
-    }
-    throw new Error(`agent-runtime ${url} → ${res.status}${detail ? `: ${detail}` : ""}`);
+}
+
+async function assertOk(res: Response, url: string): Promise<void> {
+  if (res.ok) return;
+  let detail = "";
+  try {
+    const data = (await res.json()) as { error?: string };
+    detail = data.error ?? "";
+  } catch {
+    detail = await res.text().catch(() => "");
   }
+  throw new Error(`agent-runtime ${url} → ${res.status}${detail ? `: ${detail}` : ""}`);
 }
 
 export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeSkillsClient {
@@ -48,5 +62,11 @@ export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeS
   return {
     install: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/install`, token, body),
     uninstall: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/uninstall`, token, body),
+    async listLocal(instanceId, token, skillPaths) {
+      const qs = skillPaths.map((p) => `skillPaths=${encodeURIComponent(p)}`).join("&");
+      const url = `${base(instanceId)}/api/skills/local?${qs}`;
+      const { skills } = await getJson<{ skills: LocalSkill[] }>(url, token);
+      return skills;
+    },
   };
 }

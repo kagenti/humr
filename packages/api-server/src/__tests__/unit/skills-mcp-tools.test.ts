@@ -22,6 +22,7 @@ function makeSkills(overrides: Partial<SkillsService> = {}): SkillsService {
     listSkills: async () => [{ source: SOURCE.gitUrl, name: "adr", description: "", version: "sha-v1" }] as Skill[],
     installSkill: async () => INSTALLED,
     uninstallSkill: async () => [],
+    listLocal: async () => [],
     ...overrides,
   };
 }

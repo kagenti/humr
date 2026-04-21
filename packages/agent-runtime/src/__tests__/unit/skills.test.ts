@@ -6,6 +6,7 @@ import {
   assertAbsoluteSkillPath,
   assertSafeSkillName,
   installSkillInputSchema,
+  listLocalSkills,
   resolveSkillDir,
   uninstallSkill,
   uninstallSkillInputSchema,
@@ -148,5 +149,85 @@ describe("uninstallSkill", () => {
     await expect(
       uninstallSkill({ name: "pdf", skillPaths: ["relative/path"] }),
     ).rejects.toThrow(/must be absolute/);
+  });
+});
+
+describe("listLocalSkills", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "humr-skills-local-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  async function writeSkill(name: string, body: string) {
+    const dir = path.join(root, name);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "SKILL.md"), body);
+  }
+
+  it("returns skills parsed from frontmatter, sorted by name", async () => {
+    await writeSkill("beta", "---\nname: beta\ndescription: Second skill\n---\nbody");
+    await writeSkill("alpha", "---\nname: alpha\ndescription: First skill\n---\nbody");
+
+    const skills = await listLocalSkills([root]);
+
+    expect(skills).toEqual([
+      { name: "alpha", description: "First skill", skillPath: root },
+      { name: "beta", description: "Second skill", skillPath: root },
+    ]);
+  });
+
+  it("falls back to the directory name when frontmatter is missing or malformed", async () => {
+    await writeSkill("dir-name-only", "# heading, no frontmatter");
+    await writeSkill("bad-fm", "---\njust a plain string\n---\nbody");
+
+    const skills = await listLocalSkills([root]);
+    const names = skills.map((s) => s.name).sort();
+    const descriptions = Object.fromEntries(skills.map((s) => [s.name, s.description]));
+
+    expect(names).toEqual(["bad-fm", "dir-name-only"]);
+    expect(descriptions["dir-name-only"]).toBe("");
+    expect(descriptions["bad-fm"]).toBe("");
+  });
+
+  it("ignores directories without SKILL.md and hidden directories", async () => {
+    await fs.mkdir(path.join(root, "no-skill-md"), { recursive: true });
+    await fs.writeFile(path.join(root, "no-skill-md", "README.md"), "# nope");
+    await fs.mkdir(path.join(root, ".hidden"), { recursive: true });
+    await fs.writeFile(path.join(root, ".hidden", "SKILL.md"), "---\nname: hidden\n---");
+    await writeSkill("visible", "---\nname: visible\n---");
+
+    const skills = await listLocalSkills([root]);
+    expect(skills.map((s) => s.name)).toEqual(["visible"]);
+  });
+
+  it("deduplicates by directory name across multiple skillPaths (first wins)", async () => {
+    const second = await fs.mkdtemp(path.join(os.tmpdir(), "humr-skills-local-2-"));
+    try {
+      await writeSkill("shared", "---\nname: shared\ndescription: from first\n---");
+      await fs.mkdir(path.join(second, "shared"), { recursive: true });
+      await fs.writeFile(path.join(second, "shared", "SKILL.md"), "---\nname: shared\ndescription: from second\n---");
+
+      const skills = await listLocalSkills([root, second]);
+      expect(skills).toHaveLength(1);
+      expect(skills[0].description).toBe("from first");
+      expect(skills[0].skillPath).toBe(root);
+    } finally {
+      await fs.rm(second, { recursive: true, force: true });
+    }
+  });
+
+  it("silently skips non-existent skillPaths", async () => {
+    await writeSkill("alpha", "---\nname: alpha\n---");
+    const skills = await listLocalSkills([root, "/nonexistent/path-xyz"]);
+    expect(skills.map((s) => s.name)).toEqual(["alpha"]);
+  });
+
+  it("rejects relative skillPaths before touching the filesystem", async () => {
+    await expect(listLocalSkills(["relative"])).rejects.toThrow(/must be absolute/);
   });
 });
