@@ -1,7 +1,7 @@
 ---
 name: draft-issue
 description: >
-  Draft a GitHub issue that defines a problem and proposes a high-level solution from the user's perspective, with no implementation details. Present the draft for approval, then file it via the GitHub MCP.
+  Draft a GitHub issue that defines a problem and proposes a high-level solution from the user's perspective, with no implementation details. Present the draft for approval, then file it via the `gh` CLI.
   TRIGGER when: user wants to draft, file, or "drop" a GitHub issue / ticket.
 argument-hint: "[what the issue is about]"
 ---
@@ -20,7 +20,7 @@ Produce a GitHub issue that reads like a product ticket, not an engineering plan
 
 4. **Get explicit approval.** Ask whether to file as-is or revise. Iterate until the user says to file. NEVER file without explicit approval.
 
-5. **File via GitHub MCP.** Use `mcp__github__issue_write` with `method: create`. Infer the repo from context (current working directory's git remote, or a repo mentioned earlier in the session). If unclear, ask. Return the issue URL.
+5. **File via `gh` CLI.** Use `gh issue create`. Infer the repo from context (current working directory's git remote, or a repo mentioned earlier in the session). If unclear, ask. Return the issue URL.
 
 ## What to include
 
@@ -78,11 +78,26 @@ Rule of thumb: if a reader would need to know the codebase to understand a sente
 
 ## Filing
 
-After approval, file with `mcp__github__issue_write`:
+After approval, file with `gh issue create`. Do not use the GitHub MCP tools (`mcp__github__*`) for this — always use `gh`.
 
-- `method: "create"`
-- `owner` / `repo`: infer from git remote or prior context; ask if ambiguous
-- `title` and `body`: exactly as approved
-- `labels`: only if the user specified them
+- `--repo owner/repo` — infer from git remote or prior context; ask if ambiguous
+- `--title "..."` — exactly as approved
+- `--body "..."` — exactly as approved; pass via a HEREDOC so markdown formatting survives
+- `--label foo --label bar` — only if the user specified labels
+
+Example:
+
+```sh
+gh issue create --repo owner/repo --title "Short declarative title" --body "$(cat <<'EOF'
+## Problem
+
+...
+
+## Proposed solution
+
+...
+EOF
+)"
+```
 
 Return the resulting issue URL to the user in one line. Do not add commentary about what was filed — the draft already conveyed that.
