@@ -35,12 +35,14 @@ export function createAgentsService(deps: {
         if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
         const spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
+          env: input.env,
         });
         return deps.repo.create(spec, deps.owner, input.templateId);
       }
       const spec = assembleSpecFromImage(input.name, {
         image: input.image,
         description: input.description,
+        env: input.env,
       });
       return deps.repo.create(spec, deps.owner);
     },

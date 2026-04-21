@@ -14,6 +14,7 @@ export interface AgentsSlice {
     templateId?: string;
     image?: string;
     description?: string;
+    env?: EnvVar[];
     secretIds?: string[];
     appConnectionIds?: string[];
   }) => Promise<void>;

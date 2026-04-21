@@ -40,6 +40,7 @@ export const agentsRouter = t.router({
       templateId: z.string().optional(),
       image: z.string().optional(),
       description: z.string().optional(),
+      env: z.array(envVarSchema).max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!input.templateId && !input.image) {
