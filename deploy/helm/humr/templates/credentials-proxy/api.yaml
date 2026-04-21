@@ -1,0 +1,134 @@
+{{- if .Values.credentialsProxy.enabled }}
+{{- $name := include "humr.credentialsProxy.fullname" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: credentials-proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.credentialsProxy.api.port }}
+      targetPort: web
+      protocol: TCP
+      name: web
+  selector:
+    app.kubernetes.io/component: credentials-proxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: credentials-proxy
+spec:
+  replicas: {{ .Values.credentialsProxy.api.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: credentials-proxy
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "humr.labels" . | nindent 8 }}
+        app.kubernetes.io/component: credentials-proxy
+    spec:
+      {{- include "humr.imagePullSecrets" . | nindent 6 }}
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h {{ include "humr.credentialsProxy.db.host" . }} -U postgres; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+      containers:
+        - name: api
+          image: {{ .Values.credentialsProxy.api.image }}
+          ports:
+            - containerPort: {{ .Values.credentialsProxy.api.port }}
+              name: web
+          env:
+            - name: API_LISTEN_PORT
+              value: {{ .Values.credentialsProxy.api.port | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: DB_API_PASSWORD
+            - name: DATABASE_URL
+              value: {{ include "humr.credentialsProxy.db.apiDsn" . | quote }}
+            - name: SECRET_ENCRYPTION_KEY_V1
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: SECRET_ENCRYPTION_KEY_V1
+            - name: OAUTH_STATE_MAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: OAUTH_STATE_MAC_KEY
+            - name: KEYCLOAK_ISSUER_URL
+              value: {{ include "humr.keycloak.issuer" . | quote }}
+            - name: KEYCLOAK_JWKS_URL
+              value: "http://{{ include "humr.keycloak.fullname" . }}:{{ .Values.keycloak.port }}/realms/{{ .Values.keycloak.realm }}/protocol/openid-connect/certs"
+            - name: KEYCLOAK_AUDIENCE
+              value: "credentials-proxy"
+            - name: API_PUBLIC_URL
+              value: {{ include "humr.url.credentialsProxy" . | quote }}
+            - name: OAUTH_CALLBACK_URL
+              value: "{{ include "humr.url.credentialsProxy" . }}/api/oauth/callback"
+            - name: CA_CERT_PATH
+              value: /etc/humr/ca/ca.crt
+            - name: CA_KEY_PATH
+              value: /etc/humr/ca/ca.key
+            {{- if .Values.credentialsProxy.oauth.github.clientId }}
+            - name: OAUTH_GITHUB_CLIENT_ID
+              value: {{ .Values.credentialsProxy.oauth.github.clientId | quote }}
+            - name: OAUTH_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: OAUTH_GITHUB_CLIENT_SECRET
+            - name: OAUTH_GITHUB_SCOPES
+              value: {{ .Values.credentialsProxy.oauth.github.scopes | quote }}
+            {{- end }}
+            {{- if .Values.credentialsProxy.oauth.google.clientId }}
+            - name: OAUTH_GOOGLE_CLIENT_ID
+              value: {{ .Values.credentialsProxy.oauth.google.clientId | quote }}
+            - name: OAUTH_GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: OAUTH_GOOGLE_CLIENT_SECRET
+            - name: OAUTH_GOOGLE_SCOPES
+              value: {{ .Values.credentialsProxy.oauth.google.scopes | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: ca
+              mountPath: /etc/humr/ca
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /api/health, port: web }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: web }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.credentialsProxy.api.resources | nindent 12 }}
+      volumes:
+        - name: ca
+          secret:
+            secretName: {{ include "humr.credentialsProxy.ca.secretName" . }}
+{{- end }}

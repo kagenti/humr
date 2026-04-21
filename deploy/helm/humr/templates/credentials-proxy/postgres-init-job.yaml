@@ -1,0 +1,86 @@
+{{- if .Values.credentialsProxy.enabled }}
+{{/*
+Creates the credentials-proxy database, the cp_api and cp_sidecar roles, and
+grants appropriate permissions. Runs as a post-install,post-upgrade hook AFTER
+the shared postgres StatefulSet is ready. Drizzle migrations run later on the
+API pod's first boot (they don't need role-creation privileges).
+
+This Job is idempotent: CREATE ROLE / DATABASE use IF NOT EXISTS patterns.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "humr.credentialsProxy.fullname" . }}-db-init
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      name: {{ include "humr.credentialsProxy.fullname" . }}-db-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: {{ .Values.postgres.image }}
+          env:
+            - name: PGHOST
+              value: {{ include "humr.credentialsProxy.db.host" . }}
+            - name: PGPORT
+              value: {{ .Values.credentialsProxy.db.port | quote }}
+            - name: PGUSER
+              value: {{ .Values.postgres.user | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.postgres.secrets.fullname" . }}
+                  key: POSTGRES_PASSWORD
+            - name: DB_NAME
+              value: {{ .Values.credentialsProxy.db.database | quote }}
+            - name: API_USER
+              value: {{ .Values.credentialsProxy.db.apiUser | quote }}
+            - name: API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: DB_API_PASSWORD
+            - name: SIDECAR_USER
+              value: {{ .Values.credentialsProxy.db.sidecarUser | quote }}
+            - name: SIDECAR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "humr.credentialsProxy.secretsName" . }}
+                  key: DB_SIDECAR_PASSWORD
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null; do sleep 2; done
+
+              psql -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 \
+                || psql -c "CREATE DATABASE \"$DB_NAME\""
+
+              psql -c "DO \$\$ BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$API_USER') THEN
+                  CREATE ROLE \"$API_USER\" LOGIN PASSWORD '$API_PASSWORD';
+                ELSE
+                  ALTER ROLE \"$API_USER\" WITH LOGIN PASSWORD '$API_PASSWORD';
+                END IF;
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$SIDECAR_USER') THEN
+                  CREATE ROLE \"$SIDECAR_USER\" LOGIN PASSWORD '$SIDECAR_PASSWORD';
+                ELSE
+                  ALTER ROLE \"$SIDECAR_USER\" WITH LOGIN PASSWORD '$SIDECAR_PASSWORD';
+                END IF;
+              END \$\$;"
+
+              psql -c "GRANT CONNECT ON DATABASE \"$DB_NAME\" TO \"$API_USER\";"
+              psql -c "GRANT CONNECT ON DATABASE \"$DB_NAME\" TO \"$SIDECAR_USER\";"
+
+              psql -d "$DB_NAME" -c "GRANT USAGE ON SCHEMA public TO \"$API_USER\", \"$SIDECAR_USER\";"
+              psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO \"$API_USER\";"
+              psql -d "$DB_NAME" -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"$SIDECAR_USER\";"
+              psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES FOR ROLE \"$API_USER\" IN SCHEMA public GRANT SELECT ON TABLES TO \"$SIDECAR_USER\";"
+{{- end }}

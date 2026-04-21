@@ -1,0 +1,51 @@
+{{- if and .Values.credentialsProxy.enabled .Values.credentialsProxy.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "humr.credentialsProxy.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: credentials-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: credentials-proxy
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Egress"]
+  egress:
+    # DNS
+    - to: []
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+        - { protocol: UDP, port: 5353 }
+    # Postgres
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+      ports:
+        - { protocol: TCP, port: 5432 }
+    # Keycloak (for JWKS fetch)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: keycloak
+      ports:
+        - { protocol: TCP, port: {{ .Values.keycloak.port }} }
+    # Public internet (minus private ranges and cluster CIDRs) for OAuth token endpoints.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range .Values.credentialsProxy.networkPolicy.blockedCIDRs }}
+              - {{ . | quote }}
+              {{- end }}
+              {{- if .Values.credentialsProxy.networkPolicy.serviceCIDR }}
+              - {{ .Values.credentialsProxy.networkPolicy.serviceCIDR | quote }}
+              {{- end }}
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }
+{{- end }}

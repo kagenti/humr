@@ -1,0 +1,99 @@
+{{- if .Values.credentialsProxy.enabled }}
+{{/*
+Generates the MITM CA (ECDSA P-256, PKCS8) into a Secret the first time the
+chart is installed. The Secret holds both the cert and the private key; a
+companion ConfigMap holds only the cert (agent pods mount the ConfigMap).
+
+Uses a Helm pre-install,pre-upgrade hook so the keypair exists before the API
+Deployment comes up. The Job deletes itself after success (ttlSecondsAfterFinished).
+*/}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      name: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+    spec:
+      serviceAccountName: {{ include "humr.credentialsProxy.fullname" . }}-ca-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: alpine/k8s:1.30.0
+          env:
+            - name: CA_SECRET_NAME
+              value: {{ include "humr.credentialsProxy.ca.secretName" . }}
+            - name: CA_CONFIGMAP_NAME
+              value: {{ include "humr.credentialsProxy.ca.configMapName" . }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              if kubectl -n "$NAMESPACE" get secret "$CA_SECRET_NAME" >/dev/null 2>&1; then
+                echo "CA already exists; skipping"
+                exit 0
+              fi
+              cd /tmp
+              openssl ecparam -name prime256v1 -genkey -noout -out ca.key.tmp
+              openssl pkcs8 -topk8 -nocrypt -in ca.key.tmp -out ca.key
+              openssl req -new -x509 -key ca.key -out ca.crt -days 3650 \
+                -subj "/CN=Humr Credentials Proxy CA" \
+                -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+                -addext "keyUsage=critical,keyCertSign,cRLSign"
+              kubectl -n "$NAMESPACE" create secret generic "$CA_SECRET_NAME" \
+                --from-file=ca.crt=ca.crt --from-file=ca.key=ca.key
+              kubectl -n "$NAMESPACE" create configmap "$CA_CONFIGMAP_NAME" \
+                --from-file=ca.crt=ca.crt
+{{- end }}
