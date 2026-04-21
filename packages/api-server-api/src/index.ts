@@ -40,6 +40,7 @@ export type {
   Schedule,
   ScheduleSpec,
   ScheduleStatus,
+  ScheduleCreator,
   CreateCronScheduleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";

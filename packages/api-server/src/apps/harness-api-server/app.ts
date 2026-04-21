@@ -23,6 +23,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
+    schedulesServiceFor: (owner: string) => composeAgentsModule(api, config.namespace, owner, db).schedules,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";

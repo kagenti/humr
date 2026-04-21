@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { SchedulesService } from "api-server-api";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -20,6 +21,7 @@ export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
   handleTrigger: (req: TriggerRequest) => Promise<TriggerResult>;
+  schedulesServiceFor: (owner: string) => SchedulesService;
 }) {
   const app = new Hono();
 
@@ -32,7 +34,11 @@ export function createHarnessRouter(deps: {
     return c.json(result);
   });
 
-  mountMcpRoutes(app, { channelManager: deps.channelManager, k8s: deps.k8s });
+  mountMcpRoutes(app, {
+    channelManager: deps.channelManager,
+    k8s: deps.k8s,
+    schedulesServiceFor: deps.schedulesServiceFor,
+  });
 
   return app;
 }

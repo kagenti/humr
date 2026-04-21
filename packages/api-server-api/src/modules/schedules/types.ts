@@ -1,3 +1,5 @@
+export type ScheduleCreator = "user" | "agent";
+
 export interface ScheduleSpec {
   version: string;
   type: "cron";
@@ -5,6 +7,7 @@ export interface ScheduleSpec {
   task?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
+  createdBy?: ScheduleCreator;
 }
 
 export interface ScheduleStatus {
@@ -27,6 +30,7 @@ export interface CreateCronScheduleInput {
   cron: string;
   task: string;
   sessionMode?: "continuous" | "fresh";
+  createdBy?: ScheduleCreator;
 }
 
 export interface SchedulesService {

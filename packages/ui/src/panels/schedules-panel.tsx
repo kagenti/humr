@@ -109,6 +109,14 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
               <div className="flex items-center gap-2">
                 {isExpanded ? <ChevronDown size={12} className="text-text-muted shrink-0" /> : <ChevronRight size={12} className="text-text-muted shrink-0" />}
                 <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info">cron</span>
+                {s.createdBy === "agent" && (
+                  <span
+                    title="Scheduled by the agent itself"
+                    className="text-[10px] font-bold uppercase tracking-[0.03em] border rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border-amber-300"
+                  >
+                    agent
+                  </span>
+                )}
                 {s.sessionMode === "continuous" && (
                   <span className="text-[10px] font-bold uppercase tracking-[0.03em] border rounded-full px-2 py-0.5 bg-purple-50 text-purple-600 border-purple-300">
                     continuous
