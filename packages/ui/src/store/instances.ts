@@ -9,9 +9,15 @@ export interface InstancesSlice {
   availableChannels: Record<string, boolean>;
   instances: InstanceView[];
   selectedInstance: string | null;
+  /** Instance IDs whose pod has been deleted via Restart but hasn't yet cycled
+   *  through a non-`running` state back to `running`. Each entry tracks whether
+   *  we've observed the intermediate dip so we don't clear on the grace-period
+   *  read that still shows `running` before the pod actually terminates. */
+  restartingInstances: Map<string, { seenNonRunning: boolean }>;
   fetchInstances: () => Promise<void>;
   createInstance: (agentId: string, name: string) => Promise<void>;
   deleteInstance: (id: string) => Promise<void>;
+  restartInstance: (id: string) => Promise<void>;
   updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
@@ -23,6 +29,7 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
   availableChannels: {},
   instances: [],
   selectedInstance: null,
+  restartingInstances: new Map(),
 
   fetchInstances: async () => {
     set((s) => ({ loading: { ...s.loading, instances: true } }));
@@ -42,6 +49,7 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
         instances: result.list,
         availableChannels: result.availableChannels,
         loadedOnce: { ...s.loadedOnce, instances: true },
+        restartingInstances: transitionRestartingInstances(s.restartingInstances, result.list),
       }));
     }
     set((s) => ({ loading: { ...s.loading, instances: false } }));
@@ -61,6 +69,27 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
       "Failed to delete instance",
     );
     if (ok !== ACTION_FAILED) await get().fetchInstances();
+  },
+
+  restartInstance: async (id) => {
+    set((s) => {
+      const next = new Map(s.restartingInstances);
+      next.set(id, { seenNonRunning: false });
+      return { restartingInstances: next };
+    });
+    const ok = await runAction(
+      () => platform.instances.restart.mutate({ id }),
+      "Failed to restart agent",
+    );
+    if (ok === ACTION_FAILED) {
+      set((s) => {
+        const next = new Map(s.restartingInstances);
+        next.delete(id);
+        return { restartingInstances: next };
+      });
+      return;
+    }
+    await get().fetchInstances();
   },
 
   updateInstance: async (id, updates) => {
@@ -113,3 +142,31 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
     get().fetchInstances();
   },
 });
+
+/**
+ * Advances each restart entry based on the latest observed instance state:
+ *   - instance gone → drop (instance was deleted mid-restart).
+ *   - state !== "running" → mark seenNonRunning (pod has cycled).
+ *   - state === "running" && seenNonRunning → drop (restart complete).
+ *   - state === "running" && !seenNonRunning → keep (still in grace window
+ *     before the pod terminates; the poll that sees it down will flip it).
+ * Exported for tests.
+ */
+export function transitionRestartingInstances(
+  current: Map<string, { seenNonRunning: boolean }>,
+  instances: InstanceView[],
+): Map<string, { seenNonRunning: boolean }> {
+  if (current.size === 0) return current;
+  const byId = new Map(instances.map((i) => [i.id, i]));
+  const next = new Map<string, { seenNonRunning: boolean }>();
+  for (const [id, entry] of current) {
+    const inst = byId.get(id);
+    if (!inst) continue;
+    if (inst.state !== "running") {
+      next.set(id, { seenNonRunning: true });
+    } else if (!entry.seenNonRunning) {
+      next.set(id, entry);
+    }
+  }
+  return next;
+}

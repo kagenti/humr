@@ -10,6 +10,7 @@ export enum EventType {
   InstanceCreated = "InstanceCreated",
   InstanceUpdated = "InstanceUpdated",
   InstanceDeleted = "InstanceDeleted",
+  InstanceRestarted = "InstanceRestarted",
   InstanceWoken = "InstanceWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
@@ -37,6 +38,11 @@ export type InstanceDeleted = {
   instanceId: string;
 };
 
+export type InstanceRestarted = {
+  type: EventType.InstanceRestarted;
+  instanceId: string;
+};
+
 export type InstanceWoken = {
   type: EventType.InstanceWoken;
   instanceId: string;
@@ -58,6 +64,7 @@ export type DomainEvent =
   | InstanceCreated
   | InstanceUpdated
   | InstanceDeleted
+  | InstanceRestarted
   | InstanceWoken
   | SlackConnected
   | SlackDisconnected;
