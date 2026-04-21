@@ -1,17 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
 import { platform } from "../platform.js";
+import { runQuery } from "../store/query-helpers.js";
 import { Plus, X, ChevronDown, ChevronRight } from "lucide-react";
 import type { SessionView } from "../types.js";
 
 export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: string) => void }) {
-  const inst = useStore(s => s.selectedInstance);
   const schedules = useStore(s => s.schedules);
   const fetchSchedules = useStore(s => s.fetchSchedules);
+  const createSchedule = useStore(s => s.createSchedule);
   const toggleSchedule = useStore(s => s.toggleSchedule);
   const deleteSchedule = useStore(s => s.deleteSchedule);
   const resetScheduleSession = useStore(s => s.resetScheduleSession);
-  const showAlert = useStore(s => s.showAlert);
   const showConfirm = useStore(s => s.showConfirm);
 
   const [show, setShow] = useState(false);
@@ -23,17 +23,20 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
   const poll = useCallback(() => fetchSchedules(), [fetchSchedules]);
   useEffect(() => { poll(); const i = setInterval(poll, 5000); return () => clearInterval(i); }, [poll]);
 
-  // Fetch sessions when a schedule card is expanded
+  // Fetch sessions when a schedule card is expanded. Single-shot on expand,
+  // so threshold 1 — we want the toast on the first failure rather than
+  // pretending there are simply no sessions.
   useEffect(() => {
     if (!expanded) return;
     let cancelled = false;
-    const fetchSessions = async () => {
-      try {
-        const sessions = await platform.sessions.listByScheduleId.query({ scheduleId: expanded });
-        if (!cancelled) setScheduleSessions(prev => ({ ...prev, [expanded]: sessions }));
-      } catch {}
-    };
-    fetchSessions();
+    (async () => {
+      const sessions = await runQuery(
+        `schedule-sessions:${expanded}`,
+        () => platform.sessions.listByScheduleId.query({ scheduleId: expanded }),
+        { fallback: "Couldn't load past runs for this schedule", threshold: 1 },
+      );
+      if (!cancelled && sessions) setScheduleSessions(prev => ({ ...prev, [expanded]: sessions }));
+    })();
     return () => { cancelled = true; };
   }, [expanded]);
 
@@ -42,12 +45,10 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
   };
 
   const create = async () => {
-    if (!inst) return; setBusy(true);
-    try {
-      await platform.schedules.createCron.mutate({ name: f.name, instanceId: inst, cron: f.cron, task: f.task, sessionMode: f.sessionMode !== "fresh" ? f.sessionMode : undefined });
-      setShow(false); fetchSchedules();
-    } catch (e) { showAlert(e instanceof Error ? e.message : "Failed", "Schedule Error"); }
-    finally { setBusy(false); }
+    setBusy(true);
+    const ok = await createSchedule({ name: f.name, cron: f.cron, task: f.task, sessionMode: f.sessionMode });
+    setBusy(false);
+    if (ok) setShow(false);
   };
 
   const inp = "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";

@@ -26,7 +26,7 @@ export function ConnectionsView() {
   const fetchSecrets = useStore((s) => s.fetchSecrets);
   const createSecret = useStore((s) => s.createSecret);
   const deleteSecret = useStore((s) => s.deleteSecret);
-  const showAlert = useStore((s) => s.showAlert);
+  const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
   const connections = useStore((s) => s.mcpConnections);
   const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
@@ -82,7 +82,7 @@ export function ConnectionsView() {
       });
       const data = (await res.json()) as { authUrl?: string; error?: string };
       if (data.error) {
-        showAlert(data.error, "OAuth Error");
+        showToast({ kind: "error", message: data.error });
         setConnecting(false);
         return;
       }
@@ -91,7 +91,7 @@ export function ConnectionsView() {
         window.location.href = data.authUrl;
       }
     } catch (err) {
-      showAlert(`${err}`, "Connection Failed");
+      showToast({ kind: "error", message: `Connection failed: ${err}` });
       setConnecting(false);
     }
   };
@@ -105,7 +105,7 @@ export function ConnectionsView() {
       });
       await load();
     } catch (err) {
-      showAlert(`${err}`, "Disconnect Failed");
+      showToast({ kind: "error", message: `Disconnect failed: ${err}` });
     }
     setDisconnecting(null);
   };

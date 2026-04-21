@@ -9,6 +9,52 @@ import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant, isTextMime } 
 import type { Message, Attachment } from "../types.js";
 import { instanceState } from "./../components/status-indicator.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
+import { runQuery } from "../store/query-helpers.js";
+
+/**
+ * Read a human-readable message off any error shape we may see here. The
+ * promise that `prompt`/`loadSession` returns can reject with:
+ *  - an `Error` / `DOMException` — has `.message`
+ *  - the raw JSON-RPC error `{ code, message, data }` — has `.message`
+ *  - a WebSocket `CloseEvent` on connection drop — no message; use `code`/`reason`
+ *  - a WebSocket `Event` from `onerror` — browsers omit useful details here
+ *
+ * The fallback `String(e)` on an Event yields `[object Event]`, which is what
+ * users were seeing on disconnect.
+ */
+function extractErrorMessage(e: unknown): string {
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message: unknown }).message;
+    if (typeof m === "string" && m) return m;
+  }
+  if (e instanceof Error) return e.message;
+  if (typeof CloseEvent !== "undefined" && e instanceof CloseEvent) {
+    return e.reason || `Connection closed (code ${e.code})`;
+  }
+  if (typeof Event !== "undefined" && e instanceof Event) {
+    return "Connection error";
+  }
+  return String(e);
+}
+
+/**
+ * Classify a resume-time failure so the inline error card can render the
+ * right message and action. Prefers structured error fields (ACP JSON-RPC
+ * `code`, tRPC `data.code`) over regexing the human-readable message — the
+ * latter breaks the moment server wording changes.
+ */
+function classifyResumeError(e: unknown): "not-found" | "connection" | "other" {
+  if (e && typeof e === "object") {
+    const anyE = e as { code?: unknown; data?: { code?: unknown } };
+    if (anyE.code === -32002) return "not-found";
+    if (anyE.data?.code === "NOT_FOUND") return "not-found";
+    if (e instanceof DOMException) return "connection";
+  }
+  const msg = extractErrorMessage(e);
+  if (/not\s*found/i.test(msg)) return "not-found";
+  if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
+  return "other";
+}
 
 // ── Hook ──
 
@@ -32,6 +78,8 @@ export function useAcpSession(
   const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const includeChannelSessions = useStore((s) => s.includeChannelSessions);
+  const setSessionError = useStore((s) => s.setSessionError);
+  const showToast = useStore((s) => s.showToast);
 
   const connectionRef = useRef<{ connection: ClientSideConnection; ws: WebSocket } | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -159,11 +207,14 @@ export function useAcpSession(
     if (!selectedInstance) return false;
     const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
     if (inst?.state !== "running") return false;
-    try {
-      const list = await platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions });
-      setSessions(list);
-      return true;
-    } catch { return false; }
+    const list = await runQuery(
+      `sessions:${selectedInstance}`,
+      () => platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions }),
+      { fallback: "Couldn't refresh session list" },
+    );
+    if (!list) return false;
+    setSessions(list);
+    return true;
   }, [selectedInstance, includeChannelSessions, setSessions]);
 
   useEffect(() => {
@@ -359,7 +410,7 @@ export function useAcpSession(
           setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
         }
       }
-    } catch {} finally {
+    } finally {
       // Leave the SDK session alive — the live reconnect that follows will
       // resume it and the SDK dedupes by sessionId, so an open session is
       // cheap whereas closing it would force a `claude` CLI respawn. Only
@@ -375,12 +426,21 @@ export function useAcpSession(
     if (!selectedInstance) return;
     setLoadingSession(true);
     setMessages([]);
+    setSessionError(null);
     setSessionId(sid);
     setMobileScreen("chat");
-    const fresh = await loadHistoryInto(sid);
-    setMessages(fresh);
+    try {
+      const fresh = await loadHistoryInto(sid);
+      setMessages(fresh);
+    } catch (e) {
+      setSessionError({
+        sessionId: sid,
+        message: extractErrorMessage(e),
+        kind: classifyResumeError(e),
+      });
+    }
     setLoadingSession(false);
-  }, [selectedInstance, loadHistoryInto, setLoadingSession, setMessages, setSessionId, setMobileScreen]);
+  }, [selectedInstance, loadHistoryInto, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   // ── Send prompt ──
 
@@ -400,7 +460,13 @@ export function useAcpSession(
     const startingQueued = hasStreamingAssistant(useStore.getState().messages);
     const uMsg: Message = { id: crypto.randomUUID(), role: "user", parts: userParts, streaming: false };
     const aMsg: Message = { id: aId, role: "assistant", parts: [], streaming: true, queued: startingQueued };
-    setMessages((p) => [...p, uMsg, aMsg]);
+    // Drop Retry buttons on any prior failed send — only the latest failure
+    // should offer a retry. The error text itself stays for history.
+    setMessages((p) => [
+      ...p.map((m) => (m.error?.retryWith ? { ...m, error: { message: m.error.message } } : m)),
+      uMsg,
+      aMsg,
+    ]);
     addLog("prompt", { text });
 
     try {
@@ -435,22 +501,30 @@ export function useAcpSession(
       // user opens the app and closes it without sending anything.
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
-        platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance }).catch(() => {});
+        platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance })
+          .catch((err) => {
+            showToast({
+              kind: "warning",
+              message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
+            });
+          });
       }
       // Belt-and-braces: if humr_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
       setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
-    } catch (err: any) {
-      const errMsg = err?.message ?? String(err);
+    } catch (err: unknown) {
+      const errMsg = extractErrorMessage(err);
       addLog("error", { message: errMsg });
       setMessages((p) => p.map((m) =>
-        m.id === aId ? { ...m, streaming: false, queued: false, parts: [{ kind: "text" as const, text: errMsg }] } : m,
+        m.id === aId
+          ? { ...m, streaming: false, queued: false, parts: [], error: { message: errMsg, retryWith: { text, attachments } } }
+          : m,
       ));
     } finally {
       fetchSessions();
       textareaRef.current?.focus();
     }
-  }, [selectedInstance, ensureConnection, addLog, setMessages, fetchSessions, textareaRef]);
+  }, [selectedInstance, ensureConnection, addLog, setMessages, fetchSessions, showToast, textareaRef]);
 
   const stopAgent = useCallback(async () => {
     const conn = connectionRef.current?.connection;
