@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
+import { platform } from "../platform.js";
 import {
   ANTHROPIC_OAUTH_ENV_MAPPING,
   ANTHROPIC_API_KEY_ENV_MAPPING,
@@ -214,18 +215,54 @@ function AnthropicForm({
   const [mode, setMode] = useState<Mode>(initialMode);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<
+    { ok: true } | { ok: false; message: string } | null
+  >(null);
+  const testTokenRef = useRef(0);
 
   const error = mismatchError(value, mode);
-  const canSave = value.trim().length > 0 && !error && !saving;
+  const trimmed = value.trim();
+  const canSave = trimmed.length > 0 && !error && !saving && !testing;
+  const canTest = canSave;
+
+  useEffect(() => {
+    testTokenRef.current++;
+    setTestResult(null);
+  }, [value, mode]);
 
   const save = async () => {
     if (!canSave) return;
     setSaving(true);
     try {
-      await onSave({ mode, value: value.trim() });
+      await onSave({ mode, value: trimmed });
       setValue("");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    if (!canTest) return;
+    const token = ++testTokenRef.current;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await platform.secrets.testAnthropic.mutate({
+        value: trimmed,
+        envName: mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
+      });
+      if (token !== testTokenRef.current) return;
+      if (result.ok) {
+        setTestResult({ ok: true });
+      } else {
+        setTestResult({ ok: false, message: result.message ?? "Could not verify credential." });
+      }
+    } catch {
+      if (token !== testTokenRef.current) return;
+      setTestResult({ ok: false, message: "Could not verify credential." });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -278,6 +315,15 @@ function AnthropicForm({
           onKeyDown={(e) => e.key === "Enter" && save()}
         />
         <button
+          className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0"
+          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          onClick={test}
+          disabled={!canTest}
+          title="Verify the credential with Anthropic"
+        >
+          {testing ? "..." : "Test"}
+        </button>
+        <button
           className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
           style={{ boxShadow: "var(--shadow-brutal-accent)" }}
           onClick={save}
@@ -288,6 +334,14 @@ function AnthropicForm({
       </div>
 
       {error && <div className="text-[12px] font-medium text-danger">{error}</div>}
+      {!error && testResult?.ok && (
+        <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
+          <Check size={13} /> Credential is valid.
+        </div>
+      )}
+      {!error && testResult && !testResult.ok && (
+        <div className="text-[12px] font-medium text-danger">{testResult.message}</div>
+      )}
     </div>
   );
 }
