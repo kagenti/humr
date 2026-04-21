@@ -11,6 +11,7 @@ import { createFilesService } from "./modules/files.js";
 import {
   installSkill,
   installSkillInputSchema,
+  listLocalSkills,
   uninstallSkill,
   uninstallSkillInputSchema,
 } from "./modules/skills.js";
@@ -131,6 +132,28 @@ const server = http.createServer((req, res) => {
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
     };
     res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
+    return;
+  }
+
+  if (req.url?.startsWith("/api/skills/local") && req.method === "GET") {
+    if (!isAuthorizedAgentCaller(req)) {
+      writeJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    (async () => {
+      const url = new URL(req.url!, "http://localhost");
+      const skillPaths = url.searchParams.getAll("skillPaths");
+      if (skillPaths.length === 0) {
+        writeJson(res, 400, { error: "skillPaths query parameter required" });
+        return;
+      }
+      try {
+        const skills = await listLocalSkills(skillPaths);
+        writeJson(res, 200, { skills });
+      } catch (err) {
+        writeJson(res, 500, { error: (err as Error).message });
+      }
+    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
   }
 

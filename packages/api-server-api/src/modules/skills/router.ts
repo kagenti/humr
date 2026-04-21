@@ -22,6 +22,12 @@ const skillRefSchema = z.object({
   version: z.string(),
 });
 
+const localSkillSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  skillPath: z.string(),
+});
+
 export const skillsRouter = t.router({
   sources: t.router({
     list: t.procedure.output(z.array(skillSourceViewSchema)).query(({ ctx }) => ctx.skills.listSources()),
@@ -66,4 +72,9 @@ export const skillsRouter = t.router({
     }))
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.uninstallSkill(input)),
+
+  listLocal: t.procedure
+    .input(z.object({ instanceId: z.string().min(1) }))
+    .output(z.array(localSkillSchema))
+    .query(({ ctx, input }) => ctx.skills.listLocal(input.instanceId)),
 });

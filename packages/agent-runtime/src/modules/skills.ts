@@ -11,6 +11,81 @@ export const installSkillInputSchema = z.object({
   skillPaths: z.array(z.string().min(1)).min(1),
 });
 
+export interface LocalSkill {
+  name: string;
+  description: string;
+  skillPath: string;
+}
+
+/**
+ * Minimal frontmatter parser — mirrors the one in the api-server's
+ * skill-scanner. Duplicated intentionally so agent-runtime doesn't grow a
+ * shared package dependency.
+ */
+function parseFrontmatter(content: string): { name?: string; description?: string } {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const out: { name?: string; description?: string } = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const m = /^(name|description):\s*(.*)$/.exec(line);
+    if (!m) continue;
+    const raw = m[2].trim().replace(/^["']|["']$/g, "");
+    if (raw) out[m[1] as "name" | "description"] = raw;
+  }
+  return out;
+}
+
+const FRONTMATTER_READ_BYTES = 8 * 1024;
+
+/**
+ * Enumerate skill directories under each path. A directory is a skill when it
+ * contains SKILL.md. Dedup by directory name across paths (first-wins), and
+ * ignore dot-prefixed entries.
+ */
+export async function listLocalSkills(skillPaths: string[]): Promise<LocalSkill[]> {
+  for (const p of skillPaths) assertAbsoluteSkillPath(p);
+
+  const seen = new Set<string>();
+  const out: LocalSkill[] = [];
+
+  for (const skillPath of skillPaths) {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(skillPath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      if (ent.name.startsWith(".")) continue;
+      if (seen.has(ent.name)) continue;
+
+      const skillMd = path.join(skillPath, ent.name, "SKILL.md");
+      let fd: import("node:fs/promises").FileHandle;
+      try {
+        fd = await fs.open(skillMd, "r");
+      } catch {
+        continue;
+      }
+      try {
+        const buf = Buffer.alloc(FRONTMATTER_READ_BYTES);
+        const { bytesRead } = await fd.read(buf, 0, FRONTMATTER_READ_BYTES, 0);
+        const fm = parseFrontmatter(buf.subarray(0, bytesRead).toString("utf8"));
+        seen.add(ent.name);
+        out.push({
+          name: fm.name?.trim() || ent.name,
+          description: fm.description?.trim() || "",
+          skillPath,
+        });
+      } finally {
+        await fd.close();
+      }
+    }
+  }
+
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export const uninstallSkillInputSchema = z.object({
   name: z.string().min(1),
   skillPaths: z.array(z.string().min(1)).min(1),

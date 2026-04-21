@@ -150,6 +150,7 @@ export function ChatView() {
             onResumeSession={mobileResumeSession}
             instanceId={selectedInstance}
             instanceRunning={instances.find((i) => i.id === selectedInstance)?.state === "running"}
+            onOpenFile={openFileHandler}
           />
         </div>
       </div>

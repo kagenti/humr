@@ -88,6 +88,7 @@ function makeEnv(opts: {
   const runtimeClient: AgentRuntimeSkillsClient = {
     install: runtimeInstall,
     uninstall: runtimeUninstall,
+    listLocal: vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]),
   };
 
   const getAgentToken = vi.fn<(agentId: string) => Promise<string>>().mockResolvedValue("agent-token-xyz");
@@ -213,6 +214,90 @@ describe("skills-service uninstall", () => {
       env.svc.uninstallSkill({ instanceId: INSTANCE_ID, source: SOURCE.gitUrl, name: "adr" }),
     ).rejects.toThrow(/boom/);
     expect(env.instancesUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("skills-service listLocal", () => {
+  it("returns local skills from agent-runtime minus those already tracked by name", async () => {
+    const runtimeListLocal = vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([
+      { name: "adr", description: "", skillPath: "/home/agent/.claude/skills/" },
+      { name: "my-draft", description: "work in progress", skillPath: "/home/agent/.claude/skills/" },
+    ]);
+    const env = makeEnv({
+      instance: makeInfraInstance({
+        skills: [{ source: "https://x/x", name: "adr", version: "sha" }],
+      }),
+    });
+    // Overwrite with a runtimeClient that has our listLocal mock.
+    const svc = createSkillsService({
+      repo: makeRepo(),
+      instancesRepo: { get: env.instancesGet, updateSpec: env.instancesUpdate } as unknown as InstancesRepository,
+      agentsRepo: { get: env.agentsGet } as unknown as AgentsRepository,
+      runtimeClient: {
+        install: vi.fn(),
+        uninstall: vi.fn(),
+        listLocal: runtimeListLocal,
+      },
+      getAgentToken: async () => "agent-token-xyz",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    const result = await svc.listLocal(INSTANCE_ID);
+
+    expect(runtimeListLocal).toHaveBeenCalledWith(
+      INSTANCE_ID,
+      "agent-token-xyz",
+      ["/home/agent/.claude/skills/"],
+    );
+    // "adr" collides with a tracked skill → hidden. "my-draft" is purely local → returned.
+    expect(result).toEqual([
+      { name: "my-draft", description: "work in progress", skillPath: "/home/agent/.claude/skills/" },
+    ]);
+  });
+
+  it("returns empty when the instance is not running", async () => {
+    const runtimeListLocal = vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]);
+    const instancesGet = vi.fn().mockResolvedValue(
+      makeInfraInstance({ currentState: "hibernated", desiredState: "hibernated" }),
+    );
+    const svc = createSkillsService({
+      repo: makeRepo(),
+      instancesRepo: { get: instancesGet, updateSpec: vi.fn() } as unknown as InstancesRepository,
+      agentsRepo: { get: vi.fn() } as unknown as AgentsRepository,
+      runtimeClient: {
+        install: vi.fn(),
+        uninstall: vi.fn(),
+        listLocal: runtimeListLocal,
+      },
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    expect(await svc.listLocal(INSTANCE_ID)).toEqual([]);
+    expect(runtimeListLocal).not.toHaveBeenCalled();
+  });
+
+  it("returns empty when the instance is missing", async () => {
+    const instancesGet = vi.fn().mockResolvedValue(null);
+    const runtimeListLocal = vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]);
+    const svc = createSkillsService({
+      repo: makeRepo(),
+      instancesRepo: { get: instancesGet, updateSpec: vi.fn() } as unknown as InstancesRepository,
+      agentsRepo: { get: vi.fn() } as unknown as AgentsRepository,
+      runtimeClient: {
+        install: vi.fn(),
+        uninstall: vi.fn(),
+        listLocal: runtimeListLocal,
+      },
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    expect(await svc.listLocal("ghost")).toEqual([]);
+    expect(runtimeListLocal).not.toHaveBeenCalled();
   });
 });
 

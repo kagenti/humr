@@ -40,6 +40,13 @@ export interface UninstallSkillInput {
   name: string;
 }
 
+/** A skill authored directly on the instance's PVC (not installed from a remote source). */
+export interface LocalSkill {
+  name: string;
+  description: string;
+  skillPath: string;
+}
+
 export interface SkillsService {
   listSources: () => Promise<SkillSource[]>;
   getSource: (id: string) => Promise<SkillSource | null>;
@@ -48,4 +55,5 @@ export interface SkillsService {
   listSkills: (sourceId: string) => Promise<Skill[]>;
   installSkill: (input: InstallSkillInput) => Promise<SkillRef[]>;
   uninstallSkill: (input: UninstallSkillInput) => Promise<SkillRef[]>;
+  listLocal: (instanceId: string) => Promise<LocalSkill[]>;
 }
