@@ -42,23 +42,32 @@ export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
 
   useEffect(() => {
     let cancelled = false;
+
+    const refreshInstalled = async () => {
+      if (!instanceId) {
+        if (!cancelled) setInstalled([]);
+        return;
+      }
+      try {
+        const inst = await platform.instances.get.query({ id: instanceId });
+        if (!cancelled) setInstalled(inst?.skills ?? []);
+      } catch {}
+    };
+
     (async () => {
       try {
-        const [srcs, inst] = await Promise.all([
-          platform.skills.sources.list.query(),
-          instanceId ? platform.instances.get.query({ id: instanceId }) : Promise.resolve(null),
-        ]);
-        if (cancelled) return;
-        setSources(srcs);
-        setInstalled(inst?.skills ?? []);
+        const srcs = await platform.skills.sources.list.query();
+        if (!cancelled) setSources(srcs);
       } catch {
-        if (!cancelled) {
-          setSources([]);
-          setInstalled([]);
-        }
+        if (!cancelled) setSources([]);
       }
     })();
-    return () => { cancelled = true; };
+    refreshInstalled();
+
+    // Poll so agent-initiated installs (via MCP tool calls in chat) show up
+    // without a manual refresh. Matches SchedulesPanel's cadence.
+    const iv = setInterval(refreshInstalled, 5000);
+    return () => { cancelled = true; clearInterval(iv); };
   }, [instanceId]);
 
   useEffect(() => {

@@ -5,6 +5,7 @@ import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
+import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createAcpClient } from "../../core/acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
@@ -34,6 +35,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
+    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner),
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
