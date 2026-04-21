@@ -31,6 +31,7 @@ This directory contains ADRs for the Humr project.
 | [023](023-harness-agnostic-base-image.md) | Harness-agnostic agent base image (`humr-base` + `AGENT_COMMAND`) | @tomas |
 | [024](024-connector-declared-envs.md) | Connector-declared pod envs + per-agent env overrides | @tomas |
 | [025](025-thread-session.md) | Persistent ACP session per Slack thread | @tomkis |
+| [027](027-generic-secret-injection-config.md) | Configurable injection on generic secrets (host/path + custom header) | @tomas2d |
 
 ## Drafts
 
