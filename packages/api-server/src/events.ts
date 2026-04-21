@@ -13,6 +13,9 @@ export enum EventType {
   InstanceWoken = "InstanceWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
+  ForkReady = "ForkReady",
+  ForkFailed = "ForkFailed",
+  ForkCompleted = "ForkCompleted",
 }
 
 export type UserAuthenticated = {
@@ -53,6 +56,32 @@ export type SlackDisconnected = {
   instanceId: string;
 };
 
+export type ForkFailureReason =
+  | "CredentialMintFailed"
+  | "OrchestrationFailed"
+  | "PodNotReady"
+  | "Timeout";
+
+export type ForkReady = {
+  type: EventType.ForkReady;
+  forkId: string;
+  replyId: string;
+  podIP: string;
+};
+
+export type ForkFailed = {
+  type: EventType.ForkFailed;
+  forkId: string;
+  replyId: string;
+  reason: ForkFailureReason;
+  detail?: string;
+};
+
+export type ForkCompleted = {
+  type: EventType.ForkCompleted;
+  forkId: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | InstanceCreated
@@ -60,7 +89,10 @@ export type DomainEvent =
   | InstanceDeleted
   | InstanceWoken
   | SlackConnected
-  | SlackDisconnected;
+  | SlackDisconnected
+  | ForkReady
+  | ForkFailed
+  | ForkCompleted;
 
 // ---------------------------------------------------------------------------
 // Event bus
