@@ -9,6 +9,7 @@ import {
   sanitizeEnvMappings,
 } from "../components/env-mappings-editor.js";
 import { EditSecretDialog } from "../dialogs/edit-secret-dialog.js";
+import { AppStatusPill } from "../components/app-status-pill.js";
 import {
   RefreshCw,
   Lock,
@@ -224,23 +225,7 @@ export function ConnectionsView() {
                           : c.provider}
                     </div>
                   </div>
-                  <span
-                    className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
-                      c.status === "expired"
-                        ? "bg-danger-light text-danger border-danger"
-                        : c.status === "connected"
-                          ? "bg-info-light text-info border-info"
-                          : "bg-surface-raised text-text-muted border-border-light"
-                    }`}
-                  >
-                    {c.status === "expired"
-                      ? "Expired"
-                      : c.status === "disconnected"
-                        ? "Disconnected"
-                        : c.status === "unknown"
-                          ? "Unknown"
-                          : "Connected"}
-                  </span>
+                  <AppStatusPill status={c.status} size="md" />
                 </div>
               ))}
             </div>

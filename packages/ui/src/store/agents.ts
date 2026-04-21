@@ -14,10 +14,8 @@ export interface AgentsSlice {
     templateId?: string;
     image?: string;
     description?: string;
-    secretMode?: "all" | "selective";
     secretIds?: string[];
     appConnectionIds?: string[];
-    autoCreateInstance?: boolean;
   }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   updateAgent: (id: string, patch: { description?: string; env?: EnvVar[] }) => Promise<void>;
@@ -44,7 +42,7 @@ export const createAgentsSlice: StateCreator<HumrStore, [], [], AgentsSlice> = (
     } catch {}
   },
 
-  createAgent: async ({ secretMode, secretIds, appConnectionIds, autoCreateInstance, ...input }) => {
+  createAgent: async ({ secretIds, appConnectionIds, ...input }) => {
     const agent = await runAction(
       () => platform.agents.create.mutate(input),
       "Failed to create agent",
@@ -52,18 +50,11 @@ export const createAgentsSlice: StateCreator<HumrStore, [], [], AgentsSlice> = (
     if (agent === ACTION_FAILED) return;
     await get().fetchAgents();
 
-    if (autoCreateInstance) {
-      await runAction(async () => {
-        await platform.instances.create.mutate({ name: input.name, agentId: agent.id });
-        await get().fetchInstances();
-      }, "Agent created but failed to create instance");
-    }
+    await runAction(async () => {
+      await platform.instances.create.mutate({ name: input.name, agentId: agent.id });
+      await get().fetchInstances();
+    }, "Agent created but failed to create instance");
 
-    // Only call setAgentAccess if the user deviates from the controller's default
-    // ("selective" + auto-assigned anthropic) — i.e. selective with an explicit
-    // list, or all-credentials mode.
-    const needsAccessUpdate =
-      secretMode === "all" || (secretMode === "selective" && secretIds?.length);
     // Controller registers the OneCLI agent asynchronously, so both
     // setAgentAccess and setAgentConnections have to retry past the sync lag.
     const withRetry = async (label: string, fn: () => Promise<void>) => {
@@ -81,12 +72,15 @@ export const createAgentsSlice: StateCreator<HumrStore, [], [], AgentsSlice> = (
         }
       }
     };
-    if (needsAccessUpdate) {
+    // Only override the controller's default ("selective" + auto-assigned
+    // anthropic) when the caller passes an explicit list (including empty).
+    // `undefined` means "accept the default" and skips the call.
+    if (secretIds !== undefined) {
       await withRetry("secret assignment", () =>
         platform.secrets.setAgentAccess.mutate({
           agentName: agent.id,
-          mode: secretMode ?? "selective",
-          secretIds: secretIds ?? [],
+          mode: "selective",
+          secretIds,
         }),
       );
     }
