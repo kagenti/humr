@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
 import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
-import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon } from "lucide-react";
+import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon, AlertCircle, Trash2, RefreshCw } from "lucide-react";
 import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
 import { ResizeHandle } from "./../components/resize-handle.js";
@@ -13,6 +13,7 @@ import { LogPanel } from "./../panels/log-panel.js";
 import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
+import type { SessionError } from "../store.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
 import { useFileTree } from "./../hooks/use-file-tree.js";
 import { isMobile } from "./../lib/breakpoints.js";
@@ -22,6 +23,9 @@ export function ChatView() {
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
+  const sessionError = useStore((s) => s.sessionError);
+  const setSessionError = useStore((s) => s.setSessionError);
+  const deleteSession = useStore((s) => s.deleteSession);
   const rightTab = useStore((s) => s.rightTab);
   const loadingSession = useStore((s) => s.loading.session);
   const goBack = useStore((s) => s.goBack);
@@ -120,7 +124,7 @@ export function ChatView() {
       <div className="flex border-b border-border-light shrink-0">
         {rightTabs.map(tab => (
           <button key={tab} onClick={() => setRightTab(tab)}
-            className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
+            className={`flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
             {tab === "configuration" ? "config" : tab}
           </button>
         ))}
@@ -192,7 +196,19 @@ export function ChatView() {
                 Loading session...
               </div>
             )}
-            {!loadingSession && messages.length === 0 && (
+            {!loadingSession && sessionError && (
+              <SessionErrorCard
+                error={sessionError}
+                onBack={() => { setSessionError(null); resetSession(); if (isMobile()) setMobileScreen("sessions"); }}
+                onDelete={async () => {
+                  const sid = sessionError.sessionId;
+                  setSessionError(null);
+                  await deleteSession(sid);
+                  if (isMobile()) setMobileScreen("sessions");
+                }}
+              />
+            )}
+            {!loadingSession && !sessionError && messages.length === 0 && (
               <div className="py-24 text-center">
                 <p className="text-[16px] font-bold text-text mb-2">Start a conversation</p>
                 <p className="text-[14px] text-text-muted">Send a message to begin a new session with this agent</p>
@@ -209,6 +225,14 @@ export function ChatView() {
                 <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
                   {m.role === "user" ? "You" : "Agent"}
                 </span>
+                {m.error ? (
+                  <SendErrorCard
+                    error={m.error.message}
+                    onRetry={m.error.retryWith
+                      ? () => sendPrompt(m.error!.retryWith!.text, m.error!.retryWith!.attachments)
+                      : undefined}
+                  />
+                ) : (
                 <div className={m.role === "user"
                   ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
                   : "flex flex-col gap-2 max-w-full"
@@ -244,6 +268,7 @@ export function ChatView() {
                       : <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
                   )}
                 </div>
+                )}
               </div>
             ))}
           </div>
@@ -314,5 +339,78 @@ function StatusBadge({ selectedInstance, instances, busy }: { selectedInstance: 
       <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
       {label}
     </span>
+  );
+}
+
+function SessionErrorCard({
+  error,
+  onBack,
+  onDelete,
+}: {
+  error: SessionError;
+  onBack: () => void;
+  onDelete: () => void;
+}) {
+  const title =
+    error.kind === "not-found" ? "Session not found"
+    : error.kind === "connection" ? "Can't reach the agent"
+    : "Failed to load session";
+  return (
+    <div
+      className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in"
+      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+    >
+      <div className="flex items-start gap-3">
+        <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[15px] font-bold text-text mb-1">{title}</h3>
+          <p className="text-[13px] text-text-secondary break-words">{error.message}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={onBack}
+          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5"
+          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+        >
+          <ArrowLeft size={12} /> Back to sessions
+        </button>
+        {error.kind === "not-found" && (
+          <button
+            onClick={onDelete}
+            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
+            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          >
+            <Trash2 size={12} /> Delete orphaned session
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SendErrorCard({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  return (
+    <div
+      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
+      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+      role="alert"
+    >
+      <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0 flex flex-col gap-2">
+        <div className="text-[13px] text-text break-words">
+          <span className="font-bold text-danger">Send failed:</span> {error}
+        </div>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
+            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          >
+            <RefreshCw size={11} /> Retry
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

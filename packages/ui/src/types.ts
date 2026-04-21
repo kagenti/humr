@@ -20,8 +20,8 @@ export interface TextPart {
 
 export interface ImagePart {
   kind: "image";
-  data: string;       // base64-encoded
-  mimeType: string;   // e.g. "image/png", "image/jpeg"
+  data: string; // base64-encoded
+  mimeType: string; // e.g. "image/png", "image/jpeg"
 }
 
 export interface FilePart {
@@ -30,7 +30,7 @@ export interface FilePart {
   mimeType: string;
   /** Absent when the part is a replayed reference rather than a fresh upload — */
   /** the actual bytes only exist on the agent side. */
-  data?: string;      // base64-encoded
+  data?: string; // base64-encoded
   size?: number;
 }
 
@@ -57,6 +57,12 @@ export interface Message {
    *  catch-up when the session log has been truncated. Invisible to the
    *  projection's routing (findActiveAssistant skips these). */
   notice?: boolean;
+  error?: {
+    message: string;
+    /** Cleared once any subsequent send starts, so the Retry button only lives
+     *  on the most recent failure. */
+    retryWith?: { text: string; attachments?: Attachment[] };
+  };
 }
 
 export interface LogEntry {
@@ -90,7 +96,12 @@ export interface AgentView {
   env?: import("api-server-api").EnvVar[];
 }
 
-export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
+export type InstanceState =
+  | "starting"
+  | "running"
+  | "hibernating"
+  | "hibernated"
+  | "error";
 
 export interface InstanceView {
   id: string;
@@ -132,7 +143,9 @@ export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
 }
 
 export function mcpHostnameFromSecretName(name: string): string {
-  return name.startsWith(MCP_SECRET_PREFIX) ? name.slice(MCP_SECRET_PREFIX.length) : name;
+  return name.startsWith(MCP_SECRET_PREFIX)
+    ? name.slice(MCP_SECRET_PREFIX.length)
+    : name;
 }
 
 export type { EnvMapping, EnvVar } from "api-server-api";
