@@ -78,7 +78,7 @@ describe("instances-repository.restart", () => {
     expect(deletePod).not.toHaveBeenCalled();
   });
 
-  it("returns false when the pod has already been reaped (K8s 404)", async () => {
+  it("treats pod-already-gone (K8s 404) as a successful restart — the StatefulSet will recreate pod-0", async () => {
     const deletePod = vi.fn().mockResolvedValue(false);
     const k8s = fakeK8s({
       getConfigMap: vi.fn().mockResolvedValue(instanceCM("inst-1", "alice")),
@@ -88,7 +88,7 @@ describe("instances-repository.restart", () => {
 
     const ok = await repo.restart("inst-1", "alice");
 
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
     expect(deletePod).toHaveBeenCalledExactlyOnceWith("inst-1-0");
   });
 });

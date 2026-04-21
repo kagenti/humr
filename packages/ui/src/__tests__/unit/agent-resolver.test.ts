@@ -70,35 +70,48 @@ describe("resolveAgentDisplay", () => {
 });
 
 describe("transitionRestartingInstances", () => {
-  const entry = (seen: boolean) => ({ seenNonRunning: seen });
+  const NOW = 1_000_000_000_000;
+  const entry = (seen: boolean, ageMs = 0) => ({ seenNonRunning: seen, clickedAt: NOW - ageMs });
 
   test("keeps entry while state still reads running and no dip observed", () => {
     const current = new Map([["i-1", entry(false)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")]);
+    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
     expect(next.get("i-1")).toEqual(entry(false));
   });
 
-  test("marks seenNonRunning once the pod goes to starting/error", () => {
+  test("marks seenNonRunning once the pod goes to starting", () => {
     const current = new Map([["i-1", entry(false)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "starting")]);
+    const next = transitionRestartingInstances(current, [inst("i-1", "a", "starting")], NOW);
     expect(next.get("i-1")).toEqual(entry(true));
   });
 
   test("clears entry once running returns after a non-running dip", () => {
     const current = new Map([["i-1", entry(true)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")]);
+    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
+    expect(next.has("i-1")).toBe(false);
+  });
+
+  test("drops entry on error so the real failure surfaces", () => {
+    const current = new Map([["i-1", entry(true)]]);
+    const next = transitionRestartingInstances(current, [inst("i-1", "a", "error")], NOW);
+    expect(next.has("i-1")).toBe(false);
+  });
+
+  test("drops entry once it exceeds the TTL, even if state still looks running", () => {
+    const current = new Map([["i-1", entry(false, 121_000)]]);
+    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
     expect(next.has("i-1")).toBe(false);
   });
 
   test("drops entry when the instance disappears", () => {
     const current = new Map([["i-1", entry(false)]]);
-    const next = transitionRestartingInstances(current, []);
+    const next = transitionRestartingInstances(current, [], NOW);
     expect(next.has("i-1")).toBe(false);
   });
 
   test("no-op when there are no restart entries", () => {
-    const current = new Map<string, { seenNonRunning: boolean }>();
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")]);
+    const current = new Map<string, { seenNonRunning: boolean; clickedAt: number }>();
+    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
     expect(next).toBe(current);
   });
 });

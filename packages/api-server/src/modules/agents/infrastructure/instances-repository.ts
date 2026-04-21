@@ -82,7 +82,11 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
       // current spec. For replicas=1 this is equivalent to `kubectl rollout
       // restart` without the pod-template annotation dance, which would be
       // wiped by the next reconcile of applyStatefulSet.
-      return k8s.deletePod(`${id}-0`);
+      // A 404 from deletePod (pod already gone — crashed, mid-recreate, etc.)
+      // is still a successful restart from the user's perspective: the
+      // StatefulSet will produce a fresh pod-0 regardless.
+      await k8s.deletePod(`${id}-0`);
+      return true;
     },
 
     async wake(id) {
