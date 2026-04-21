@@ -18,7 +18,9 @@ Produce a GitHub issue that reads like a product ticket, not an engineering plan
 
 3. **Draft inline.** Present the full draft (title + body) in the chat, in the format below. Do not file yet.
 
-4. **Get explicit approval.** Ask whether to file as-is or revise. Iterate until the user says to file. NEVER file without explicit approval.
+4. **Get explicit approval.** Ask whether to file as-is or revise. NEVER file without explicit approval.
+
+   **Every revision invalidates the previous approval.** If the user requests any change after approving — even a small one — you must present the revised draft and get a fresh, explicit "file it" before sending to GitHub. Do not assume the original approval carries over.
 
 5. **File via `gh` CLI.** Use `gh issue create`. Infer the repo from context (current working directory's git remote, or a repo mentioned earlier in the session). If unclear, ask. Return the issue URL.
 
