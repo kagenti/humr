@@ -1,6 +1,6 @@
 # GitHub Issue Guidelines
 
-Shared content guidelines for writing GitHub issues. Used by the `draft-issue` and `file-issue` skills.
+Shared content guidelines for writing GitHub issues.
 
 A GitHub issue should read like a product ticket, not an engineering plan. The reader should understand **what problem exists** and **what the user-visible outcome of fixing it looks like** — nothing more.
 
