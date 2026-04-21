@@ -212,23 +212,22 @@ func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (
 	return woke, err
 }
 
-// waitForPodReady polls until the instance pod is Ready or the timeout expires.
-// Uses exponential backoff with jitter so simultaneous wake events don't hammer
-// the kube-API in lockstep.
-func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
-	podName := instanceName + "-0"
-	deadline := time.Now().Add(wakeTimeout)
-	interval := wakePollInitial
+// pollUntilReady polls isReady with exponential backoff + jitter until it
+// returns true, the context is cancelled, or the timeout elapses. Extracted
+// from waitForPodReady so it can be unit-tested with short intervals and
+// deterministic readiness signals.
+func pollUntilReady(
+	ctx context.Context,
+	isReady func(context.Context) bool,
+	initial, max, timeout time.Duration,
+) bool {
+	deadline := time.Now().Add(timeout)
+	interval := initial
 	for time.Now().Before(deadline) {
-		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
-		if err == nil {
-			for _, c := range pod.Status.Conditions {
-				if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-					return true
-				}
-			}
+		if isReady(ctx) {
+			return true
 		}
-		// ±20% jitter around the current interval.
+		// ±20% jitter so concurrent callers don't align their polls.
 		jittered := time.Duration(float64(interval) * (0.8 + 0.4*rand.Float64()))
 		select {
 		case <-ctx.Done():
@@ -236,10 +235,27 @@ func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bo
 		case <-time.After(jittered):
 		}
 		interval = interval * 3 / 2
-		if interval > wakePollMax {
-			interval = wakePollMax
+		if interval > max {
+			interval = max
 		}
 	}
 	return false
+}
+
+// waitForPodReady polls until the instance pod is Ready or the timeout expires.
+func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
+	podName := instanceName + "-0"
+	return pollUntilReady(ctx, func(ctx context.Context) bool {
+		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+		for _, c := range pod.Status.Conditions {
+			if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	}, wakePollInitial, wakePollMax, wakeTimeout)
 }
 

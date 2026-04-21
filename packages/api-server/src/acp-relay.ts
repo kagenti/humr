@@ -26,20 +26,39 @@ function shouldUpdateActivity(instanceId: string): boolean {
   return true;
 }
 
+/**
+ * Poll `isReady` with exponential backoff + jitter until it returns true or
+ * the deadline elapses. Extracted so it can be unit-tested with short
+ * intervals and deterministic readiness signals.
+ */
+export async function pollUntilReady(
+  isReady: () => Promise<boolean>,
+  initialMs: number,
+  maxMs: number,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let interval = initialMs;
+  while (Date.now() < deadline) {
+    if (await isReady()) return true;
+    // ±20% jitter so concurrent waiters on the same pod don't poll in lockstep.
+    const jittered = interval * (0.8 + 0.4 * Math.random());
+    await new Promise((r) => setTimeout(r, jittered));
+    interval = Math.min(Math.floor(interval * 1.5), maxMs);
+  }
+  return false;
+}
+
 async function waitForPodReady(
   repo: InstancesRepository,
   instanceId: string,
 ): Promise<boolean> {
-  const deadline = Date.now() + WAKE_TIMEOUT_MS;
-  let interval = WAKE_POLL_INITIAL_MS;
-  while (Date.now() < deadline) {
-    if (await repo.isPodReady(instanceId)) return true;
-    // ±20% jitter so concurrent waiters on the same pod don't poll in lockstep.
-    const jittered = interval * (0.8 + 0.4 * Math.random());
-    await new Promise((r) => setTimeout(r, jittered));
-    interval = Math.min(Math.floor(interval * 1.5), WAKE_POLL_MAX_MS);
-  }
-  return false;
+  return pollUntilReady(
+    () => repo.isPodReady(instanceId),
+    WAKE_POLL_INITIAL_MS,
+    WAKE_POLL_MAX_MS,
+    WAKE_TIMEOUT_MS,
+  );
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
