@@ -90,6 +90,41 @@ type ScheduleStatus struct {
 	LastResult string `yaml:"lastResult,omitempty"`
 }
 
+// --- Fork ---
+
+type ForkSpec struct {
+	Version     string `yaml:"version"`
+	Instance    string `yaml:"instance"`
+	ForeignSub  string `yaml:"foreignSub"`
+	SessionID   string `yaml:"sessionId,omitempty"`
+	AccessToken string `yaml:"accessToken"`
+}
+
+type ForkError struct {
+	Reason string `yaml:"reason"`
+	Detail string `yaml:"detail,omitempty"`
+}
+
+type ForkStatus struct {
+	Version string     `yaml:"version"`
+	Phase   string     `yaml:"phase"`
+	JobName string     `yaml:"jobName,omitempty"`
+	PodIP   string     `yaml:"podIP,omitempty"`
+	Error   *ForkError `yaml:"error,omitempty"`
+}
+
+const (
+	ForkPhasePending   = "Pending"
+	ForkPhaseReady     = "Ready"
+	ForkPhaseFailed    = "Failed"
+	ForkPhaseCompleted = "Completed"
+
+	ForkReasonCredentialMintFailed = "CredentialMintFailed"
+	ForkReasonOrchestrationFailed  = "OrchestrationFailed"
+	ForkReasonPodNotReady          = "PodNotReady"
+	ForkReasonTimeout              = "Timeout"
+)
+
 // --- Parsing + Validation ---
 
 func ParseAgentSpec(data string) (*AgentSpec, error) {
@@ -126,6 +161,30 @@ func ParseInstanceSpec(data string) (*InstanceSpec, error) {
 		return nil, fmt.Errorf("instance spec: desiredState must be 'running' or 'hibernated', got %q", spec.DesiredState)
 	}
 	return &spec, nil
+}
+
+func ParseForkSpec(data string) (*ForkSpec, error) {
+	var spec ForkSpec
+	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
+		return nil, fmt.Errorf("parsing fork spec: %w", err)
+	}
+	if err := validateVersion(spec.Version); err != nil {
+		return nil, fmt.Errorf("fork spec: %w", err)
+	}
+	if spec.Instance == "" {
+		return nil, fmt.Errorf("fork spec: instance is required")
+	}
+	if spec.ForeignSub == "" {
+		return nil, fmt.Errorf("fork spec: foreignSub is required")
+	}
+	if spec.AccessToken == "" {
+		return nil, fmt.Errorf("fork spec: accessToken is required")
+	}
+	return &spec, nil
+}
+
+func NewForkStatus(phase, jobName, podIP string, forkErr *ForkError) *ForkStatus {
+	return &ForkStatus{Version: SpecVersion, Phase: phase, JobName: jobName, PodIP: podIP, Error: forkErr}
 }
 
 func ParseScheduleSpec(data string) (*ScheduleSpec, error) {
