@@ -18,7 +18,7 @@ export const badgeColors: Record<InstanceState, string> = {
   running: "bg-success-light text-success border-success",
   starting: "bg-warning-light text-warning border-warning",
   hibernating: "bg-warning-light text-warning border-warning",
-  hibernated: "bg-bg text-text-muted border-border-light",
+  hibernated: "bg-warning-light text-text-muted border-border-light",
   error: "bg-danger-light text-danger border-danger",
 };
 
