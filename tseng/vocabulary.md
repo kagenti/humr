@@ -24,6 +24,16 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 | Channel | An external communication pathway connecting users to an agent instance (e.g., Slack) |
 | Channel Worker | A long-running process that bridges an external service to an agent instance |
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Instance |
+| Foreign Replier | A linked Slack user in an instance's `allowedUsers` list whose identity differs from the Instance owner; triggers a Fork for the turn |
+
+## Forks (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Fork | An ephemeral, per-turn execution environment derived from an Instance that impersonates a foreign user for the duration of one Slack turn |
+| Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Instance owner |
+| Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
+| Foreign Registration | The `(agent, foreignSub) → OneCLI access token` binding, minted lazily on first fork request and cached in-memory by the Connections module |
 
 ## Secrets (bounded context)
 
