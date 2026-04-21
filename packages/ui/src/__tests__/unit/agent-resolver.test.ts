@@ -14,7 +14,7 @@ const inst = (id: string, agentId: string, state: InstanceView["state"]): Instan
 describe("resolveAgentDisplay", () => {
   test("returns no-instance when the agent has no instances", () => {
     const out = resolveAgentDisplay(agent("a"), [], new Set());
-    expect(out).toEqual({ instance: null, state: "no-instance", clickable: false, canRestart: false });
+    expect(out).toEqual({ instance: null, state: "no-instance", clickable: false, powerAction: null });
   });
 
   test("picks the lowest-id instance when multiple exist", () => {
@@ -35,12 +35,12 @@ describe("resolveAgentDisplay", () => {
   });
 
   test.each([
-    ["running", true, true],
-    ["error", false, true],
-    ["starting", false, false],
-    ["hibernating", false, false],
-    ["hibernated", true, false],
-  ] as const)("state=%s → clickable=%s canRestart=%s", (state, clickable, canRestart) => {
+    ["running", true, "restart"],
+    ["error", false, "restart"],
+    ["hibernated", true, "start"],
+    ["starting", false, null],
+    ["hibernating", false, null],
+  ] as const)("state=%s → clickable=%s powerAction=%s", (state, clickable, powerAction) => {
     const out = resolveAgentDisplay(
       agent("a"),
       [inst("i-1", "a", state)],
@@ -48,7 +48,7 @@ describe("resolveAgentDisplay", () => {
     );
     expect(out.state).toBe(state);
     expect(out.clickable).toBe(clickable);
-    expect(out.canRestart).toBe(canRestart);
+    expect(out.powerAction).toBe(powerAction);
   });
 
   test("restart override: state flips to restarting and actions are suppressed", () => {
@@ -56,7 +56,7 @@ describe("resolveAgentDisplay", () => {
     const out = resolveAgentDisplay(agent("a"), [i], new Set(["i-1"]));
     expect(out.state).toBe("restarting");
     expect(out.clickable).toBe(false);
-    expect(out.canRestart).toBe(false);
+    expect(out.powerAction).toBe(null);
   });
 
   test("restart override keyed on instance id, not agent id", () => {

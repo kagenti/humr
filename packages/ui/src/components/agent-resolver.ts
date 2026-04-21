@@ -9,8 +9,10 @@ export interface AgentDisplay {
   state: AgentDisplayState;
   /** Whether the underlying instance is reachable enough to click through. */
   clickable: boolean;
-  /** Whether the Restart action is valid in the current state. */
-  canRestart: boolean;
+  /** Which power action to offer — mutually exclusive; `null` means the action
+   *  is disabled (transient states like `starting`/`hibernating`/`restarting`,
+   *  or `no-instance`). */
+  powerAction: "restart" | "start" | null;
 }
 
 /**
@@ -31,11 +33,15 @@ export function resolveAgentDisplay(
   const instance = forAgent[0] ?? null;
 
   if (!instance) {
-    return { instance: null, state: "no-instance", clickable: false, canRestart: false };
+    return { instance: null, state: "no-instance", clickable: false, powerAction: null };
   }
   const restarting = restartingInstanceIds.has(instance.id);
   const state: AgentDisplayState = restarting ? "restarting" : instance.state;
   const clickable = !restarting && (instance.state === "running" || instance.state === "hibernated");
-  const canRestart = !restarting && (instance.state === "running" || instance.state === "error");
-  return { instance, state, clickable, canRestart };
+  const powerAction: AgentDisplay["powerAction"] =
+    restarting ? null
+    : instance.state === "hibernated" ? "start"
+    : (instance.state === "running" || instance.state === "error") ? "restart"
+    : null;
+  return { instance, state, clickable, powerAction };
 }

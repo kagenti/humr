@@ -19,6 +19,7 @@ export interface InstancesSlice {
   fetchInstances: () => Promise<void>;
   createInstance: (agentId: string, name: string) => Promise<void>;
   restartInstance: (id: string) => Promise<void>;
+  wakeInstance: (id: string) => Promise<void>;
   updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
@@ -60,6 +61,14 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
     const ok = await runAction(
       () => platform.instances.create.mutate({ name, agentId }),
       "Failed to create instance",
+    );
+    if (ok !== ACTION_FAILED) await get().fetchInstances();
+  },
+
+  wakeInstance: async (id) => {
+    const ok = await runAction(
+      () => platform.instances.wake.mutate({ id }),
+      "Failed to start agent",
     );
     if (ok !== ACTION_FAILED) await get().fetchInstances();
   },

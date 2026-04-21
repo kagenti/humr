@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
 import { useStore } from "../store.js";
-import { StatusIndicator, stateLabel, badgeColors } from "../components/status-indicator.js";
+import { StatusBadge } from "../components/status-indicator.js";
 import { resolveAgentDisplay } from "../components/agent-resolver.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
-import { RefreshCw, Plus, Trash2, KeyRound, RotateCw } from "lucide-react";
+import { RefreshCw, Plus, Trash2, KeyRound, RotateCw, Play } from "lucide-react";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
 
 export function ListView() {
@@ -17,6 +17,7 @@ export function ListView() {
   const createAgent = useStore(s => s.createAgent);
   const deleteAgent = useStore(s => s.deleteAgent);
   const restartInstance = useStore(s => s.restartInstance);
+  const wakeInstance = useStore(s => s.wakeInstance);
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
@@ -92,10 +93,7 @@ export function ListView() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <h2 className="text-[16px] md:text-[17px] font-bold text-text">{agent.name}</h2>
-                        <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${badgeColors[display.state]}`}>
-                          <StatusIndicator state={display.state} />
-                          {stateLabel[display.state]}
-                        </span>
+                        <StatusBadge state={display.state} />
                       </div>
                       {agent.description && (
                         <p className="text-[13px] text-text-secondary">{agent.description}</p>
@@ -112,13 +110,19 @@ export function ListView() {
                         <KeyRound size={12} /> Configure
                       </button>
                       <button
-                        onClick={() => { if (inst) restartInstance(inst.id); }}
-                        disabled={!display.canRestart}
+                        onClick={() => {
+                          if (!inst) return;
+                          if (display.powerAction === "start") wakeInstance(inst.id);
+                          else if (display.powerAction === "restart") restartInstance(inst.id);
+                        }}
+                        disabled={display.powerAction === null}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:hover:text-text-secondary disabled:hover:border-border flex items-center gap-1"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                        title="Restart the agent pod"
+                        title={display.powerAction === "start" ? "Wake the hibernated agent" : "Restart the agent pod"}
                       >
-                        <RotateCw size={12} /> Restart
+                        {display.powerAction === "start"
+                          ? (<><Play size={12} /> Start</>)
+                          : (<><RotateCw size={12} /> Restart</>)}
                       </button>
                       <button
                         onClick={async () => {
