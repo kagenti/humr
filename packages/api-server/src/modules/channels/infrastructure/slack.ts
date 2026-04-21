@@ -141,16 +141,24 @@ export function createSlackWorker(
     }
   }
 
-  function resolveInstance(channel: string, threadTs?: string): string | null {
-    if (threadTs) {
-      const routed = threadRoutes.get(threadTs);
-      if (routed) return routed;
-    }
+  async function hasAccess(instanceName: string, keycloakSub: string): Promise<boolean> {
+    const [instance, ownerSub] = await Promise.all([
+      instances().get(instanceName),
+      getInstanceOwner(instanceName),
+    ]);
+    if (ownerSub !== null && ownerSub === keycloakSub) return true;
+    if (instance && instance.allowedUsers.includes(keycloakSub)) return true;
+    return false;
+  }
 
-    const ins = channelMap.get(channel);
-    if (!ins || ins.size === 0) return null;
-    if (ins.size === 1) return [...ins][0];
-    return null;
+  async function filterAccessible(
+    instanceNames: string[],
+    keycloakSub: string,
+  ): Promise<string[]> {
+    const checks = await Promise.all(
+      instanceNames.map(async (n) => ((await hasAccess(n, keycloakSub)) ? n : null)),
+    );
+    return checks.filter((n): n is string => n !== null);
   }
 
   async function relayOwnerTurn(ctx: {
@@ -374,61 +382,93 @@ export function createSlackWorker(
     }
 
     const threadTs = event.thread_ts ?? event.ts;
-    const instanceName = resolveInstance(event.channel, event.thread_ts);
+    const routedInstance = event.thread_ts ? threadRoutes.get(event.thread_ts) ?? null : null;
 
-    if (!instanceName) {
-      const ins = channelMap.get(event.channel);
-      if (!ins || ins.size === 0) {
+    if (routedInstance) {
+      if (!(await hasAccess(routedInstance, keycloakSub))) {
         await app.client.chat.postEphemeral({
           channel: event.channel,
           user: slackUserId,
-          text: "No instance connected to this channel.",
+          text: "You don't have access to the instance handling this thread.",
         });
         return;
       }
-
-      const selectionId = crypto.randomUUID();
-      pendingSelections.set(selectionId, {
-        text: event.text,
+      await routeReply({
         channel: event.channel,
-        slackUserId,
-        keycloakSub,
         threadTs,
         eventTs: event.ts,
-      });
-
-      await app.client.chat.postEphemeral({
-        channel: event.channel,
-        user: slackUserId,
-        text: "Multiple instances are connected to this channel. Pick one:",
-        blocks: [
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: "Multiple instances are connected to this channel. Pick one:" },
-            accessory: {
-              type: "static_select",
-              action_id: `instance_select:${selectionId}`,
-              placeholder: { type: "plain_text", text: "Choose instance" },
-              options: [...ins].map((name) => ({
-                text: { type: "plain_text" as const, text: name },
-                value: name,
-              })),
-            },
-          },
-        ],
+        text: event.text,
+        hasThread: !!event.thread_ts,
+        slackUserId,
+        keycloakSub,
+        instanceName: routedInstance,
       });
       return;
     }
 
-    await routeReply({
-      channel: event.channel,
-      threadTs,
-      eventTs: event.ts,
+    const channelInstances = [...(channelMap.get(event.channel) ?? [])];
+    if (channelInstances.length === 0) {
+      await app.client.chat.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: "No instance connected to this channel.",
+      });
+      return;
+    }
+
+    const accessibleInstances = await filterAccessible(channelInstances, keycloakSub);
+    if (accessibleInstances.length === 0) {
+      await app.client.chat.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: "You don't have access to any instance in this channel.",
+      });
+      return;
+    }
+
+    if (accessibleInstances.length === 1) {
+      await routeReply({
+        channel: event.channel,
+        threadTs,
+        eventTs: event.ts,
+        text: event.text,
+        hasThread: !!event.thread_ts,
+        slackUserId,
+        keycloakSub,
+        instanceName: accessibleInstances[0],
+      });
+      return;
+    }
+
+    const selectionId = crypto.randomUUID();
+    pendingSelections.set(selectionId, {
       text: event.text,
-      hasThread: !!event.thread_ts,
+      channel: event.channel,
       slackUserId,
       keycloakSub,
-      instanceName,
+      threadTs,
+      eventTs: event.ts,
+    });
+
+    await app.client.chat.postEphemeral({
+      channel: event.channel,
+      user: slackUserId,
+      text: "Multiple instances are available. Pick one:",
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: "Multiple instances are available. Pick one:" },
+          accessory: {
+            type: "static_select",
+            action_id: `instance_select:${selectionId}`,
+            placeholder: { type: "plain_text", text: "Choose instance" },
+            options: accessibleInstances.map((name) => ({
+              text: { type: "plain_text" as const, text: name },
+              value: name,
+            })),
+          },
+        },
+      ],
     });
   }
 
