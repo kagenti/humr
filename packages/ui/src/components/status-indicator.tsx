@@ -21,7 +21,7 @@ const badgeColors: Record<AgentDisplayState, string> = {
   running: "bg-success-light text-success border-success",
   starting: "bg-warning-light text-warning border-warning",
   hibernating: "bg-warning-light text-warning border-warning",
-  hibernated: "bg-info-light text-info border-info",
+  hibernated: "bg-info-light text-text-secondary border-border-light",
   error: "bg-danger-light text-danger border-danger",
   restarting: "bg-warning-light text-warning border-warning",
   "no-instance": "bg-surface text-text-muted border-border-light",

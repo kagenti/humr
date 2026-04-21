@@ -102,14 +102,6 @@ export function ListView() {
 
                     <div className="flex items-center gap-2 shrink-0 flex-wrap" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => setShowSecretsDlg(agent.id)}
-                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
-                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                        title="Configure agent credentials and env vars"
-                      >
-                        <KeyRound size={12} /> Configure
-                      </button>
-                      <button
                         onClick={() => {
                           if (!inst) return;
                           if (display.powerAction === "start") wakeInstance(inst.id);
@@ -123,6 +115,14 @@ export function ListView() {
                         {display.powerAction === "start"
                           ? (<><Play size={12} /> Start</>)
                           : (<><RotateCw size={12} /> Restart</>)}
+                      </button>
+                      <button
+                        onClick={() => setShowSecretsDlg(agent.id)}
+                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
+                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                        title="Configure agent credentials and env vars"
+                      >
+                        <KeyRound size={12} /> Configure
                       </button>
                       <button
                         onClick={async () => {
