@@ -48,6 +48,15 @@ export interface Message {
   role: Role;
   parts: MessagePart[];
   streaming: boolean;
+  /** True while this assistant message is waiting behind an earlier in-flight
+   *  prompt on the server queue. Flipped to false when the server starts
+   *  streaming content to it. */
+  queued?: boolean;
+  /** System-style placeholder rendered as dim centered text — used for the
+   *  `<clipped-conversation>` marker the runtime injects at the start of a
+   *  catch-up when the session log has been truncated. Invisible to the
+   *  projection's routing (findActiveAssistant skips these). */
+  notice?: boolean;
 }
 
 export interface LogEntry {

@@ -2,13 +2,14 @@ import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
 import { createFilesService } from "./modules/files.js";
 import { config } from "./modules/config.js";
-import { spawnAcpSession } from "./acp-bridge.js";
+import { composeAcp } from "./modules/acp/compose.js";
+import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
 
 let triggerWatcher: TriggerWatcher | undefined;
@@ -41,6 +42,12 @@ const trpcHandler = createHTTPHandler({
   createContext,
 });
 
+const { runtime: acpRuntime } = composeAcp({
+  command: agentCommand,
+  workingDir: workDir,
+  log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
+});
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS).end();
@@ -53,8 +60,12 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/status") {
+    const s = acpRuntime.status();
     const status = {
-      activeSessions: wss.clients.size,
+      activeClients: s.activeClientCount,
+      pendingRequests: s.pendingRequestCount,
+      queuedPrompts: s.queuedPromptCount,
+      agentAlive: s.agentAlive,
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
     };
     res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
@@ -74,52 +85,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/api/acp" });
 
 wss.on("connection", (ws) => {
-  const session = spawnAcpSession({ command: agentCommand, workingDir: workDir });
-
-  session.onMessage((line) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        const msg = JSON.parse(line);
-        const hint =
-          "Authentication Error: Ensure the API/OAuth credential secret is correct and linked to this agent in the OneCLI dashboard (Agents > select agent > Secrets).\n\nError: ";
-
-        // JSON-RPC error response (e.g. internal error wrapping the API failure)
-        if (msg.error?.message?.includes("authentication_error")) {
-          msg.error.message = hint + msg.error.message;
-          ws.send(JSON.stringify(msg));
-          return;
-        }
-
-        // Session update notification (agent_message_chunk with error text)
-        const text = msg.params?.update?.content?.text;
-        if (typeof text === "string" && text.includes("authentication_error")) {
-          msg.params.update.content.text = hint + msg.params.update.content.text;
-          ws.send(JSON.stringify(msg));
-          return;
-        }
-      } catch {
-        // not JSON — relay as-is
-      }
-      ws.send(line);
-    }
-  });
-
-  ws.on("message", (data: Buffer) => {
-    try {
-      const msg = JSON.parse(data.toString());
-      if (msg.params?.cwd !== undefined) {
-        msg.params.cwd = workDir;
-      }
-      session.send(msg);
-    } catch {
-      process.stderr.write(`[acp] Dropping non-JSON WebSocket message: ${data.toString()}\n`);
-    }
-  });
-
-  ws.on("close", () => session.kill());
-  session.exited.then(() => {
-    if (ws.readyState === WebSocket.OPEN) ws.close();
-  });
+  acpRuntime.attach(createWebSocketChannel(ws));
 });
 
 if (config.HUMR_MCP_URL) {

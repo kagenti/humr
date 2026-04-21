@@ -29,6 +29,7 @@ includes = [
     "packages/ui/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/api-server/tasks.toml",
+    "packages/agent-runtime/tasks.toml",
     "deploy/helm/tasks.toml",
     "deploy/tasks.toml",
 ]

@@ -7,7 +7,8 @@
     "dev": "tsx watch --env-file=.env src/server.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsup",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.24.2",
@@ -24,6 +25,7 @@
     "@types/ws": "^8.18.1",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.3"
   }
 }
