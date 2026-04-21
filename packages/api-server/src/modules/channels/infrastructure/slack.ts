@@ -95,6 +95,7 @@ export function createSlackWorker(
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
   threadSessions: {
     find: (instanceId: string, threadTs: string) => Promise<{ sessionId: string } | null>;
+    findInstance: (threadTs: string) => Promise<string | null>;
     touch: (sessionId: string) => Promise<void>;
   },
   getInstanceOwner: (instanceId: string) => Promise<string | null>,
@@ -382,7 +383,13 @@ export function createSlackWorker(
     }
 
     const threadTs = event.thread_ts ?? event.ts;
-    const routedInstance = event.thread_ts ? threadRoutes.get(event.thread_ts) ?? null : null;
+    let routedInstance: string | null = null;
+    if (event.thread_ts) {
+      routedInstance =
+        threadRoutes.get(event.thread_ts) ??
+        (await threadSessions.findInstance(event.thread_ts));
+      if (routedInstance) threadRoutes.set(event.thread_ts, routedInstance);
+    }
 
     if (routedInstance) {
       if (!(await hasAccess(routedInstance, keycloakSub))) {

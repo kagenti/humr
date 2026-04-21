@@ -4,7 +4,7 @@ import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } 
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
-import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
+import { upsertSession, findByInstanceAndThreadTs, findInstanceByThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
@@ -100,6 +100,7 @@ const slackWorker = config.slackBotToken && config.slackAppToken
       pendingSlackOAuthFlows,
       {
         find: findByInstanceAndThreadTs(db),
+        findInstance: findInstanceByThreadTs(db),
         touch: touchSession(db),
       },
       (instanceId) => instancesRepo.getOwner(instanceId),
