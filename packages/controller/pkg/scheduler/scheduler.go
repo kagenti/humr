@@ -221,6 +221,11 @@ func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (
 //
 // Extracted from waitForPodReady so the loop can be unit-tested with
 // short intervals and a deterministic isReady.
+//
+// NOTE: mirrored in packages/api-server/src/acp-relay.ts (TS). The
+// api-server's ACP relay waits for the same pod-ready signal when a
+// WebSocket upgrade hits a hibernated pod. Keep behaviour, constants,
+// and the shape of the loop in sync across both.
 func pollUntilReady(
 	ctx context.Context,
 	isReady func(context.Context) bool,

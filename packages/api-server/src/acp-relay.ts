@@ -36,6 +36,11 @@ function shouldUpdateActivity(instanceId: string): boolean {
  *
  * Exported so the loop can be unit-tested with short intervals and a
  * deterministic isReady.
+ *
+ * NOTE: mirrored in packages/controller/pkg/scheduler/scheduler.go (Go).
+ * The controller's scheduler waits for the same pod-ready signal when a
+ * scheduled trigger fires against a hibernated pod. Keep behaviour,
+ * constants, and the shape of the loop in sync across both.
  */
 export async function pollUntilReady(
   isReady: () => Promise<boolean>,
