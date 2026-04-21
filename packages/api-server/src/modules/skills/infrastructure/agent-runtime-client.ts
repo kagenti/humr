@@ -13,16 +13,19 @@ export interface UninstallSkillCall {
 }
 
 export interface AgentRuntimeSkillsClient {
-  install(instanceId: string, body: InstallSkillCall): Promise<void>;
-  uninstall(instanceId: string, body: UninstallSkillCall): Promise<void>;
+  install(instanceId: string, token: string, body: InstallSkillCall): Promise<void>;
+  uninstall(instanceId: string, token: string, body: UninstallSkillCall): Promise<void>;
 }
 
-async function post(url: string, body: unknown): Promise<void> {
+async function post(url: string, token: string, body: unknown): Promise<void> {
   let res: Response;
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -43,7 +46,7 @@ async function post(url: string, body: unknown): Promise<void> {
 export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeSkillsClient {
   const base = (instanceId: string) => `http://${podBaseUrl(instanceId, namespace)}`;
   return {
-    install: (instanceId, body) => post(`${base(instanceId)}/api/skills/install`, body),
-    uninstall: (instanceId, body) => post(`${base(instanceId)}/api/skills/uninstall`, body),
+    install: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/install`, token, body),
+    uninstall: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/uninstall`, token, body),
   };
 }

@@ -22,6 +22,7 @@ export interface SkillsServiceDeps {
   instancesRepo: InstancesRepository;
   agentsRepo: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
+  getAgentToken: (agentId: string) => Promise<string>;
   owner: string;
   scanSource: (gitUrl: string) => Promise<Skill[]>;
 }
@@ -81,8 +82,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async installSkill(input: InstallSkillInput) {
       const infra = await loadRunningInstance(deps, input.instanceId);
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
+      const token = await deps.getAgentToken(infra.agentId);
 
-      await deps.runtimeClient.install(input.instanceId, {
+      await deps.runtimeClient.install(input.instanceId, token, {
         source: input.source,
         name: input.name,
         version: input.version,
@@ -101,8 +103,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async uninstallSkill(input: UninstallSkillInput) {
       const infra = await loadRunningInstance(deps, input.instanceId);
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
+      const token = await deps.getAgentToken(infra.agentId);
 
-      await deps.runtimeClient.uninstall(input.instanceId, {
+      await deps.runtimeClient.uninstall(input.instanceId, token, {
         name: input.name,
         skillPaths,
       });

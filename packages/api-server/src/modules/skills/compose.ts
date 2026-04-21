@@ -4,6 +4,7 @@ import { createAgentsRepository } from "../agents/infrastructure/agents-reposito
 import { createInstancesRepository } from "../agents/infrastructure/instances-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
+import { createAgentTokenResolver } from "./infrastructure/agent-token.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { scanSource } from "./infrastructure/skill-scanner.js";
 import { createSkillsService } from "./services/skills-service.js";
@@ -46,6 +47,7 @@ export function composeSkillsModule(
     instancesRepo: createInstancesRepository(k8s),
     agentsRepo: createAgentsRepository(k8s),
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
+    getAgentToken: createAgentTokenResolver(k8s),
     owner,
     scanSource: scanWithCache,
   });

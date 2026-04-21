@@ -1,4 +1,5 @@
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -80,6 +81,23 @@ function writeJson(res: http.ServerResponse, status: number, body: unknown): voi
   res.writeHead(status, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(body));
 }
 
+/**
+ * Check Authorization: Bearer <token> against the agent's own access token
+ * (the same value stored in the agent-token Secret and written to .mcp.json on
+ * boot). Returns true only when both are configured and match. Constant-time.
+ */
+function isAuthorizedAgentCaller(req: http.IncomingMessage): boolean {
+  const expected = config.ONECLI_ACCESS_TOKEN;
+  if (!expected) return false;
+  const header = req.headers["authorization"];
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
+  const presented = header.slice("Bearer ".length);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(presented);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 const trpcHandler = createHTTPHandler({
   router: appRouter,
   createContext,
@@ -117,6 +135,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/skills/install" && req.method === "POST") {
+    if (!isAuthorizedAgentCaller(req)) {
+      writeJson(res, 401, { error: "unauthorized" });
+      return;
+    }
     (async () => {
       const body = await readJsonBody(req);
       const parsed = installSkillInputSchema.safeParse(body);
@@ -135,6 +157,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/skills/uninstall" && req.method === "POST") {
+    if (!isAuthorizedAgentCaller(req)) {
+      writeJson(res, 401, { error: "unauthorized" });
+      return;
+    }
     (async () => {
       const body = await readJsonBody(req);
       const parsed = uninstallSkillInputSchema.safeParse(body);
