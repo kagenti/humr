@@ -9,11 +9,11 @@ const ICON: Record<ToastKind, LucideIcon> = {
   info: Info,
 };
 
-const COLOR: Record<ToastKind, { border: string; bg: string; icon: string }> = {
-  error:   { border: "border-danger",  bg: "bg-danger-light",  icon: "text-danger" },
-  warning: { border: "border-warning", bg: "bg-warning-light", icon: "text-warning" },
-  success: { border: "border-success", bg: "bg-success-light", icon: "text-success" },
-  info:    { border: "border-info",    bg: "bg-info-light",    icon: "text-info" },
+const COLOR: Record<ToastKind, { border: string; tint: string; icon: string }> = {
+  error:   { border: "border-danger",  tint: "var(--color-danger)",  icon: "text-danger" },
+  warning: { border: "border-warning", tint: "var(--color-warning)", icon: "text-warning" },
+  success: { border: "border-success", tint: "var(--color-success)", icon: "text-success" },
+  info:    { border: "border-info",    tint: "var(--color-info)",    icon: "text-info" },
 };
 
 export function ToastOverlay() {
@@ -35,8 +35,14 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
   const isError = toast.kind === "error";
   return (
     <div
-      className={`pointer-events-auto rounded-lg border-2 ${c.border} ${c.bg} bg-surface p-3 flex items-start gap-2.5 anim-scale-in`}
-      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+      className={`pointer-events-auto rounded-lg border-2 ${c.border} p-3 flex items-start gap-2.5 anim-scale-in`}
+      style={{
+        boxShadow: "var(--shadow-brutal-sm)",
+        // Solid tinted bg — the theme's *-light tokens are alpha in dark mode,
+        // which bled through whatever the toast floated over. color-mix keeps
+        // the tint identity while staying fully opaque.
+        backgroundColor: `color-mix(in srgb, ${c.tint} 10%, var(--color-surface))`,
+      }}
       role={isError ? "alert" : "status"}
       aria-live={isError ? "assertive" : "polite"}
     >
