@@ -37,4 +37,6 @@ data:
         memory: {{ .Values.googleWorkspaceTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
+    skillPaths:
+      - /home/agent/.claude/skills/
 {{- end }}

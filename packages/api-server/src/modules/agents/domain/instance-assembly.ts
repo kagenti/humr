@@ -1,4 +1,4 @@
-import type { Instance, InstanceState, ChannelConfig } from "api-server-api";
+import type { Instance, InstanceState, ChannelConfig, SkillRef } from "api-server-api";
 
 export interface InfraInstance {
   id: string;
@@ -9,6 +9,7 @@ export interface InfraInstance {
   currentState?: "running" | "hibernated" | "error";
   error?: string;
   podReady: boolean;
+  skills: SkillRef[];
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
@@ -34,6 +35,7 @@ export function assembleInstance(
     error: infra.currentState === "error" ? infra.error : undefined,
     channels,
     allowedUserEmails,
+    skills: infra.skills,
   };
 }
 

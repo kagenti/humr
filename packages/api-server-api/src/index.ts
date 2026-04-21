@@ -84,3 +84,13 @@ export type {
   SessionView,
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
+
+export type {
+  Skill,
+  SkillRef,
+  SkillSource,
+  SkillsService,
+  CreateSkillSourceInput,
+  InstallSkillInput,
+  UninstallSkillInput,
+} from "./modules/skills/types.js";

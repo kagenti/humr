@@ -381,3 +381,13 @@ codeGuardianTemplate:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# -- Seed skill source (shared catalog visible to all users).
+# When enabled, a humr.ai/type=skill-source ConfigMap is created at install time
+# in `agentNamespace`. Users see it alongside their own sources in the UI's
+# Skills section and cannot delete it.
+skills:
+  seedSource:
+    enabled: false
+    name: "Anthropic Skills"
+    gitUrl: "https://github.com/anthropics/skills"

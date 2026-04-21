@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ type AgentSpec struct {
 	Resources       ResourceSpec                `yaml:"resources,omitempty"`
 	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
 	SecretMode      string                      `yaml:"secretMode,omitempty"` // "all" or "selective" (default)
+	SkillPaths      []string                    `yaml:"skillPaths,omitempty"` // filesystem paths where the harness reads skills
 }
 
 type Mount struct {
@@ -62,18 +64,35 @@ type MCPServerConfig struct {
 // --- Instance ---
 
 type InstanceSpec struct {
-	Version      string   `yaml:"version"`
-	DesiredState string   `yaml:"desiredState"`
-	AgentName    string   `yaml:"agentId,omitempty"`
-	Env          []EnvVar `yaml:"env,omitempty"`
-	SecretRef    string   `yaml:"secretRef,omitempty"`
-	Description  string   `yaml:"description,omitempty"`
+	Version      string     `yaml:"version"`
+	DesiredState string     `yaml:"desiredState"`
+	AgentName    string     `yaml:"agentId,omitempty"`
+	Env          []EnvVar   `yaml:"env,omitempty"`
+	SecretRef    string     `yaml:"secretRef,omitempty"`
+	Description  string     `yaml:"description,omitempty"`
+	Skills       []SkillRef `yaml:"skills,omitempty"`
+}
+
+// SkillRef identifies an installed skill on an instance.
+// Source is the source git URL; Name is the skill directory name; Version is a commit SHA.
+type SkillRef struct {
+	Source  string `yaml:"source"`
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
 }
 
 type InstanceStatus struct {
 	Version      string `yaml:"version"`
 	CurrentState string `yaml:"currentState"`
 	Error        string `yaml:"error,omitempty"`
+}
+
+// --- Skill Source ---
+
+type SkillSourceSpec struct {
+	Version string `yaml:"version"`
+	Name    string `yaml:"name,omitempty"`
+	GitURL  string `yaml:"gitUrl"`
 }
 
 // --- Schedule ---
@@ -174,6 +193,11 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 			return nil, fmt.Errorf("agent spec: mount path %q must be absolute", m.Path)
 		}
 	}
+	for _, p := range spec.SkillPaths {
+		if !strings.HasPrefix(p, "/") {
+			return nil, fmt.Errorf("agent spec: skillPath %q must be absolute", p)
+		}
+	}
 	return &spec, nil
 }
 
@@ -190,6 +214,35 @@ func ParseInstanceSpec(data string) (*InstanceSpec, error) {
 	}
 	if spec.DesiredState != "running" && spec.DesiredState != "hibernated" {
 		return nil, fmt.Errorf("instance spec: desiredState must be 'running' or 'hibernated', got %q", spec.DesiredState)
+	}
+	for i, s := range spec.Skills {
+		if s.Source == "" {
+			return nil, fmt.Errorf("instance spec: skill[%d]: source is required", i)
+		}
+		if s.Name == "" {
+			return nil, fmt.Errorf("instance spec: skill[%d]: name is required", i)
+		}
+		if s.Version == "" {
+			return nil, fmt.Errorf("instance spec: skill[%d]: version is required", i)
+		}
+	}
+	return &spec, nil
+}
+
+func ParseSkillSourceSpec(data string) (*SkillSourceSpec, error) {
+	var spec SkillSourceSpec
+	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
+		return nil, fmt.Errorf("parsing skill source spec: %w", err)
+	}
+	if err := validateVersion(spec.Version); err != nil {
+		return nil, fmt.Errorf("skill source spec: %w", err)
+	}
+	if spec.GitURL == "" {
+		return nil, fmt.Errorf("skill source spec: gitUrl is required")
+	}
+	u, err := url.Parse(spec.GitURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("skill source spec: gitUrl %q is not a valid URL", spec.GitURL)
 	}
 	return &spec, nil
 }

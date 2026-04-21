@@ -85,6 +85,27 @@ mounts:
 	assert.Contains(t, err.Error(), "must be absolute")
 }
 
+func TestParseAgentSpec_SkillPaths(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillPaths:
+  - /home/agent/.claude/skills/
+  - /home/agent/.agents/skills/
+`)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/home/agent/.claude/skills/", "/home/agent/.agents/skills/"}, spec.SkillPaths)
+}
+
+func TestParseAgentSpec_RelativeSkillPath(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillPaths:
+  - home/agent/skills/`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "skillPath")
+	assert.Contains(t, err.Error(), "must be absolute")
+}
+
 // --- Instance ---
 
 func TestParseInstanceSpec(t *testing.T) {
@@ -122,6 +143,69 @@ func TestParseInstanceSpec_MissingVersion(t *testing.T) {
 	_, err := ParseInstanceSpec(`desiredState: running`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestParseInstanceSpec_Skills(t *testing.T) {
+	spec, err := ParseInstanceSpec(`version: humr.ai/v1
+desiredState: running
+skills:
+  - source: https://github.com/anthropics/skills
+    name: pdf
+    version: abc123
+`)
+	require.NoError(t, err)
+	require.Len(t, spec.Skills, 1)
+	assert.Equal(t, "https://github.com/anthropics/skills", spec.Skills[0].Source)
+	assert.Equal(t, "pdf", spec.Skills[0].Name)
+	assert.Equal(t, "abc123", spec.Skills[0].Version)
+}
+
+func TestParseInstanceSpec_SkillMissingVersion(t *testing.T) {
+	_, err := ParseInstanceSpec(`version: humr.ai/v1
+desiredState: running
+skills:
+  - source: https://github.com/anthropics/skills
+    name: pdf
+    version: ""`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "skill[0]: version is required")
+}
+
+// --- Skill Source ---
+
+func TestParseSkillSourceSpec(t *testing.T) {
+	spec, err := ParseSkillSourceSpec(`version: humr.ai/v1
+gitUrl: https://github.com/anthropics/skills
+`)
+	require.NoError(t, err)
+	assert.Equal(t, SpecVersion, spec.Version)
+	assert.Equal(t, "https://github.com/anthropics/skills", spec.GitURL)
+}
+
+func TestParseSkillSourceSpec_MissingGitURL(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`version: humr.ai/v1`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "gitUrl is required")
+}
+
+func TestParseSkillSourceSpec_MissingVersion(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`gitUrl: https://github.com/anthropics/skills`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestParseSkillSourceSpec_WrongVersion(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`version: humr.ai/v99
+gitUrl: https://github.com/anthropics/skills`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported version")
+}
+
+func TestParseSkillSourceSpec_InvalidGitURL(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`version: humr.ai/v1
+gitUrl: not-a-url`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a valid URL")
 }
 
 // --- Schedule ---

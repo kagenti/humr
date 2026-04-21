@@ -12,6 +12,7 @@ import type {
   Template, TemplateSpec,
   Agent, AgentSpec,
   Schedule, ScheduleSpec, ScheduleStatus,
+  SkillRef,
 } from "api-server-api";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 import {
@@ -75,6 +76,7 @@ interface RawInstanceSpec {
   agentId: string;
   desiredState: "running" | "hibernated";
   description?: string;
+  skills?: SkillRef[];
 }
 
 export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
@@ -96,6 +98,7 @@ export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraI
     currentState,
     error,
     podReady: pod ? isPodReady(pod) : false,
+    skills: spec.skills ?? [],
   };
 }
 

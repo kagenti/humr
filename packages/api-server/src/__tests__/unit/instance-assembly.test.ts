@@ -8,6 +8,7 @@ function infra(overrides: Partial<InfraInstance> = {}): InfraInstance {
     agentId: "agent-1",
     desiredState: "running",
     podReady: true,
+    skills: [],
     ...overrides,
   };
 }

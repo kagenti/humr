@@ -1,0 +1,16 @@
+{{- if .Values.skills.seedSource.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skill-src-seed
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    humr.ai/type: skill-source
+    humr.ai/system: "true"
+data:
+  spec.yaml: |
+    version: humr.ai/v1
+    name: {{ .Values.skills.seedSource.name | quote }}
+    gitUrl: {{ .Values.skills.seedSource.gitUrl | quote }}
+{{- end }}
