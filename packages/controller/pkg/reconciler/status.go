@@ -28,6 +28,10 @@ func WriteScheduleStatus(ctx context.Context, client kubernetes.Interface, names
 	return writeStatus(ctx, client, namespace, name, status)
 }
 
+func WriteForkStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *types.ForkStatus) error {
+	return writeStatus(ctx, client, namespace, name, status)
+}
+
 func writeStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status any) error {
 	statusYAML, err := yaml.Marshal(status)
 	if err != nil {
