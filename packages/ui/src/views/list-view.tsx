@@ -85,7 +85,7 @@ export function ListView() {
               <div
                 key={agent.id}
                 onClick={onOpen}
-                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in transition-shadow hover:shadow-[4px_4px_0_#292524] ${display.clickable ? "cursor-pointer" : ""}`}
+                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in transition-shadow ${display.clickable ? "cursor-pointer hover:shadow-[4px_4px_0_#292524]" : ""}`}
                 style={{ boxShadow: "var(--shadow-brutal)" }}
               >
                 <div className="px-4 md:px-6 py-4 md:py-5">
