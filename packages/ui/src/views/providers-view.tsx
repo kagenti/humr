@@ -17,14 +17,12 @@ const MODES = {
     placeholder: "sk-ant-oat-…",
     prefix: "sk-ant-oat-",
     mapping: ANTHROPIC_OAUTH_ENV_MAPPING,
-    badgeTone: "bg-info-light text-info border-info",
   },
   "api-key": {
     label: "API Key",
     placeholder: "sk-ant-api-…",
     prefix: "sk-ant-api-",
     mapping: ANTHROPIC_API_KEY_ENV_MAPPING,
-    badgeTone: "bg-warning-light text-warning border-warning",
   },
 } as const satisfies Record<
   Mode,
@@ -33,7 +31,6 @@ const MODES = {
     placeholder: string;
     prefix: string;
     mapping: EnvMapping;
-    badgeTone: string;
   }
 >;
 
@@ -179,15 +176,9 @@ function AnthropicConnected({
       <div className="flex items-center gap-4">
         <CardIcon variant="accent" />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-[15px] font-bold text-text">Anthropic</span>
-            <ModeBadge mode={currentMode} />
-          </div>
+          <div className="text-[15px] font-bold text-text mb-0.5">Anthropic</div>
           <div className="text-[12px] text-text-muted">
-            Injected as{" "}
-            <span className="font-mono text-text-secondary">
-              {MODES[currentMode].mapping.envName}
-            </span>
+            Set up with {MODES[currentMode].label}
           </div>
         </div>
         <IconButton onClick={() => setEditing(true)} title="Edit" hoverTone="accent">
@@ -262,7 +253,6 @@ function AnthropicForm({
   };
 
   const isEdit = variant === "edit";
-  const envName = MODES[mode].mapping.envName;
 
   return (
     <div
@@ -292,24 +282,28 @@ function AnthropicForm({
 
       <ModeToggle mode={mode} onChange={setMode} />
 
-      <div className="text-[12px] text-text-secondary leading-relaxed">
-        Paste a{mode === "api-key" ? "n" : ""}{" "}
-        <span className="font-mono">{MODES[mode].placeholder}</span> — injected as{" "}
-        <span className="font-mono">{envName}</span>.
-      </div>
+      {mode === "oauth" && <QuickSetupHint />}
 
-      {mode === "oauth" && !isEdit && <QuickSetupHint />}
-
-      <div className="flex gap-3">
+      <form
+        className="flex gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
         <input
           className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
           type="password"
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
           placeholder={MODES[mode].placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && save()}
         />
         <button
+          type="button"
           className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0"
           style={{ boxShadow: "var(--shadow-brutal-sm)" }}
           onClick={test}
@@ -319,14 +313,14 @@ function AnthropicForm({
           {testing ? "..." : "Test"}
         </button>
         <button
+          type="submit"
           className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
           style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-          onClick={save}
           disabled={!canSave}
         >
           {saving ? "..." : isEdit ? "Replace" : "Save"}
         </button>
-      </div>
+      </form>
 
       {error && <div className="text-[12px] font-medium text-danger">{error}</div>}
       {!error && testResult?.ok && (
@@ -349,34 +343,26 @@ function QuickSetupHint() {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="rounded-lg border-2 border-border-light bg-bg px-4 py-3 flex items-center gap-3">
-      <div className="flex-1 min-w-0">
-        <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-1">
-          Quick setup
-        </div>
-        <div className="text-[13px] text-text-secondary">
-          Run this inside a Claude Code agent to generate a token:
-        </div>
-        <code className="text-[13px] font-mono font-semibold text-accent mt-1 block">
-          claude setup-token
-        </code>
-      </div>
-      <button
-        onClick={copy}
-        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shrink-0"
-        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-        title="Copy command"
-      >
-        {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
-        {copied ? "Copied" : "Copy"}
-      </button>
+    <div className="text-[13px] text-text-secondary">
+      Run{" "}
+      <span className="inline-flex items-center gap-1.5 align-middle">
+        <code className="font-mono font-semibold text-accent">claude setup-token</code>
+        <button
+          onClick={copy}
+          className="h-5 w-5 rounded inline-flex items-center justify-center text-text-muted hover:text-accent"
+          title="Copy command"
+        >
+          {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+        </button>
+      </span>{" "}
+      inside a Claude Code agent to generate a token.
     </div>
   );
 }
 
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
-    <div className="flex gap-1 p-1 rounded-lg bg-bg border-2 border-border-light">
+    <div className="flex items-center gap-1 border-b-2 border-border-light">
       {(Object.keys(MODES) as Mode[]).map((m) => {
         const active = mode === m;
         return (
@@ -384,28 +370,17 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
             key={m}
             type="button"
             onClick={() => onChange(m)}
-            className={`flex-1 h-9 rounded-md text-[12px] font-semibold transition-colors ${
+            className={`h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[2px] transition-colors ${
               active
-                ? "bg-surface text-text border-2 border-accent"
-                : "text-text-secondary hover:text-text border-2 border-transparent"
+                ? "text-accent border-accent"
+                : "text-text-muted border-transparent hover:text-text"
             }`}
-            style={active ? { boxShadow: "var(--shadow-brutal-sm)" } : undefined}
           >
             {MODES[m].label}
           </button>
         );
       })}
     </div>
-  );
-}
-
-function ModeBadge({ mode }: { mode: Mode }) {
-  return (
-    <span
-      className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${MODES[mode].badgeTone}`}
-    >
-      {MODES[mode].label}
-    </span>
   );
 }
 
