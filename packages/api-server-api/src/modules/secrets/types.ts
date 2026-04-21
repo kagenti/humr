@@ -49,7 +49,7 @@ export interface InjectionConfig {
 
 /** Default used when the user doesn't override it: `Authorization: Bearer <value>`. */
 export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
-  headerName: "authorization",
+  headerName: "Authorization",
   valueFormat: "Bearer {value}",
 };
 
