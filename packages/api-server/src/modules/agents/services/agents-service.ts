@@ -30,21 +30,29 @@ export function createAgentsService(deps: {
     get: (id) => deps.repo.get(id, deps.owner),
 
     async create(input: CreateAgentInput) {
+      let spec: Record<string, unknown>;
+      let templateId: string | undefined;
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
         if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
-        const spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
+        spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
-          env: input.env,
         });
-        return deps.repo.create(spec, deps.owner, input.templateId);
+        templateId = input.templateId;
+      } else {
+        spec = assembleSpecFromImage(input.name, {
+          image: input.image,
+          description: input.description,
+        });
       }
-      const spec = assembleSpecFromImage(input.name, {
-        image: input.image,
-        description: input.description,
-        env: input.env,
-      });
-      return deps.repo.create(spec, deps.owner);
+      // Append caller-supplied extras (e.g. envMappings from granted app
+      // connections). `preserveProtectedEnvs` ensures PORT is always sourced
+      // from the template/defaults, no matter what the caller sends.
+      if (input.env?.length) {
+        const base = (spec.env as EnvVar[] | undefined) ?? [];
+        spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
+      }
+      return deps.repo.create(spec, deps.owner, templateId);
     },
 
     async update(input: UpdateAgentInput) {
