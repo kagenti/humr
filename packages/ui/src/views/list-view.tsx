@@ -85,13 +85,13 @@ export function ListView() {
               <div
                 key={agent.id}
                 onClick={onOpen}
-                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in shadow-[var(--shadow-brutal)] ${display.clickable ? "cursor-pointer" : ""}`}
+                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in shadow-[var(--shadow-brutal)] ${display.clickable ? "group cursor-pointer" : ""}`}
               >
                 <div className="px-4 md:px-6 py-4 md:py-5">
                   <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <h2 className="text-[16px] md:text-[17px] font-bold text-text">{agent.name}</h2>
+                        <h2 className="text-[16px] md:text-[17px] font-bold text-text transition-colors group-hover:text-accent">{agent.name}</h2>
                         <StatusBadge state={display.state} />
                       </div>
                       {agent.description && (
