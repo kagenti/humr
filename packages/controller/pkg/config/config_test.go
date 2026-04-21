@@ -60,6 +60,18 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "humr-onecli.default.svc.cluster.local", cfg.GatewayFQDN())
 	assert.Equal(t, "http://humr-onecli.default.svc.cluster.local:10254", cfg.WebURL())
 	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
+	assert.Equal(t, "", cfg.AgentStorageClass)
+}
+
+func TestLoadFromEnv_AgentStorageClass(t *testing.T) {
+	setEnv(t, map[string]string{
+		"HUMR_RELEASE_NAME":   "humr",
+		"POD_NAME":            "controller-0",
+		"AGENT_STORAGE_CLASS": "humr-rwx",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, "humr-rwx", cfg.AgentStorageClass)
 }
 
 func TestLoadFromEnv_IdleTimeout(t *testing.T) {
@@ -109,6 +121,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"KEYCLOAK_TOKEN_URL",
 		"ONECLI_GATEWAY_HOST", "ONECLI_GATEWAY_PORT",
 		"HUMR_LEASE_NAME", "POD_NAME", "HUMR_IDLE_TIMEOUT",
+		"AGENT_STORAGE_CLASS",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })
