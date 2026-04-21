@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store.js";
+import { runAction } from "../store/query-helpers.js";
 import { Check, ChevronUp, ChevronDown } from "lucide-react";
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type {
@@ -123,9 +124,7 @@ export function SessionConfigBar({
     }
     // No session yet — create one to get config options
     setInitializing(true);
-    try {
-      await ensureConnection();
-    } catch {}
+    await runAction(() => ensureConnection(), "Couldn't load session config");
     setInitializing(false);
     setOpen(true);
   };
@@ -136,18 +135,16 @@ export function SessionConfigBar({
     if (!modes) return;
     setSessionModes({ ...modes, currentModeId: modeId });
     savePreference(instanceId, "mode", modeId);
-    (async () => {
-      try {
-        const conn = await ensureConnection();
-        // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
-        const latest = useStore.getState().sessionModes;
-        if (latest && latest.currentModeId !== modeId) {
-          setSessionModes({ ...latest, currentModeId: modeId });
-        }
-        const sid = activeSessionIdRef.current;
-        if (conn && sid) await conn.setSessionMode({ sessionId: sid, modeId });
-      } catch {}
-    })();
+    runAction(async () => {
+      const conn = await ensureConnection();
+      // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
+      const latest = useStore.getState().sessionModes;
+      if (latest && latest.currentModeId !== modeId) {
+        setSessionModes({ ...latest, currentModeId: modeId });
+      }
+      const sid = activeSessionIdRef.current;
+      if (conn && sid) await conn.setSessionMode({ sessionId: sid, modeId });
+    }, "Couldn't change mode");
   };
 
   // Optimistic model change
@@ -155,18 +152,16 @@ export function SessionConfigBar({
     if (!models) return;
     setSessionModels({ ...models, currentModelId: modelId });
     savePreference(instanceId, "model", modelId);
-    (async () => {
-      try {
-        const conn = await ensureConnection();
-        // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
-        const latest = useStore.getState().sessionModels;
-        if (latest && latest.currentModelId !== modelId) {
-          setSessionModels({ ...latest, currentModelId: modelId });
-        }
-        const sid = activeSessionIdRef.current;
-        if (conn && sid) await conn.unstable_setSessionModel({ sessionId: sid, modelId });
-      } catch {}
-    })();
+    runAction(async () => {
+      const conn = await ensureConnection();
+      // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
+      const latest = useStore.getState().sessionModels;
+      if (latest && latest.currentModelId !== modelId) {
+        setSessionModels({ ...latest, currentModelId: modelId });
+      }
+      const sid = activeSessionIdRef.current;
+      if (conn && sid) await conn.unstable_setSessionModel({ sessionId: sid, modelId });
+    }, "Couldn't change model");
   };
 
   // Config option: optimistic, persist, fire-and-forget
@@ -178,18 +173,16 @@ export function SessionConfigBar({
     setSessionConfigOptions(updated);
     savePreference(instanceId, `config:${opt.id}`, String(value));
 
-    (async () => {
-      try {
-        const conn = await ensureConnection();
-        const sid = activeSessionIdRef.current;
-        if (!conn || !sid) return;
-        const req = opt.type === "boolean"
-          ? { sessionId: sid, configId: opt.id, type: "boolean" as const, value: value as boolean }
-          : { sessionId: sid, configId: opt.id, value: value as string };
-        const resp = await conn.setSessionConfigOption(req);
-        setSessionConfigOptions(resp.configOptions);
-      } catch {}
-    })();
+    runAction(async () => {
+      const conn = await ensureConnection();
+      const sid = activeSessionIdRef.current;
+      if (!conn || !sid) return;
+      const req = opt.type === "boolean"
+        ? { sessionId: sid, configId: opt.id, type: "boolean" as const, value: value as boolean }
+        : { sessionId: sid, configId: opt.id, value: value as string };
+      const resp = await conn.setSessionConfigOption(req);
+      setSessionConfigOptions(resp.configOptions);
+    }, `Couldn't apply "${opt.name}"`);
   };
 
   // Filter config options: exclude "model" and "mode" categories since those

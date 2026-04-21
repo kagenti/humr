@@ -6,8 +6,10 @@ import { ProvidersView } from "./views/providers-view.js";
 import { ConnectionsView } from "./views/connections-view.js";
 import { SettingsView } from "./views/settings-view.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { ToastOverlay } from "./components/toast-overlay.js";
 import { Sidebar } from "./components/sidebar.js";
 import { MobileNav } from "./components/mobile-nav.js";
+import { SetupProgressBar } from "./components/setup-progress-bar.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -35,33 +37,34 @@ export default function App() {
     if (!oauthResult) return;
     window.history.replaceState({}, "", window.location.pathname);
     if (oauthResult === "error") {
-      useStore.getState().showAlert(params.get("message") ?? "Unknown error", "OAuth Failed");
+      useStore.getState().showToast({
+        kind: "error",
+        message: `OAuth failed: ${params.get("message") ?? "Unknown error"}`,
+      });
     }
   }, []);
 
   // Browser back/forward
   useEffect(() => {
+    const enterChat = (inst: string) => {
+      useStore.getState().resetChatContext();
+      useStore.setState({ selectedInstance: inst, view: "chat" });
+    };
+    const leaveChat = () => {
+      useStore.getState().resetChatContext();
+      useStore.setState({ selectedInstance: null, view: "list" });
+    };
     const onPopState = () => {
       const path = window.location.pathname;
-      if (path.startsWith("/chat/")) {
-        const inst = decodeURIComponent(path.slice(6));
-        useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
-      } else if (path === "/providers") {
-        useStore.setState({ view: "providers" });
-      } else if (path === "/connections") {
-        useStore.setState({ view: "connections" });
-      } else if (path === "/settings") {
-        useStore.setState({ view: "settings" });
-      } else {
-        useStore.setState({ selectedInstance: null, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "list" });
-      }
+      if (path.startsWith("/chat/")) enterChat(decodeURIComponent(path.slice(6)));
+      else if (path === "/providers") useStore.setState({ view: "providers" });
+      else if (path === "/connections") useStore.setState({ view: "connections" });
+      else if (path === "/settings") useStore.setState({ view: "settings" });
+      else leaveChat();
     };
     // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
     const path = window.location.pathname;
-    if (path.startsWith("/chat/")) {
-      const inst = decodeURIComponent(path.slice(6));
-      useStore.setState({ selectedInstance: inst, sessionId: null, messages: [], sessions: [], fileTree: [], openFile: null, log: [], view: "chat" });
-    }
+    if (path.startsWith("/chat/")) enterChat(decodeURIComponent(path.slice(6)));
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -75,7 +78,7 @@ export default function App() {
   }, [fetchTemplates, fetchAgents, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)
-  if (view === "chat") return <><ChatView /><DialogOverlay /></>;
+  if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /></>;
 
   // All non-chat views share the sidebar shell
   return (
@@ -87,12 +90,14 @@ export default function App() {
 
       <Sidebar />
       <main className="relative z-10 flex-1 overflow-y-auto">
+        <SetupProgressBar />
         <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
           {view === "settings" ? <SettingsView /> : view === "providers" ? <ProvidersView /> : view === "connections" ? <ConnectionsView /> : <ListView />}
         </div>
       </main>
       <MobileNav />
       <DialogOverlay />
+      <ToastOverlay />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -24,8 +25,9 @@ import (
 )
 
 const (
-	wakePollInterval = 1 * time.Second
-	wakeTimeout      = 2 * time.Minute
+	wakePollInitial = 500 * time.Millisecond
+	wakePollMax     = 5 * time.Second
+	wakeTimeout     = 2 * time.Minute
 )
 
 type Scheduler struct {
@@ -210,25 +212,59 @@ func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (
 	return woke, err
 }
 
-// waitForPodReady polls until the instance pod is Ready or the timeout expires.
-func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
-	podName := instanceName + "-0"
-	deadline := time.Now().Add(wakeTimeout)
+// pollUntilReady polls isReady with exponential backoff + jitter.
+//
+// Backoff: start fast so a quick wake is still detected quickly, then
+// slow down so a pod that takes longer doesn't get hammered for the
+// full deadline. Jitter: ±20% so many callers waking at once desync
+// within a few iterations instead of polling in lockstep bursts.
+//
+// Extracted from waitForPodReady so the loop can be unit-tested with
+// short intervals and a deterministic isReady.
+//
+// NOTE: mirrored in packages/api-server/src/acp-relay.ts (TS). The
+// api-server's ACP relay waits for the same pod-ready signal when a
+// WebSocket upgrade hits a hibernated pod. Keep behaviour, constants,
+// and the shape of the loop in sync across both.
+func pollUntilReady(
+	ctx context.Context,
+	isReady func(context.Context) bool,
+	initial, max, timeout time.Duration,
+) bool {
+	deadline := time.Now().Add(timeout)
+	interval := initial
 	for time.Now().Before(deadline) {
-		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
-		if err == nil {
-			for _, c := range pod.Status.Conditions {
-				if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-					return true
-				}
-			}
+		if isReady(ctx) {
+			return true
 		}
+		jittered := time.Duration(float64(interval) * (0.8 + 0.4*rand.Float64()))
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(wakePollInterval):
+		case <-time.After(jittered):
+		}
+		interval = interval * 3 / 2
+		if interval > max {
+			interval = max
 		}
 	}
 	return false
+}
+
+// waitForPodReady polls until the instance pod is Ready or the timeout expires.
+func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
+	podName := instanceName + "-0"
+	return pollUntilReady(ctx, func(ctx context.Context) bool {
+		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+		for _, c := range pod.Status.Conditions {
+			if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	}, wakePollInitial, wakePollMax, wakeTimeout)
 }
 
