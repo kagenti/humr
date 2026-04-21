@@ -299,13 +299,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function appendAndFanOut(
     sessionId: string,
     line: string,
-    options?: { skipChannel?: ClientChannel },
+    options?: { skipChannel?: ClientChannel; onlyChannel?: ClientChannel },
   ): void {
     const seq = appendToLog(sessionId, line);
     const out = rewriteAuthError(line);
     for (const [channel, sessions] of engagedSessions) {
       if (!sessions.has(sessionId) || !channel.isOpen()) continue;
       if (cursorFor(channel, sessionId) >= seq) continue;
+      // `onlyChannel` mode: used during a cold-bootstrap replay so the
+      // agent's historical events populate the log (for future cache hits)
+      // but are delivered only to the loader. Other engaged channels
+      // already have the history in their React state and don't need the
+      // replay — fanning it out to them would double their messages.
+      if (options?.onlyChannel && channel !== options.onlyChannel) {
+        setCursor(channel, sessionId, seq);
+        continue;
+      }
       if (channel === options?.skipChannel) {
         setCursor(channel, sessionId, seq);
         continue;
@@ -681,9 +690,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     // Notification — append to the session's log and fan out to engaged
     // channels by cursor. Notifications without a sessionId (rare) go to
     // every attached channel.
+    //
+    // Cold-bootstrap window: when session/load is in flight for this sid,
+    // the agent is streaming replaySessionHistory. Those events need to
+    // populate the log (so future session/loads hit cache) but MUST NOT
+    // fan out to other engaged channels — they already have the history
+    // in their React state, and receiving the replay would append a
+    // second copy on top. Route replay events to the bootstrap initiator
+    // only.
     const sessionId = extractParamsSessionId(frame);
-    if (sessionId) appendAndFanOut(sessionId, line);
-    else broadcastToAll(line);
+    if (sessionId) {
+      const boot = bootstrapBySession.get(sessionId);
+      if (boot) {
+        appendAndFanOut(sessionId, line, { onlyChannel: boot.initiatorChannel });
+      } else {
+        appendAndFanOut(sessionId, line);
+      }
+    } else {
+      broadcastToAll(line);
+    }
   }
 
   // ── Client → agent traffic ──
