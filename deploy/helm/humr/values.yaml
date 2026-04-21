@@ -254,6 +254,12 @@ controller:
   # -- Pull secrets for agent pods (in agentNamespace, separate from chart-level imagePullSecrets).
   # The referenced secrets must exist in agentNamespace.
   agentImagePullSecrets: []
+  # -- StorageClass for per-instance agent PVCs. Must support ReadWriteMany
+  # so per-turn foreign-user fork pods can mount the same /home/agent volume
+  # concurrently with the main pod (see ADR DRAFT — Slack per-turn user
+  # impersonation). Empty = cluster default (which must itself support RWX).
+  # Set to "humr-rwx" to use the bundled in-cluster NFS provisioner below.
+  agentStorageClass: ""
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
   idleTimeout: "1h"
@@ -266,6 +272,36 @@ controller:
     limits:
       cpu: 500m
       memory: 256Mi
+
+# -- In-cluster NFS server + external provisioner.
+# Opt-in RWX storage class for dev clusters (k3s-on-lima, kind, minikube)
+# whose default provisioner is RWO-only. The agent instance PVC needs
+# ReadWriteMany so per-turn foreign-user fork pods can mount the same
+# /home/agent volume concurrently with the main pod.
+#
+# Production deployments on managed K8s should leave this disabled and
+# point `controller.agentStorageClass` at the cloud-native RWX class
+# (EFS / Filestore / Azure Files).
+nfsProvisioner:
+  enabled: false
+  image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
+  # -- Name of the RWX StorageClass created by this provisioner. Set
+  # `controller.agentStorageClass` to this value to use it for agent PVCs.
+  storageClassName: humr-rwx
+  # -- Size of the single backing volume that hosts all NFS-served exports.
+  # Individual agent PVCs are carved out of this pool as subdirectories.
+  size: 20Gi
+  # -- StorageClass backing the NFS server's own PVC. Empty = cluster
+  # default (which only needs to support RWO — the RWX fan-out happens
+  # at the NFS layer).
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 # -- Default agent template
 defaultTemplate:

@@ -63,6 +63,10 @@ spec:
             - name: AGENT_IMAGE_PULL_SECRETS
               value: {{ include "humr.nameList" . }}
             {{- end }}
+            {{- with .Values.controller.agentStorageClass }}
+            - name: AGENT_STORAGE_CLASS
+              value: {{ . | quote }}
+            {{- end }}
             - name: HUMR_API_SERVER_HOST
               value: "{{ include "humr.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
             - name: HUMR_HARNESS_SERVER_URL

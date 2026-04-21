@@ -24,6 +24,7 @@ type Config struct {
 	PodName          string // This pod's name (from downward API)
 	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
 	AgentImagePullSecrets     []string      // Pull secret names for agent pods (comma-separated via env)
+	AgentStorageClass         string
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
 	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
@@ -70,6 +71,7 @@ func LoadFromEnv() (*Config, error) {
 			}
 		}
 	}
+	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	return cfg, nil

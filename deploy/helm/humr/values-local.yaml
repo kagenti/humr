@@ -24,6 +24,10 @@ controller:
     tag: latest
     pullPolicy: Never
   agentImagePullPolicy: Never
+  agentStorageClass: humr-rwx
+
+nfsProvisioner:
+  enabled: true
 
 defaultTemplate:
   image:
