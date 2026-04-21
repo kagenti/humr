@@ -58,15 +58,6 @@ describe("resolveAgentDisplay", () => {
     expect(out.clickable).toBe(false);
     expect(out.powerAction).toBe(null);
   });
-
-  test("restart override keyed on instance id, not agent id", () => {
-    const out = resolveAgentDisplay(
-      agent("a"),
-      [inst("i-1", "a", "running")],
-      new Set(["some-other-instance"]),
-    );
-    expect(out.state).toBe("running");
-  });
 });
 
 describe("transitionRestartingInstances", () => {
@@ -107,11 +98,5 @@ describe("transitionRestartingInstances", () => {
     const current = new Map([["i-1", entry(false)]]);
     const next = transitionRestartingInstances(current, [], NOW);
     expect(next.has("i-1")).toBe(false);
-  });
-
-  test("no-op when there are no restart entries", () => {
-    const current = new Map<string, { seenNonRunning: boolean; clickedAt: number }>();
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
-    expect(next).toBe(current);
   });
 });

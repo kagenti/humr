@@ -1,11 +1,4 @@
-import type { InstanceView, InstanceState } from "../types.js";
 import type { AgentDisplayState } from "./agent-resolver.js";
-
-export type { InstanceState };
-
-export function instanceState(i: InstanceView): InstanceState {
-  return i.state;
-}
 
 const stateLabel: Record<AgentDisplayState, string> = {
   running: "Running",

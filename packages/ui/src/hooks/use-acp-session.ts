@@ -7,7 +7,6 @@ import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
 import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant, isTextMime } from "../session-projection.js";
 import type { Message, Attachment } from "../types.js";
-import { instanceState } from "./../components/status-indicator.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 import { runQuery } from "../store/query-helpers.js";
 
@@ -196,7 +195,7 @@ export function useAcpSession(
   useEffect(() => {
     if (!selectedInstance) return;
     const inst = instances.find(i => i.id === selectedInstance);
-    if (inst && instanceState(inst) === "hibernated") {
+    if (inst?.state === "hibernated") {
       platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);

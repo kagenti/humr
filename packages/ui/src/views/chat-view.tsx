@@ -14,6 +14,7 @@ import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
 import type { SessionError } from "../store.js";
+import type { InstanceView } from "../types.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
 import { useFileTree } from "./../hooks/use-file-tree.js";
 import { isMobile } from "./../lib/breakpoints.js";
@@ -329,7 +330,7 @@ export function ChatView() {
 
 /** Small pill in the chat header. Falls through to the shared `StatusBadge`,
  *  overriding to a "Busy" variant while the agent is mid-turn. */
-function ChatHeaderStatus({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: any[]; busy: boolean }) {
+function ChatHeaderStatus({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: InstanceView[]; busy: boolean }) {
   if (busy) {
     return (
       <StatusBadge
@@ -340,7 +341,7 @@ function ChatHeaderStatus({ selectedInstance, instances, busy }: { selectedInsta
       />
     );
   }
-  const inst = instances.find((i: any) => i.id === selectedInstance);
+  const inst = instances.find((i) => i.id === selectedInstance);
   return <StatusBadge size="sm" state={inst?.state ?? "starting"} />;
 }
 
