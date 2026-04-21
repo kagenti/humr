@@ -200,14 +200,22 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 						}},
 						Env:     env,
 						EnvFrom: envFrom,
+						// Fast (1s) during startup so wake-up is detected quickly, slow
+						// (10s) afterwards so we're not probing every agent pod every
+						// second forever. FailureThreshold=120 → ~2 min of startup
+						// runway, enough for a cold pull of a large agent image.
+						StartupProbe: &corev1.Probe{
+							ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							PeriodSeconds:    1,
+							FailureThreshold: 120,
+						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 1,
+							PeriodSeconds: 10,
 						},
 						LivenessProbe: &corev1.Probe{
-							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							InitialDelaySeconds: 10,
-							PeriodSeconds:       10,
+							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							PeriodSeconds: 10,
 						},
 						SecurityContext: &corev1.SecurityContext{
 							Capabilities: &corev1.Capabilities{
