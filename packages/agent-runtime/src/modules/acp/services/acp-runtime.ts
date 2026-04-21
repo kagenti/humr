@@ -299,13 +299,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function appendAndFanOut(
     sessionId: string,
     line: string,
-    options?: { skipChannel?: ClientChannel },
+    options?: { skipChannel?: ClientChannel; onlyChannel?: ClientChannel },
   ): void {
     const seq = appendToLog(sessionId, line);
     const out = rewriteAuthError(line);
     for (const [channel, sessions] of engagedSessions) {
       if (!sessions.has(sessionId) || !channel.isOpen()) continue;
       if (cursorFor(channel, sessionId) >= seq) continue;
+      // `onlyChannel` mode: used during a cold-bootstrap replay so the
+      // agent's historical events populate the log (for future cache hits)
+      // but are delivered only to the loader. Other engaged channels
+      // already have the history in their React state and don't need the
+      // replay — fanning it out to them would double their messages.
+      if (options?.onlyChannel && channel !== options.onlyChannel) {
+        setCursor(channel, sessionId, seq);
+        continue;
+      }
       if (channel === options?.skipChannel) {
         setCursor(channel, sessionId, seq);
         continue;
@@ -606,16 +615,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const sidForChannel = sidFromResult ?? mapping.attachSessionId;
         if (sidForChannel) {
           engage(mapping.channel, sidForChannel);
-          // Cache the response body as log metadata so a subsequent
-          // session/load for this sid is served from memory. Without this,
-          // a session created via session/new leaves metadata=null even
-          // though its log is populated by live events; a second viewer's
-          // session/load would miss the cache, cold-bootstrap the agent,
-          // and the agent's replaySessionHistory would append duplicate
-          // entries to the already-populated log.
-          const log = getOrCreateLog(sidForChannel);
-          if (log.metadata === null) {
-            log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+          // Cache the response body as log metadata **only** on paths that
+          // produce authoritative log state: session/new and session/fork
+          // start an empty log that the creator's prompts will populate,
+          // and session/load populates it via replaySessionHistory. NEVER
+          // cache on session/resume — resume doesn't replay history, and
+          // may happen right after maybeCloseIdleSession reaped the log
+          // (e.g. brief WS drop during a prompt). Caching on resume would
+          // mark an empty log as "complete" and a later session/load from
+          // another tab would hit the cache and serve no history.
+          const cacheable = mapping.method === "session/new"
+            || mapping.method === "session/fork"
+            || mapping.method === "session/load";
+          if (cacheable) {
+            const log = getOrCreateLog(sidForChannel);
+            if (log.metadata === null) {
+              log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+            }
           }
         }
 
@@ -674,9 +690,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     // Notification — append to the session's log and fan out to engaged
     // channels by cursor. Notifications without a sessionId (rare) go to
     // every attached channel.
+    //
+    // Cold-bootstrap window: when session/load is in flight for this sid,
+    // the agent is streaming replaySessionHistory. Those events need to
+    // populate the log (so future session/loads hit cache) but MUST NOT
+    // fan out to other engaged channels — they already have the history
+    // in their React state, and receiving the replay would append a
+    // second copy on top. Route replay events to the bootstrap initiator
+    // only.
     const sessionId = extractParamsSessionId(frame);
-    if (sessionId) appendAndFanOut(sessionId, line);
-    else broadcastToAll(line);
+    if (sessionId) {
+      const boot = bootstrapBySession.get(sessionId);
+      if (boot) {
+        appendAndFanOut(sessionId, line, { onlyChannel: boot.initiatorChannel });
+      } else {
+        appendAndFanOut(sessionId, line);
+      }
+    } else {
+      broadcastToAll(line);
+    }
   }
 
   // ── Client → agent traffic ──
