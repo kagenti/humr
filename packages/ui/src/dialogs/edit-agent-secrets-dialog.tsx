@@ -13,6 +13,10 @@ import {
   allEnvVarsValid,
   sanitizeEnvVars,
 } from "../components/env-vars-editor.js";
+import {
+  envsAfterUngrant,
+  envsToAddOnGrant,
+} from "./connection-env-helpers.js";
 import { ConnectionsPicker } from "../components/connections-picker.js";
 import { HoverTooltip } from "../components/hover-tooltip.js";
 import { KeyRound, Lock } from "lucide-react";
@@ -90,7 +94,21 @@ export function EditAgentSecretsDialog({
   const toggleApp = (id: string) =>
     setAssignedAppIds((p) => {
       const n = new Set(p);
-      n.has(id) ? n.delete(id) : n.add(id);
+      const app = apps.find((a) => a.id === id);
+      if (n.has(id)) {
+        n.delete(id);
+        const remaining = apps.filter((a) => n.has(a.id));
+        setEnvVars((prev) => envsAfterUngrant(prev, app, remaining));
+      } else {
+        n.add(id);
+        // Grant-time populate: copy the app's declared envMappings into the
+        // editable env list. Functional updater reads fresh state so rapid
+        // double-grants can't race the dedupe.
+        setEnvVars((prev) => {
+          const toAdd = envsToAddOnGrant(prev, app);
+          return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+        });
+      }
       return n;
     });
 

@@ -42,9 +42,8 @@ export function createConnectionsService(deps: {
 }): ConnectionsService {
   return {
     async list() {
-      // OneCLI >= 0.0.14 returns `providerName` populated from the app
-      // registry (e.g. "Google Drive"). `label` is the user's identity
-      // (email/username) — correct as a subtitle, wrong as a title.
+      // OneCLI returns `providerName` and `envMappings` joined from the app
+      // registry — provider-specific knowledge lives there, not here.
       const raw = await deps.port.listAppConnections();
       return raw
         .filter((c) => typeof c.id === "string" && typeof c.provider === "string")
@@ -56,6 +55,9 @@ export function createConnectionsService(deps: {
           identity: extractIdentity(c.metadata) || c.label?.trim() || undefined,
           ...(c.scopes ? { scopes: c.scopes } : {}),
           ...(c.connectedAt ? { connectedAt: c.connectedAt } : {}),
+          ...(c.envMappings && c.envMappings.length > 0
+            ? { envMappings: c.envMappings }
+            : {}),
         }));
     },
 
