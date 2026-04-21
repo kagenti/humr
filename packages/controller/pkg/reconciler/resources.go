@@ -200,14 +200,22 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 						}},
 						Env:     env,
 						EnvFrom: envFrom,
+						// StartupProbe polls fast during initial pod startup so wake-up
+						// from hibernation is detected quickly. Once it succeeds, the
+						// steady-state ReadinessProbe takes over at a slower cadence so
+						// we don't keep every agent pod health-checked every second.
+						StartupProbe: &corev1.Probe{
+							ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							PeriodSeconds:    1,
+							FailureThreshold: 60,
+						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 1,
+							PeriodSeconds: 10,
 						},
 						LivenessProbe: &corev1.Probe{
-							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							InitialDelaySeconds: 10,
-							PeriodSeconds:       10,
+							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+							PeriodSeconds: 10,
 						},
 						SecurityContext: &corev1.SecurityContext{
 							Capabilities: &corev1.Capabilities{
