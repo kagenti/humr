@@ -104,13 +104,14 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
                   <button
                     key={tmpl.id}
                     onClick={() => pickTemplate(tmpl)}
-                    className="flex items-center gap-3 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light"
+                    className="flex flex-col gap-1.5 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light min-w-0"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[14px] font-semibold text-text">{tmpl.name}</div>
-                      {tmpl.description && <div className="text-[12px] text-text-muted truncate">{tmpl.description}</div>}
-                    </div>
-                    <span className="text-[11px] font-bold text-info border-2 border-info bg-info-light rounded-full px-2.5 py-0.5 shrink-0">
+                    <div className="text-[14px] font-semibold text-text truncate w-full">{tmpl.name}</div>
+                    {tmpl.description && <div className="text-[12px] text-text-muted truncate w-full">{tmpl.description}</div>}
+                    <span
+                      className="max-w-full self-start text-[11px] font-bold text-info border-2 border-info bg-info-light rounded-full px-2.5 py-0.5 truncate"
+                      title={tmpl.image}
+                    >
                       {tmpl.image}
                     </span>
                   </button>
