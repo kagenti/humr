@@ -118,11 +118,11 @@ export function ListView() {
                       </button>
                       <button
                         onClick={() => setShowSecretsDlg(agent.id)}
-                        className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-accent hover:border-accent"
+                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                         title="Configure agent credentials and env vars"
                       >
-                        <KeyRound size={14} />
+                        <KeyRound size={12} /> Configure
                       </button>
                       <button
                         onClick={async () => {
