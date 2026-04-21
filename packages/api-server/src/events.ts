@@ -16,6 +16,8 @@ export enum EventType {
   ForkReady = "ForkReady",
   ForkFailed = "ForkFailed",
   ForkCompleted = "ForkCompleted",
+  ForeignReplyReceived = "ForeignReplyReceived",
+  SlackTurnRelayed = "SlackTurnRelayed",
 }
 
 export type UserAuthenticated = {
@@ -82,6 +84,26 @@ export type ForkCompleted = {
   forkId: string;
 };
 
+export type ForeignReplyReceived = {
+  type: EventType.ForeignReplyReceived;
+  replyId: string;
+  instanceId: string;
+  foreignSub: string;
+  threadTs: string;
+  sessionId?: string;
+  prompt: string;
+  slackContext: {
+    channelId: string;
+    userSlackId: string;
+  };
+};
+
+export type SlackTurnRelayed = {
+  type: EventType.SlackTurnRelayed;
+  replyId: string;
+  forkId?: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | InstanceCreated
@@ -92,7 +114,9 @@ export type DomainEvent =
   | SlackDisconnected
   | ForkReady
   | ForkFailed
-  | ForkCompleted;
+  | ForkCompleted
+  | ForeignReplyReceived
+  | SlackTurnRelayed;
 
 // ---------------------------------------------------------------------------
 // Event bus
