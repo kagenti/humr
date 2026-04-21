@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useStore } from "../store.js";
 import type { InstanceView } from "../types.js";
-import { isMcpSecret } from "../types.js";
 import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
@@ -22,9 +21,6 @@ export function ListView() {
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
-  const secrets = useStore(s => s.secrets);
-  const agentAccess = useStore(s => s.agentAccess);
-  const fetchAgentAccess = useStore(s => s.fetchAgentAccess);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [busyAgent, setBusyAgent] = useState(false);
@@ -36,7 +32,7 @@ export function ListView() {
   // Persisted across mount in the store — ensures skeleton doesn't reappear
   // when the user navigates away and back while data is already loaded.
   const loadedOnce = useStore(s => s.loadedOnce);
-  const initialLoaded = loadedOnce.agents && loadedOnce.instances && loadedOnce.secrets;
+  const initialLoaded = loadedOnce.agents && loadedOnce.instances;
 
   const byAgent = useMemo(() => {
     const m = new Map<string, InstanceView[]>();
@@ -44,37 +40,12 @@ export function ListView() {
     return m;
   }, [instances]);
 
-  // Per-agent access — secrets are fetched by SetupProgressBar (when onboarding)
-  // or providers-view (which is the primary owner of that data).
-  useEffect(() => {
-    for (const a of agents) {
-      if (!agentAccess[a.id]) fetchAgentAccess(a.id);
-    }
-  }, [agents, agentAccess, fetchAgentAccess]);
-
-  // Count by category for a given agent based on its access mode.
-  // "all" mode: counts = totals across all user secrets.
-  // "selective" mode: counts = only those in the agent's assigned list.
-  const countsFor = (agentId: string) => {
-    const access = agentAccess[agentId];
-    const pool = !access || access.mode === "all"
-      ? secrets
-      : secrets.filter(s => access.secretIds.includes(s.id));
-    let anthropic = 0, mcp = 0, generic = 0;
-    for (const s of pool) {
-      if (s.type === "anthropic") anthropic += 1;
-      else if (isMcpSecret(s)) mcp += 1;
-      else generic += 1;
-    }
-    return { mode: access?.mode, anthropic, mcp, generic };
-  };
-
   return (
     <>
       <div>
         {/* Page header */}
         <div className="flex items-center gap-3 mb-8">
-          <h1 className="text-[20px] md:text-[24px] font-bold text-text">My Agents</h1>
+          <h1 className="text-[20px] md:text-[24px] font-bold text-text">Agents</h1>
           <div className="ml-auto flex items-center gap-2 md:gap-3">
             <button
               onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
@@ -123,54 +94,10 @@ export function ListView() {
                 <div className="px-4 md:px-6 pt-4 md:pt-5 pb-3 md:pb-4">
                   <div className="flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h2 className="text-[16px] md:text-[17px] font-bold text-text">{agent.name}</h2>
-                        <span className="text-[12px] font-semibold text-text-muted border-2 border-border-light rounded-full px-2.5 py-0.5">
-                          {insts.length} instance{insts.length !== 1 && "s"}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-info bg-info-light text-info rounded-full px-2.5 py-0.5">
-                          {agent.image}
-                        </span>
-                        {agent.description && (
-                          <span className="text-[13px] text-text-secondary">{agent.description}</span>
-                        )}
-                        {(() => {
-                          const c = countsFor(agent.id);
-                          if (c.mode === "all") {
-                            return (
-                              <span className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
-                                All credentials
-                              </span>
-                            );
-                          }
-                          const chips: React.ReactNode[] = [];
-                          if (c.anthropic > 0) {
-                            chips.push(
-                              <span key="a" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-warning bg-warning-light text-warning rounded-full px-2.5 py-0.5">
-                                Anthropic
-                              </span>,
-                            );
-                          }
-                          const otherSecrets = c.generic;
-                          if (otherSecrets > 0) {
-                            chips.push(
-                              <span key="s" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-border-light bg-surface-raised text-text-muted rounded-full px-2.5 py-0.5">
-                                {otherSecrets} secret{otherSecrets === 1 ? "" : "s"}
-                              </span>,
-                            );
-                          }
-                          if (c.mcp > 0) {
-                            chips.push(
-                              <span key="m" className="inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 border-accent bg-accent-light text-accent rounded-full px-2.5 py-0.5">
-                                {c.mcp} MCP
-                              </span>,
-                            );
-                          }
-                          return chips;
-                        })()}
-                      </div>
+                      <h2 className="text-[16px] md:text-[17px] font-bold text-text mb-2">{agent.name}</h2>
+                      {agent.description && (
+                        <p className="text-[13px] text-text-secondary">{agent.description}</p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0 flex-wrap">
