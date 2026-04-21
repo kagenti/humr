@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import type { TemplateView, SecretView } from "../types.js";
+import type { TemplateView, SecretView, EnvVar } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
 import { Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
 import { HoverTooltip } from "../components/hover-tooltip.js";
 import { ConnectionsPicker } from "../components/connections-picker.js";
+import { envsToAddOnGrant } from "./connection-env-helpers.js";
 import { useStore } from "../store.js";
 
 type Step = "pick" | "configure";
@@ -21,6 +22,7 @@ export function AddAgentDialog({
     templateId?: string;
     image?: string;
     description?: string;
+    env?: EnvVar[];
     secretIds?: string[];
     appConnectionIds?: string[];
   }) => void;
@@ -109,11 +111,19 @@ export function AddAgentDialog({
   const submit = () => {
     const n = name.trim();
     if (!n) return;
+    // Derive env from each granted app's envMappings (dedupe by name across
+    // apps — e.g. Gmail + Drive both declare GOOGLE_WORKSPACE_CLI_TOKEN).
+    const grantedApps = apps.filter((a) => selApps.has(a.id));
+    const env = grantedApps.reduce<EnvVar[]>((acc, app) => {
+      const toAdd = envsToAddOnGrant(acc, app);
+      return toAdd.length > 0 ? [...acc, ...toAdd] : acc;
+    }, []);
     onSubmit({
       name: n,
       templateId: selectedTemplate?.id,
       image: selectedTemplate ? undefined : customImage.trim(),
       description: desc.trim() || undefined,
+      env: env.length > 0 ? env : undefined,
       secretIds: secretsDirty ? [...selSecrets] : undefined,
       appConnectionIds: selApps.size ? [...selApps] : undefined,
     });
