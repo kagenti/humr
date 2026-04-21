@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -24,8 +25,9 @@ import (
 )
 
 const (
-	wakePollInterval = 1 * time.Second
-	wakeTimeout      = 2 * time.Minute
+	wakePollInitial = 500 * time.Millisecond
+	wakePollMax     = 5 * time.Second
+	wakeTimeout     = 2 * time.Minute
 )
 
 type Scheduler struct {
@@ -211,9 +213,12 @@ func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (
 }
 
 // waitForPodReady polls until the instance pod is Ready or the timeout expires.
+// Uses exponential backoff with jitter so simultaneous wake events don't hammer
+// the kube-API in lockstep.
 func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
 	podName := instanceName + "-0"
 	deadline := time.Now().Add(wakeTimeout)
+	interval := wakePollInitial
 	for time.Now().Before(deadline) {
 		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
 		if err == nil {
@@ -223,10 +228,16 @@ func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bo
 				}
 			}
 		}
+		// ±20% jitter around the current interval.
+		jittered := time.Duration(float64(interval) * (0.8 + 0.4*rand.Float64()))
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(wakePollInterval):
+		case <-time.After(jittered):
+		}
+		interval = interval * 3 / 2
+		if interval > wakePollMax {
+			interval = wakePollMax
 		}
 	}
 	return false

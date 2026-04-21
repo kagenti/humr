@@ -6,7 +6,8 @@ import type { InstancesRepository } from "./modules/agents/infrastructure/instan
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
 
 const DEBOUNCE_MS = 30_000;
-const WAKE_POLL_MS = 1_000;
+const WAKE_POLL_INITIAL_MS = 500;
+const WAKE_POLL_MAX_MS = 5_000;
 const WAKE_TIMEOUT_MS = 120_000;
 
 const lastActivityTimestamps = new Map<string, number>();
@@ -30,9 +31,13 @@ async function waitForPodReady(
   instanceId: string,
 ): Promise<boolean> {
   const deadline = Date.now() + WAKE_TIMEOUT_MS;
+  let interval = WAKE_POLL_INITIAL_MS;
   while (Date.now() < deadline) {
     if (await repo.isPodReady(instanceId)) return true;
-    await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
+    // ±20% jitter so concurrent waiters on the same pod don't poll in lockstep.
+    const jittered = interval * (0.8 + 0.4 * Math.random());
+    await new Promise((r) => setTimeout(r, jittered));
+    interval = Math.min(Math.floor(interval * 1.5), WAKE_POLL_MAX_MS);
   }
   return false;
 }
