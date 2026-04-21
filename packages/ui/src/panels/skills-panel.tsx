@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Plus, RefreshCw, X } from "lucide-react";
 import type { Skill, SkillRef, SkillSource } from "api-server-api";
 import { platform } from "../platform.js";
 import { ACTION_FAILED, runAction } from "../store/query-helpers.js";
@@ -11,6 +11,19 @@ interface SkillsPanelProps {
 }
 
 const skillKey = (source: string, name: string) => `${source}::${name}`;
+
+/**
+ * Best-effort URL to the skill's SKILL.md at the installed commit. Assumes
+ * the `skills/<name>/` layout (the de-facto convention our scanner tries
+ * first). Falls back to the repo root for non-GitHub-like hosts.
+ */
+function skillSourceUrl(source: string, version: string, name: string): string {
+  const base = source.replace(/\.git$/, "").replace(/\/$/, "");
+  if (/(github|gitlab)\.com|bitbucket\.org/.test(base)) {
+    return `${base}/blob/${version}/skills/${name}/SKILL.md`;
+  }
+  return base;
+}
 
 export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -274,6 +287,16 @@ export function SkillsPanel({ instanceId, isRunning }: SkillsPanelProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
+                      <a
+                        href={skillSourceUrl(skill.source, skill.version, skill.name)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-text-muted hover:text-accent transition-colors shrink-0"
+                        title="View SKILL.md at the pinned commit"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink size={11} />
+                      </a>
                       {hasDrift && (
                         <button
                           type="button"
