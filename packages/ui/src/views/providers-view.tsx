@@ -282,7 +282,7 @@ function AnthropicForm({
 
       <ModeToggle mode={mode} onChange={setMode} />
 
-      {mode === "oauth" && !isEdit && <QuickSetupHint />}
+      {mode === "oauth" && <QuickSetupHint />}
 
       <form
         className="flex gap-3"
