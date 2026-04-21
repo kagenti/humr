@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
-import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
+import { StatusBadge } from "./../components/status-indicator.js";
 import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon, AlertCircle, Trash2, RefreshCw } from "lucide-react";
 import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
@@ -14,6 +14,7 @@ import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
 import type { SessionError } from "../store.js";
+import type { InstanceView } from "../types.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
 import { useFileTree } from "./../hooks/use-file-tree.js";
 import { isMobile } from "./../lib/breakpoints.js";
@@ -182,7 +183,7 @@ export function ChatView() {
             >
               <Settings2 size={14} />
             </button>
-            <StatusBadge selectedInstance={selectedInstance} instances={instances} busy={busy} />
+            <ChatHeaderStatus selectedInstance={selectedInstance} instances={instances} busy={busy} />
           </div>
         </header>
 
@@ -327,19 +328,21 @@ export function ChatView() {
   );
 }
 
-/** Status badge extracted for readability */
-function StatusBadge({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: any[]; busy: boolean }) {
-  const inst = instances.find((i: any) => i.id === selectedInstance);
-  const state = inst ? instanceState(inst) : ("starting" as const);
-  const label = busy ? "Busy" : stateLabel[state];
-  const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];
-  const dot = busy ? "bg-warning anim-pulse" : dotColors[state];
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-      {label}
-    </span>
-  );
+/** Small pill in the chat header. Falls through to the shared `StatusBadge`,
+ *  overriding to a "Busy" variant while the agent is mid-turn. */
+function ChatHeaderStatus({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: InstanceView[]; busy: boolean }) {
+  if (busy) {
+    return (
+      <StatusBadge
+        size="sm"
+        label="Busy"
+        colorClasses="bg-warning-light text-warning border-warning"
+        dotColorClasses="bg-warning anim-pulse"
+      />
+    );
+  }
+  const inst = instances.find((i) => i.id === selectedInstance);
+  return <StatusBadge size="sm" state={inst?.state ?? "starting"} />;
 }
 
 function SessionErrorCard({

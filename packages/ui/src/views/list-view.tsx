@@ -1,44 +1,39 @@
 import { useState, useMemo } from "react";
 import { useStore } from "../store.js";
-import type { InstanceView } from "../types.js";
-import { StatusIndicator, instanceState, stateLabel, badgeColors } from "../components/status-indicator.js";
+import { StatusBadge } from "../components/status-indicator.js";
+import { resolveAgentDisplay } from "../components/agent-resolver.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
-import { CreateInstanceDialog } from "../dialogs/create-instance-dialog.js";
-import { RefreshCw, Plus, Trash2, KeyRound } from "lucide-react";
+import { RefreshCw, Plus, Trash2, KeyRound, RotateCw, Play } from "lucide-react";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
 
 export function ListView() {
   const templates = useStore(s => s.templates);
   const agents = useStore(s => s.agents);
   const instances = useStore(s => s.instances);
+  const restartingInstances = useStore(s => s.restartingInstances);
   const fetchTemplates = useStore(s => s.fetchTemplates);
   const fetchAgents = useStore(s => s.fetchAgents);
   const fetchInstances = useStore(s => s.fetchInstances);
   const createAgent = useStore(s => s.createAgent);
   const deleteAgent = useStore(s => s.deleteAgent);
-  const createInstance = useStore(s => s.createInstance);
-  const deleteInstance = useStore(s => s.deleteInstance);
+  const restartInstance = useStore(s => s.restartInstance);
+  const wakeInstance = useStore(s => s.wakeInstance);
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [busyAgent, setBusyAgent] = useState(false);
-  const [showInstDlg, setShowInstDlg] = useState<string | null>(null);
-  const [busyInst, setBusyInst] = useState<string | null>(null);
   const [delAgent, setDelAgent] = useState<string | null>(null);
   const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
 
-  // Persisted across mount in the store — ensures skeleton doesn't reappear
-  // when the user navigates away and back while data is already loaded.
   const loadedOnce = useStore(s => s.loadedOnce);
   const initialLoaded = loadedOnce.agents && loadedOnce.instances;
 
-  const byAgent = useMemo(() => {
-    const m = new Map<string, InstanceView[]>();
-    for (const i of instances) m.set(i.agentId, [...(m.get(i.agentId) ?? []), i]);
-    return m;
-  }, [instances]);
+  const restartingIds = useMemo(
+    () => new Set(restartingInstances.keys()),
+    [restartingInstances],
+  );
 
   return (
     <>
@@ -68,8 +63,8 @@ export function ListView() {
         {/* Skeleton during initial load — only when we expect agents */}
         {!initialLoaded && agents.length > 0 && (
           <div className="flex flex-col gap-6">
-            <div className="rounded-xl border-2 border-border-light bg-surface h-[120px] anim-pulse" />
-            <div className="rounded-xl border-2 border-border-light bg-surface h-[120px] anim-pulse" />
+            <div className="rounded-xl border-2 border-border-light bg-surface h-[88px] anim-pulse" />
+            <div className="rounded-xl border-2 border-border-light bg-surface h-[88px] anim-pulse" />
           </div>
         )}
 
@@ -80,27 +75,46 @@ export function ListView() {
           </div>
         )}
 
-        {/* Agent cards */}
+        {/* One row per agent — the 1:N agent→instance cardinality is hidden. */}
         <div className="flex flex-col gap-6">
           {initialLoaded && agents.map(agent => {
-            const insts = byAgent.get(agent.id) ?? [];
+            const display = resolveAgentDisplay(agent, instances, restartingIds);
+            const inst = display.instance;
+            const onOpen = () => { if (inst && display.clickable) selectInstance(inst.id); };
             return (
               <div
                 key={agent.id}
-                className="rounded-xl border-2 border-border bg-surface overflow-hidden anim-in transition-shadow hover:shadow-[4px_4px_0_#292524]"
-                style={{ boxShadow: "var(--shadow-brutal)" }}
+                onClick={onOpen}
+                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in shadow-[var(--shadow-brutal)] transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-[4px_4px_0_#292524]" : ""}`}
               >
-                {/* Card header */}
-                <div className="px-4 md:px-6 pt-4 md:pt-5 pb-3 md:pb-4">
-                  <div className="flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
+                <div className="px-4 md:px-6 py-4 md:py-5">
+                  <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
                     <div className="flex-1 min-w-0">
-                      <h2 className="text-[16px] md:text-[17px] font-bold text-text mb-2">{agent.name}</h2>
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        <h2 className="text-[16px] md:text-[17px] font-bold text-text transition-colors [.group:hover:not(:has(button:hover))_&]:text-accent">{agent.name}</h2>
+                        <StatusBadge state={display.state} />
+                      </div>
                       {agent.description && (
                         <p className="text-[13px] text-text-secondary">{agent.description}</p>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          if (!inst) return;
+                          if (display.powerAction === "start") wakeInstance(inst.id);
+                          else if (display.powerAction === "restart") restartInstance(inst.id);
+                        }}
+                        disabled={display.powerAction === null}
+                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:hover:text-text-secondary disabled:hover:border-border flex items-center gap-1"
+                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                        title={display.powerAction === "start" ? "Wake the hibernated agent" : "Restart the agent pod"}
+                      >
+                        {display.powerAction === "start"
+                          ? (<><Play size={12} /> Start</>)
+                          : (<><RotateCw size={12} /> Restart</>)}
+                      </button>
                       <button
                         onClick={() => setShowSecretsDlg(agent.id)}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
@@ -110,23 +124,12 @@ export function ListView() {
                         <KeyRound size={12} /> Configure
                       </button>
                       <button
-                        onClick={() => setShowInstDlg(agent.id)}
-                        disabled={busyInst === agent.id}
-                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 flex items-center gap-1"
-                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                      >
-                        <Plus size={12} /> Instance
-                      </button>
-                      <button
                         onClick={async () => {
-                          const n = insts.length;
-                          const msg = n === 0 ? (
-                            <>Delete agent <strong className="text-text">"{agent.name}"</strong>?</>
-                          ) : (
+                          const msg = (
                             <div className="space-y-2">
                               <p>Delete agent <strong className="text-text">"{agent.name}"</strong>?</p>
                               <p className="text-danger">
-                                This will also delete <strong>{n} {n === 1 ? "instance" : "instances"}</strong> and <strong>all their persistent data</strong>.
+                                This will also delete <strong>all persistent data</strong>.
                               </p>
                               <p className="text-text-muted text-[12px]">This cannot be undone.</p>
                             </div>
@@ -146,43 +149,6 @@ export function ListView() {
                     </div>
                   </div>
                 </div>
-
-                {/* Instance rows */}
-                {insts.length === 0 ? (
-                  <div className="border-t-2 border-border-light px-6 py-4 text-[13px] text-text-muted">
-                    No instances — click "+ Instance" to create one
-                  </div>
-                ) : (
-                  insts.map(inst => {
-                    const state = instanceState(inst);
-                    const clickable = state === "running" || state === "hibernated";
-                    const label = stateLabel[state];
-                    const colors = badgeColors[state];
-                    return (
-                      <div
-                        key={inst.id}
-                        onClick={clickable ? () => selectInstance(inst.id) : undefined}
-                        className={`flex items-center gap-3 md:gap-4 border-t-2 border-border-light px-4 md:px-6 py-3 md:py-3.5 min-h-[44px] transition-colors ${clickable ? "cursor-pointer hover:bg-accent-light" : "opacity-50"}`}
-                      >
-                        <StatusIndicator state={state} />
-                        <span className="text-[14px] font-semibold text-text">{inst.name}</span>
-                        <span className={`inline-flex items-center text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${colors}`}>
-                          {label}
-                        </span>
-
-                        <span className="flex-1" />
-
-                        <button
-                          onClick={async e => { e.stopPropagation(); if (await showConfirm(`Delete instance "${inst.name}"?`, "Delete Instance")) deleteInstance(inst.id); }}
-                          className="h-7 w-7 rounded-md border-2 border-border-light flex items-center justify-center text-text-muted hover:text-danger hover:border-danger transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
               </div>
             );
           })}
@@ -195,13 +161,6 @@ export function ListView() {
           onSubmit={async (input) => { setShowAddAgent(false); setBusyAgent(true); await createAgent(input); setBusyAgent(false); }}
           onCancel={() => setShowAddAgent(false)}
           onGoToProviders={() => { setShowAddAgent(false); setView("providers"); }}
-        />
-      )}
-      {showInstDlg && (
-        <CreateInstanceDialog
-          agentName={agents.find(a => a.id === showInstDlg)?.name ?? showInstDlg}
-          onSubmit={async (name) => { const aid = showInstDlg; setShowInstDlg(null); setBusyInst(aid); await createInstance(aid, name); setBusyInst(null); }}
-          onCancel={() => setShowInstDlg(null)}
         />
       )}
       {showSecretsDlg &&

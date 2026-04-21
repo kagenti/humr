@@ -46,6 +46,13 @@ export const instancesRouter = t.router({
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.instances.delete(input.id)),
 
+  restart: t.procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const ok = await ctx.instances.restart(input.id);
+      if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
+    }),
+
   wake: t.procedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
