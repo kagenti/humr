@@ -27,17 +27,17 @@ function FrontmatterBlock({ source }: { source: string }) {
   const [open, setOpen] = useState(false);
   const Icon = open ? ChevronDown : ChevronRight;
   return (
-    <div className="not-prose mb-3 rounded border border-border-light bg-surface-muted/40 text-[12px]">
+    <div className="not-prose mb-3 text-[12px]">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-text-muted hover:text-text-primary"
+        className="flex items-center gap-1.5 text-text-muted hover:text-text-primary"
       >
         <Icon size={12} />
         <span className="font-mono uppercase tracking-[0.05em] text-[11px]">Frontmatter</span>
       </button>
       {open && (
-        <pre className="border-t border-border-light px-2 py-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre overflow-x-auto">{source}</pre>
+        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre overflow-x-auto">{source}</pre>
       )}
     </div>
   );
