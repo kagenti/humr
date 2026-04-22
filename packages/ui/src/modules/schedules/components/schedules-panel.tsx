@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { useStore } from "../../../store.js";
 import { Plus } from "lucide-react";
+import { useState } from "react";
+
+import { useStore } from "../../../store.js";
 import { useSchedules, useScheduleSessions } from "../api/queries.js";
-import { ScheduleCard } from "./schedule-card.js";
 import { CreateScheduleForm } from "../forms/create-schedule-form.js";
+import { ScheduleCard } from "./schedule-card.js";
 
 export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sessionId: string) => void }) {
   const selectedInstance = useStore(s => s.selectedInstance);

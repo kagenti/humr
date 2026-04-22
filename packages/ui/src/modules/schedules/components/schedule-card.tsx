@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight, X } from "lucide-react";
+
 import { useStore } from "../../../store.js";
 import type { Schedule, SessionView } from "../../../types.js";
 import {
