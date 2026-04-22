@@ -139,7 +139,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_PREFIX }}/code-guardian
-          tags: type=raw,value=main
+          tags: type=sha,prefix=,format=long
       - uses: docker/build-push-action@v6
         with:
           context: packages/agents/code-guardian
@@ -149,7 +149,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:main
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:${{ github.sha }}
           cache-from: type=gha,scope=code-guardian
           cache-to: type=gha,mode=max,scope=code-guardian
 

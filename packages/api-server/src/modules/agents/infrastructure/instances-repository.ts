@@ -15,6 +15,7 @@ export interface InstancesRepository {
   create(agentId: string, spec: Record<string, unknown>, owner: string): Promise<InfraInstance>;
   updateSpec(id: string, owner: string | undefined, patch: Record<string, unknown>): Promise<InfraInstance | null>;
   delete(id: string, owner?: string): Promise<boolean>;
+  restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraInstance | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
   getOwner(id: string): Promise<string | null>;
@@ -70,6 +71,21 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
       if (!cm) return false;
       if (owner && !isOwnedBy(cm, owner)) return false;
       await k8s.deleteConfigMap(id);
+      return true;
+    },
+
+    async restart(id, owner?) {
+      const cm = await k8s.getConfigMap(id);
+      if (!cm) return false;
+      if (owner && !isOwnedBy(cm, owner)) return false;
+      // Delete pod-0; the StatefulSet controller will recreate it with the
+      // current spec. For replicas=1 this is equivalent to `kubectl rollout
+      // restart` without the pod-template annotation dance, which would be
+      // wiped by the next reconcile of applyStatefulSet.
+      // A 404 from deletePod (pod already gone — crashed, mid-recreate, etc.)
+      // is still a successful restart from the user's perspective: the
+      // StatefulSet will produce a fresh pod-0 regardless.
+      await k8s.deletePod(`${id}-0`);
       return true;
     },
 

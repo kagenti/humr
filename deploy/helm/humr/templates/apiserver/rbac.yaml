@@ -59,7 +59,10 @@ rules:
     verbs: ["get", "list", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    # `delete` powers instance restart: deleting pod-{id}-0 makes the StatefulSet
+    # recreate it with the current spec — functionally equivalent to a rolling
+    # restart for replicas=1 without racing against the controller's reconcile.
+    verbs: ["get", "list", "watch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

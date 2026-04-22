@@ -48,6 +48,7 @@ export interface InstancesService {
   create: (input: CreateInstanceInput) => Promise<Instance>;
   update: (input: UpdateInstanceInput) => Promise<Instance | null>;
   delete: (id: string) => Promise<void>;
+  restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Instance | null>;
   connectSlack: (id: string, slackChannelId: string) => Promise<Instance | null>;
   disconnectSlack: (id: string) => Promise<Instance | null>;

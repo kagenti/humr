@@ -18,6 +18,7 @@ export interface K8sClient {
   listPods(labelSelector: string): Promise<k8s.V1Pod[]>;
   getPod(name: string): Promise<k8s.V1Pod | null>;
   patchPod(name: string, body: object): Promise<void>;
+  deletePod(name: string): Promise<boolean>;
 
   listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
   deletePVC(name: string): Promise<void>;
@@ -79,6 +80,16 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
 
     async patchPod(name, body) {
       await api.patchNamespacedPod({ name, namespace, body });
+    },
+
+    async deletePod(name) {
+      try {
+        await api.deleteNamespacedPod({ name, namespace });
+        return true;
+      } catch (err) {
+        if (is404(err)) return false;
+        throw err;
+      }
     },
 
     async listPVCs(labelSelector) {

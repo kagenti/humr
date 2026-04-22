@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -155,4 +156,69 @@ func TestWakeIfHibernated_SkipsRunning(t *testing.T) {
 	woke, err := s.wakeIfHibernated(context.Background(), "my-instance")
 	require.NoError(t, err)
 	assert.False(t, woke)
+}
+
+func TestPollUntilReady_ReadyImmediately(t *testing.T) {
+	called := 0
+	ok := pollUntilReady(context.Background(), func(ctx context.Context) bool {
+		called++
+		return true
+	}, 10*time.Millisecond, 100*time.Millisecond, time.Second)
+	assert.True(t, ok)
+	assert.Equal(t, 1, called, "should exit on first iteration without polling again")
+}
+
+func TestPollUntilReady_EventuallyReady(t *testing.T) {
+	called := 0
+	ok := pollUntilReady(context.Background(), func(ctx context.Context) bool {
+		called++
+		return called >= 3
+	}, 10*time.Millisecond, 100*time.Millisecond, time.Second)
+	assert.True(t, ok)
+	assert.Equal(t, 3, called)
+}
+
+func TestPollUntilReady_Timeout(t *testing.T) {
+	called := 0
+	start := time.Now()
+	ok := pollUntilReady(context.Background(), func(ctx context.Context) bool {
+		called++
+		return false
+	}, 10*time.Millisecond, 30*time.Millisecond, 100*time.Millisecond)
+	elapsed := time.Since(start)
+	assert.False(t, ok)
+	assert.GreaterOrEqual(t, called, 2, "should poll at least a few times before giving up")
+	assert.GreaterOrEqual(t, elapsed, 100*time.Millisecond, "should honor the deadline")
+	assert.Less(t, elapsed, 500*time.Millisecond, "should not run much past the deadline")
+}
+
+func TestPollUntilReady_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	ok := pollUntilReady(ctx, func(ctx context.Context) bool {
+		return false
+	}, 100*time.Millisecond, time.Second, 10*time.Second)
+	elapsed := time.Since(start)
+	assert.False(t, ok)
+	assert.Less(t, elapsed, 500*time.Millisecond, "should return quickly on ctx cancel, well before the 10s timeout")
+}
+
+func TestWaitForPodReady_PodReady(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-0", Namespace: "test-agents"},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	client := fake.NewSimpleClientset(pod)
+	s := New(client, testCfg)
+
+	ok := s.waitForPodReady(context.Background(), "my-instance")
+	assert.True(t, ok)
 }

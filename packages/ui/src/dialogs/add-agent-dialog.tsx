@@ -1,21 +1,38 @@
-import { useState, useEffect, useMemo } from "react";
-import type { TemplateView, SecretView, SecretMode } from "../types.js";
+import { useState, useEffect } from "react";
+import type { TemplateView, SecretView, EnvVar } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
-import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
-import { Globe, KeyRound, Lock, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { platform } from "../platform.js";
-import { AuthModeBadge } from "../components/auth-mode-badge.js";
+import { HoverTooltip } from "../components/hover-tooltip.js";
+import { ConnectionsPicker } from "../components/connections-picker.js";
+import { envsToAddOnGrant } from "./connection-env-helpers.js";
+import { useStore } from "../store.js";
 
 type Step = "pick" | "configure";
 
-export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders }: {
+export function AddAgentDialog({
+  templates,
+  onSubmit,
+  onCancel,
+  onGoToProviders,
+}: {
   templates: TemplateView[];
-  onSubmit: (i: { name: string; templateId?: string; image?: string; description?: string; secretMode?: SecretMode; secretIds?: string[]; appConnectionIds?: string[]; autoCreateInstance?: boolean }) => void;
+  onSubmit: (i: {
+    name: string;
+    templateId?: string;
+    image?: string;
+    description?: string;
+    env?: EnvVar[];
+    secretIds?: string[];
+    appConnectionIds?: string[];
+  }) => void;
   onCancel: () => void;
   onGoToProviders: () => void;
 }) {
   const [step, setStep] = useState<Step>("pick");
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateView | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateView | null>(
+    null,
+  );
   const [customImage, setCustomImage] = useState("");
 
   // Configure step state
@@ -23,19 +40,57 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
   const [desc, setDesc] = useState("");
   const [secrets, setSecrets] = useState<SecretView[]>([]);
   const [selSecrets, setSelSecrets] = useState<Set<string>>(new Set());
+  // Tracks whether the user touched the selection at all. Needed because the
+  // controller auto-assigns the single Anthropic provider when no explicit
+  // list is sent, which would otherwise silently ignore an explicit uncheck.
+  const [secretsDirty, setSecretsDirty] = useState(false);
   const [loadSecrets, setLoadSecrets] = useState(true);
-  const [secretMode, setSecretMode] = useState<SecretMode>("selective");
   const [apps, setApps] = useState<AppConnectionView[]>([]);
   const [selApps, setSelApps] = useState<Set<string>>(new Set());
-  const [autoCreateInstance, setAutoCreateInstance] = useState(true);
+  const showToast = useStore((s) => s.showToast);
 
   useEffect(() => {
-    platform.secrets.list.query().then(setSecrets).catch(() => {}).finally(() => setLoadSecrets(false));
-    platform.connections.list.query().then(setApps).catch(() => {});
-  }, []);
+    platform.secrets.list
+      .query()
+      .then((loaded) => {
+        setSecrets(loaded);
+        const providers = loaded.filter((s) => s.type === "anthropic");
+        if (providers.length === 1) {
+          setSelSecrets(new Set([providers[0].id]));
+        }
+      })
+      .catch((err) =>
+        showToast({
+          kind: "error",
+          message: `Couldn't load secrets: ${err instanceof Error ? err.message : "unknown error"}`,
+        }),
+      )
+      .finally(() => setLoadSecrets(false));
+    platform.connections.list
+      .query()
+      .then(setApps)
+      .catch((err) =>
+        showToast({
+          kind: "error",
+          message: `Couldn't load connections: ${err instanceof Error ? err.message : "unknown error"}`,
+        }),
+      );
+  }, [showToast]);
 
-  const toggleSecret = (id: string) => setSelSecrets(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleApp = (id: string) => setSelApps(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSecret = (id: string) => {
+    setSecretsDirty(true);
+    setSelSecrets((p) => {
+      const n = new Set(p);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+  const toggleApp = (id: string) =>
+    setSelApps((p) => {
+      const n = new Set(p);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -56,41 +111,38 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
   const submit = () => {
     const n = name.trim();
     if (!n) return;
+    // Derive env from each granted app's envMappings (dedupe by name across
+    // apps — e.g. Gmail + Drive both declare GOOGLE_WORKSPACE_CLI_TOKEN).
+    const grantedApps = apps.filter((a) => selApps.has(a.id));
+    const env = grantedApps.reduce<EnvVar[]>((acc, app) => {
+      const toAdd = envsToAddOnGrant(acc, app);
+      return toAdd.length > 0 ? [...acc, ...toAdd] : acc;
+    }, []);
     onSubmit({
       name: n,
       templateId: selectedTemplate?.id,
       image: selectedTemplate ? undefined : customImage.trim(),
       description: desc.trim() || undefined,
-      secretMode,
-      secretIds: secretMode === "selective" && selSecrets.size ? [...selSecrets] : undefined,
+      env: env.length > 0 ? env : undefined,
+      secretIds: secretsDirty ? [...selSecrets] : undefined,
       appConnectionIds: selApps.size ? [...selApps] : undefined,
-      autoCreateInstance,
     });
   };
 
-  const inp = "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+  const inp =
+    "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
-  const anthropicSecrets = secrets.filter(s => s.type === "anthropic");
-  const mcpSecrets = secrets.filter(s => isMcpSecret(s));
-  const genericSecrets = secrets.filter(s => s.type !== "anthropic" && !isMcpSecret(s));
-
-  const inheritedEnvs = useMemo(() => {
-    const granted = secretMode === "all" ? secrets : secrets.filter(s => selSecrets.has(s.id));
-    const out: { name: string; value: string; secretName: string }[] = [];
-    for (const s of granted) {
-      for (const m of s.envMappings ?? []) {
-        out.push({ name: m.envName, value: m.placeholder, secretName: s.name });
-      }
-    }
-    return out;
-  }, [secretMode, secrets, selSecrets]);
+  const anthropicSecrets = secrets.filter((s) => s.type === "anthropic");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in"
+      onClick={onCancel}
+    >
       <div
         className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
         style={{ boxShadow: "var(--shadow-brutal)" }}
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         {step === "pick" ? (
           <>
@@ -99,20 +151,17 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
             {/* Template catalog */}
             {templates.length > 0 && (
               <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">From Template</span>
-                {templates.map(tmpl => (
+                <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+                  From Template
+                </span>
+                {templates.map((tmpl) => (
                   <button
                     key={tmpl.id}
                     onClick={() => pickTemplate(tmpl)}
-                    className="flex items-center gap-3 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light"
+                    className="flex flex-col gap-1 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light min-w-0"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[14px] font-semibold text-text">{tmpl.name}</div>
-                      {tmpl.description && <div className="text-[12px] text-text-muted truncate">{tmpl.description}</div>}
-                    </div>
-                    <span className="text-[11px] font-bold text-info border-2 border-info bg-info-light rounded-full px-2.5 py-0.5 shrink-0">
-                      {tmpl.image}
-                    </span>
+                    <div className="text-[14px] font-semibold text-text truncate w-full">{tmpl.name}</div>
+                    {tmpl.description && <div className="text-[12px] text-text-muted truncate w-full">{tmpl.description}</div>}
                   </button>
                 ))}
               </div>
@@ -120,13 +169,15 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
 
             {/* Custom image */}
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Custom Image</span>
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+                Custom Image
+              </span>
               <div className="flex gap-2">
                 <input
                   className={inp}
                   value={customImage}
-                  onChange={e => setCustomImage(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && pickCustom()}
+                  onChange={(e) => setCustomImage(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && pickCustom()}
                   placeholder="ghcr.io/org/agent:latest"
                 />
                 <button
@@ -141,7 +192,11 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
             </div>
 
             <div className="flex justify-end pt-1">
-              <button className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text" style={{ boxShadow: "var(--shadow-brutal-sm)" }} onClick={onCancel}>
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </div>
@@ -149,220 +204,102 @@ export function AddAgentDialog({ templates, onSubmit, onCancel, onGoToProviders 
         ) : (
           <>
             <div>
-              <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
+              <h2 className="text-[20px] font-bold text-text">
+                Configure Agent
+              </h2>
               <p className="text-[12px] text-text-muted mt-1">
-                {selectedTemplate ? <>Template: <span className="font-semibold text-text-secondary">{selectedTemplate.name}</span></> : <>Image: <span className="font-semibold text-text-secondary">{customImage}</span></>}
+                {selectedTemplate ? (
+                  <>
+                    Template:{" "}
+                    <HoverTooltip
+                      placement="right"
+                      trigger={
+                        <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                          {selectedTemplate.name}
+                        </span>
+                      }
+                    >
+                      <span className="font-mono">{selectedTemplate.image}</span>
+                    </HoverTooltip>
+                  </>
+                ) : (
+                  <>
+                    Image:{" "}
+                    <span className="font-mono text-text-secondary break-all">
+                      {customImage}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
 
             <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Name</span>
-              <input className={inp} value={name} onChange={e => setName(e.target.value)} placeholder="my-agent" autoFocus />
+              <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Name
+              </span>
+              <input
+                className={inp}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="my-agent"
+                autoFocus
+              />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Description</span>
-              <input className={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional" />
+              <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Description
+              </span>
+              <input
+                className={inp}
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="Optional"
+              />
             </label>
 
             {!loadSecrets && anthropicSecrets.length === 0 && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
                 <Sparkles size={16} className="text-warning shrink-0" />
                 <p className="text-[12px] text-text-secondary">
-                  No provider configured — this agent won't be able to reach an AI model.{" "}
-                  <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>Set one up</button>
+                  No provider configured, so this agent won't be able to reach an
+                  AI model.{" "}
+                  <button
+                    className="text-accent font-semibold hover:underline"
+                    onClick={onGoToProviders}
+                  >
+                    Set one up
+                  </button>
                 </p>
               </div>
             )}
 
-            {/* Connections */}
-            <div className="flex flex-col gap-3">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Connections</span>
+            <ConnectionsPicker
+              loading={loadSecrets}
+              secrets={secrets}
+              apps={apps}
+              selSecrets={selSecrets}
+              selApps={selApps}
+              onToggleSecret={toggleSecret}
+              onToggleApp={toggleApp}
+              onGoToProviders={onGoToProviders}
+            />
 
-              {/* Mode toggle */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSecretMode("selective")}
-                  className={`rounded-lg border-2 px-3 py-2.5 text-left transition-colors ${secretMode === "selective" ? "border-accent bg-accent-light" : "border-border-light bg-bg hover:border-border"}`}
-                >
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <Lock size={12} className="text-text-secondary" />
-                    <span className="text-[12px] font-bold text-text">Selective</span>
-                  </div>
-                  <span className="text-[11px] text-text-muted">Only connections you pick</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSecretMode("all")}
-                  className={`rounded-lg border-2 px-3 py-2.5 text-left transition-colors ${secretMode === "all" ? "border-accent bg-accent-light" : "border-border-light bg-bg hover:border-border"}`}
-                >
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <Globe size={12} className="text-text-secondary" />
-                    <span className="text-[12px] font-bold text-text">All</span>
-                  </div>
-                  <span className="text-[11px] text-text-muted">Any connection, now or later</span>
-                </button>
-              </div>
-
-              <p className="text-[12px] text-text-muted leading-relaxed">
-                {secretMode === "selective"
-                  ? "Only the connections you pick below are available to this agent."
-                  : "This agent can use any connection, including ones you add later."}
-              </p>
-
-              {loadSecrets && <span className="text-[12px] text-text-muted">Loading...</span>}
-              {!loadSecrets && secrets.length === 0 && (
-                <span className="text-[12px] text-text-muted">
-                  No connections yet — <button className="text-accent font-semibold hover:underline" onClick={onGoToProviders}>add one</button>
-                </span>
-              )}
-
-              {/* Selective list — only rendered in selective mode */}
-              {secretMode === "selective" && (
-                <div className="flex flex-col gap-4">
-                  {/* Provider */}
-                  {anthropicSecrets.length > 0 && (
-                    <div>
-                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Provider</div>
-                      <div className="flex flex-col gap-2">
-                        {anthropicSecrets.map(s => (
-                          <label
-                            key={s.id}
-                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                          >
-                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
-                            <Sparkles size={14} className="text-warning" />
-                            <span className="text-[13px] font-medium text-text flex-1">{s.name}</span>
-                            <AuthModeBadge mode={s.authMode} />
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* MCP Servers */}
-                  {mcpSecrets.length > 0 && (
-                    <div>
-                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">MCP Servers</div>
-                      <div className="flex flex-col gap-2">
-                        {mcpSecrets.map(s => (
-                          <label
-                            key={s.id}
-                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                          >
-                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
-                            <Globe size={14} className="text-info" />
-                            <span className="text-[13px] font-medium text-text">{mcpHostnameFromSecretName(s.name)}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Secrets */}
-                  {genericSecrets.length > 0 && (
-                    <div>
-                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Secrets</div>
-                      <div className="flex flex-col gap-2">
-                        {genericSecrets.map(s => (
-                          <label
-                            key={s.id}
-                            className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selSecrets.has(s.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                          >
-                            <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selSecrets.has(s.id)} onChange={() => toggleSecret(s.id)} />
-                            <Lock size={14} className="text-text-secondary" />
-                            <span className="text-[13px] font-medium text-text">{s.name}</span>
-                            <span className="ml-auto text-[11px] font-mono text-text-muted">{s.hostPattern}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Apps — not mode-gated; OneCLI's agent-app grant is an explicit list */}
-              {apps.length > 0 && (
-                <div>
-                  <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">Apps</div>
-                  <div className="flex flex-col gap-2">
-                    {apps.map(a => (
-                      <label
-                        key={a.id}
-                        className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${selApps.has(a.id) ? "border-accent bg-accent-light" : "border-border-light"}`}
-                      >
-                        <input type="checkbox" className="accent-[var(--color-accent)] w-4 h-4" checked={selApps.has(a.id)} onChange={() => toggleApp(a.id)} />
-                        <KeyRound size={14} className="text-text-secondary shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-medium text-text truncate">{a.label}</div>
-                          {a.identity && <div className="text-[11px] font-mono text-text-muted truncate">{a.identity}</div>}
-                        </div>
-                        <span
-                          className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${
-                            a.status === "expired"
-                              ? "bg-danger-light text-danger border-danger"
-                              : a.status === "connected"
-                                ? "bg-info-light text-info border-info"
-                                : "bg-surface-raised text-text-muted border-border-light"
-                          }`}
-                        >
-                          {a.status === "expired" ? "Expired" : a.status === "disconnected" ? "Disconnected" : a.status === "unknown" ? "Unknown" : "Connected"}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {inheritedEnvs.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">Environment</span>
-                  <span className="text-[10px] text-text-muted">· inherited from connections</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  {inheritedEnvs.map((e, i) => (
-                    <div
-                      key={`${e.name}:${i}`}
-                      className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]"
-                    >
-                      <span className="shrink-0 text-accent" title={`From connector: ${e.secretName}`}>
-                        <KeyRound size={12} />
-                      </span>
-                      <span className="font-mono font-semibold text-text truncate">{e.name}</span>
-                      <span className="text-text-muted">=</span>
-                      <span className="font-mono text-text-muted truncate flex-1" title={e.value}>{e.value}</span>
-                      <span className="text-[10px] text-text-muted italic truncate max-w-[160px]">{e.secretName}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none sm:mr-auto" title="Start a running instance of this agent right away">
-                <input
-                  type="checkbox"
-                  className="accent-[var(--color-accent)] w-4 h-4"
-                  checked={autoCreateInstance}
-                  onChange={(e) => setAutoCreateInstance(e.target.checked)}
-                />
-                <span className="text-[12px] font-semibold text-text-secondary">Create instance immediately</span>
-              </label>
-              <div className="flex items-center gap-3 ml-auto">
-                <button className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text" style={{ boxShadow: "var(--shadow-brutal-sm)" }} onClick={() => setStep("pick")}>
-                  Back
-                </button>
-                <button
-                  className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                  onClick={submit}
-                  disabled={!name.trim()}
-                >
-                  Create Agent
-                </button>
-              </div>
+            <div className="flex items-center justify-end gap-3 pt-1">
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
+                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                onClick={() => setStep("pick")}
+              >
+                Back
+              </button>
+              <button
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
+                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                onClick={submit}
+                disabled={!name.trim()}
+              >
+                Create Agent
+              </button>
             </div>
           </>
         )}

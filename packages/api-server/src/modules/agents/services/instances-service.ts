@@ -194,5 +194,13 @@ export function createInstancesService(deps: {
       const subs = await deps.listAllowedUsersByInstance(instanceId);
       return subs.includes(keycloakSub);
     },
+
+    async restart(id) {
+      const restarted = await deps.repo.restart(id, deps.owner);
+      if (restarted) {
+        emit({ type: EventType.InstanceRestarted, instanceId: id });
+      }
+      return restarted;
+    },
   };
 }

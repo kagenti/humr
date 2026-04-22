@@ -1,3 +1,5 @@
+import type { EnvMapping } from "../secrets/types.js";
+
 export type AppConnectionStatus =
   | "connected"
   | "expired"
@@ -12,6 +14,12 @@ export interface AppConnectionView {
   identity?: string;
   scopes?: string[];
   connectedAt?: string;
+  /**
+   * Pod envs contributed by this connection. Declared by OneCLI's app
+   * registry (see the matching `AppDefinition.envMappings` field) and
+   * returned verbatim on `GET /api/connections` — Humr never writes this.
+   */
+  envMappings?: EnvMapping[];
 }
 
 export interface AgentAppConnections {
