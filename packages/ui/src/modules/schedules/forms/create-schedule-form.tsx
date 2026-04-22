@@ -55,10 +55,8 @@ export function CreateScheduleForm({ instanceId, onCancel, onCreated }: Props) {
   const onSubmit = handleSubmit((values) => {
     createSchedule.mutate(
       {
-        name: values.name,
+        ...values,
         instanceId,
-        cron: values.cron,
-        task: values.task,
         sessionMode: values.sessionMode === "fresh" ? undefined : values.sessionMode,
       },
       { onSuccess: onCreated },
@@ -89,14 +87,14 @@ export function CreateScheduleForm({ instanceId, onCancel, onCreated }: Props) {
       </div>
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-text-secondary">Session:</span>
-        {(["fresh", "continuous"] as const).map(m => (
+        {(["fresh", "continuous"] as const).map(mode => (
           <button
-            key={m}
+            key={mode}
             type="button"
-            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${sessionMode === m ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light"}`}
-            onClick={() => setValue("sessionMode", m, { shouldDirty: true })}
+            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${sessionMode === mode ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light"}`}
+            onClick={() => setValue("sessionMode", mode, { shouldDirty: true })}
           >
-            {m}
+            {mode}
           </button>
         ))}
       </div>

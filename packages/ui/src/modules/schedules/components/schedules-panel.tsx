@@ -5,16 +5,16 @@ import { useSchedules, useScheduleSessions } from "../api/queries.js";
 import { ScheduleCard } from "./schedule-card.js";
 import { CreateScheduleForm } from "../forms/create-schedule-form.js";
 
-export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: string) => void }) {
+export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sessionId: string) => void }) {
   const selectedInstance = useStore(s => s.selectedInstance);
 
   const schedulesQuery = useSchedules(selectedInstance);
   const schedules = schedulesQuery.data ?? [];
 
-  const [show, setShow] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const sessionsQuery = useScheduleSessions(expanded);
+  const sessionsQuery = useScheduleSessions(expandedId);
   const sessionsForExpanded = sessionsQuery.data ?? [];
 
   return (
@@ -22,28 +22,28 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
       <div className="px-3 py-2.5 shrink-0">
         <button
           className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
-          onClick={() => setShow(true)}
+          onClick={() => setIsCreating(true)}
         >
           <Plus size={12} /> Add Schedule
         </button>
       </div>
 
-      {show && selectedInstance && (
+      {isCreating && selectedInstance && (
         <CreateScheduleForm
           instanceId={selectedInstance}
-          onCancel={() => setShow(false)}
-          onCreated={() => setShow(false)}
+          onCancel={() => setIsCreating(false)}
+          onCreated={() => setIsCreating(false)}
         />
       )}
 
-      {schedules.length === 0 && !show && <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>}
-      {schedules.map(s => (
+      {schedules.length === 0 && !isCreating && <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>}
+      {schedules.map(schedule => (
         <ScheduleCard
-          key={s.id}
-          schedule={s}
-          isExpanded={expanded === s.id}
-          sessions={expanded === s.id ? sessionsForExpanded : []}
-          onToggleExpanded={() => setExpanded(prev => prev === s.id ? null : s.id)}
+          key={schedule.id}
+          schedule={schedule}
+          isExpanded={expandedId === schedule.id}
+          sessions={expandedId === schedule.id ? sessionsForExpanded : []}
+          onToggleExpanded={() => setExpandedId(prev => prev === schedule.id ? null : schedule.id)}
           onResumeSession={onResumeSession}
         />
       ))}
