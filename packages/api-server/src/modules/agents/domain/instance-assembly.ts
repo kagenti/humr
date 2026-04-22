@@ -1,4 +1,10 @@
-import type { Instance, InstanceState, ChannelConfig, SkillRef } from "api-server-api";
+import type {
+  Instance,
+  InstanceState,
+  ChannelConfig,
+  SkillRef,
+  SkillPublishRecord,
+} from "api-server-api";
 
 export interface InfraInstance {
   id: string;
@@ -10,6 +16,7 @@ export interface InfraInstance {
   error?: string;
   podReady: boolean;
   skills: SkillRef[];
+  publishes: SkillPublishRecord[];
 }
 
 export function computeState(infra: InfraInstance): InstanceState {

@@ -5,8 +5,8 @@ import { createInstancesRepository } from "../agents/infrastructure/instances-re
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { createAgentTokenResolver } from "./infrastructure/agent-token.js";
+import { scanPublicGithubArchive } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
-import { scanSource } from "./infrastructure/skill-scanner.js";
 import { createSkillsService } from "./services/skills-service.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -24,14 +24,17 @@ interface CacheEntry {
  */
 const sharedScanCache = new Map<string, CacheEntry>();
 
-async function scanWithCache(gitUrl: string): Promise<Skill[]> {
+async function scanWithCache(
+  gitUrl: string,
+  scanner: (gitUrl: string) => Promise<Skill[]>,
+): Promise<Skill[]> {
   const hit = sharedScanCache.get(gitUrl);
   if (hit && hit.expiresAt > Date.now()) {
     process.stderr.write(`[skills] cache hit: ${gitUrl}\n`);
     return hit.skills;
   }
   process.stderr.write(`[skills] cache miss: ${gitUrl}\n`);
-  const skills = await scanSource(gitUrl);
+  const skills = await scanner(gitUrl);
   sharedScanCache.set(gitUrl, { skills, expiresAt: Date.now() + CACHE_TTL_MS });
   return skills;
 }
@@ -59,5 +62,6 @@ export function composeSkillsModule(
     owner,
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,
+    scanPublic: scanPublicGithubArchive,
   });
 }

@@ -3,6 +3,10 @@ export interface SkillRef {
   source: string;
   name: string;
   version: string;
+  /** Deterministic SHA-256 of the skill directory's file contents at install
+   *  time. Compared to the scanner's contentHash to flag drift. Optional for
+   *  backward compatibility with installs that pre-date this field. */
+  contentHash?: string;
 }
 
 /** A connected skill source (e.g. a public git repo). */
@@ -16,12 +20,15 @@ export interface SkillSource {
   canPublish?: boolean;
 }
 
-/** A skill available from a connected source. Version is the last-touching commit SHA. */
+/** A skill available from a connected source. Version is the source's HEAD
+ *  commit SHA; contentHash is a deterministic content signature used for
+ *  drift detection (see SkillRef.contentHash). */
 export interface Skill {
   source: string;
   name: string;
   description: string;
   version: string;
+  contentHash: string;
 }
 
 export interface CreateSkillSourceInput {
@@ -34,6 +41,10 @@ export interface InstallSkillInput {
   source: string;
   name: string;
   version: string;
+  /** Content hash captured from the scan result. Optional because the MCP
+   *  tool flow may install a skill without a prior scan (in which case the
+   *  agent-runtime computes + returns it at install time). */
+  contentHash?: string;
 }
 
 export interface UninstallSkillInput {
@@ -62,15 +73,51 @@ export interface PublishSkillResult {
   branch: string;
 }
 
+/**
+ * Explicit record of a publish event. Written on a successful
+ * `publishSkill` call and kept alongside spec.skills on the instance
+ * ConfigMap. Drives the `Published` badge + "View PR" link in the UI —
+ * the name-match heuristic it replaces had confusing false positives
+ * when a local skill happened to share a name with a catalog entry.
+ *
+ * Source fields are denormalized so the record stays usable after the
+ * source is renamed or deleted.
+ */
+export interface SkillPublishRecord {
+  skillName: string;
+  sourceId: string;
+  sourceName: string;
+  sourceGitUrl: string;
+  prUrl: string;
+  publishedAt: string;  // ISO 8601
+}
+
+/** Reconciled view of an instance's skills: both the installed (tracked in
+ *  spec.skills AND present on disk) and the standalone (on disk but not
+ *  tracked). Computing this in one pass lets the server drop ghost
+ *  SkillRefs — entries whose directories were deleted out-of-band — and
+ *  persist the cleanup back to spec.skills so the declarative state stops
+ *  drifting from the filesystem.
+ *
+ *  `publishes` carries the publish history for this instance so the UI
+ *  can light up the "Published" badge on exactly the skills the user
+ *  actually pushed. */
+export interface SkillsState {
+  installed: SkillRef[];
+  standalone: LocalSkill[];
+  publishes: SkillPublishRecord[];
+}
+
 export interface SkillsService {
   listSources: () => Promise<SkillSource[]>;
   getSource: (id: string) => Promise<SkillSource | null>;
   createSource: (input: CreateSkillSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
-  listSkills: (sourceId: string) => Promise<Skill[]>;
+  listSkills: (sourceId: string, instanceId: string) => Promise<Skill[]>;
   installSkill: (input: InstallSkillInput) => Promise<SkillRef[]>;
   uninstallSkill: (input: UninstallSkillInput) => Promise<SkillRef[]>;
   listLocal: (instanceId: string) => Promise<LocalSkill[]>;
+  getState: (instanceId: string) => Promise<SkillsState>;
   publishSkill: (input: PublishSkillInput) => Promise<PublishSkillResult>;
 }

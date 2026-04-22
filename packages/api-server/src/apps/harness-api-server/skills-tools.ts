@@ -47,7 +47,7 @@ export function createSkillsToolHandlers(instanceId: string, skills: SkillsServi
       try {
         const src = await skills.getSource(sourceId);
         if (!src) return errorResult(`skill source ${JSON.stringify(sourceId)} not found`);
-        const list = await skills.listSkills(sourceId);
+        const list = await skills.listSkills(sourceId, instanceId);
         return textResult(JSON.stringify(list));
       } catch (err) {
         return formatToolError(err, "Failed to list skills");
