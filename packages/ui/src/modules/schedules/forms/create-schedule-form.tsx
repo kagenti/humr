@@ -110,8 +110,7 @@ export function CreateScheduleForm({ instanceId, onCancel, onCreated }: Props) {
         </button>
         <button
           type="submit"
-          className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
-          style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+          className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white shadow-brutal-accent disabled:opacity-40"
           disabled={!name.trim() || createSchedule.isPending}
         >
           {createSchedule.isPending ? "..." : "Create"}
