@@ -17,6 +17,26 @@ import type { IdentityLinkService } from "./../services/identity-link-service.js
 
 type BoltApp = InstanceType<typeof App>;
 
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err !== null && typeof err === "object") {
+    const obj = err as { message?: unknown; code?: unknown };
+    if (typeof obj.message === "string") {
+      if (typeof obj.code === "number" || typeof obj.code === "string") {
+        return `${obj.message} (code ${obj.code})`;
+      }
+      return obj.message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+
 async function getContextMessages(
   app: BoltApp,
   channel: string,
@@ -210,7 +230,7 @@ export function createSlackWorker(
       await app.client.chat.postMessage({
         channel: ctx.channel,
         thread_ts: ctx.threadTs,
-        text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        text: `Error: ${formatError(err)}`,
       });
     }
   }
@@ -575,7 +595,7 @@ export function createSlackWorker(
       await bolt.start();
     } catch (err) {
       appFailed = true;
-      process.stderr.write(`[slack] Failed to start Slack bot: ${err instanceof Error ? err.message : String(err)}\n`);
+      process.stderr.write(`[slack] Failed to start Slack bot: ${formatError(err)}\n`);
       return null;
     }
 
@@ -637,7 +657,7 @@ export function createSlackWorker(
         });
         return { ok: true as const };
       } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) };
+        return { error: formatError(err) };
       }
     },
 
@@ -663,7 +683,7 @@ export function createSlackWorker(
         await app.client.chat.postMessage({
           channel,
           thread_ts: threadTs,
-          text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          text: `Error: ${formatError(err)}`,
         });
       } finally {
         emit({
