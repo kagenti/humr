@@ -361,7 +361,7 @@ function QuickSetupHint() {
           {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
         </button>
       </span>{" "}
-      inside a Claude Code agent to generate a token.
+      on your own machine (with Claude Code installed) to generate a token.
     </div>
   );
 }
