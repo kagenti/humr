@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { useStore } from "../store.js";
-import { platform } from "../platform.js";
-import { runQuery } from "../store/query-helpers.js";
+import { useStore } from "../../../store.js";
+import { platform } from "../../../platform.js";
+import { runQuery } from "../../../store/query-helpers.js";
 import { Plus, X, ChevronDown, ChevronRight } from "lucide-react";
-import type { SessionView } from "../types.js";
+import type { SessionView } from "../../../types.js";
 
 export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: string) => void }) {
   const schedules = useStore(s => s.schedules);

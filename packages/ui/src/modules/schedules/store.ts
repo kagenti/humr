@@ -1,8 +1,8 @@
 import type { StateCreator } from "zustand";
-import { platform } from "../platform.js";
-import type { Schedule } from "../types.js";
-import type { HumrStore } from "../store.js";
-import { runAction, runQuery, ACTION_FAILED } from "./query-helpers.js";
+import { platform } from "../../platform.js";
+import type { Schedule } from "../../types.js";
+import type { HumrStore } from "../../store.js";
+import { runAction, runQuery, ACTION_FAILED } from "../../store/query-helpers.js";
 
 export interface CreateScheduleInput {
   name: string;
