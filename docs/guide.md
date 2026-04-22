@@ -50,3 +50,5 @@ Humr detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioni
 - **Agent Runtime** (TypeScript) — ACP server inside each agent pod
 - **OneCLI** — credential injection proxy, network policy enforcement
 - **Web UI** (React) — instance management, chat, scheduling
+
+See [Security Model](security-model.md) for how these components defend against agent compromise.
