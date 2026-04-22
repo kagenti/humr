@@ -1,0 +1,22 @@
+import { useQuery, skipToken } from "@tanstack/react-query";
+import { trpc } from "../../../trpc.js";
+
+export function useSchedules(instanceId: string | null) {
+  return useQuery({
+    ...trpc.schedules.list.queryOptions(
+      instanceId ? { instanceId } : skipToken,
+    ),
+    refetchInterval: 5000,
+    meta: { errorToast: "Couldn't refresh schedules" },
+  });
+}
+
+export function useScheduleSessions(scheduleId: string | null) {
+  return useQuery({
+    ...trpc.sessions.listByScheduleId.queryOptions(
+      scheduleId ? { scheduleId } : skipToken,
+    ),
+    retry: 0,
+    meta: { errorToast: "Couldn't load past runs for this schedule" },
+  });
+}

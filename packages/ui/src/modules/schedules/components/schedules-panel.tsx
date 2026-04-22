@@ -1,54 +1,49 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useStore } from "../../../store.js";
-import { platform } from "../../../platform.js";
-import { runQuery } from "../../../store/query-helpers.js";
 import { Plus, X, ChevronDown, ChevronRight } from "lucide-react";
-import type { SessionView } from "../../../types.js";
+import { useSchedules, useScheduleSessions } from "../api/queries.js";
+import {
+  useCreateSchedule,
+  useDeleteSchedule,
+  useResetScheduleSession,
+  useToggleSchedule,
+} from "../api/mutations.js";
 
 export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: string) => void }) {
-  const schedules = useStore(s => s.schedules);
-  const fetchSchedules = useStore(s => s.fetchSchedules);
-  const createSchedule = useStore(s => s.createSchedule);
-  const toggleSchedule = useStore(s => s.toggleSchedule);
-  const deleteSchedule = useStore(s => s.deleteSchedule);
-  const resetScheduleSession = useStore(s => s.resetScheduleSession);
+  const selectedInstance = useStore(s => s.selectedInstance);
   const showConfirm = useStore(s => s.showConfirm);
 
+  const schedulesQuery = useSchedules(selectedInstance);
+  const schedules = schedulesQuery.data ?? [];
+
+  const createSchedule = useCreateSchedule();
+  const toggleSchedule = useToggleSchedule();
+  const deleteSchedule = useDeleteSchedule();
+  const resetScheduleSession = useResetScheduleSession();
+
   const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [f, setF] = useState({ name: "", cron: "", task: "", sessionMode: "fresh" as "continuous" | "fresh" });
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [scheduleSessions, setScheduleSessions] = useState<Record<string, SessionView[]>>({});
 
-  const poll = useCallback(() => fetchSchedules(), [fetchSchedules]);
-  useEffect(() => { poll(); const i = setInterval(poll, 5000); return () => clearInterval(i); }, [poll]);
-
-  // Fetch sessions when a schedule card is expanded. Single-shot on expand,
-  // so threshold 1 — we want the toast on the first failure rather than
-  // pretending there are simply no sessions.
-  useEffect(() => {
-    if (!expanded) return;
-    let cancelled = false;
-    (async () => {
-      const sessions = await runQuery(
-        `schedule-sessions:${expanded}`,
-        () => platform.sessions.listByScheduleId.query({ scheduleId: expanded }),
-        { fallback: "Couldn't load past runs for this schedule", threshold: 1 },
-      );
-      if (!cancelled && sessions) setScheduleSessions(prev => ({ ...prev, [expanded]: sessions }));
-    })();
-    return () => { cancelled = true; };
-  }, [expanded]);
+  const sessionsQuery = useScheduleSessions(expanded);
+  const sessionsForExpanded = sessionsQuery.data ?? [];
 
   const toggleExpanded = (id: string) => {
     setExpanded(prev => prev === id ? null : id);
   };
 
-  const create = async () => {
-    setBusy(true);
-    const ok = await createSchedule({ name: f.name, cron: f.cron, task: f.task, sessionMode: f.sessionMode });
-    setBusy(false);
-    if (ok) setShow(false);
+  const create = () => {
+    if (!selectedInstance) return;
+    createSchedule.mutate(
+      {
+        name: f.name,
+        instanceId: selectedInstance,
+        cron: f.cron,
+        task: f.task,
+        sessionMode: f.sessionMode === "fresh" ? undefined : f.sessionMode,
+      },
+      { onSuccess: () => setShow(false) },
+    );
   };
 
   const inp = "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
@@ -86,10 +81,10 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
             <button
               className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
               style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-              disabled={busy || !f.name.trim()}
+              disabled={createSchedule.isPending || !f.name.trim()}
               onClick={create}
             >
-              {busy ? "..." : "Create"}
+              {createSchedule.isPending ? "..." : "Create"}
             </button>
           </div>
         </div>
@@ -98,7 +93,7 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
       {schedules.length === 0 && !show && <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>}
       {schedules.map(s => {
         const isExpanded = expanded === s.id;
-        const sessions = scheduleSessions[s.id] ?? [];
+        const sessions = isExpanded ? sessionsForExpanded : [];
 
         return (
           <div key={s.id} className="border-b border-border-light">
@@ -119,13 +114,13 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
                 <span className="text-[11px] font-mono text-text-muted">{s.cron}</span>
                 <button
                   className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${s.enabled ? "bg-success-light text-success border-success" : "bg-bg text-text-muted border-border-light"} hover:opacity-80`}
-                  onClick={(e) => { e.stopPropagation(); toggleSchedule(s.id); }}
+                  onClick={(e) => { e.stopPropagation(); toggleSchedule.mutate({ id: s.id }); }}
                 >
                   {s.enabled ? "On" : "Off"}
                 </button>
                 <button
                   className="text-text-muted hover:text-danger transition-colors"
-                  onClick={async (e) => { e.stopPropagation(); if (await showConfirm(`Delete schedule "${s.name}"?`, "Delete Schedule")) deleteSchedule(s.id); }}
+                  onClick={async (e) => { e.stopPropagation(); if (await showConfirm(`Delete schedule "${s.name}"?`, "Delete Schedule")) deleteSchedule.mutate({ id: s.id }); }}
                 >
                   <X size={14} />
                 </button>
@@ -166,7 +161,7 @@ export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sid: st
                       onClick={async (e) => {
                         e.stopPropagation();
                         if (await showConfirm(`Reset session for "${s.name}"? The next tick will start a fresh conversation.`, "Reset Session")) {
-                          await resetScheduleSession(s.id);
+                          resetScheduleSession.mutate({ scheduleId: s.id });
                         }
                       }}
                     >
