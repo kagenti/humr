@@ -128,6 +128,7 @@ export function ConnectionsPicker({
                 label={a.label}
                 identity={a.identity}
                 status={a.status}
+                envNames={a.envMappings?.map((m) => m.envName) ?? []}
                 checked={selApps.has(a.id)}
                 onToggle={() => onToggleApp(a.id)}
               />
@@ -138,6 +139,7 @@ export function ConnectionsPicker({
                 label="Unavailable app"
                 identity={id}
                 status={undefined}
+                envNames={[]}
                 checked={selApps.has(id)}
                 onToggle={() => onToggleApp(id)}
               />
@@ -259,33 +261,43 @@ function AppItemRow({
   label,
   identity,
   status,
+  envNames,
   checked,
   onToggle,
 }: {
   label: string;
   identity?: string;
   status: AppConnectionView["status"] | undefined;
+  envNames: string[];
   checked: boolean;
   onToggle: () => void;
 }) {
   return (
     <label
-      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
+      className={`flex items-start gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
         checked ? "border-accent bg-accent-light" : "border-border-light"
       }`}
     >
       <input
         type="checkbox"
-        className="accent-[var(--color-accent)] w-4 h-4"
+        className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
         checked={checked}
         onChange={onToggle}
       />
-      <KeyRound size={14} className="text-text-secondary shrink-0" />
+      <KeyRound size={14} className="text-text-secondary shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-text truncate">{label}</div>
         {identity && (
           <div className="text-[11px] font-mono text-text-muted truncate">
             {identity}
+          </div>
+        )}
+        {envNames.length > 0 && (
+          <div className="text-[11px] text-accent truncate">
+            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+              env
+            </span>
+            <span className="font-mono">{envNames.join(", ")}</span>
           </div>
         )}
       </div>

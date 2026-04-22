@@ -26,7 +26,7 @@ type Tab = "connections" | "env";
 interface InheritedEnv {
   name: string;
   value: string;
-  source: "system" | { secretName: string };
+  source: "system" | { secretName: string } | { appLabel: string };
 }
 
 export function EditAgentSecretsDialog({
@@ -144,8 +144,21 @@ export function EditAgentSecretsDialog({
         });
       }
     }
+
+    const userEnvNames = new Set(envVars.map((e) => e.name));
+    const grantedApps = apps.filter((a) => assignedAppIds.has(a.id));
+    for (const a of grantedApps) {
+      for (const m of a.envMappings ?? []) {
+        if (userEnvNames.has(m.envName)) continue;
+        items.push({
+          name: m.envName,
+          value: m.placeholder,
+          source: { appLabel: a.label },
+        });
+      }
+    }
     return items;
-  }, [initialEnv, secrets, assigned]);
+  }, [initialEnv, secrets, assigned, apps, assignedAppIds, envVars]);
 
   const save = async () => {
     if (!envValid) return;
@@ -372,7 +385,12 @@ function EnvTab({
 
 function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
   const isSystem = entry.source === "system";
-  const sourceName = entry.source === "system" ? null : entry.source.secretName;
+  const sourceName =
+    entry.source === "system"
+      ? null
+      : "secretName" in entry.source
+        ? entry.source.secretName
+        : entry.source.appLabel;
   return (
     <div className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]">
       <span
