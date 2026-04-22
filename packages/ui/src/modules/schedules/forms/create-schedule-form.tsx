@@ -1,11 +1,30 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { FormError } from "../../../components/form-error.js";
 import { useCreateSchedule } from "../api/mutations.js";
+
+// Structural check only: standard 5-field cron with allowed characters.
+// Semantic ranges (e.g. "99" for minute) are rejected by the backend.
+const CRON_FIELD_RE = /^[0-9*,/?\-LW#]+$/;
+const CRON_FIELDS = 5;
+
+function isValidCronStructure(v: string): boolean {
+  const fields = v.trim().split(/\s+/);
+  if (fields.length !== CRON_FIELDS) return false;
+  return fields.every((f) => CRON_FIELD_RE.test(f));
+}
 
 export const createScheduleSchema = z.object({
   name: z.string().trim().min(1, "Required"),
-  cron: z.string().trim().min(1, "Required"),
+  cron: z
+    .string()
+    .trim()
+    .min(1, "Required")
+    .refine(
+      isValidCronStructure,
+      "Must be 5 fields: minute hour day month weekday (e.g. */5 * * * *)",
+    ),
   task: z.string().trim().min(1, "Required"),
   sessionMode: z.enum(["fresh", "continuous"]),
 });
@@ -53,11 +72,11 @@ export function CreateScheduleForm({ instanceId, onCancel, onCreated }: Props) {
     >
       <div>
         <input className={INPUT_CLASS} placeholder="Name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-[11px] text-danger">{errors.name.message}</p>}
+        <FormError message={errors.name?.message} />
       </div>
       <div>
         <input className={`${INPUT_CLASS} font-mono`} placeholder="Cron expression" {...register("cron")} />
-        {errors.cron && <p className="mt-1 text-[11px] text-danger">{errors.cron.message}</p>}
+        <FormError message={errors.cron?.message} />
       </div>
       <div>
         <textarea
@@ -66,7 +85,7 @@ export function CreateScheduleForm({ instanceId, onCancel, onCreated }: Props) {
           rows={2}
           {...register("task")}
         />
-        {errors.task && <p className="mt-1 text-[11px] text-danger">{errors.task.message}</p>}
+        <FormError message={errors.task?.message} />
       </div>
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-text-secondary">Session:</span>
