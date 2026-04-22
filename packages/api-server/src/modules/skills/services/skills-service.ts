@@ -3,8 +3,11 @@ import type {
   CreateSkillSourceInput,
   InstallSkillInput,
   LocalSkill,
+  PublishSkillInput,
+  PublishSkillResult,
   Skill,
   SkillRef,
+  SkillSource,
   SkillsService,
   UninstallSkillInput,
 } from "api-server-api";
@@ -15,6 +18,8 @@ import {
   type SkillsRepository,
 } from "../infrastructure/skills-repository.js";
 import type { AgentRuntimeSkillsClient } from "../infrastructure/agent-runtime-client.js";
+import { detectHost } from "../infrastructure/git-host.js";
+import { publishSkill as runPublishSkill } from "./publish-service.js";
 
 const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
@@ -26,6 +31,7 @@ export interface SkillsServiceDeps {
   getAgentToken: (agentId: string) => Promise<string>;
   owner: string;
   scanSource: (gitUrl: string) => Promise<Skill[]>;
+  invalidateScan: (gitUrl: string) => void;
 }
 
 async function resolveSkillPaths(
@@ -58,10 +64,30 @@ function removeSkill(current: SkillRef[], key: { source: string; name: string })
   return current.filter((s) => !(s.source === key.source && s.name === key.name));
 }
 
+/**
+ * canPublish is a soft signal: "the publish infrastructure knows how to
+ * target this host." True when the gitUrl parses as a GitHub URL — that's
+ * the only host our publish flow supports today. Authentication/authorization
+ * (is the user Connected in OneCLI? is this agent granted access?) is not
+ * preflighted here; any failure surfaces at publish time with a precise CTA
+ * from OneCLI's gateway. Cheaper + harder to get stale than a cluster call.
+ */
+function enrichSources(sources: SkillSource[]): SkillSource[] {
+  return sources.map((s) => (detectHost(s.gitUrl) ? { ...s, canPublish: true } : s));
+}
+
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
-    listSources: () => deps.repo.list(deps.owner),
-    getSource: (id) => deps.repo.get(id, deps.owner),
+    async listSources() {
+      const sources = await deps.repo.list(deps.owner);
+      return enrichSources(sources);
+    },
+    async getSource(id) {
+      const s = await deps.repo.get(id, deps.owner);
+      if (!s) return null;
+      const [enriched] = enrichSources([s]);
+      return enriched;
+    },
     createSource: (input: CreateSkillSourceInput) => deps.repo.create(input, deps.owner),
     async deleteSource(id) {
       try {
@@ -114,6 +140,32 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const updated = removeSkill(infra.skills, { source: input.source, name: input.name });
       await deps.instancesRepo.updateSpec(input.instanceId, deps.owner, { skills: updated });
       return updated;
+    },
+
+    async publishSkill(input: PublishSkillInput): Promise<PublishSkillResult> {
+      const result = await runPublishSkill(
+        {
+          owner: deps.owner,
+          sources: deps.repo,
+          instances: deps.instancesRepo,
+          agents: deps.agentsRepo,
+          runtimeClient: deps.runtimeClient,
+          getAgentToken: deps.getAgentToken,
+        },
+        input,
+      );
+      // Drop the scan cache for this source so the next listSkills reflects
+      // the merged PR (whenever that happens — we don't wait, we just stop
+      // serving a stale snapshot).
+      const source = await deps.repo.get(input.sourceId, deps.owner);
+      if (source) deps.invalidateScan(source.gitUrl);
+      return result;
+    },
+
+    async refreshSource(id: string): Promise<void> {
+      const source = await deps.repo.get(id, deps.owner);
+      if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "skill source not found" });
+      deps.invalidateScan(source.gitUrl);
     },
 
     async listLocal(instanceId: string): Promise<LocalSkill[]> {

@@ -94,4 +94,6 @@ export type {
   InstallSkillInput,
   UninstallSkillInput,
   LocalSkill,
+  PublishSkillInput,
+  PublishSkillResult,
 } from "./modules/skills/types.js";

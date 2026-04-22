@@ -12,6 +12,8 @@ export interface SkillSource {
   gitUrl: string;
   /** True when the source is managed by the cluster admin (Helm-seeded). Users can't delete it. */
   system?: boolean;
+  /** True when the current user has a publish credential stored for this source. */
+  canPublish?: boolean;
 }
 
 /** A skill available from a connected source. Version is the last-touching commit SHA. */
@@ -47,13 +49,28 @@ export interface LocalSkill {
   skillPath: string;
 }
 
+export interface PublishSkillInput {
+  instanceId: string;
+  sourceId: string;
+  name: string;
+  title?: string;
+  body?: string;
+}
+
+export interface PublishSkillResult {
+  prUrl: string;
+  branch: string;
+}
+
 export interface SkillsService {
   listSources: () => Promise<SkillSource[]>;
   getSource: (id: string) => Promise<SkillSource | null>;
   createSource: (input: CreateSkillSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
+  refreshSource: (id: string) => Promise<void>;
   listSkills: (sourceId: string) => Promise<Skill[]>;
   installSkill: (input: InstallSkillInput) => Promise<SkillRef[]>;
   uninstallSkill: (input: UninstallSkillInput) => Promise<SkillRef[]>;
   listLocal: (instanceId: string) => Promise<LocalSkill[]>;
+  publishSkill: (input: PublishSkillInput) => Promise<PublishSkillResult>;
 }

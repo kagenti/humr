@@ -107,6 +107,18 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
     (args) => skillsTools.uninstallSkill(args),
   );
 
+  server.tool(
+    "publish_skill",
+    "Publish a locally-authored skill from THIS instance as a pull request on a connected source. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+    {
+      sourceId: z.string().min(1),
+      name: z.string().min(1),
+      title: z.string().optional(),
+      body: z.string().optional(),
+    },
+    (args) => skillsTools.publishSkill(args),
+  );
+
   // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({

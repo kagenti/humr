@@ -7,6 +7,12 @@ const skillSourceViewSchema = z.object({
   name: z.string(),
   gitUrl: z.string(),
   system: z.boolean().optional(),
+  canPublish: z.boolean().optional(),
+});
+
+const publishResultSchema = z.object({
+  prUrl: z.string().url(),
+  branch: z.string(),
 });
 
 const skillViewSchema = z.object({
@@ -43,6 +49,12 @@ export const skillsRouter = t.router({
     delete: t.procedure
       .input(z.object({ id: z.string().min(1) }))
       .mutation(({ ctx, input }) => ctx.skills.deleteSource(input.id)),
+
+    /** Drop the scan cache for this source so the next listSkills re-queries
+     *  upstream. Called after merging a PR, pushing out-of-band, etc. */
+    refresh: t.procedure
+      .input(z.object({ id: z.string().min(1) }))
+      .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
   }),
 
   listSkills: t.procedure
@@ -77,4 +89,15 @@ export const skillsRouter = t.router({
     .input(z.object({ instanceId: z.string().min(1) }))
     .output(z.array(localSkillSchema))
     .query(({ ctx, input }) => ctx.skills.listLocal(input.instanceId)),
+
+  publish: t.procedure
+    .input(z.object({
+      instanceId: z.string().min(1),
+      sourceId: z.string().min(1),
+      name: z.string().min(1),
+      title: z.string().optional(),
+      body: z.string().optional(),
+    }))
+    .output(publishResultSchema)
+    .mutation(({ ctx, input }) => ctx.skills.publishSkill(input)),
 });

@@ -89,6 +89,8 @@ function makeEnv(opts: {
     install: runtimeInstall,
     uninstall: runtimeUninstall,
     listLocal: vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]),
+    readLocal: vi.fn<AgentRuntimeSkillsClient["readLocal"]>().mockResolvedValue([]),
+    publish: vi.fn<AgentRuntimeSkillsClient["publish"]>().mockResolvedValue({ prUrl: "x", branch: "y" }),
   };
 
   const getAgentToken = vi.fn<(agentId: string) => Promise<string>>().mockResolvedValue("agent-token-xyz");
@@ -101,6 +103,7 @@ function makeEnv(opts: {
     getAgentToken,
     owner: OWNER,
     scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
   });
 
   return { instancesGet, instancesUpdate, agentsGet, runtimeInstall, runtimeUninstall, getAgentToken, svc };
@@ -237,10 +240,13 @@ describe("skills-service listLocal", () => {
         install: vi.fn(),
         uninstall: vi.fn(),
         listLocal: runtimeListLocal,
+        readLocal: vi.fn(),
+        publish: vi.fn(),
       },
       getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
       scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
     });
 
     const result = await svc.listLocal(INSTANCE_ID);
@@ -269,10 +275,13 @@ describe("skills-service listLocal", () => {
         install: vi.fn(),
         uninstall: vi.fn(),
         listLocal: runtimeListLocal,
+        readLocal: vi.fn(),
+        publish: vi.fn(),
       },
       getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
     });
 
     expect(await svc.listLocal(INSTANCE_ID)).toEqual([]);
@@ -290,10 +299,13 @@ describe("skills-service listLocal", () => {
         install: vi.fn(),
         uninstall: vi.fn(),
         listLocal: runtimeListLocal,
+        readLocal: vi.fn(),
+        publish: vi.fn(),
       },
       getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
     });
 
     expect(await svc.listLocal("ghost")).toEqual([]);
@@ -312,6 +324,7 @@ describe("skills-service deleteSource", () => {
       getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
       scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
     });
 
     await expect(svc.deleteSource("skill-src-seed")).rejects.toMatchObject({

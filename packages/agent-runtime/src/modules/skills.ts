@@ -37,6 +37,255 @@ function parseFrontmatter(content: string): { name?: string; description?: strin
 
 const FRONTMATTER_READ_BYTES = 8 * 1024;
 
+export interface LocalSkillFile {
+  relPath: string;           // relative to the skill dir
+  content: string;           // UTF-8 text, or base64-encoded bytes when binary
+  base64?: true;
+}
+
+/** Max total raw bytes read per readLocalSkill call. Bigger → 413. */
+const MAX_SKILL_BYTES = 5 * 1024 * 1024;
+/** Skip any individual file above this size — a large binary isn't what
+ *  we're here for. Keeps surprises bounded inside the total cap. */
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+function hasNullBytes(buf: Buffer): boolean {
+  const len = Math.min(buf.length, 8192);
+  for (let i = 0; i < len; i++) if (buf[i] === 0) return true;
+  return false;
+}
+
+async function findLocalSkillDir(name: string, skillPaths: string[]): Promise<string | null> {
+  assertSafeSkillName(name);
+  for (const base of skillPaths) {
+    assertAbsoluteSkillPath(base);
+    const candidate = path.join(base, name);
+    try {
+      await fs.access(path.join(candidate, "SKILL.md"));
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+async function walkFiles(root: string): Promise<string[]> {
+  const out: string[] = [];
+  async function rec(dir: string) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const ent of entries) {
+      if (ent.name.startsWith(".")) continue;
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        await rec(full);
+      } else if (ent.isFile()) {
+        out.push(full);
+      }
+    }
+  }
+  await rec(root);
+  return out;
+}
+
+export class PayloadTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+export interface PublishSkillOpts {
+  name: string;
+  skillPaths: string[];
+  owner: string;
+  repo: string;
+  title: string;
+  body: string;
+}
+
+export interface PublishSkillResult {
+  prUrl: string;
+  branch: string;
+}
+
+const GITHUB_API = "https://api.github.com";
+
+interface GithubError {
+  status?: number;
+  error?: string;      // OneCLI gateway error codes (app_not_connected, access_restricted, …)
+  message?: string;
+  connect_url?: string;
+  manage_url?: string;
+  provider?: string;
+}
+
+/** Call an `api.github.com` endpoint. Passes the sentinel bearer; OneCLI's MITM
+ *  swaps it for the user's OAuth token. Throws a structured Error whose
+ *  `cause` carries OneCLI's JSON payload so the caller can extract
+ *  connect_url/manage_url. */
+async function githubFetch(path: string, init?: RequestInit): Promise<Response> {
+  const token = process.env.GH_TOKEN ?? "humr:sentinel";
+  return fetch(`${GITHUB_API}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+    },
+  });
+}
+
+async function githubJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await githubFetch(path, init);
+  const text = await res.text();
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  if (!res.ok) {
+    const err: GithubError =
+      typeof body === "object" && body !== null ? (body as GithubError) : {};
+    const detail =
+      err.message ?? (typeof body === "string" && body ? body : "github error");
+    const e = new Error(`github ${init?.method ?? "GET"} ${path} → ${res.status}: ${detail}`);
+    (e as Error & { cause?: unknown }).cause = { status: res.status, body: err };
+    throw e;
+  }
+  return body as T;
+}
+
+/**
+ * Publish a local skill to GitHub as a new branch + PR. Executes entirely
+ * via the REST API through OneCLI's MITM — no git subprocess, no working
+ * copy on disk. Requires:
+ *   - this pod to be running with `GH_TOKEN=humr:sentinel` + `HTTPS_PROXY`
+ *     pre-wired by the controller (always true in Humr)
+ *   - OneCLI to have `GITHUB_CLIENT_ID/SECRET` configured
+ *   - the current user to have Connect GitHub done in OneCLI
+ *   - this agent to be granted access to that GitHub connection
+ * Failure on any of the last three surfaces as a 401/403 from OneCLI's gateway
+ * with a structured error body (connect_url / manage_url) the caller can
+ * relay to the UI.
+ */
+export async function publishSkill(opts: PublishSkillOpts): Promise<PublishSkillResult> {
+  const { files } = await readLocalSkill(opts.name, opts.skillPaths);
+  const base = `/repos/${opts.owner}/${opts.repo}`;
+
+  const repoInfo = await githubJson<{ default_branch: string }>(base);
+  const defaultBranch = repoInfo.default_branch;
+
+  const headRef = await githubJson<{ object: { sha: string } }>(
+    `${base}/git/refs/heads/${encodeURIComponent(defaultBranch)}`,
+  );
+  const headSha = headRef.object.sha;
+
+  // 1. Create a blob per file.
+  const blobs = await Promise.all(
+    files.map(async (f) => {
+      const blob = await githubJson<{ sha: string }>(`${base}/git/blobs`, {
+        method: "POST",
+        body: JSON.stringify(
+          f.base64
+            ? { content: f.content, encoding: "base64" }
+            : { content: f.content, encoding: "utf-8" },
+        ),
+      });
+      return { path: `skills/${opts.name}/${f.relPath}`, sha: blob.sha };
+    }),
+  );
+
+  // 2. Tree referencing the blobs, parented on the default-branch HEAD tree.
+  const tree = await githubJson<{ sha: string }>(`${base}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({
+      base_tree: headSha,
+      tree: blobs.map((b) => ({
+        path: b.path,
+        mode: "100644",
+        type: "blob",
+        sha: b.sha,
+      })),
+    }),
+  });
+
+  // 3. Commit pointing at the tree.
+  const commit = await githubJson<{ sha: string }>(`${base}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({
+      message: `Add ${opts.name} skill\n\nPublished from Humr.`,
+      tree: tree.sha,
+      parents: [headSha],
+      author: {
+        name: "Humr",
+        email: "humr-publish@users.noreply.github.com",
+      },
+    }),
+  });
+
+  // 4. Create the branch ref.
+  const branch = `humr/publish-${opts.name}-${branchTimestamp()}`;
+  await githubJson(`${base}/git/refs`, {
+    method: "POST",
+    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+  });
+
+  // 5. Open the PR.
+  const pr = await githubJson<{ html_url: string }>(`${base}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: opts.title,
+      body: opts.body,
+      head: branch,
+      base: defaultBranch,
+    }),
+  });
+
+  return { prUrl: pr.html_url, branch };
+}
+
+function branchTimestamp(): string {
+  const d = new Date();
+  const p = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
+}
+
+/**
+ * Read a local skill's directory and return every file (SKILL.md + scripts/
+ * + whatever else) as a JSON-friendly payload. Text files come back as UTF-8
+ * strings; binary files are base64-encoded with `base64: true`. The api-server
+ * uses this to populate a cloned repo before committing.
+ */
+export async function readLocalSkill(name: string, skillPaths: string[]): Promise<{ files: LocalSkillFile[] }> {
+  const root = await findLocalSkillDir(name, skillPaths);
+  if (!root) throw new Error(`skill ${JSON.stringify(name)} not found in any skillPath`);
+
+  const absFiles = (await walkFiles(root)).sort();
+  const out: LocalSkillFile[] = [];
+  let total = 0;
+
+  for (const abs of absFiles) {
+    const stat = await fs.stat(abs);
+    if (stat.size > MAX_FILE_BYTES) {
+      throw new PayloadTooLargeError(`${path.relative(root, abs)} is ${stat.size} bytes (max ${MAX_FILE_BYTES})`);
+    }
+    total += stat.size;
+    if (total > MAX_SKILL_BYTES) {
+      throw new PayloadTooLargeError(`skill exceeds ${MAX_SKILL_BYTES} bytes total`);
+    }
+    const buf = await fs.readFile(abs);
+    const relPath = path.relative(root, abs);
+    if (hasNullBytes(buf)) {
+      out.push({ relPath, content: buf.toString("base64"), base64: true });
+    } else {
+      out.push({ relPath, content: buf.toString("utf8") });
+    }
+  }
+
+  return { files: out };
+}
+
 /**
  * Enumerate skill directories under each path. A directory is a skill when it
  * contains SKILL.md. Dedup by directory name across paths (first-wins), and
