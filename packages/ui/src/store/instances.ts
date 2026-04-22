@@ -126,7 +126,6 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
     // doesn't bleed into this one.
     if (prev && prev !== id) {
       resetQueryTracker(`sessions:${prev}`);
-      resetQueryTracker(`schedules:${prev}`);
     }
     set({ selectedInstance: id, view: "chat", mobileScreen: "sessions", showMobilePanel: false });
   },
@@ -137,7 +136,6 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
     get().resetChatContext();
     if (prev) {
       resetQueryTracker(`sessions:${prev}`);
-      resetQueryTracker(`schedules:${prev}`);
     }
     set({ selectedInstance: null, view: "list", showMobilePanel: false });
     get().fetchAgents();
