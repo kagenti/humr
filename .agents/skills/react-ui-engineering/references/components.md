@@ -138,6 +138,32 @@ When a component passes through children, type them explicitly rather than exten
 
 The second form is also a DRY candidate: a toggle-in-Set pattern shows up whenever the user picks a subset from a list. Extract to a `useToggleSet()` hook (see `references/hooks.md`).
 
+## Destructuring
+
+**[MODERATE]** When a prop, a nested field, or an API return is referenced multiple times in the same scope, destructure once and reference by name. Long repeated paths are noise the reader has to filter out on every line.
+
+```tsx
+❌ {schedule.status.lastRun && <span>last: {schedule.status.lastRun}</span>}
+   {schedule.status.nextRun && <span>next: {schedule.status.nextRun}</span>}
+   {schedule.status.lastResult && <span>{schedule.status.lastResult}</span>}
+
+✅ const { lastRun, nextRun, lastResult } = schedule.status;
+   …
+   {lastRun && <span>last: {lastRun}</span>}
+   {nextRun && <span>next: {nextRun}</span>}
+   {lastResult && <span>{lastResult}</span>}
+```
+
+Single-use access stays inline — don't destructure for its own sake. A prop or object referenced once reads fine as `schedule.cron`.
+
+**Narrow first, then destructure.** When a field is optional, destructure after the guard so TypeScript's narrowing is preserved:
+```tsx
+if (!schedule.status) return null;
+const { lastRun, nextRun, lastResult } = schedule.status;
+```
+
+Equivalently, inside a `{schedule.status && …}` branch, pull `status` out first (`const { status } = schedule` at the top, then use `status.X` inside the guard) or extract a `<StatusLine status={status} />` subcomponent that destructures in its own signature.
+
 ## Conditional rendering
 
 **[MODERATE]** Keep conditionals shallow. Nested ternaries are hard to read:

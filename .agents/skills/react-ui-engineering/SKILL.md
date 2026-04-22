@@ -57,6 +57,7 @@ Each of these is expanded in a reference file. Severity in brackets.
 - [HIGH] Names carry intent. Variables, functions, types, and components are named for what they represent, not for their type, position, or abbreviation (`selectedAgentId` not `sel`, `handleSubmit` not `h`, `Agent` not `Data`, `hasPendingChanges` not `dirty`). If you're reaching for a comment to explain a name, rename it.
 - [HIGH] Comments explain *why*, not *what*. Add a brief comment only when code contains something a future reader couldn't infer: a subtle invariant, a workaround for a specific bug, a constraint from an external system. Delete comments that restate the code.
 - [MODERATE] One line is enough for most comments. Multi-paragraph docstrings and block comments are almost always a sign that the code itself should be clearer.
+- [MODERATE] Destructure when a path repeats in a scope. `schedule.status.lastRun`, `schedule.status.nextRun`, `schedule.status.lastResult` → `const { lastRun, nextRun, lastResult } = status;` (after the guard that narrows `status`). Single-use access stays inline — don't destructure for its own sake. See `references/components.md`.
 
 ### Structure & files
 - [CRITICAL] Organize by **domain modules**, not technical layers. New code goes in `src/modules/{domain}/` with `api/`, `components/`, `hooks/`, `types.ts`. See `references/project-structure.md`.
