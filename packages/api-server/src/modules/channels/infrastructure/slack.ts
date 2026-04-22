@@ -240,15 +240,17 @@ export function createSlackWorker(
     threadTs: string,
     instanceName: string,
     response: string,
+    opts: { forkId?: string } = {},
   ) {
     if (!app) return;
+    const suffix = opts.forkId ? ` · fork \`${opts.forkId}\`` : "";
     await app.client.chat.postMessage({
       channel,
       thread_ts: threadTs,
       text: response || "(no response)",
       blocks: [
         { type: "markdown", text: response || "(no response)" },
-        { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
+        { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}${suffix}_` }] },
       ],
     });
   }
@@ -677,7 +679,7 @@ export function createSlackWorker(
           ? await acp.sendPrompt(prompt, { resumeSessionId: existingSessionId })
           : await acp.sendPrompt(prompt);
         if (existingSessionId) await threadSessions.touch(existingSessionId);
-        await postAssistantMessage(channel, threadTs, instanceName, response);
+        await postAssistantMessage(channel, threadTs, instanceName, response, { forkId: event.forkId });
       } catch (err) {
         process.stderr.write(`[slack/fork ${event.forkId}] ACP error: ${err}\n`);
         await app.client.chat.postMessage({
