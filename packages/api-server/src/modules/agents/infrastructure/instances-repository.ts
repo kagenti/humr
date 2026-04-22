@@ -1,7 +1,6 @@
 import type { K8sClient } from "./k8s.js";
 import {
   LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF,
-  LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY,
 } from "./labels.js";
 import {
   parseInfraInstance, isOwnedBy, hasType,
@@ -19,6 +18,7 @@ export interface InstancesRepository {
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraInstance | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
+  getOwner(id: string): Promise<string | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
   isPodReady(id: string): Promise<boolean>;
@@ -108,6 +108,12 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
     async isOwnedBy(id, owner) {
       const cm = await k8s.getConfigMap(id);
       return cm !== null && isOwnedBy(cm, owner);
+    },
+
+    async getOwner(id) {
+      const cm = await k8s.getConfigMap(id);
+      if (!cm || !hasType(cm, TYPE_INSTANCE)) return null;
+      return cm.metadata?.labels?.[LABEL_OWNER] ?? null;
     },
 
     async patchAnnotation(id, key, value) {

@@ -38,8 +38,14 @@ function detectMode(envName?: string): Mode {
   return envName === ANTHROPIC_API_KEY_ENV_MAPPING.envName ? "api-key" : "oauth";
 }
 
+// `claude setup-token` output often gets a newline inserted mid-string when copied
+// from a terminal, so strip all whitespace rather than just trimming the ends.
+function stripWhitespace(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
 function mismatchError(value: string, mode: Mode): string | null {
-  const v = value.trim();
+  const v = stripWhitespace(value);
   if (!v) return null;
   for (const m of Object.keys(MODES) as Mode[]) {
     if (m !== mode && v.startsWith(MODES[m].prefix)) {
@@ -213,8 +219,8 @@ function AnthropicForm({
   const testTokenRef = useRef(0);
 
   const error = mismatchError(value, mode);
-  const trimmed = value.trim();
-  const canSave = trimmed.length > 0 && !error && !saving && !testing;
+  const sanitized = stripWhitespace(value);
+  const canSave = sanitized.length > 0 && !error && !saving && !testing;
 
   useEffect(() => {
     testTokenRef.current++;
@@ -225,7 +231,7 @@ function AnthropicForm({
     if (!canSave) return;
     setSaving(true);
     try {
-      await onSave({ mode, value: trimmed });
+      await onSave({ mode, value: sanitized });
       setValue("");
     } finally {
       setSaving(false);
@@ -239,7 +245,7 @@ function AnthropicForm({
     setTestResult(null);
     try {
       const result = await platform.secrets.testAnthropic.mutate({
-        value: trimmed,
+        value: sanitized,
         envName: mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
       });
       if (token !== testTokenRef.current) return;
@@ -355,7 +361,7 @@ function QuickSetupHint() {
           {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
         </button>
       </span>{" "}
-      inside a Claude Code agent to generate a token.
+      on your own machine (with Claude Code installed) to generate a token.
     </div>
   );
 }

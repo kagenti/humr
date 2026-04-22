@@ -23,7 +23,7 @@ export function computeState(infra: InfraInstance): InstanceState {
 export function assembleInstance(
   infra: InfraInstance,
   channels: ChannelConfig[],
-  allowedUsers: string[] = [],
+  allowedUserEmails: string[] = [],
 ): Instance {
   return {
     id: infra.id,
@@ -33,7 +33,7 @@ export function assembleInstance(
     state: computeState(infra),
     error: infra.currentState === "error" ? infra.error : undefined,
     channels,
-    allowedUsers,
+    allowedUserEmails,
   };
 }
 

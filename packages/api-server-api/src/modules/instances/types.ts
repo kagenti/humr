@@ -23,7 +23,7 @@ export interface Instance {
   state: InstanceState;
   error?: string;
   channels: ChannelConfig[];
-  allowedUsers: string[];
+  allowedUserEmails: string[];
 }
 
 export interface CreateInstanceInput {
@@ -32,14 +32,14 @@ export interface CreateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   description?: string;
-  allowedUsers?: string[];
+  allowedUserEmails?: string[];
 }
 
 export interface UpdateInstanceInput {
   id: string;
   env?: EnvVar[];
   secretRef?: string;
-  allowedUsers?: string[];
+  allowedUserEmails?: string[];
 }
 
 export interface InstancesService {
@@ -52,4 +52,5 @@ export interface InstancesService {
   wake: (id: string) => Promise<Instance | null>;
   connectSlack: (id: string, slackChannelId: string) => Promise<Instance | null>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
+  isAllowedUser: (instanceId: string, keycloakSub: string) => Promise<boolean>;
 }

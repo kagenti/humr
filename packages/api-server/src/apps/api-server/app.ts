@@ -10,6 +10,7 @@ import {
 } from "../../modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./../../modules/agents/infrastructure/instances-repository.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
+import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createAcpRelay } from "../../acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
@@ -39,6 +40,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
+
+  const userDirectory = createKeycloakUserDirectory({
+    keycloakUrl: config.keycloakUrl,
+    keycloakRealm: config.keycloakRealm,
+    clientId: config.keycloakApiClientId,
+    clientSecret: config.keycloakApiClientSecret,
+  });
 
   const auth = createAuth({
     issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
@@ -110,7 +118,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const userJwt = c.req.header("authorization")!.slice(7);
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db);
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
     });

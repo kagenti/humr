@@ -112,6 +112,10 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   if [ ! -d /var/lib/rancher/k3s ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
+    echo "Installing nfs-common for RWX PVC support..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+    echo "mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
     for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
       yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
     done

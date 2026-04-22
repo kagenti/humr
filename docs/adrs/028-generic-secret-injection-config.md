@@ -1,4 +1,4 @@
-# ADR-027: Configurable injection on generic secrets
+# ADR-028: Configurable injection on generic secrets
 
 **Date:** 2026-04-21
 **Status:** Accepted

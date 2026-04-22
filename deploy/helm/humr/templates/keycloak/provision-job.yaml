@@ -82,6 +82,8 @@ spec:
               value: {{ .Values.onecli.oauth.clientId | quote }}
             - name: SOURCE_CLIENTS
               value: {{ printf "%s,%s" .Values.keycloak.apiClientId .Values.keycloak.controllerClientId | quote }}
+            - name: API_CLIENT_ID
+              value: {{ .Values.keycloak.apiClientId | quote }}
           command: ["sh", "-c"]
           args:
             - |
@@ -184,6 +186,18 @@ spec:
                   --arg r "$USER_RESOURCE" --arg s "$IMP_SCOPE" --arg p "$POL_ID" \
                   '{name:$n,resources:[$r],scopes:[$s],policies:[$p],decisionStrategy:"UNANIMOUS"}')" > /dev/null
               echo "Impersonation permission configured"
+
+              # 8. Grant view-users role from realm-management to the API service account
+              API_UUID=$(client_uuid "$API_CLIENT_ID")
+              SA_USER_ID=$(curl -f -s -H "$AUTH" \
+                "$KC_URL/admin/realms/$KC_REALM/clients/$API_UUID/service-account-user" | jq -r '.id')
+              VIEW_USERS_ROLE=$(curl -f -s -H "$AUTH" \
+                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/roles/view-users")
+              curl -f -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
+                "$KC_URL/admin/realms/$KC_REALM/users/$SA_USER_ID/role-mappings/clients/$RM_UUID" \
+                -d "[$VIEW_USERS_ROLE]" > /dev/null
+              echo "Granted view-users to $API_CLIENT_ID service account"
+
               echo "Done"
       volumes:
         - name: realm-config

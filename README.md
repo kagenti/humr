@@ -10,11 +10,13 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 ## What you get
 
-- **Zero-trust isolation** — Every agent runs in its own pod with its own filesystem, network, and credentials. Outbound traffic routes through a proxy that injects real API keys; the agent never sees them. Network policy drops everything else. A compromised agent has nothing to steal and nowhere to go.
+- **Isolated by design** — Each agent runs in its own sandbox: separate pod, process, and filesystem. API keys live in a proxy; the agent never sees them. Network access is locked to destinations you've approved. That contains two of the three big agent-security risks structurally. [Security model →](docs/security-model.md)
 
 - **Always-on scheduling** — Cron lives on the platform, not your laptop. Scheduled tasks look identical to human messages from the agent's perspective. Workspace and conversation history persist across restarts.
 
-- **Slack-native channels** — One Slack app, unlimited agents. Per-thread routing, identity linking via `/humr login`, per-instance access control. Your agents live where your team already works.
+- **Built for team collaboration** — Until now, coding agents have been 1:1: you and your copilot. Humr unlocks N people collaborating with 1 or many agents, multi-tenant from the ground up.
+
+- **Slack-native channels** — One Slack app, unlimited agents, per-thread routing. Your agents live where your team already works.
 
 - **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Gemini CLI, or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works too. No lock-in to one vendor's SDK or cloud.
 
@@ -58,4 +60,5 @@ Open [humr.localhost:4444](http://humr.localhost:4444) (login: `dev` / `dev`), c
 ## Learn more
 
 - **[Guide](docs/guide.md)** — credential setup, Slack integration, development workflow, architecture overview
+- **[Security model](docs/security-model.md)** — the three big risks when running AI agents, how Humr handles each, and what's still unsolved
 - **[Why Humr exists](PITCH.md)** — the three problems every agent hits in production, how Humr solves each, and a 5-minute walkthrough
