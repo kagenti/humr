@@ -4,6 +4,7 @@ import {
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import { getAccessToken } from "./auth.js";
+import { useStore, type PermissionOption, type PermissionOutcome } from "./store.js";
 
 export type UpdateHandler = (update: any) => void;
 
@@ -50,6 +51,30 @@ async function wsUrl(instanceId: string): Promise<string> {
   return `${proto}//${location.host}/api/instances/${instanceId}/acp?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Hand a permission request off to the store and await the user's choice. The
+ * returned promise stays pending until a human picks an option (or cancels) —
+ * there is no client-side auto-approve, and no timeout. If the WebSocket dies
+ * before the user responds, the agent-runtime replays the request on the next
+ * connection, which overwrites the pending entry and supplies a fresh resolver.
+ */
+function awaitPermission(params: {
+  sessionId: string;
+  toolCall?: { toolCallId?: string };
+  options?: PermissionOption[];
+}): Promise<PermissionOutcome> {
+  return new Promise((resolve) => {
+    const toolCallId = params.toolCall?.toolCallId ?? crypto.randomUUID();
+    useStore.getState().addPendingPermission({
+      toolCallId,
+      sessionId: params.sessionId,
+      toolCall: params.toolCall,
+      options: params.options ?? [],
+      resolve,
+    });
+  });
+}
+
 export async function openConnection(
   instanceId: string,
   onUpdate: UpdateHandler,
@@ -58,17 +83,7 @@ export async function openConnection(
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
-        const opts: Array<{ kind?: string; optionId: string }> = params.options ?? [];
-        const pick =
-          opts.find((o) => o.kind === "allow_always") ??
-          opts.find((o) => o.kind === "allow_once") ??
-          opts[0];
-        return {
-          outcome: {
-            outcome: "selected" as const,
-            optionId: pick.optionId,
-          },
-        };
+        return awaitPermission(params);
       },
       async sessionUpdate(params: any) {
         onUpdate(params.update);
@@ -78,6 +93,15 @@ export async function openConnection(
       },
       async readTextFile() {
         return { content: "" };
+      },
+      // Our runtime emits a custom `humr/turnEnded` notification on the last
+      // response of each prompt so viewers that didn't originate the prompt
+      // can close their in-progress assistant bubble. Surface it through the
+      // same `onUpdate` channel as a synthetic `sessionUpdate`.
+      async extNotification(method: string, params: any) {
+        if (method === "humr/turnEnded") {
+          onUpdate({ sessionUpdate: "humr_turn_ended", sessionId: params?.sessionId });
+        }
       },
     }),
     stream,

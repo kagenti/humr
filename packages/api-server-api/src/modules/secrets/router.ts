@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { ENV_NAME_RE } from "./types.js";
+import { ANTHROPIC_API_KEY_ENV_MAPPING, ENV_NAME_RE } from "./types.js";
 
 const secretTypeSchema = z.enum(["anthropic", "generic"]);
 
@@ -19,6 +19,14 @@ const injectionConfigSchema = z.object({
   headerName: z.string().min(1).max(255),
   valueFormat: z.string().max(1000).optional(),
 });
+
+function messageForStatus(status: number): string {
+  if (status === 401) return "Invalid credential.";
+  if (status === 403) return "Credential lacks required permissions.";
+  if (status === 429) return "Rate limited by Anthropic.";
+  if (status >= 500) return "Anthropic is unavailable right now.";
+  return `Unexpected response (${status}).`;
+}
 
 export const secretsRouter = t.router({
   list: t.procedure.query(({ ctx }) => ctx.secrets.list()),
@@ -77,6 +85,37 @@ export const secretsRouter = t.router({
   getAgentAccess: t.procedure
     .input(z.object({ agentName: z.string().min(1) }))
     .query(({ ctx, input }) => ctx.secrets.getAgentAccess(input.agentName)),
+
+  testAnthropic: t.procedure
+    .input(
+      z.object({
+        value: z.string().min(1),
+        envName: z.enum(["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
+      if (input.envName === ANTHROPIC_API_KEY_ENV_MAPPING.envName) {
+        headers["x-api-key"] = input.value;
+      } else {
+        headers["Authorization"] = `Bearer ${input.value}`;
+        headers["anthropic-beta"] = "oauth-2025-04-20";
+      }
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+          method: "GET",
+          headers,
+        });
+        if (res.ok) return { ok: true as const };
+        return {
+          ok: false as const,
+          status: res.status,
+          message: messageForStatus(res.status),
+        };
+      } catch {
+        return { ok: false as const, message: "Could not reach Anthropic." };
+      }
+    }),
 
   setAgentAccess: t.procedure
     .input(

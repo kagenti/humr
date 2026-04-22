@@ -73,18 +73,21 @@ describe("extractIdentity", () => {
 });
 
 describe("ConnectionsService.list", () => {
+  // Fixture uses a fictional provider — this service is provider-agnostic and
+  // just passes OneCLI's joined fields through to the view shape.
   const conn: OnecliAppConnection = {
     id: "c-1",
-    provider: "gmail",
-    providerName: "Gmail",
+    provider: "acme-app",
+    providerName: "Acme App",
     label: "user@example.com",
     status: "connected",
-    scopes: ["openid"],
+    scopes: ["read"],
     metadata: { email: "user@example.com" },
     connectedAt: "2026-04-17T00:00:00Z",
+    envMappings: [{ envName: "ACME_TOKEN", placeholder: "test-placeholder" }],
   };
 
-  it("uses OneCLI's providerName as the label, with identity as subtitle", async () => {
+  it("uses OneCLI's providerName as the label, with identity as subtitle, and passes through envMappings", async () => {
     const svc = createConnectionsService({
       port: makePort({ listAppConnections: async () => [conn] }),
     });
@@ -92,21 +95,42 @@ describe("ConnectionsService.list", () => {
     expect(rows).toEqual([
       {
         id: "c-1",
-        provider: "gmail",
-        label: "Gmail",
+        provider: "acme-app",
+        label: "Acme App",
         status: "connected",
         identity: "user@example.com",
-        scopes: ["openid"],
+        scopes: ["read"],
         connectedAt: "2026-04-17T00:00:00Z",
+        envMappings: [{ envName: "ACME_TOKEN", placeholder: "test-placeholder" }],
       },
     ]);
+  });
+
+  it("omits envMappings when the OneCLI response has none (provider lacks declared envs)", async () => {
+    const svc = createConnectionsService({
+      port: makePort({
+        listAppConnections: async () => [{ ...conn, envMappings: null }],
+      }),
+    });
+    const rows = await svc.list();
+    expect(rows[0]).not.toHaveProperty("envMappings");
+  });
+
+  it("omits envMappings when the array is empty", async () => {
+    const svc = createConnectionsService({
+      port: makePort({
+        listAppConnections: async () => [{ ...conn, envMappings: [] }],
+      }),
+    });
+    const rows = await svc.list();
+    expect(rows[0]).not.toHaveProperty("envMappings");
   });
 
   it("falls back to OneCLI label then provider id when providerName is missing", async () => {
     const svc = createConnectionsService({
       port: makePort({
         listAppConnections: async () => [
-          // older OneCLI (<0.0.14) — providerName absent entirely
+          // older OneCLI — providerName absent entirely
           { ...conn, providerName: undefined, label: "user@example.com" },
           // registry orphan — providerName explicitly null
           { ...conn, id: "c-2", providerName: null, label: null },
@@ -117,8 +141,8 @@ describe("ConnectionsService.list", () => {
     });
     const rows = await svc.list();
     expect(rows[0].label).toBe("user@example.com");
-    expect(rows[1].label).toBe("gmail");
-    expect(rows[2].label).toBe("gmail");
+    expect(rows[1].label).toBe("acme-app");
+    expect(rows[2].label).toBe("acme-app");
   });
 
   it("omits optional scopes and connectedAt when absent", async () => {

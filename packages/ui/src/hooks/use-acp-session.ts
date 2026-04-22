@@ -5,68 +5,54 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
-import type { Message, MessagePart, Attachment, ToolChip } from "../types.js";
-import { instanceState } from "./../components/status-indicator.js";
+import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant, isTextMime } from "../session-projection.js";
+import type { Message, Attachment } from "../types.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
-import { createMessageThread } from "../lib/message-thread.js";
-
-// ── Shared helpers ──
-
-/** Extract tool content from ACP update payloads */
-function mapToolContent(content: any[] | undefined) {
-  return content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
-}
-
-/** Strip system tags from text chunks */
-function cleanText(raw: string): string {
-  return raw.replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
-}
-
-/** Detect text-based files. Browsers often leave file.type empty for Markdown, YAML, etc. */
-const TEXT_EXTENSIONS = new Set([
-  ".md", ".mdx", ".txt", ".json", ".jsonl", ".csv", ".tsv", ".yaml", ".yml",
-  ".xml", ".html", ".htm", ".css", ".scss", ".js", ".jsx", ".ts", ".tsx",
-  ".py", ".rb", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".sh",
-  ".toml", ".ini", ".env", ".log", ".sql", ".graphql", ".svg",
-]);
+import { runQuery } from "../store/query-helpers.js";
 
 /**
- * Parse a replayed user message into chip + text parts.
+ * Read a human-readable message off any error shape we may see here. The
+ * promise that `prompt`/`loadSession` returns can reject with:
+ *  - an `Error` / `DOMException` — has `.message`
+ *  - the raw JSON-RPC error `{ code, message, data }` — has `.message`
+ *  - a WebSocket `CloseEvent` on connection drop — no message; use `code`/`reason`
+ *  - a WebSocket `Event` from `onerror` — browsers omit useful details here
  *
- * The Claude SDK round-trips uploaded attachments back as text:
- *  - text files become `<context ref="file:///NAME">FULL_BODY</context>`
- *  - binary files become `[@NAME](file:///PATH)`
- *
- * Both should render as a file chip — we don't want to dump the whole file
- * body into the user bubble.
+ * The fallback `String(e)` on an Event yields `[object Event]`, which is what
+ * users were seeing on disconnect.
  */
-function parseUserText(text: string): MessagePart[] {
-  const parts: MessagePart[] = [];
-  const regex = /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = regex.exec(text)) !== null) {
-    if (m.index > last) {
-      const seg = text.slice(last, m.index).trim();
-      if (seg) parts.push({ kind: "text", text: seg });
-    }
-    const name = m[1] ?? m[2] ?? m[3];
-    parts.push({ kind: "file", name, mimeType: "" });
-    last = m.index + m[0].length;
+function extractErrorMessage(e: unknown): string {
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message: unknown }).message;
+    if (typeof m === "string" && m) return m;
   }
-  if (last < text.length) {
-    const seg = text.slice(last).trim();
-    if (seg) parts.push({ kind: "text", text: seg });
+  if (e instanceof Error) return e.message;
+  if (typeof CloseEvent !== "undefined" && e instanceof CloseEvent) {
+    return e.reason || `Connection closed (code ${e.code})`;
   }
-  return parts.length > 0 ? parts : [{ kind: "text", text }];
+  if (typeof Event !== "undefined" && e instanceof Event) {
+    return "Connection error";
+  }
+  return String(e);
 }
 
-function isTextMime(mime: string, name: string): boolean {
-  if (mime.startsWith("text/")) return true;
-  if (mime === "application/json" || mime === "application/xml") return true;
-  const dot = name.lastIndexOf(".");
-  if (dot !== -1 && TEXT_EXTENSIONS.has(name.substring(dot).toLowerCase())) return true;
-  return false;
+/**
+ * Classify a resume-time failure so the inline error card can render the
+ * right message and action. Prefers structured error fields (ACP JSON-RPC
+ * `code`, tRPC `data.code`) over regexing the human-readable message — the
+ * latter breaks the moment server wording changes.
+ */
+function classifyResumeError(e: unknown): "not-found" | "connection" | "other" {
+  if (e && typeof e === "object") {
+    const anyE = e as { code?: unknown; data?: { code?: unknown } };
+    if (anyE.code === -32002) return "not-found";
+    if (anyE.data?.code === "NOT_FOUND") return "not-found";
+    if (e instanceof DOMException) return "connection";
+  }
+  const msg = extractErrorMessage(e);
+  if (/not\s*found/i.test(msg)) return "not-found";
+  if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
+  return "other";
 }
 
 // ── Hook ──
@@ -78,7 +64,7 @@ export function useAcpSession(
 ) {
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
-  const busy = useStore((s) => s.busy);
+  const messages = useStore((s) => s.messages);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setSessions = useStore((s) => s.setSessions);
@@ -89,21 +75,39 @@ export function useAcpSession(
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
   const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
-  const setQueuedMessage = useStore((s) => s.setQueuedMessage);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const includeChannelSessions = useStore((s) => s.includeChannelSessions);
+  const setSessionError = useStore((s) => s.setSessionError);
+  const showToast = useStore((s) => s.showToast);
 
   const connectionRef = useRef<{ connection: ClientSideConnection; ws: WebSocket } | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
-  const currentAssistantIdRef = useRef<string | null>(null);
   const ensureConnectionInFlight = useRef<Promise<ClientSideConnection | null> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const isMountedRef = useRef(true);
+  const reconnectFnRef = useRef<(() => void) | null>(null);
+  // Session IDs already persisted to the platform DB. We only upsert after a
+  // prompt actually succeeds, so opening the app without sending anything
+  // (or StrictMode double-mount) doesn't leave empty rows in the sidebar.
+  const persistedSessionsRef = useRef<Set<string>>(new Set());
 
-  // Cleanup refs on unmount
+  // Derive busy from the projection instead of tracking it with explicit
+  // setBusy calls scattered across sendPrompt/resume/disconnect paths. The
+  // projection owns streaming state on every message, so "any streaming
+  // assistant" is the authoritative answer.
+  const busy = hasStreamingAssistant(messages);
+  useEffect(() => { setBusy(busy); }, [busy, setBusy]);
+
   useEffect(() => () => {
+    isMountedRef.current = false;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     connectionRef.current?.ws.close();
     connectionRef.current = null;
     activeSessionIdRef.current = null;
-    currentAssistantIdRef.current = null;
   }, []);
 
   // ── Config capture & caching ──
@@ -132,7 +136,6 @@ export function useAcpSession(
     }
   }, [setSessionModes, setSessionConfigOptions]);
 
-  // Derive the selected instance's state for use as a stable dep
   const instanceRunState = instances.find(i => i.id === selectedInstance)?.state;
 
   // Restore cached config or fetch via throwaway session
@@ -154,14 +157,11 @@ export function useAcpSession(
       if (data.configOptions?.length) setSessionConfigOptions(data.configOptions);
     };
 
-    // Try cache first
     try {
       const raw = localStorage.getItem(`humr-cached-config:${selectedInstance}`);
       if (raw) { applyConfig(JSON.parse(raw)); return; }
     } catch {}
 
-    // Fetch from throwaway session (retry up to 3 times — the ACP server
-    // inside the pod may not be ready immediately after state flips to running)
     if (instanceRunState !== "running") return;
     let cancelled = false;
 
@@ -181,7 +181,7 @@ export function useAcpSession(
           const data = { modes: s.modes, models: s.models, configOptions: s.configOptions };
           try { localStorage.setItem(`humr-cached-config:${selectedInstance}`, JSON.stringify(data)); } catch {}
           applyConfig(data);
-          return; // success
+          return;
         } catch {
           if (!cancelled) await new Promise(r => setTimeout(r, 2000));
         }
@@ -195,7 +195,7 @@ export function useAcpSession(
   useEffect(() => {
     if (!selectedInstance) return;
     const inst = instances.find(i => i.id === selectedInstance);
-    if (inst && instanceState(inst) === "hibernated") {
+    if (inst?.state === "hibernated") {
       platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);
@@ -206,11 +206,14 @@ export function useAcpSession(
     if (!selectedInstance) return false;
     const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
     if (inst?.state !== "running") return false;
-    try {
-      const list = await platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions });
-      setSessions(list);
-      return true;
-    } catch { return false; }
+    const list = await runQuery(
+      `sessions:${selectedInstance}`,
+      () => platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions }),
+      { fallback: "Couldn't refresh session list" },
+    );
+    if (!list) return false;
+    setSessions(list);
+    return true;
   }, [selectedInstance, includeChannelSessions, setSessions]);
 
   useEffect(() => {
@@ -229,63 +232,44 @@ export function useAcpSession(
     return () => { stopped = true; };
   }, [selectedInstance, fetchSessions, setLoadingSessions]);
 
-  // ── Streaming update handler (shared between live prompts) ──
+  // ── Streaming update handler ──
 
-  function createLiveUpdateHandler() {
+  /** Drop a pending permission prompt whose resolution arrived out-of-band —
+   *  either another client answered it or the agent proceeded without one.
+   *  Local-only: we don't resolve the ACP promise, just clean up the UI. */
+  const dismissStalePermission = useCallback((toolCallId: string | undefined) => {
+    if (!toolCallId) return;
+    const pending = useStore.getState().pendingPermissions;
+    if (pending.some((p) => p.toolCallId === toolCallId)) {
+      useStore.getState().dismissPendingPermission(toolCallId);
+    }
+  }, []);
+
+  /** Build an update handler that feeds every sessionUpdate through the
+   *  pure projection and fires a couple of side effects (log entries,
+   *  permission-dialog cleanup) that aren't about message shape. */
+  const makeUpdateHandler = useCallback(() => {
     return (u: any) => {
       handleConfigUpdate(u);
-      const aid = currentAssistantIdRef.current;
-      if (!aid) return;
 
-      if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
-        setMessages((p) =>
-          p.map((m) => {
-            if (m.id !== aid) return m;
-            const parts = [...m.parts];
-            const l = parts[parts.length - 1];
-            l?.kind === "text"
-              ? (parts[parts.length - 1] = { kind: "text", text: l.text + u.content.text })
-              : parts.push({ kind: "text", text: u.content.text });
-            return { ...m, parts };
-          }),
-        );
-        addLog("text", { text: u.content.text });
-      } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "image") {
-        setMessages((p) =>
-          p.map((m) => {
-            if (m.id !== aid) return m;
-            return { ...m, parts: [...m.parts, { kind: "image", data: u.content.data, mimeType: u.content.mimeType }] };
-          }),
-        );
-        addLog("image", { mimeType: u.content.mimeType });
-      } else if (u.sessionUpdate === "tool_call") {
-        const content = mapToolContent(u.content);
-        setMessages((p) =>
-          p.map((m) =>
-            m.id === aid
-              ? { ...m, parts: [...m.parts, { kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content } as ToolChip] }
-              : m,
-          ),
-        );
-        addLog("tool", { title: u.title, status: u.status });
-      } else if (u.sessionUpdate === "tool_call_update") {
-        const newContent = mapToolContent(u.content);
-        setMessages((p) =>
-          p.map((m) => {
-            if (m.id !== aid) return m;
-            const parts = m.parts.map((part) =>
-              part.kind === "tool" && part.toolCallId === u.toolCallId
-                ? { ...part, status: u.status ?? part.status, title: u.title ?? part.title, content: newContent?.length ? newContent : part.content }
-                : part,
-            );
-            return { ...m, parts };
-          }),
-        );
+
+      if ((u?.sessionUpdate === "tool_call" || u?.sessionUpdate === "tool_call_update")
+          && u.status && u.status !== "pending") {
+        dismissStalePermission(u.toolCallId);
       }
-    };
-  }
 
-  // ── Apply saved preferences to a session (new or resumed) ──
+      if (u?.sessionUpdate === "agent_message_chunk") {
+        if (u.content?.type === "text") addLog("text", { text: u.content.text });
+        else if (u.content?.type === "image") addLog("image", { mimeType: u.content.mimeType });
+      } else if (u?.sessionUpdate === "tool_call") {
+        addLog("tool", { title: u.title, status: u.status });
+      }
+
+      setMessages((prev) => applyUpdate(prev, u));
+    };
+  }, [handleConfigUpdate, dismissStalePermission, addLog, setMessages]);
+
+  // ── Apply saved preferences to a session ──
 
   async function applySavedPreferences(
     conn: ClientSideConnection,
@@ -320,18 +304,21 @@ export function useAcpSession(
     if (!selectedInstance) return null;
 
     if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
-      const { connection, ws } = await openConnection(selectedInstance, createLiveUpdateHandler());
+      const { connection, ws } = await openConnection(selectedInstance, makeUpdateHandler());
       await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
       // addEventListener (not onclose=) so we don't clobber the handler that
       // closes the ACP ReadableStream controller inside openConnection.
-      // activeSessionIdRef must be reset too — otherwise the next call skips
-      // resume and the fresh agent process rejects with "Session not found".
       ws.addEventListener("close", () => {
         connectionRef.current = null;
         activeSessionIdRef.current = null;
+        // Any in-flight stream is now dead. Finalize every streaming bubble
+        // so busy clears, prompts show whatever they had so far, and the
+        // next turn opens a fresh bubble instead of merging into a stale one.
+        setMessages((prev) => finalizeAllStreaming(prev));
+        reconnectFnRef.current?.();
       });
       ws.addEventListener("error", () => {
         addLog("error", { message: "WebSocket connection error" });
@@ -353,12 +340,11 @@ export function useAcpSession(
         setSessionId(s.sessionId);
         activeSessionIdRef.current = s.sessionId;
         addLog("session", { sessionId: s.sessionId });
-        platform.sessions.create.mutate({ sessionId: s.sessionId, instanceId: selectedInstance }).catch(() => {});
         await applySavedPreferences(conn, s.sessionId, s);
       }
     }
     return conn;
-  }, [selectedInstance, selectedMcpServers, captureSessionConfig]);
+  }, [selectedInstance, selectedMcpServers, captureSessionConfig, makeUpdateHandler, addLog, setMessages, setSessionId]);
 
   const ensureConnection = useCallback((): Promise<ClientSideConnection | null> => {
     if (!ensureConnectionInFlight.current) {
@@ -382,60 +368,38 @@ export function useAcpSession(
     setSessionConfigOptions([]);
   }, [setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
 
-  // ── Resume session (load history) ──
+  // ── Resume / rehydrate (load history) ──
 
-  const resumeSession = useCallback(async (sid: string) => {
-    if (!selectedInstance) return;
-    setBusy(true);
-    setLoadingSession(true);
-    setMessages([]);
-    setSessionId(sid);
-    setMobileScreen("chat");
+  /**
+   * Pull the authoritative message list from the agent via `loadSession`
+   * through a throwaway connection, closing the current live WS first so
+   * the runtime doesn't broadcast the history replay to both channels.
+   * The caller is responsible for UX state (spinner vs. silent) and for
+   * letting `ensureConnection` reopen a live channel after.
+   */
+  const loadHistoryInto = useCallback(async (sid: string): Promise<Message[]> => {
+    if (!selectedInstance) return [];
     connectionRef.current?.ws.close();
     connectionRef.current = null;
     activeSessionIdRef.current = null;
 
-    const thread = createMessageThread();
-
+    let replayed: Message[] = [];
+    let ws: WebSocket | null = null;
     try {
-      const { connection, ws } = await openConnection(selectedInstance, (u) => {
+      const conn = await openConnection(selectedInstance, (u) => {
         handleConfigUpdate(u);
-
-        if (u.sessionUpdate === "user_message_chunk" && u.content.type === "text") {
-          const txt = cleanText(u.content.text as string);
-          if (!txt) return;
-          for (const p of parseUserText(txt)) {
-            // Text resources replay as both `[@name]` and `<context ref>` — dedupe by name per turn.
-            if (p.kind === "file" && thread.hasFilePart("user", p.name)) continue;
-            if (p.kind === "text") thread.appendText("user", p.text);
-            else thread.appendPart("user", p);
-          }
-        } else if (u.sessionUpdate === "user_message_chunk" && u.content.type === "image") {
-          thread.appendPart("user", { kind: "image", data: u.content.data as string, mimeType: u.content.mimeType as string });
-        } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text") {
-          const txt = cleanText(u.content.text as string);
-          if (!txt) return;
-          thread.appendText("assistant", txt);
-        } else if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "image") {
-          thread.appendPart("assistant", { kind: "image", data: u.content.data as string, mimeType: u.content.mimeType as string });
-        } else if (u.sessionUpdate === "tool_call") {
-          thread.appendPart("assistant", { kind: "tool", toolCallId: u.toolCallId, title: u.title, status: u.status, content: mapToolContent(u.content) });
-        } else if (u.sessionUpdate === "tool_call_update") {
-          thread.updateTool(u.toolCallId, { status: u.status, title: u.title, content: u.content ? mapToolContent(u.content) : undefined });
-        }
+        replayed = applyUpdate(replayed, u);
       });
-
-      await connection.initialize({
+      ws = conn.ws;
+      await conn.connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
-      const resp = await connection.loadSession({ sessionId: sid, cwd: ".", mcpServers: selectedMcpServers });
+      const resp = await conn.connection.loadSession({ sessionId: sid, cwd: ".", mcpServers: selectedMcpServers });
       captureSessionConfig(resp);
-      ws.close();
 
-      // Apply saved prefs to the store only (optimistic) — the connection is
-      // closed after loadSession. The real ACP calls happen when ensureConnection
-      // opens a live connection and calls applySavedPreferences.
+      // Optimistic store updates for saved prefs — real ACP calls happen
+      // when ensureConnection opens a live channel.
       if (selectedInstance) {
         const prefs = getSavedPreferences(selectedInstance);
         if (prefs.model && resp.models?.availableModels?.some((m: any) => m.modelId === prefs.model)) {
@@ -445,28 +409,63 @@ export function useAcpSession(
           setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
         }
       }
-    } catch {}
+    } finally {
+      // Leave the SDK session alive — the live reconnect that follows will
+      // resume it and the SDK dedupes by sessionId, so an open session is
+      // cheap whereas closing it would force a `claude` CLI respawn. Only
+      // the WS is throwaway.
+      ws?.close();
+    }
 
-    setMessages(thread.toArray());
+    return finalizeAllStreaming(replayed);
+  }, [selectedInstance, selectedMcpServers, captureSessionConfig, handleConfigUpdate,
+      setSessionModels, setSessionModes]);
+
+  const resumeSession = useCallback(async (sid: string) => {
+    if (!selectedInstance) return;
+    setLoadingSession(true);
+    setMessages([]);
+    setSessionError(null);
+    setSessionId(sid);
+    setMobileScreen("chat");
+    try {
+      const fresh = await loadHistoryInto(sid);
+      setMessages(fresh);
+    } catch (e) {
+      setSessionError({
+        sessionId: sid,
+        message: extractErrorMessage(e),
+        kind: classifyResumeError(e),
+      });
+    }
     setLoadingSession(false);
-    setBusy(false);
-  }, [selectedInstance, selectedMcpServers, setBusy, setLoadingSession, setMessages, setSessionId, setMobileScreen, captureSessionConfig, handleConfigUpdate]);
+  }, [selectedInstance, loadHistoryInto, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   // ── Send prompt ──
 
   const sendPrompt = useCallback(async (text: string, attachments?: Attachment[]) => {
     if ((!text && (!attachments || attachments.length === 0)) || !selectedInstance) return;
-    setBusy(true);
 
     const userParts: Message["parts"] = [];
     if (attachments?.length) for (const a of attachments) userParts.push(a);
     if (text) userParts.push({ kind: "text", text });
 
-    const uMsg: Message = { id: crypto.randomUUID(), role: "user", parts: userParts, streaming: false };
     const aId = crypto.randomUUID();
-    const aMsg: Message = { id: aId, role: "assistant", parts: [], streaming: true };
-    currentAssistantIdRef.current = aId;
-    setMessages((p) => [...p, uMsg, aMsg]);
+
+    // If a prior turn is still streaming, this bubble starts `queued: true`
+    // — the projection will promote it to active once prompt N's content
+    // actually arrives. The user sees a "Waiting for previous prompt…"
+    // indicator meanwhile.
+    const startingQueued = hasStreamingAssistant(useStore.getState().messages);
+    const uMsg: Message = { id: crypto.randomUUID(), role: "user", parts: userParts, streaming: false };
+    const aMsg: Message = { id: aId, role: "assistant", parts: [], streaming: true, queued: startingQueued };
+    // Drop Retry buttons on any prior failed send — only the latest failure
+    // should offer a retry. The error text itself stays for history.
+    setMessages((p) => [
+      ...p.map((m) => (m.error?.retryWith ? { ...m, error: { message: m.error.message } } : m)),
+      uMsg,
+      aMsg,
+    ]);
     addLog("prompt", { text });
 
     try {
@@ -480,14 +479,12 @@ export function useAcpSession(
             promptBlocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
           } else if (isTextMime(a.mimeType, a.name)) {
             // Claude only honors EmbeddedResource with a `text` field — decode base64 back to UTF-8.
-            const text = new TextDecoder().decode(Uint8Array.from(atob(a.data), c => c.charCodeAt(0)));
+            const textBody = new TextDecoder().decode(Uint8Array.from(atob(a.data), c => c.charCodeAt(0)));
             promptBlocks.push({
               type: "resource",
-              resource: { uri: `file:///${a.name}`, text, mimeType: a.mimeType },
+              resource: { uri: `file:///${a.name}`, text: textBody, mimeType: a.mimeType },
             });
           } else {
-            // Binary blobs are ignored by the Claude agent — send as resource_link so the
-            // file name at least appears in the conversation, and warn in the log.
             addLog("warning", { message: `Binary attachment "${a.name}" (${a.mimeType}) — Claude cannot read this file type.` });
             promptBlocks.push({ type: "resource_link", uri: `file:///${a.name}`, name: a.name, mimeType: a.mimeType });
           }
@@ -495,36 +492,100 @@ export function useAcpSession(
       }
       if (text) promptBlocks.push({ type: "text", text });
 
-      const r = await conn.prompt({ sessionId: activeSessionIdRef.current!, prompt: promptBlocks });
-      setMessages((p) => p.map((m) => (m.id === aId ? { ...m, streaming: false } : m)));
+      const sid = activeSessionIdRef.current!;
+      const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
       addLog("done", { stopReason: r.stopReason });
-    } catch (err: any) {
-      const errMsg = err?.message ?? String(err);
+      // Persist to the platform DB lazily, only once the session has real
+      // content. Prevents empty rows from appearing in the sidebar when the
+      // user opens the app and closes it without sending anything.
+      if (!persistedSessionsRef.current.has(sid)) {
+        persistedSessionsRef.current.add(sid);
+        platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance })
+          .catch((err) => {
+            showToast({
+              kind: "warning",
+              message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
+            });
+          });
+      }
+      // Belt-and-braces: if humr_turn_ended somehow didn't fire (server
+      // variant without our extension), force-close our bubble anyway.
+      setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
+    } catch (err: unknown) {
+      const errMsg = extractErrorMessage(err);
       addLog("error", { message: errMsg });
       setMessages((p) => p.map((m) =>
-        m.id === aId ? { ...m, streaming: false, parts: [{ kind: "text" as const, text: errMsg }] } : m,
+        m.id === aId
+          ? { ...m, streaming: false, queued: false, parts: [], error: { message: errMsg, retryWith: { text, attachments } } }
+          : m,
       ));
-      connectionRef.current?.ws.close();
-      connectionRef.current = null;
-      activeSessionIdRef.current = null;
     } finally {
-      setBusy(false);
       fetchSessions();
       textareaRef.current?.focus();
-      const queued = useStore.getState().queuedMessage;
-      if (queued) {
-        setQueuedMessage(null);
-        setTimeout(() => sendPrompt(queued), 0);
-      }
     }
-  }, [selectedInstance, ensureConnection, addLog, setBusy, setMessages, fetchSessions, setQueuedMessage, textareaRef]);
+  }, [selectedInstance, ensureConnection, addLog, setMessages, fetchSessions, showToast, textareaRef]);
 
   const stopAgent = useCallback(async () => {
     const conn = connectionRef.current?.connection;
     const sid = activeSessionIdRef.current;
+    // Finalize up front so the UI reacts immediately even if `cancel` hangs
+    // or the SDK never rejects on a dropped stream.
+    setMessages((p) => finalizeAllStreaming(p));
     if (!conn || !sid) return;
     try { await conn.cancel({ sessionId: sid }); } catch {}
-  }, []);
+  }, [setMessages]);
+
+  const RECONNECT_DELAYS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
+
+  useEffect(() => {
+    reconnectFnRef.current = () => {
+      if (!isMountedRef.current) return;
+      const sid = useStore.getState().sessionId;
+      const inst = useStore.getState().selectedInstance;
+      if (!sid || inst !== selectedInstance) return;
+      if (reconnectTimerRef.current) return;
+
+      const attempt = reconnectAttemptRef.current;
+      const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
+      reconnectAttemptRef.current = attempt + 1;
+
+      reconnectTimerRef.current = setTimeout(async () => {
+        reconnectTimerRef.current = null;
+        if (!isMountedRef.current) return;
+        const currentSid = useStore.getState().sessionId;
+        const currentInst = useStore.getState().selectedInstance;
+        if (!currentSid || currentInst !== selectedInstance) return;
+        try {
+          await ensureConnection();
+          reconnectAttemptRef.current = 0;
+        } catch {
+          reconnectFnRef.current?.();
+        }
+      }, delay);
+    };
+  }, [selectedInstance, ensureConnection]);
+
+  useEffect(() => {
+    reconnectAttemptRef.current = 0;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, [sessionId, selectedInstance]);
+
+  // Keep a live connection open whenever we're viewing a session. Without
+  // this, `resumeSession` (sidebar click) opens a throwaway WS just for
+  // history replay and closes it — so any pending tool-permission prompt
+  // replayed to that socket has no channel to answer on.
+  const loadingSession = useStore((s) => s.loading.session);
+  useEffect(() => {
+    // Don't open a live WS while resumeSession's throwaway is still replaying
+    // history. If we overlap, both channels are engaged with the same session
+    // and receive the history stream — the live projection would apply every
+    // update twice.
+    if (!selectedInstance || !sessionId || loadingSession) return;
+    ensureConnection().catch(() => {});
+  }, [selectedInstance, sessionId, loadingSession, ensureConnection]);
 
   return {
     connectionRef,

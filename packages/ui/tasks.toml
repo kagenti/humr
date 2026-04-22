@@ -14,7 +14,9 @@ run = "pnpm exec tsc --noEmit"
 run = "echo 'No fix tasks for ui yet'"
 
 ["ui:test"]
-run = "echo 'No tests for ui yet'"
+description = "Run UI unit tests"
+dir = "{{config_root}}"
+run = 'pnpm --filter humr-ui exec vitest run'
 
 ["ui:run"]
 dir = "{{config_root}}"

@@ -7,6 +7,7 @@ import {
   type EnvMapping,
   type McpConnection,
   type SecretView,
+  isCustomSecret,
 } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
 import {
@@ -15,6 +16,7 @@ import {
   sanitizeEnvMappings,
 } from "../components/env-mappings-editor.js";
 import { EditSecretDialog } from "../dialogs/edit-secret-dialog.js";
+import { AppStatusPill } from "../components/app-status-pill.js";
 import {
   RefreshCw,
   Lock,
@@ -41,22 +43,22 @@ export function ConnectionsView() {
   const fetchSecrets = useStore((s) => s.fetchSecrets);
   const createSecret = useStore((s) => s.createSecret);
   const deleteSecret = useStore((s) => s.deleteSecret);
-  const showAlert = useStore((s) => s.showAlert);
+  const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
+  const connections = useStore((s) => s.mcpConnections);
+  const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
+  const appConnections = useStore((s) => s.appConnections);
+  const appsError = useStore((s) => s.appConnectionsError);
+  const fetchAppConnections = useStore((s) => s.fetchAppConnections);
 
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
 
   // MCP state
-  const [connections, setConnections] = useState<McpConnection[]>([]);
   const [showAddMcp, setShowAddMcp] = useState(false);
   const [mcpUrl, setMcpUrl] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
-
-  // OneCLI app connections (OAuth apps: Google, GitHub, Slack, ...)
-  const [appConnections, setAppConnections] = useState<AppConnectionView[]>([]);
-  const [appsError, setAppsError] = useState<string | null>(null);
 
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
@@ -67,39 +69,18 @@ export function ConnectionsView() {
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
 
-  const loadConnections = useCallback(async () => {
-    try {
-      const r = await authFetch("/api/mcp/connections");
-      const d = await r.json();
-      if (Array.isArray(d)) setConnections(d);
-    } catch {}
-  }, []);
-
-  const loadAppConnections = useCallback(async () => {
-    try {
-      const list = await platform.connections.list.query();
-      setAppConnections(list);
-      setAppsError(null);
-    } catch (err) {
-      console.warn("connections.list failed", err);
-      setAppsError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
   const load = useCallback(async () => {
     if (!loaded.current) setLoading(true);
-    await Promise.all([loadConnections(), loadAppConnections(), fetchSecrets()]);
+    await Promise.all([fetchMcpConnections(), fetchAppConnections(), fetchSecrets()]);
     loaded.current = true;
     setLoading(false);
-  }, [loadConnections, loadAppConnections, fetchSecrets]);
+  }, [fetchMcpConnections, fetchAppConnections, fetchSecrets]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const customSecrets = secrets.filter(
-    (s) => s.type !== "anthropic" && !s.name.startsWith("__humr_mcp:"),
-  );
+  const customSecrets = secrets.filter(isCustomSecret);
 
   // --- MCP actions ---
 
@@ -114,7 +95,7 @@ export function ConnectionsView() {
       });
       const data = (await res.json()) as { authUrl?: string; error?: string };
       if (data.error) {
-        showAlert(data.error, "OAuth Error");
+        showToast({ kind: "error", message: data.error });
         setConnecting(false);
         return;
       }
@@ -123,7 +104,7 @@ export function ConnectionsView() {
         window.location.href = data.authUrl;
       }
     } catch (err) {
-      showAlert(`${err}`, "Connection Failed");
+      showToast({ kind: "error", message: `Connection failed: ${err}` });
       setConnecting(false);
     }
   };
@@ -137,7 +118,7 @@ export function ConnectionsView() {
       });
       await load();
     } catch (err) {
-      showAlert(`${err}`, "Disconnect Failed");
+      showToast({ kind: "error", message: `Disconnect failed: ${err}` });
     }
     setDisconnecting(null);
   };
@@ -266,23 +247,7 @@ export function ConnectionsView() {
                           : c.provider}
                     </div>
                   </div>
-                  <span
-                    className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
-                      c.status === "expired"
-                        ? "bg-danger-light text-danger border-danger"
-                        : c.status === "connected"
-                          ? "bg-info-light text-info border-info"
-                          : "bg-surface-raised text-text-muted border-border-light"
-                    }`}
-                  >
-                    {c.status === "expired"
-                      ? "Expired"
-                      : c.status === "disconnected"
-                        ? "Disconnected"
-                        : c.status === "unknown"
-                          ? "Unknown"
-                          : "Connected"}
-                  </span>
+                  <AppStatusPill status={c.status} size="md" />
                 </div>
               ))}
             </div>

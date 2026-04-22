@@ -15,6 +15,7 @@ export function SessionsSidebar({
   const sessions = useStore((s) => s.sessions);
   const sessionId = useStore((s) => s.sessionId);
   const loading = useStore((s) => s.loading.sessions);
+  const pendingPermissions = useStore((s) => s.pendingPermissions);
   const includeChannel = useStore((s) => s.includeChannelSessions);
   const setIncludeChannel = useStore((s) => s.setIncludeChannelSessions);
   const deleteSession = useStore((s) => s.deleteSession);
@@ -80,6 +81,7 @@ export function SessionsSidebar({
             key={s.sessionId}
             session={s}
             active={s.sessionId === sessionId}
+            hasPending={pendingPermissions.some((p) => p.sessionId === s.sessionId)}
             onResume={() => onResumeSession(s.sessionId)}
             onDelete={() => confirmDelete(s.sessionId, s.title)}
           />
@@ -102,6 +104,7 @@ const LONG_PRESS_MS = 400;
 function SessionRow({
   session: s,
   active,
+  hasPending,
   onResume,
   onDelete,
 }: {
@@ -113,6 +116,7 @@ function SessionRow({
     updatedAt?: string | null;
   };
   active: boolean;
+  hasPending: boolean;
   onResume: () => void;
   onDelete: () => void;
 }) {
@@ -173,6 +177,12 @@ function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
+          {hasPending && (
+            <span
+              className="w-2 h-2 rounded-full bg-warning anim-pulse shrink-0"
+              title="Pending permission request"
+            />
+          )}
           <span
             className={`text-[13px] truncate ${active ? "text-accent font-bold" : "text-text font-medium"}`}
           >

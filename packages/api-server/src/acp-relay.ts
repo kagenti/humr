@@ -6,7 +6,8 @@ import type { InstancesRepository } from "./modules/agents/infrastructure/instan
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "./modules/agents/infrastructure/labels.js";
 
 const DEBOUNCE_MS = 30_000;
-const WAKE_POLL_MS = 1_000;
+const WAKE_POLL_INITIAL_MS = 500;
+const WAKE_POLL_MAX_MS = 5_000;
 const WAKE_TIMEOUT_MS = 120_000;
 
 const lastActivityTimestamps = new Map<string, number>();
@@ -25,16 +26,49 @@ function shouldUpdateActivity(instanceId: string): boolean {
   return true;
 }
 
+/**
+ * Poll `isReady` with exponential backoff + jitter.
+ *
+ * Backoff: start fast so a quick wake is still detected quickly, then
+ * slow down so a pod that takes longer doesn't get hammered for the
+ * full deadline. Jitter: ±20% so many callers waking at once desync
+ * within a few iterations instead of polling in lockstep bursts.
+ *
+ * Exported so the loop can be unit-tested with short intervals and a
+ * deterministic isReady.
+ *
+ * NOTE: mirrored in packages/controller/pkg/scheduler/scheduler.go (Go).
+ * The controller's scheduler waits for the same pod-ready signal when a
+ * scheduled trigger fires against a hibernated pod. Keep behaviour,
+ * constants, and the shape of the loop in sync across both.
+ */
+export async function pollUntilReady(
+  isReady: () => Promise<boolean>,
+  initialMs: number,
+  maxMs: number,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let interval = initialMs;
+  while (Date.now() < deadline) {
+    if (await isReady()) return true;
+    const jittered = interval * (0.8 + 0.4 * Math.random());
+    await new Promise((r) => setTimeout(r, jittered));
+    interval = Math.min(Math.floor(interval * 1.5), maxMs);
+  }
+  return false;
+}
+
 async function waitForPodReady(
   repo: InstancesRepository,
   instanceId: string,
 ): Promise<boolean> {
-  const deadline = Date.now() + WAKE_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (await repo.isPodReady(instanceId)) return true;
-    await new Promise((r) => setTimeout(r, WAKE_POLL_MS));
-  }
-  return false;
+  return pollUntilReady(
+    () => repo.isPodReady(instanceId),
+    WAKE_POLL_INITIAL_MS,
+    WAKE_POLL_MAX_MS,
+    WAKE_TIMEOUT_MS,
+  );
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {

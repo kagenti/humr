@@ -37,6 +37,7 @@ export interface CreateAgentInput {
   templateId?: string;
   image?: string;
   description?: string;
+  env?: EnvVar[];
 }
 
 export interface UpdateAgentInput {

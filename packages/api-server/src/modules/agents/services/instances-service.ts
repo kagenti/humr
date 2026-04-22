@@ -155,5 +155,13 @@ export function createInstancesService(deps: {
         emit({ type: EventType.InstanceDeleted, instanceId: id });
       }
     },
+
+    async restart(id) {
+      const restarted = await deps.repo.restart(id, deps.owner);
+      if (restarted) {
+        emit({ type: EventType.InstanceRestarted, instanceId: id });
+      }
+      return restarted;
+    },
   };
 }

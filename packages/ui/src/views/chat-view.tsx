@@ -1,17 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
-import { instanceState, stateLabel, badgeColors, dotColors } from "./../components/status-indicator.js";
-import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon } from "lucide-react";
+import { StatusBadge } from "./../components/status-indicator.js";
+import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon, AlertCircle, Trash2, RefreshCw } from "lucide-react";
 import { Markdown } from "./../components/markdown.js";
 import { ToolChip } from "./../components/tool-chip.js";
 import { ResizeHandle } from "./../components/resize-handle.js";
 import { ChatInput } from "./../components/chat-input.js";
+import { PermissionPrompt } from "./../components/permission-prompt.js";
 import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
 import { FilesPanel } from "./../panels/files-panel.js";
 import { LogPanel } from "./../panels/log-panel.js";
 import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
+import type { SessionError } from "../store.js";
+import type { InstanceView } from "../types.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
 import { useFileTree } from "./../hooks/use-file-tree.js";
 import { isMobile } from "./../lib/breakpoints.js";
@@ -21,12 +24,16 @@ export function ChatView() {
   const instances = useStore((s) => s.instances);
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
+  const sessionError = useStore((s) => s.sessionError);
+  const setSessionError = useStore((s) => s.setSessionError);
+  const deleteSession = useStore((s) => s.deleteSession);
   const rightTab = useStore((s) => s.rightTab);
   const loadingSession = useStore((s) => s.loading.session);
   const goBack = useStore((s) => s.goBack);
   const setRightTab = useStore((s) => s.setRightTab);
-  const queuedMessage = useStore((s) => s.queuedMessage);
-  const setQueuedMessage = useStore((s) => s.setQueuedMessage);
+  const hasPendingPermission = useStore((s) =>
+    s.sessionId ? s.pendingPermissions.some((p) => p.sessionId === s.sessionId) : false,
+  );
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const showMobilePanel = useStore((s) => s.showMobilePanel);
@@ -118,7 +125,7 @@ export function ChatView() {
       <div className="flex border-b border-border-light shrink-0">
         {rightTabs.map(tab => (
           <button key={tab} onClick={() => setRightTab(tab)}
-            className={`flex-1 h-9 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
+            className={`flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
             {tab === "configuration" ? "config" : tab}
           </button>
         ))}
@@ -176,7 +183,7 @@ export function ChatView() {
             >
               <Settings2 size={14} />
             </button>
-            <StatusBadge selectedInstance={selectedInstance} instances={instances} busy={busy} />
+            <ChatHeaderStatus selectedInstance={selectedInstance} instances={instances} busy={busy} />
           </div>
         </header>
 
@@ -190,17 +197,43 @@ export function ChatView() {
                 Loading session...
               </div>
             )}
-            {!loadingSession && messages.length === 0 && (
+            {!loadingSession && sessionError && (
+              <SessionErrorCard
+                error={sessionError}
+                onBack={() => { setSessionError(null); resetSession(); if (isMobile()) setMobileScreen("sessions"); }}
+                onDelete={async () => {
+                  const sid = sessionError.sessionId;
+                  setSessionError(null);
+                  await deleteSession(sid);
+                  if (isMobile()) setMobileScreen("sessions");
+                }}
+              />
+            )}
+            {!loadingSession && !sessionError && messages.length === 0 && (
               <div className="py-24 text-center">
                 <p className="text-[16px] font-bold text-text mb-2">Start a conversation</p>
                 <p className="text-[14px] text-text-muted">Send a message to begin a new session with this agent</p>
               </div>
             )}
-            {messages.map((m) => (
+            {messages.map((m) => m.notice ? (
+              <div key={m.id} className="flex justify-center anim-in">
+                <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
+                  {m.parts.find((p) => p.kind === "text")?.kind === "text" ? (m.parts.find((p) => p.kind === "text") as { text: string }).text : "…"}
+                </span>
+              </div>
+            ) : (
               <div key={m.id} className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}>
                 <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
                   {m.role === "user" ? "You" : "Agent"}
                 </span>
+                {m.error ? (
+                  <SendErrorCard
+                    error={m.error.message}
+                    onRetry={m.error.retryWith
+                      ? () => sendPrompt(m.error!.retryWith!.text, m.error!.retryWith!.attachments)
+                      : undefined}
+                  />
+                ) : (
                 <div className={m.role === "user"
                   ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
                   : "flex flex-col gap-2 max-w-full"
@@ -230,8 +263,13 @@ export function ChatView() {
                       </div>
                     ) : <ToolChip key={i} chip={p} />
                   )}
-                  {m.streaming && m.parts.length === 0 && <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />}
+                  {m.streaming && m.parts.length === 0 && (
+                    m.queued
+                      ? <span className="text-[12px] text-text-muted italic">Waiting for previous prompt…</span>
+                      : <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
+                  )}
                 </div>
+                )}
               </div>
             ))}
           </div>
@@ -248,19 +286,20 @@ export function ChatView() {
         )}
         </div>
 
-        <ChatInput
-          textareaRef={textareaRef}
-          busy={busy}
-          loadingSession={loadingSession}
-          queuedMessage={queuedMessage}
-          onSend={sendPrompt}
-          onStop={stopAgent}
-          onQueue={setQueuedMessage}
-          onClearQueue={() => setQueuedMessage(null)}
-          footer={!loadingSession && (
-            <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
-          )}
-        />
+        {hasPendingPermission ? (
+          <PermissionPrompt />
+        ) : (
+          <ChatInput
+            textareaRef={textareaRef}
+            busy={busy}
+            loadingSession={loadingSession}
+            onSend={sendPrompt}
+            onStop={stopAgent}
+            footer={!loadingSession && (
+              <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
+            )}
+          />
+        )}
       </div>
 
       {/* Right panel: desktop */}
@@ -289,17 +328,92 @@ export function ChatView() {
   );
 }
 
-/** Status badge extracted for readability */
-function StatusBadge({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: any[]; busy: boolean }) {
-  const inst = instances.find((i: any) => i.id === selectedInstance);
-  const state = inst ? instanceState(inst) : ("starting" as const);
-  const label = busy ? "Busy" : stateLabel[state];
-  const color = busy ? "bg-warning-light text-warning border-warning" : badgeColors[state];
-  const dot = busy ? "bg-warning anim-pulse" : dotColors[state];
+/** Small pill in the chat header. Falls through to the shared `StatusBadge`,
+ *  overriding to a "Busy" variant while the agent is mid-turn. */
+function ChatHeaderStatus({ selectedInstance, instances, busy }: { selectedInstance: string | null; instances: InstanceView[]; busy: boolean }) {
+  if (busy) {
+    return (
+      <StatusBadge
+        size="sm"
+        label="Busy"
+        colorClasses="bg-warning-light text-warning border-warning"
+        dotColorClasses="bg-warning anim-pulse"
+      />
+    );
+  }
+  const inst = instances.find((i) => i.id === selectedInstance);
+  return <StatusBadge size="sm" state={inst?.state ?? "starting"} />;
+}
+
+function SessionErrorCard({
+  error,
+  onBack,
+  onDelete,
+}: {
+  error: SessionError;
+  onBack: () => void;
+  onDelete: () => void;
+}) {
+  const title =
+    error.kind === "not-found" ? "Session not found"
+    : error.kind === "connection" ? "Can't reach the agent"
+    : "Failed to load session";
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] border rounded-full px-2.5 py-0.5 ${color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-      {label}
-    </span>
+    <div
+      className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in"
+      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+    >
+      <div className="flex items-start gap-3">
+        <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[15px] font-bold text-text mb-1">{title}</h3>
+          <p className="text-[13px] text-text-secondary break-words">{error.message}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={onBack}
+          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5"
+          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+        >
+          <ArrowLeft size={12} /> Back to sessions
+        </button>
+        {error.kind === "not-found" && (
+          <button
+            onClick={onDelete}
+            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
+            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          >
+            <Trash2 size={12} /> Delete orphaned session
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SendErrorCard({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  return (
+    <div
+      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
+      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+      role="alert"
+    >
+      <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0 flex flex-col gap-2">
+        <div className="text-[13px] text-text break-words">
+          <span className="font-bold text-danger">Send failed:</span> {error}
+        </div>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
+            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          >
+            <RefreshCw size={11} /> Retry
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,8 +1,5 @@
 export type SecretType = "anthropic" | "generic";
 
-/** Anthropic auth style — detected by OneCLI from the value prefix. */
-export type AnthropicAuthMode = "api-key" | "oauth";
-
 export type SecretMode = "all" | "selective";
 
 /**
@@ -25,14 +22,11 @@ export function isValidEnvName(name: string): boolean {
 }
 
 /**
- * Default env mapping auto-attached to new Anthropic connectors.
- *
- * Uses `CLAUDE_CODE_OAUTH_TOKEN` so the Claude Code SDK sends the sentinel in
- * `Authorization: Bearer …`, matching the routing OneCLI's MITM gateway is set
- * up to swap. Routing via `ANTHROPIC_API_KEY` (`x-api-key`) does not work for
- * OAuth-type credentials, which is the common case here.
+ * OAuth-token mode. The Claude Code SDK sends `CLAUDE_CODE_OAUTH_TOKEN` via
+ * `Authorization: Bearer …`, which OneCLI's MITM gateway swaps for the stored
+ * OAuth credential.
  */
-export const ANTHROPIC_DEFAULT_ENV_MAPPING: EnvMapping = {
+export const ANTHROPIC_OAUTH_ENV_MAPPING: EnvMapping = {
   envName: "CLAUDE_CODE_OAUTH_TOKEN",
   placeholder: DEFAULT_ENV_PLACEHOLDER,
 };
@@ -53,6 +47,16 @@ export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
   valueFormat: "Bearer {value}",
 };
 
+/**
+ * API-key mode. Tools that read `ANTHROPIC_API_KEY` (e.g. `@anthropic-ai/sdk`)
+ * send the sentinel via `x-api-key`, which OneCLI's gateway swaps for the
+ * stored api-key credential.
+ */
+export const ANTHROPIC_API_KEY_ENV_MAPPING: EnvMapping = {
+  envName: "ANTHROPIC_API_KEY",
+  placeholder: DEFAULT_ENV_PLACEHOLDER,
+};
+
 export interface SecretView {
   id: string;
   name: string;
@@ -62,8 +66,6 @@ export interface SecretView {
   /** Only set for generic secrets. */
   injectionConfig?: InjectionConfig;
   createdAt: string;
-  /** Only set for type="anthropic" — reflects the OneCLI-detected auth mode. */
-  authMode?: AnthropicAuthMode;
   envMappings?: EnvMapping[];
 }
 
