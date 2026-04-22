@@ -21,6 +21,7 @@ export interface SecretsSlice {
     patch: {
       name?: string;
       value?: string;
+      hostPattern?: string;
       pathPattern?: string | null;
       injectionConfig?: InjectionConfig | null;
       envMappings?: EnvMapping[];

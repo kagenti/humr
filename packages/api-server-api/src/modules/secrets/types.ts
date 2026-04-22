@@ -83,6 +83,8 @@ export interface UpdateSecretInput {
   id: string;
   name?: string;
   value?: string;
+  /** Only permitted on generic secrets. */
+  hostPattern?: string;
   /** `null` clears the path pattern; `undefined` leaves it unchanged. */
   pathPattern?: string | null;
   /** `null` resets to the default; `undefined` leaves it unchanged. */

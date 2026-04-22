@@ -67,14 +67,16 @@ export const secretsRouter = t.router({
 
   update: t.procedure
     .input(
-      z.object({
-        id: z.string().min(1),
-        name: z.string().min(1).max(100).optional(),
-        value: z.string().min(1).optional(),
-        pathPattern: z.string().max(1000).nullable().optional(),
-        injectionConfig: injectionConfigSchema.nullable().optional(),
-        envMappings: envMappingsSchema.optional(),
-      }),
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string().min(1).max(100).optional(),
+          value: z.string().min(1).optional(),
+          hostPattern: z.string().min(1).max(253).optional(),
+          pathPattern: z.string().max(1000).nullable().optional(),
+          injectionConfig: injectionConfigSchema.nullable().optional(),
+          envMappings: envMappingsSchema.optional(),
+        }),
     )
     .mutation(({ ctx, input }) => ctx.secrets.update(input)),
 

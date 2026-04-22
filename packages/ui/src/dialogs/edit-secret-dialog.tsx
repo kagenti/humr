@@ -21,6 +21,7 @@ export function EditSecretDialog({
 }) {
   const updateSecret = useStore((s) => s.updateSecret);
   const [name, setName] = useState(secret.name);
+  const [hostPattern, setHostPattern] = useState(secret.hostPattern);
   const [pathPattern, setPathPattern] = useState(secret.pathPattern ?? "");
   const [headerName, setHeaderName] = useState(
     secret.injectionConfig?.headerName ?? "",
@@ -35,11 +36,13 @@ export function EditSecretDialog({
 
   const isGeneric = secret.type !== "anthropic";
   const trimmed = name.trim();
+  const trimmedHost = hostPattern.trim();
   const trimmedPath = pathPattern.trim();
   const trimmedHeader = headerName.trim();
   const trimmedValueFormat = valueFormat.trim();
   const sanitized = sanitizeEnvMappings(envMappings);
   const nameChanged = trimmed !== secret.name;
+  const hostChanged = isGeneric && trimmedHost !== secret.hostPattern;
   const pathChanged = isGeneric && trimmedPath !== (secret.pathPattern ?? "");
   const injectionChanged =
     isGeneric &&
@@ -47,13 +50,15 @@ export function EditSecretDialog({
       trimmedValueFormat !== (secret.injectionConfig?.valueFormat ?? ""));
   const mappingsChanged =
     JSON.stringify(sanitized) !== JSON.stringify(secret.envMappings ?? []);
+  const hostValid = !isGeneric || trimmedHost.length > 0;
   const injectionValid = !isGeneric || trimmedHeader.length > 0;
   const canSave =
     !saving &&
     trimmed.length > 0 &&
+    hostValid &&
     injectionValid &&
     allEnvMappingsValid(envMappings) &&
-    (nameChanged || pathChanged || injectionChanged || mappingsChanged);
+    (nameChanged || hostChanged || pathChanged || injectionChanged || mappingsChanged);
 
   const save = async () => {
     if (!canSave) return;
@@ -61,6 +66,7 @@ export function EditSecretDialog({
     try {
       await updateSecret(secret.id, {
         ...(nameChanged && { name: trimmed }),
+        ...(hostChanged && { hostPattern: trimmedHost }),
         ...(pathChanged && { pathPattern: trimmedPath === "" ? null : trimmedPath }),
         ...(injectionChanged && {
           injectionConfig: {
@@ -100,6 +106,24 @@ export function EditSecretDialog({
             autoFocus
           />
         </label>
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Host Pattern
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder="e.g. api.example.com"
+              value={hostPattern}
+              onChange={(e) => setHostPattern(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              Hostname OneCLI matches against outbound requests. Required.
+            </span>
+          </label>
+        )}
 
         {isGeneric && (
           <label className="flex flex-col gap-1.5">

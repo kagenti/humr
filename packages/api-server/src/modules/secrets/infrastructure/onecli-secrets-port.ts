@@ -42,6 +42,8 @@ export interface OnecliSecretsPort {
     input: {
       name?: string;
       value?: string;
+      /** Only permitted on generic secrets. */
+      hostPattern?: string;
       /** `null` clears the path pattern; `undefined` leaves it unchanged. */
       pathPattern?: string | null;
       /** `null` resets to OneCLI's default; `undefined` leaves it unchanged. */
