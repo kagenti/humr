@@ -6,6 +6,7 @@ export const LABEL_TEMPLATE_REF = "humr.ai/template";
 export const LABEL_AGENT_REF = "humr.ai/agent";
 export const LABEL_INSTANCE_REF = "humr.ai/instance";
 export const LABEL_OWNER = "humr.ai/owner";
+export const LABEL_CREATED_BY = "humr.ai/created-by";
 
 // ---- Label values for LABEL_TYPE ----
 export const TYPE_TEMPLATE = "agent-template";
