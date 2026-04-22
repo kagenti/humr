@@ -116,9 +116,9 @@ Each of these is expanded in a reference file. Severity in brackets.
 | API / fetch / tRPC setup and error handling | `references/api-layer.md` |
 | Typing a prop, a response, or an error | `references/types.md` |
 
-A project may keep a `references/{project}-refactor.md` catalog alongside these — a time-boxed migration plan listing concrete legacy hotspots and fix recipes. Consult it only when working in that project, and delete it once the migration completes.
-
 **Read only what you need.** These files progressive-disclose; don't pre-load all of them.
+
+A project adopting this skill may keep a separate, time-boxed UI refactor plan (listing concrete legacy hotspots and fix recipes) in its own docs — e.g. `docs/plans/ui-refactor/`. That plan references this skill for rules and severity; the skill stays project-agnostic.
 
 ---
 
@@ -130,7 +130,7 @@ The skill's rules are the target state. When editing an existing codebase that p
 2. **Touch-it = migrate-it.** If you're editing a 600-line dialog, that's the moment to split it per `references/components.md`. If you're adding a field to a `useState`-form that's grown past the RHF threshold, convert the form. Don't bolt new code onto drift.
 3. **Batch migrations are a separate PR.** Moving an entire folder to `modules/{domain}/` or rewriting a god-hook into focused hooks is a dedicated refactor PR — don't mix with feature work.
 
-If the project ships a `{project}-refactor.md` catalog, it lists the concrete in-scope hotspots and their fix recipes; prefer those recipes over ad-hoc rewrites.
+If the project ships a UI refactor plan in its docs, prefer its recipes over ad-hoc rewrites.
 
 ---
 

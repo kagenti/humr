@@ -1,8 +1,8 @@
-# humr refactor — migration catalog
+# UI refactor plan — `packages/ui`
 
-**Scope:** this file is specific to the humr `packages/ui` first-pass refactor. Every other reference in this skill is project-agnostic — only come here when working on humr. This file will be deleted once the humr refactor completes.
+**Scope:** first-pass refactor of humr's `packages/ui` toward the [React + TypeScript UI engineering skill](../../../.agents/skills/react-ui-engineering/SKILL.md). Target state, rules, and severity tiers live in the skill; this document lists the concrete legacy hotspots and fix recipes. Delete once the work is done.
 
-**Read when:** touching a file in `humr/packages/ui` and deciding what to migrate while you're there.
+**Read when:** touching a file in `packages/ui` and deciding what to migrate while you're there.
 
 **Policy:** touch-it = migrate-it. Don't batch rewrites across unrelated code in one PR. Large single-area refactors (e.g., splitting `use-acp-session.ts`) get their own PR.
 
@@ -22,7 +22,7 @@ src/
 └── lib/         (2 files)
 ```
 
-Target: domain modules per `references/project-structure.md`. Proposed modules:
+Target: domain modules per [`references/project-structure.md`](../../../.agents/skills/react-ui-engineering/references/project-structure.md). Proposed modules:
 `agents`, `instances`, `sessions`, `acp`, `secrets`, `connections`, `schedules`, `templates`, `files`, `platform` (tRPC + auth).
 
 Shared (stays at top level):
@@ -52,7 +52,7 @@ Shared (stays at top level):
 1. Move to `src/modules/secrets/components/edit-agent-secrets-dialog/`.
 2. Split tabs: `credentials-tab.tsx`, `env-tab.tsx`.
 3. Extract row-level components: `inherited-env-row.tsx`, `apps-group.tsx`, `app-row.tsx`, `mode-card.tsx`, `tab-button.tsx`.
-4. Replace the 14 `useState` with RHF + Zod (`references/forms.md`).
+4. Replace the 14 `useState` with RHF + Zod ([`references/forms.md`](../../../.agents/skills/react-ui-engineering/references/forms.md)).
 5. Replace manual dirty-tracking (`initialMode`, `initialAssigned`, `initialAppIds` refs) with `formState.isDirty`.
 6. Delete the hand-rolled `classify()` and `displayName()` — use `isMcpSecret()`, `mcpHostnameFromSecretName()` from `types.ts`.
 
@@ -99,7 +99,7 @@ useEffect(() => {
 - Wrap in a domain hook: `useConnections()`, `useSecrets()`, etc.
 - Delete the useState triad; use `{ data, isLoading, error }` from the hook.
 
-See `references/async-data.md` for the migration block.
+See [`references/async-data.md`](../../../.agents/skills/react-ui-engineering/references/async-data.md) for the migration block.
 
 ---
 
@@ -188,7 +188,7 @@ const view = useStore((s) => s.view);
 const fetchAgents = useStore((s) => s.fetchAgents);
 const theme = useStore((s) => s.theme);
 ```
-**Fix recipe:** export selector hooks from each slice file. Components import `useView()`, `useTheme()`, `useAgentsActions()`. See `references/state-management.md` for the pattern.
+**Fix recipe:** export selector hooks from each slice file. Components import `useView()`, `useTheme()`, `useAgentsActions()`. See [`references/state-management.md`](../../../.agents/skills/react-ui-engineering/references/state-management.md) for the pattern.
 
 ---
 
@@ -201,7 +201,7 @@ const theme = useStore((s) => s.theme);
 
 ## 12. Mega-form useState (14 fields)
 
-Covered by #1 above. The fix is RHF + Zod; see `references/forms.md`.
+Covered by #1 above. The fix is RHF + Zod; see [`references/forms.md`](../../../.agents/skills/react-ui-engineering/references/forms.md).
 
 ---
 
@@ -215,7 +215,7 @@ Covered by #1 above. The fix is RHF + Zod; see `references/forms.md`.
 ## 14. Mixed authFetch + tRPC without convention
 
 **Locations:** `connections-view.tsx` uses both `platform.xxx.query()` and `authFetch("/api/oauth/start", ...)` inline.
-**Fix recipe:** tRPC where the server exposes it; typed fetcher in `modules/{domain}/api/index.ts` for non-tRPC endpoints. Never raw `authFetch` in components. See `references/api-layer.md`.
+**Fix recipe:** tRPC where the server exposes it; typed fetcher in `modules/{domain}/api/index.ts` for non-tRPC endpoints. Never raw `authFetch` in components. See [`references/api-layer.md`](../../../.agents/skills/react-ui-engineering/references/api-layer.md).
 
 ---
 
