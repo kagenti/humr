@@ -48,7 +48,7 @@ export interface AgentsUiSlice {
   setFilter: (q: string) => void;
 }
 
-export const createAgentsUiSlice: StateCreator<HumrStore, [], [], AgentsUiSlice> = (set) => ({
+export const createAgentsUiSlice: StateCreator<AppStore, [], [], AgentsUiSlice> = (set) => ({
   selectedAgentId: null,
   filter: "",
   setSelectedAgentId: (id) => set({ selectedAgentId: id }),

@@ -115,7 +115,8 @@ Each of these is expanded in a reference file. Severity in brackets.
 | Styling decisions, inline styles, class composition | `references/styling.md` |
 | API / fetch / tRPC setup and error handling | `references/api-layer.md` |
 | Typing a prop, a response, or an error | `references/types.md` |
-| Working on the humr `packages/ui` codebase (first-pass refactor) | `references/humr-refactor.md` |
+
+A project may keep a `references/{project}-refactor.md` catalog alongside these — a time-boxed migration plan listing concrete legacy hotspots and fix recipes. Consult it only when working in that project, and delete it once the migration completes.
 
 **Read only what you need.** These files progressive-disclose; don't pre-load all of them.
 
@@ -129,7 +130,7 @@ The skill's rules are the target state. When editing an existing codebase that p
 2. **Touch-it = migrate-it.** If you're editing a 600-line dialog, that's the moment to split it per `references/components.md`. If you're adding a field to a `useState`-form that's grown past the RHF threshold, convert the form. Don't bolt new code onto drift.
 3. **Batch migrations are a separate PR.** Moving an entire folder to `modules/{domain}/` or rewriting a god-hook into focused hooks is a dedicated refactor PR — don't mix with feature work.
 
-Currently in scope: the first-pass refactor of humr's `packages/ui`. Concrete targets and fix recipes live in `references/humr-refactor.md`. That file is scoped to humr and will be deleted once the refactor completes.
+If the project ships a `{project}-refactor.md` catalog, it lists the concrete in-scope hotspots and their fix recipes; prefer those recipes over ad-hoc rewrites.
 
 ---
 
@@ -139,7 +140,6 @@ Currently in scope: the first-pass refactor of humr's `packages/ui`. Concrete ta
 - **`/bootstrap` command** — scaffold a new module (`modules/{domain}/` with boilerplate).
 - **`/adopt` command** — guided migration of a legacy area (e.g., a dialog → RHF, a fetch → TQ).
 - **Lint rules bundled** — `eslint-plugin-react-ui-engineering` codifying the CRITICAL rules so they fail CI instead of relying on Claude.
-- **Delete `humr-refactor.md`** — once the humr refactor completes, delete that file and drop the "Legacy code migration" section's reference to it. The skill should stand on generic rules only.
 
 If a session would benefit from any of these, surface it; don't implement ad-hoc.
 

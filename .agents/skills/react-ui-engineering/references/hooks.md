@@ -85,9 +85,9 @@ The orchestrator becomes ~50 lines composing focused children. Each child is ind
 
 ## Common utility hooks to reach for
 
-Humr re-implements several of these ad-hoc across files — use or introduce shared versions:
+When the same stateful pattern shows up in more than one file, extract a shared hook rather than copy-pasting:
 
-- **`useToggleSet<T>(initial: T[])`** — manages a `Set<T>` with `toggle`, `has`, `clear`. Replaces the copy-paste toggle pattern in `edit-agent-secrets-dialog`, `add-agent-dialog`, `schedules-panel`.
+- **`useToggleSet<T>(initial: T[])`** — manages a `Set<T>` with `toggle`, `has`, `clear`. Replaces the typical copy-pasted `new Set(prev); n.has(id) ? n.delete(id) : n.add(id)` pattern.
 - **`useLocalStorage<T>(key: string, initial: T)`** — syncs state with localStorage.
 - **`useDebouncedCallback(fn, ms)`** — debounce user input.
 - **`useDebouncedValue(value, ms)`** — debounce a value (common for search inputs).
