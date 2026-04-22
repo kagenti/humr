@@ -84,5 +84,25 @@ export function createSkillsToolHandlers(instanceId: string, skills: SkillsServi
         return formatToolError(err, "Failed to uninstall skill");
       }
     },
+
+    async publishSkill(input: {
+      sourceId: string;
+      name: string;
+      title?: string;
+      body?: string;
+    }): Promise<ToolContent> {
+      try {
+        const result = await skills.publishSkill({
+          instanceId,
+          sourceId: input.sourceId,
+          name: input.name,
+          title: input.title,
+          body: input.body,
+        });
+        return textResult(`Published ${input.name}. PR: ${result.prUrl}`);
+      } catch (err) {
+        return formatToolError(err, "Failed to publish skill");
+      }
+    },
   };
 }

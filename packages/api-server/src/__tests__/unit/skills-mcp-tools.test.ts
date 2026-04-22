@@ -19,10 +19,12 @@ function makeSkills(overrides: Partial<SkillsService> = {}): SkillsService {
     getSource: async (id) => (id === SOURCE.id ? SOURCE : null),
     createSource: async () => SOURCE,
     deleteSource: async () => {},
+    refreshSource: async () => {},
     listSkills: async () => [{ source: SOURCE.gitUrl, name: "adr", description: "", version: "sha-v1" }] as Skill[],
     installSkill: async () => INSTALLED,
     uninstallSkill: async () => [],
     listLocal: async () => [],
+    publishSkill: async () => ({ prUrl: "https://github.com/foo/bar/pull/1", branch: "humr/publish-foo" }),
     ...overrides,
   };
 }

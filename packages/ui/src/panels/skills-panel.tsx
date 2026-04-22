@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Eye, Plus, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
 import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
 import { platform } from "../platform.js";
 import { ACTION_FAILED, runAction } from "../store/query-helpers.js";
@@ -45,6 +45,10 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", gitUrl: "" });
   const [addBusy, setAddBusy] = useState(false);
+  const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
+  const [publishForm, setPublishForm] = useState({ sourceId: "", title: "", body: "" });
+  const [publishBusy, setPublishBusy] = useState(false);
+  const showToast = useStore((s) => s.showToast);
 
   const loadSkills = useCallback(async (sourceId: string) => {
     setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
@@ -60,6 +64,14 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       setLoadingBySource((l) => ({ ...l, [sourceId]: false }));
     }
   }, []);
+
+  const refreshSource = useCallback(async (sourceId: string) => {
+    const ok = await runAction(
+      () => platform.skills.sources.refresh.mutate({ id: sourceId }),
+      "Failed to refresh source",
+    );
+    if (ok !== ACTION_FAILED) await loadSkills(sourceId);
+  }, [loadSkills]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +173,69 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     }
   };
 
+  const publishableSources = sources.filter((s) => s.canPublish);
+
+  /** Names that appear in ANY source's catalog. Used to flag a Standalone
+   *  skill as "Published" once its upstream copy shows up (after the PR
+   *  gets merged and listSkills re-scans). Pure name-match: an authored
+   *  skill of the same name is presumed to be the same skill. */
+  const publishedNames = new Set<string>();
+  for (const list of Object.values(skillsBySource)) {
+    for (const skill of list) publishedNames.add(skill.name);
+  }
+
+  const openPublish = (skill: LocalSkill) => {
+    const first = publishableSources[0];
+    if (!first) return;
+    setPublishFor(skill);
+    setPublishForm({
+      sourceId: first.id,
+      title: `Add ${skill.name} skill`,
+      body: skill.description ?? "",
+    });
+  };
+
+  const publish = async () => {
+    if (!instanceId || !publishFor) return;
+    setPublishBusy(true);
+    try {
+      const result = await platform.skills.publish.mutate({
+        instanceId,
+        sourceId: publishForm.sourceId,
+        name: publishFor.name,
+        title: publishForm.title.trim() || undefined,
+        body: publishForm.body.trim() || undefined,
+      });
+      showToast({
+        kind: "success",
+        message: `Published ${publishFor.name}`,
+        action: { label: "View PR", onClick: () => window.open(result.prUrl, "_blank") },
+        ttl: 10_000,
+      });
+      setPublishFor(null);
+      // Drop the target source's scan cache + refetch so the skill appears
+      // in the catalog as soon as the PR is merged (even if the user's
+      // still sitting on this panel).
+      void refreshSource(publishForm.sourceId);
+    } catch (err) {
+      // publish-service encodes a call-to-action URL as `\nhumr-cta:<url>`
+      // in the error message when OneCLI's gateway surfaces a structured
+      // error (not connected / agent access not granted). Parse it out so
+      // the toast's action button takes the user straight to the right fix.
+      const rawMessage = err instanceof Error ? err.message : `Failed to publish ${publishFor.name}`;
+      const cta = rawMessage.match(/humr-cta:(\S+)/)?.[1];
+      const message = rawMessage.replace(/\nhumr-cta:\S+/, "").trim();
+      showToast({
+        kind: "error",
+        message,
+        action: cta ? { label: "Fix it", onClick: () => window.open(cta, "_blank") } : undefined,
+        ttl: 15_000,
+      });
+    } finally {
+      setPublishBusy(false);
+    }
+  };
+
   const deleteSource = async (src: SkillSource) => {
     const ok = await showConfirm(
       `Remove source "${src.name}"? Installed skills stay on running instances.`,
@@ -196,6 +271,52 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
           <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised">
             <span className="text-[12px] font-bold text-text flex-1 truncate">Standalone</span>
           </div>
+          {publishFor && (
+            <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in bg-surface">
+              <div className="text-[11px] text-text-muted">
+                Publishing <span className="font-mono text-text">{publishFor.name}</span> as a pull request.
+              </div>
+              <select
+                className={inp}
+                value={publishForm.sourceId}
+                onChange={(e) => setPublishForm((f) => ({ ...f, sourceId: e.target.value }))}
+              >
+                {publishableSources.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.gitUrl.replace(/^https:\/\/(github|gitlab)\.com\//, "")})</option>
+                ))}
+              </select>
+              <input
+                className={inp}
+                placeholder="Pull request title"
+                value={publishForm.title}
+                onChange={(e) => setPublishForm((f) => ({ ...f, title: e.target.value }))}
+              />
+              <textarea
+                className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[60px]"
+                placeholder="Pull request body (optional)"
+                value={publishForm.body}
+                onChange={(e) => setPublishForm((f) => ({ ...f, body: e.target.value }))}
+                rows={3}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
+                  onClick={() => setPublishFor(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
+                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                  disabled={publishBusy || !publishForm.sourceId}
+                  onClick={publish}
+                >
+                  {publishBusy ? "Publishing…" : "Publish"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {localSkills.map((skill) => (
             <div
               key={`${skill.skillPath}::${skill.name}`}
@@ -204,6 +325,14 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
+                  {publishedNames.has(skill.name) && (
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-success-light text-success border-success"
+                      title="A skill with this name exists in a connected source — you can delete the local copy via the Files tab."
+                    >
+                      Published
+                    </span>
+                  )}
                   {onOpenFile && (
                     <button
                       type="button"
@@ -214,6 +343,19 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                       <Eye size={11} />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="text-text-muted hover:text-accent transition-colors shrink-0 disabled:opacity-40 disabled:hover:text-text-muted"
+                    title={
+                      publishableSources.length === 0
+                        ? "Add a GitHub source first to publish there"
+                        : "Publish this skill as a pull request"
+                    }
+                    disabled={publishableSources.length === 0}
+                    onClick={() => openPublish(skill)}
+                  >
+                    <Share2 size={11} />
+                  </button>
                 </div>
                 {skill.description && (
                   <div className="mt-0.5 text-[11px] text-text-muted line-clamp-2" title={skill.description}>
@@ -291,6 +433,14 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               <span className="text-[11px] text-text-muted truncate max-w-[200px]" title={src.gitUrl}>
                 {src.gitUrl.replace(/^https:\/\/github\.com\//, "")}
               </span>
+              <button
+                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""}`}
+                onClick={() => refreshSource(src.id)}
+                title="Re-scan this source"
+                disabled={loading}
+              >
+                <RefreshCw size={12} />
+              </button>
               {!src.system && (
                 <button
                   className="text-text-muted hover:text-danger transition-colors"

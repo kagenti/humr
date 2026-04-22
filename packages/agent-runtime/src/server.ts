@@ -1,4 +1,5 @@
 import http from "node:http";
+import { spawnSync } from "node:child_process";
 import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -12,9 +13,22 @@ import {
   installSkill,
   installSkillInputSchema,
   listLocalSkills,
+  PayloadTooLargeError,
+  publishSkill,
+  readLocalSkill,
   uninstallSkill,
   uninstallSkillInputSchema,
 } from "./modules/skills.js";
+import { z } from "zod/v4";
+
+const publishSkillInputSchema = z.object({
+  name: z.string().min(1),
+  skillPaths: z.array(z.string().min(1)).min(1),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string(),
+});
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -140,11 +154,34 @@ const server = http.createServer((req, res) => {
         writeJson(res, 400, { error: "skillPaths query parameter required" });
         return;
       }
+
+      // /api/skills/local → list; /api/skills/local/<name> → read a single skill.
+      const tail = url.pathname.replace(/^\/api\/skills\/local\/?/, "");
+      if (!tail) {
+        try {
+          const skills = await listLocalSkills(skillPaths);
+          writeJson(res, 200, { skills });
+        } catch (err) {
+          writeJson(res, 500, { error: (err as Error).message });
+        }
+        return;
+      }
+
+      const name = decodeURIComponent(tail);
       try {
-        const skills = await listLocalSkills(skillPaths);
-        writeJson(res, 200, { skills });
+        const result = await readLocalSkill(name, skillPaths);
+        writeJson(res, 200, result);
       } catch (err) {
-        writeJson(res, 500, { error: (err as Error).message });
+        if (err instanceof PayloadTooLargeError) {
+          writeJson(res, 413, { error: err.message });
+          return;
+        }
+        const msg = (err as Error).message;
+        if (msg.includes("not found")) {
+          writeJson(res, 404, { error: msg });
+          return;
+        }
+        writeJson(res, 500, { error: msg });
       }
     })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
@@ -167,6 +204,36 @@ const server = http.createServer((req, res) => {
         writeJson(res, 200, { ok: true });
       } catch (err) {
         writeJson(res, 500, { error: (err as Error).message });
+      }
+    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
+    return;
+  }
+
+  if (req.url === "/api/skills/publish" && req.method === "POST") {
+    if (!isAuthorizedAgentCaller(req)) {
+      writeJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    (async () => {
+      const body = await readJsonBody(req);
+      const parsed = publishSkillInputSchema.safeParse(body);
+      if (!parsed.success) {
+        writeJson(res, 400, { error: parsed.error.message });
+        return;
+      }
+      try {
+        const result = await publishSkill(parsed.data);
+        writeJson(res, 200, result);
+      } catch (err) {
+        const e = err as Error & { cause?: { status?: number; body?: unknown } };
+        // OneCLI structured errors get relayed verbatim so the api-server (and
+        // UI) can extract connect_url / manage_url.
+        const cause = e.cause;
+        if (cause && typeof cause === "object" && typeof cause.status === "number") {
+          writeJson(res, 502, { error: e.message, upstream: cause });
+          return;
+        }
+        writeJson(res, 500, { error: e.message });
       }
     })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
@@ -225,6 +292,22 @@ if (config.HUMR_MCP_URL) {
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
   process.stderr.write(`[mcp] Wrote humr-outbound to ${mcpPath}\n`);
+}
+
+// Configure git to use gh's credential helper. git doesn't know about
+// GH_TOKEN directly, so without this it prompts for a username on private
+// repos. With this, git asks `gh auth git-credential`, gets humr:sentinel,
+// and OneCLI's MITM swaps it — same path REST already uses. Idempotent;
+// safe to run on every boot.
+try {
+  const result = spawnSync("gh", ["auth", "setup-git"], { stdio: "pipe" });
+  if (result.status !== 0) {
+    process.stderr.write(
+      `[git] gh auth setup-git exited ${result.status}: ${result.stderr?.toString() ?? ""}\n`,
+    );
+  }
+} catch (err) {
+  process.stderr.write(`[git] failed to configure credential helper: ${(err as Error).message}\n`);
 }
 
 server.listen(config.PORT, () => {

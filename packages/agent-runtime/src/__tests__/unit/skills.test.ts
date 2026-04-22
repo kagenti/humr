@@ -7,6 +7,8 @@ import {
   assertSafeSkillName,
   installSkillInputSchema,
   listLocalSkills,
+  PayloadTooLargeError,
+  readLocalSkill,
   resolveSkillDir,
   uninstallSkill,
   uninstallSkillInputSchema,
@@ -229,5 +231,56 @@ describe("listLocalSkills", () => {
 
   it("rejects relative skillPaths before touching the filesystem", async () => {
     await expect(listLocalSkills(["relative"])).rejects.toThrow(/must be absolute/);
+  });
+});
+
+describe("readLocalSkill", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "humr-skills-read-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("returns every file with text content for text and base64 for binary", async () => {
+    const skillDir = path.join(root, "my-draft");
+    await fs.mkdir(path.join(skillDir, "scripts"), { recursive: true });
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "---\nname: my-draft\n---\nhello");
+    await fs.writeFile(path.join(skillDir, "scripts", "run.sh"), "#!/bin/sh\necho hi\n");
+    // A tiny "binary" file (contains null bytes).
+    await fs.writeFile(path.join(skillDir, "logo.bin"), Buffer.from([0x00, 0x01, 0x02, 0x00, 0xff]));
+
+    const { files } = await readLocalSkill("my-draft", [root]);
+    const byRel = Object.fromEntries(files.map((f) => [f.relPath, f]));
+
+    expect(byRel["SKILL.md"].content).toContain("hello");
+    expect(byRel["SKILL.md"].base64).toBeUndefined();
+
+    expect(byRel["scripts/run.sh"].content).toContain("echo hi");
+    expect(byRel["scripts/run.sh"].base64).toBeUndefined();
+
+    expect(byRel["logo.bin"].base64).toBe(true);
+    expect(Buffer.from(byRel["logo.bin"].content, "base64")).toEqual(Buffer.from([0x00, 0x01, 0x02, 0x00, 0xff]));
+  });
+
+  it("throws when the skill is not found", async () => {
+    await expect(readLocalSkill("ghost", [root])).rejects.toThrow(/not found/);
+  });
+
+  it("rejects unsafe names before touching the filesystem", async () => {
+    await expect(readLocalSkill("../etc", [root])).rejects.toThrow(/invalid skill name/);
+  });
+
+  it("surfaces PayloadTooLargeError when a single file exceeds the per-file cap", async () => {
+    const skillDir = path.join(root, "huge");
+    await fs.mkdir(skillDir);
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "---\nname: huge\n---");
+    // 3 MB, exceeds the 2 MB per-file cap.
+    await fs.writeFile(path.join(skillDir, "blob.bin"), Buffer.alloc(3 * 1024 * 1024));
+
+    await expect(readLocalSkill("huge", [root])).rejects.toBeInstanceOf(PayloadTooLargeError);
   });
 });

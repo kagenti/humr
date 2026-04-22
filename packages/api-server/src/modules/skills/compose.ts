@@ -36,6 +36,14 @@ async function scanWithCache(gitUrl: string): Promise<Skill[]> {
   return skills;
 }
 
+/** Drop the cached listing for a gitUrl so the next scan hits upstream.
+ *  Called on successful publish + manual refresh. */
+function invalidateScanCache(gitUrl: string): void {
+  if (sharedScanCache.delete(gitUrl)) {
+    process.stderr.write(`[skills] cache invalidated: ${gitUrl}\n`);
+  }
+}
+
 export function composeSkillsModule(
   api: k8s.CoreV1Api,
   namespace: string,
@@ -50,5 +58,6 @@ export function composeSkillsModule(
     getAgentToken: createAgentTokenResolver(k8s),
     owner,
     scanSource: scanWithCache,
+    invalidateScan: invalidateScanCache,
   });
 }
