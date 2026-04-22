@@ -6,7 +6,9 @@ First-pass refactor of humr's `packages/ui` toward the [React + TypeScript UI en
 
 ## Process
 
-**Domain-major, one PR per (step, domain).** For each UI domain, walk the step files in order. Each step in a domain produces one PR with one commit; each PR is small, reviewable, and independently testable. If a step is trivially a no-op in a domain (no files violate it), mark it done in the matrix without opening a PR. If two consecutive steps in a domain are both tiny, they may be combined into a single PR — call that out in the commit message.
+**Domain-major, one commit per step, one PR per domain (or more).** Pick a domain, walk the step files in order, make one commit per step. Open the PR once the domain is fully refactored. This is a fresh app so reviewer bandwidth isn't the bottleneck — if two adjacent small domains fit naturally in one PR (e.g., `schedules` + `files`), batch them. Default is one-PR-per-domain; batch opportunistically.
+
+Steps that are a no-op in a domain (nothing to change) are skipped entirely — no empty commit, just mark the matrix cell `—`.
 
 **Why domain-major:** if we pause work, each touched domain ends in a fully-refactored state rather than every domain half-done. It also keeps review cognitive load scoped to one feature area at a time.
 
@@ -58,7 +60,7 @@ Shared (stays at top level):
 | [files](domains/files.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | [settings](domains/settings.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 
-Update cells in the same PR that completes the work. Link the PR next to the cell if useful (`✅ [#268](...)`).
+Update cells as part of the PR that completes the work. Link the PR next to the domain name if useful (`[connections](domains/connections.md) ([#XYZ](...))`).
 
 ---
 
@@ -76,8 +78,8 @@ No step lands without verification. If the recipe is a pure mechanical move (ste
 
 ## Branch & commit conventions
 
-- One branch per (step, domain): `refactor/ui-{domain}-{step}` — e.g., `refactor/ui-connections-data`.
-- Conventional commits: `refactor(ui/{domain}): {step goal}` — e.g., `refactor(ui/connections): migrate to TanStack Query`.
+- One branch per domain (or per batch): `refactor/ui-{domain}` — e.g., `refactor/ui-connections`. For batched domains: `refactor/ui-{domain1}-{domain2}`.
+- One commit per step, conventional: `refactor(ui/{domain}): {step goal}` — e.g., `refactor(ui/connections): migrate to TanStack Query`. Keeps the history step-scannable even though the PR bundles them.
 - Always `git commit -s` for DCO.
-- PR title matches the commit.
-- PR body: link to the step file and the domain file; tick the matrix cell in the PR.
+- PR title summarizes the domain(s): `refactor(ui/{domain}): apply UI engineering rules`.
+- PR body: link to the domain file(s); list the step commits; tick the matrix cells.
