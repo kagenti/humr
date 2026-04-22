@@ -56,7 +56,7 @@ Shared (stays at top level):
 | [chat](domains/chat.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | [agents](domains/agents.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | [secrets](domains/secrets.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| [schedules](domains/schedules.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| [schedules](domains/schedules.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [files](domains/files.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | [settings](domains/settings.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 
@@ -75,6 +75,18 @@ Every step file ends with a **How to verify** section. Three modes, in preferenc
 No step lands without verification. If the recipe is a pure mechanical move (step 01), "`mise run check` passes and the app boots" is enough.
 
 ---
+
+## Lint scope
+
+ESLint's strict rule set (`typescript-eslint/recommended`, `consistent-type-imports`, `simple-import-sort`, `react-hooks`) is scoped to `packages/ui/src/modules/**` in `eslint.config.js`. Legacy files outside `modules/` keep only the baseline rules (kebab-case filenames, tseslint base) so this refactor stays the only thing driving those churn edits. Files pick up the strict rules automatically the moment they move into `modules/` during step 01 — that's what makes each domain's step 01 also a lint baseline.
+
+**Before merging a domain's work:** run `mise run lint:fix` (auto-fixes import order, `import type`) and make sure `mise run lint:check` is clean.
+
+**Post-migration cleanup** (track, don't forget when the last domain is done):
+1. Drop the `packages/ui/src/modules/**` block in `eslint.config.js`.
+2. Widen the `tseslint.configs.recommended` + `simple-import-sort` + `react-hooks` rules to `packages/ui/**` (or `packages/**` where appropriate).
+3. Run `mise run lint:fix` across the codebase; fix the remaining errors (`no-explicit-any` in protocol surfaces, stray `no-unused-expressions`, etc.).
+4. Delete this whole plan folder.
 
 ## Branch & commit conventions
 
