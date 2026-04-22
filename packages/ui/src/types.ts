@@ -100,7 +100,7 @@ export interface InstanceView {
   state: InstanceState;
   error?: string;
   channels: { type: string; slackChannelId: string }[];
-  allowedUsers: string[];
+  allowedUserEmails: string[];
 }
 
 export interface Schedule {

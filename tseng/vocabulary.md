@@ -16,6 +16,7 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 | Desired State | The target lifecycle state of an instance: running or hibernated |
 | Wake | Transitioning an instance from hibernated to running |
 | Heartbeat | A recurring schedule type defined by interval, internally converted to cron |
+| Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
 
 ## Channels (bounded context)
 

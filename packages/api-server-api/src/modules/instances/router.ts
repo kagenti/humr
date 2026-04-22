@@ -25,7 +25,7 @@ export const instancesRouter = t.router({
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
       description: z.string().optional(),
-      allowedUsers: z.array(z.string()).optional(),
+      allowedUserEmails: z.array(z.email()).optional(),
     }))
     .mutation(async ({ ctx, input }) => ctx.instances.create(input)),
 
@@ -34,7 +34,7 @@ export const instancesRouter = t.router({
       id: z.string().min(1),
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
-      allowedUsers: z.array(z.string()).optional(),
+      allowedUserEmails: z.array(z.email()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.update(input);

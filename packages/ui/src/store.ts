@@ -152,7 +152,7 @@ export interface HumrStore {
   fetchInstances: () => Promise<void>;
   createInstance: (agentId: string, name: string) => Promise<void>;
   deleteInstance: (id: string) => Promise<void>;
-  updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
+  updateInstance: (id: string, updates: { allowedUserEmails?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;

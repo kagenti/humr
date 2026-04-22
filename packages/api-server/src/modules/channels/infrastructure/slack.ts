@@ -163,13 +163,12 @@ export function createSlackWorker(
   }
 
   async function hasAccess(instanceName: string, keycloakSub: string): Promise<boolean> {
-    const [instance, ownerSub] = await Promise.all([
-      instances().get(instanceName),
+    const [ownerSub, isAllowed] = await Promise.all([
       getInstanceOwner(instanceName),
+      instances().isAllowedUser(instanceName, keycloakSub),
     ]);
     if (ownerSub !== null && ownerSub === keycloakSub) return true;
-    if (instance && instance.allowedUsers.includes(keycloakSub)) return true;
-    return false;
+    return isAllowed;
   }
 
   async function filterAccessible(
@@ -511,12 +510,11 @@ export function createSlackWorker(
   }) {
     if (!app) return;
 
-    const [instance, ownerSub] = await Promise.all([
-      instances().get(args.instanceName),
+    const [ownerSub, isAllowed] = await Promise.all([
       getInstanceOwner(args.instanceName),
+      instances().isAllowedUser(args.instanceName, args.keycloakSub),
     ]);
     const isOwner = ownerSub !== null && ownerSub === args.keycloakSub;
-    const isAllowed = !!instance && instance.allowedUsers.includes(args.keycloakSub);
     if (!isOwner && !isAllowed) {
       await app.client.chat.postEphemeral({
         channel: args.channel,

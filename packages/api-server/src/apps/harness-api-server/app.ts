@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createAcpClient } from "../../acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
@@ -20,13 +21,20 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
 
   const k8sClient = createK8sClient(api, config.namespace);
 
+  const userDirectory = createKeycloakUserDirectory({
+    keycloakUrl: config.keycloakUrl,
+    keycloakRealm: config.keycloakRealm,
+    clientId: config.keycloakApiClientId,
+    clientSecret: config.keycloakApiClientSecret,
+  });
+
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
-      const { sessions } = composeAgentsModule(api, config.namespace, "_system", db);
+      const { sessions } = composeAgentsModule(api, config.namespace, "_system", db, userDirectory);
 
       let resumeSessionId: string | undefined;
       if (mode === "continuous") {

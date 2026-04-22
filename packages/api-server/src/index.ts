@@ -3,6 +3,7 @@ import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
+import { createKeycloakUserDirectory } from "./modules/agents/infrastructure/keycloak-user-directory.js";
 import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
 import { upsertSession, findByInstanceAndThreadTs, findInstanceByThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
@@ -67,7 +68,14 @@ const { forks } = composeForksModule({
 const onForeignReplySub = startOnForeignReplySaga(forks);
 const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
 
-const systemInstances = composeSystemInstances(api, config.namespace, db);
+const userDirectory = createKeycloakUserDirectory({
+  keycloakUrl: config.keycloakUrl,
+  keycloakRealm: config.keycloakRealm,
+  clientId: config.keycloakApiClientId,
+  clientSecret: config.keycloakApiClientSecret,
+});
+
+const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory);
 const persistSession = upsertSession(db);
 const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
   persistSession(sessionId, instanceId, type, undefined, threadTs);
