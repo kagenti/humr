@@ -22,6 +22,7 @@ export function ScheduleCard({
   onToggleExpanded,
   onResumeSession,
 }: Props) {
+  const { id, name, cron, enabled, sessionMode, status } = schedule;
   const showConfirm = useStore(s => s.showConfirm);
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
@@ -29,23 +30,23 @@ export function ScheduleCard({
 
   const handleToggleEnabled = (e: React.MouseEvent) => {
     e.stopPropagation();
-    toggleSchedule.mutate({ id: schedule.id });
+    toggleSchedule.mutate({ id });
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (await showConfirm(`Delete schedule "${schedule.name}"?`, "Delete Schedule")) {
-      deleteSchedule.mutate({ id: schedule.id });
+    if (await showConfirm(`Delete schedule "${name}"?`, "Delete Schedule")) {
+      deleteSchedule.mutate({ id });
     }
   };
 
   const handleResetSession = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (await showConfirm(
-      `Reset session for "${schedule.name}"? The next tick will start a fresh conversation.`,
+      `Reset session for "${name}"? The next tick will start a fresh conversation.`,
       "Reset Session",
     )) {
-      resetScheduleSession.mutate({ scheduleId: schedule.id });
+      resetScheduleSession.mutate({ scheduleId: id });
     }
   };
 
@@ -58,18 +59,18 @@ export function ScheduleCard({
         <div className="flex items-center gap-2">
           {isExpanded ? <ChevronDown size={12} className="text-text-muted shrink-0" /> : <ChevronRight size={12} className="text-text-muted shrink-0" />}
           <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info">cron</span>
-          {schedule.sessionMode === "continuous" && (
+          {sessionMode === "continuous" && (
             <span className="text-[10px] font-bold uppercase tracking-[0.03em] border rounded-full px-2 py-0.5 bg-purple-50 text-purple-600 border-purple-300">
               continuous
             </span>
           )}
-          <span className="text-[13px] font-semibold text-text flex-1 truncate">{schedule.name}</span>
-          <span className="text-[11px] font-mono text-text-muted">{schedule.cron}</span>
+          <span className="text-[13px] font-semibold text-text flex-1 truncate">{name}</span>
+          <span className="text-[11px] font-mono text-text-muted">{cron}</span>
           <button
-            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${schedule.enabled ? "bg-success-light text-success border-success" : "bg-bg text-text-muted border-border-light"} hover:opacity-80`}
+            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${enabled ? "bg-success-light text-success border-success" : "bg-bg text-text-muted border-border-light"} hover:opacity-80`}
             onClick={handleToggleEnabled}
           >
-            {schedule.enabled ? "On" : "Off"}
+            {enabled ? "On" : "Off"}
           </button>
           <button
             className="text-text-muted hover:text-danger transition-colors"
@@ -78,11 +79,11 @@ export function ScheduleCard({
             <X size={14} />
           </button>
         </div>
-        {schedule.status && (
+        {status && (
           <div className="flex gap-3 text-[11px] text-text-muted pl-5">
-            {schedule.status.lastRun && <span>last: {new Date(schedule.status.lastRun).toLocaleString()}</span>}
-            {schedule.status.nextRun && <span>next: {new Date(schedule.status.nextRun).toLocaleString()}</span>}
-            {schedule.status.lastResult && <span className={schedule.status.lastResult === "success" ? "text-success" : "text-danger"}>{schedule.status.lastResult}</span>}
+            {status.lastRun && <span>last: {new Date(status.lastRun).toLocaleString()}</span>}
+            {status.nextRun && <span>next: {new Date(status.nextRun).toLocaleString()}</span>}
+            {status.lastResult && <span className={status.lastResult === "success" ? "text-success" : "text-danger"}>{status.lastResult}</span>}
           </div>
         )}
       </div>
@@ -106,7 +107,7 @@ export function ScheduleCard({
               </span>
             </div>
           ))}
-          {schedule.sessionMode === "continuous" && sessions.length > 0 && (
+          {sessionMode === "continuous" && sessions.length > 0 && (
             <div className="px-4 py-2 pl-9">
               <button
                 className="text-[10px] font-bold uppercase tracking-[0.03em] border border-border-light rounded px-1.5 py-0.5 text-text-muted hover:text-danger hover:border-danger transition-colors"
