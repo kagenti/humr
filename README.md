@@ -10,7 +10,7 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 ## What you get
 
-- **Zero-trust isolation** — Every agent runs in its own pod with its own filesystem, network, and credentials. Outbound traffic routes through a proxy that injects real API keys; the agent never sees them. Network policy drops everything else. A compromised agent has nothing to steal and nowhere to go.
+- **Isolated by design** — Each agent runs in its own sandbox: separate pod, process, and filesystem. API keys live in a proxy; the agent never sees them. Network access is locked to destinations you've approved. That contains two of the three big agent-security risks structurally. [Security model →](docs/security-model.md)
 
 - **Always-on scheduling** — Cron lives on the platform, not your laptop. Scheduled tasks look identical to human messages from the agent's perspective. Workspace and conversation history persist across restarts.
 
@@ -58,4 +58,5 @@ Open [humr.localhost:4444](http://humr.localhost:4444) (login: `dev` / `dev`), c
 ## Learn more
 
 - **[Guide](docs/guide.md)** — credential setup, Slack integration, development workflow, architecture overview
+- **[Security model](docs/security-model.md)** — the three big risks when running AI agents, how Humr handles each, and what's still unsolved
 - **[Why Humr exists](PITCH.md)** — the three problems every agent hits in production, how Humr solves each, and a 5-minute walkthrough
