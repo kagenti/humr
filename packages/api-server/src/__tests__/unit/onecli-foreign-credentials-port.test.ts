@@ -105,12 +105,13 @@ describe("onecli-foreign-credentials-port", () => {
     await expect(port.exchangeImpersonationToken("kc|u1")).rejects.toThrow(/401/);
   });
 
-  it("createOrFindAgent returns accessToken from POST /api/agents on 200", async () => {
+  it("createOrFindAgent returns accessToken from POST /api/agents on 200 and sets secret-mode=all", async () => {
     const { calls } = installFetchMock({
       "POST http://onecli/api/agents": {
         status: 200,
         body: { id: "a-1", accessToken: "at-123", identifier: "fork-x-abc" },
       },
+      "PATCH http://onecli/api/agents/a-1/secret-mode": { status: 200, body: {} },
     });
 
     const port = createOnecliForeignCredentialsPort(config);
@@ -123,10 +124,13 @@ describe("onecli-foreign-credentials-port", () => {
     expect(result).toEqual({ accessToken: "at-123" });
     expect(calls[0].method).toBe("POST");
     expect(JSON.parse(calls[0].body!)).toEqual({ name: "Fork X", identifier: "fork-x-abc" });
+    const patch = calls.find((c) => c.method === "PATCH");
+    expect(patch?.url).toBe("http://onecli/api/agents/a-1/secret-mode");
+    expect(JSON.parse(patch!.body!)).toEqual({ mode: "all" });
   });
 
-  it("falls back to listing agents when POST /api/agents returns 409", async () => {
-    installFetchMock({
+  it("falls back to listing agents when POST /api/agents returns 409 and re-applies secret-mode=all", async () => {
+    const { calls } = installFetchMock({
       "POST http://onecli/api/agents": { status: 409, body: { error: "exists" } },
       "http://onecli/api/agents": {
         status: 200,
@@ -135,6 +139,7 @@ describe("onecli-foreign-credentials-port", () => {
           { id: "a-2", identifier: "fork-x-abc", accessToken: "right" },
         ],
       },
+      "PATCH http://onecli/api/agents/a-2/secret-mode": { status: 200, body: {} },
     });
 
     const port = createOnecliForeignCredentialsPort(config);
@@ -145,6 +150,8 @@ describe("onecli-foreign-credentials-port", () => {
     });
 
     expect(result).toEqual({ accessToken: "right" });
+    const patch = calls.find((c) => c.method === "PATCH");
+    expect(patch?.url).toBe("http://onecli/api/agents/a-2/secret-mode");
   });
 
   it("falls back to listing agents when POST /api/agents response lacks accessToken", async () => {
@@ -154,6 +161,7 @@ describe("onecli-foreign-credentials-port", () => {
         status: 200,
         body: [{ id: "a-2", identifier: "fork-x-abc", accessToken: "right" }],
       },
+      "PATCH http://onecli/api/agents/a-2/secret-mode": { status: 200, body: {} },
     });
 
     const port = createOnecliForeignCredentialsPort(config);

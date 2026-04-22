@@ -99,6 +99,21 @@ export function createOnecliForeignCredentialsPort(
     return list.find((a) => a.identifier === identifier) ?? null;
   }
 
+  async function setSecretMode(
+    onecliToken: string,
+    agentId: string,
+    mode: "all" | "selective",
+  ): Promise<void> {
+    const res = await onecliFetch(onecliToken, `/api/agents/${agentId}/secret-mode`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    if (!res.ok) {
+      throw new Error(`OneCLI PATCH secret-mode: ${res.status} ${await res.text()}`);
+    }
+  }
+
   async function createOrFindAgent(args: {
     onecliToken: string;
     identifier: string;
@@ -115,6 +130,7 @@ export function createOnecliForeignCredentialsPort(
       if (!existing) {
         throw new Error(`OneCLI 409 on create but no agent with identifier ${args.identifier}`);
       }
+      await setSecretMode(args.onecliToken, existing.id, "all");
       return { accessToken: existing.accessToken };
     }
 
@@ -123,6 +139,8 @@ export function createOnecliForeignCredentialsPort(
     }
 
     const created = (await res.json()) as { id: string; accessToken?: string };
+    await setSecretMode(args.onecliToken, created.id, "all");
+
     if (created.accessToken) return { accessToken: created.accessToken };
 
     const full = await findAgentByIdentifier(args.onecliToken, args.identifier);
