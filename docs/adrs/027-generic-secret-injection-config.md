@@ -1,4 +1,4 @@
-# ADR-027: Configurable injection on generic secrets (host/path + custom header)
+# ADR-027: Configurable injection on generic secrets
 
 **Date:** 2026-04-21
 **Status:** Accepted
@@ -6,89 +6,52 @@
 
 ## Context
 
-The credential gateway (ADR-005, ADR-010) injects tokens into outbound traffic by matching a stored secret's `hostPattern` against the request host and replacing a predetermined header with the real credential. Until now, that replacement was effectively hardcoded:
+OneCLI's credential gateway (ADR-005) injects a stored token into outbound traffic by matching a secret's `hostPattern` against the request host and rewriting a predetermined header. Until now, only two knobs were surfaced on generic secrets: the secret name and the host pattern. Injection was effectively hardcoded: `Authorization: Bearer {value}` on every request to that host. Anthropic had a separate provider-shaped path; everything else was forced into the one-size-fits-all default.
 
-- Every generic secret was injected as `Authorization: Bearer {value}`.
-- Scope was limited to the host; a secret either applied to every path on that host or none.
-- Anthropic had a bespoke provider-specific code path (`x-api-key` / OAuth bearer); everything else was bundled under the one-size-fits-all default.
+That shape stops working as soon as a real provider deviates from it. Internal gateways (RITS, Portkey, and friends) commonly do one or more of:
 
-That shape stops working once you onboard providers that:
+- Use a non-`Authorization` header (e.g. `RITS_API_KEY`, `x-portkey-api-key`, `x-api-key`).
+- Require a different value format (raw token, `Token {value}`, something else).
+- Multiplex models or tenants behind one host where a single credential should only apply to a sub-path.
 
-1. Use a non-`Authorization` header (e.g. RITS authenticates with `RITS_API_KEY`, IBM-internal gateways use `x-portkey-api-key`, etc.).
-2. Require a different value template (`Token {value}`, raw values without `Bearer`).
-3. Serve multiple tenants or models behind the same host, where a single credential should only apply to a sub-path (e.g. `rits.example.com` + `/minimax-m2-5/*`).
-
-The first concrete motivation was the pi-agent RITS integration (see `packages/agents/pi-agent/README.md`) — RITS is OpenAI-compatible but authenticates via `RITS_API_KEY`, and each model lives at its own `/v1`-scoped URL.
+Each of those is a one-line platform patch in isolation, but cumulatively they push the system toward "one bespoke code path per provider" — work the user can declare themselves if we expose what OneCLI already supports.
 
 ## Decision
 
-Extend the generic-secret model with two optional scoping knobs and one full injection override. All three are persisted in OneCLI `Secret.metadata` and plumbed end-to-end (tRPC router → `OnecliSecretsPort` → `SecretView` → UI).
+Extend the generic-secret schema with one scope knob and one full injection override. Keep Anthropic special-cased; this decision is only about generic secrets.
 
-### `pathPattern` (optional)
+### 1. `pathPattern` (optional)
 
-Narrow scope from "whole host" to "prefix on host". `hostPattern: api.example.com`, `pathPattern: /v1/*` only injects on requests whose path matches. Clearing the field sends `null` to OneCLI, which drops the path filter entirely. Anthropic secrets continue to reject `pathPattern` (enforced in the router `superRefine`).
+Narrow a secret's scope from "whole host" to "prefix on host". `hostPattern: api.example.com`, `pathPattern: /v1/*` only matches requests whose path falls under that prefix. Clearing the field on update sends `null` to OneCLI, which drops the path filter.
 
-### `injectionConfig` (optional, generic-only)
+### 2. `injectionConfig` (optional)
 
-```ts
-{ headerName: string; valueFormat: string }
-```
+A pair `{ headerName, valueFormat? }`. `headerName` is the HTTP header OneCLI rewrites; `valueFormat` is a template where the literal token `{value}` is replaced with the secret. Examples: `{ headerName: "RITS_API_KEY", valueFormat: "{value}" }`, `{ headerName: "x-api-key" }` (valueFormat defaults to `{value}`), `{ headerName: "Authorization", valueFormat: "Token {value}" }`.
 
-- `headerName` — which HTTP header OneCLI rewrites (e.g. `RITS_API_KEY`, `x-api-key`, `Authorization`).
-- `valueFormat` — a template with a single `{value}` placeholder (e.g. `Bearer {value}`, `Token {value}`, or just `{value}` to emit the raw secret).
+Omitting the field falls back to a single platform default, `{ headerName: "Authorization", valueFormat: "Bearer {value}" }`, exported once and consumed by the server fallback and the UI placeholder so "default" cannot drift between them.
 
-Empty fields in the UI fall back to the platform-wide `DEFAULT_INJECTION_CONFIG = { headerName: "Authorization", valueFormat: "Bearer {value}" }` — a single exported constant that the server fallback, the port, and the UI placeholder all read from so the "default" is never out of sync.
+### 3. Anthropic restrictions stay explicit
 
-### Server-side invariants
+Anthropic secrets are rejected by the tRPC router if they carry any of `hostPattern`, `pathPattern`, or `injectionConfig`. Enforced in a single validation pass so the UI gets every violation in one response. Anthropic's OAuth/API-key shape (ADR-024) is orthogonal to this decision.
 
-- Anthropic secrets cannot carry `hostPattern`, `pathPattern`, or `injectionConfig`. All three are checked in one tRPC `superRefine` pass; the response lists every violation so the UI can surface them together.
-- On update, an explicit `null` clears; `undefined` is a no-op. Applied uniformly to `pathPattern`, `injectionConfig`, and `envMappings`.
+### 4. Null-clear semantics on update
+
+An update payload distinguishes between *unchanged* (field omitted) and *cleared* (field set to `null`). Applied uniformly to `pathPattern` and `injectionConfig`. Keeps the PATCH surface composable and avoids a separate "reset" endpoint.
 
 ## Alternatives Considered
 
-**Per-provider hardcoded configs in the gateway.** Keep shipping bespoke code paths per provider (Anthropic got its own, RITS would get its own, etc.). Rejected: this is O(providers) platform work for something users can declare themselves; the gateway already supports arbitrary header rewrites, we were just not exposing them.
+**Per-provider hardcoded configs in the gateway.** Add a code path per new provider (one for Anthropic, one for RITS, one for Portkey, …). Rejected: the gateway already supports arbitrary header rewrites; this is platform work that grows linearly with providers, for something users can express declaratively.
 
-**Free-form headers JSON instead of `{headerName, valueFormat}`.** Let the user paste a full headers object. Rejected: harder to validate, easier to misuse (no placeholder contract), and 95% of real cases only need a single header with a formatted value.
+**Free-form headers JSON instead of `{ headerName, valueFormat }`.** Let users paste an arbitrary header map. Rejected: hard to validate, no `{value}` contract, and 95% of real cases are a single header with a formatted value. The two-field shape captures the common case without closing the door on a future multi-header form.
 
-**Sentinel-per-secret (e.g. `humr:sentinel:<id>`).** Would let the gateway match by sentinel rather than host+path. Rejected: host+path matching is already how OneCLI works; per-secret sentinels would require gateway changes and force every outbound call through a rewritable template.
+**Per-secret sentinel matching.** Assign each secret a unique sentinel (`humr:sentinel:<id>`) and have OneCLI match on sentinel instead of host+path. Rejected: host+path matching is already how OneCLI works and covers this use case; per-secret sentinels would require a gateway change and touch every code path that currently emits the shared sentinel.
 
-**Put path scoping on the agent side (request rewriting in `agent-runtime`).** Rejected: the gateway already MITMs the traffic; pushing scoping into agents duplicates logic and splits a single concern across two codebases.
+**Push path scoping into the agent (rewrite requests in `agent-runtime`).** Rejected: the gateway already sits inline and MITMs the traffic; adding path scoping on the agent side would split one concern across two codebases.
 
 ## Consequences
 
-- **pi-agent RITS shipped.** With custom `headerName: RITS_API_KEY` + `valueFormat: "{value}"` (no `Bearer`) and a `pathPattern` scoped to the deployed model, the same generic-secret form can now authenticate RITS without any pi-agent-specific wire changes. See `packages/agents/pi-agent/README.md` and the pi-rits extension at `packages/agents/pi-agent/workspace/.pi/agent/extensions/pi-rits/index.ts`.
-- **Default constant in one place.** `DEFAULT_INJECTION_CONFIG` in `packages/api-server-api/src/modules/secrets/types.ts` is the single source of truth — UI placeholder, server fallback, and port default all import it. A rename or format change is a one-line edit.
-- **OneCLI fork touch.** `OnecliSecret` gained optional `pathPattern` and `injectionConfig`; the fork's schema already accepted them (same JSONB metadata column as `envMappings`), so no OneCLI code change was needed beyond the existing patch from ADR-024.
-- **UI surface.** `add-agent-dialog`, `edit-agent-secrets-dialog`, and the Connectors view now render the path field and a collapsible "Custom header" section. Empty inputs render placeholder text derived from `DEFAULT_INJECTION_CONFIG` so users see what the fallback would be.
-- **Anthropic isolation.** Anthropic secrets remain provider-shaped (OAuth vs API Key) with a dedicated `authMode`; they don't get `pathPattern`/`injectionConfig`. The router rejects those fields at validation time — the extra fields are for generic secrets only.
-- **pi-acp auth-gate workarounds** (for pi-agent specifically) are documented in its README, not lifted into platform: `OPENCODE_API_KEY` dummy env to unlock pi-acp's startup auth check, and `models.json` mirroring from the extension to satisfy its per-session gate. Upstream: [svkozak/pi-acp#15](https://github.com/svkozak/pi-acp/issues/15).
-
-## Key files
-
-### API (TypeScript)
-
-- `packages/api-server-api/src/modules/secrets/types.ts` — `DEFAULT_INJECTION_CONFIG`, `InjectionConfig`, `pathPattern`, `injectionConfig` on `GenericSecretMetadata` / `SecretView`.
-- `packages/api-server-api/src/modules/secrets/router.ts` — single `superRefine` consolidating Anthropic restrictions for all three fields; null-clear semantics on update.
-- `packages/api-server/src/modules/secrets/infrastructure/onecli-secrets-port.ts` — plumbs `pathPattern` + `injectionConfig` through `OnecliSecret` ⇄ `SecretView`.
-- `packages/api-server/src/modules/secrets/services/secrets-service.ts` — reuses `DEFAULT_INJECTION_CONFIG` on fallback.
-
-### UI (React)
-
-- `packages/ui/src/dialogs/add-agent-dialog.tsx` — path + custom-header fields for new generic secrets.
-- `packages/ui/src/dialogs/edit-agent-secrets-dialog.tsx` — edit path/header/format; null-clear on empty.
-- `packages/ui/src/dialogs/edit-secret-dialog.tsx` — symmetric edit surface from the Connectors view.
-- `packages/ui/src/views/connections-view.tsx` — list renders host + path + header name.
-- `packages/ui/src/store.ts` / `packages/ui/src/types.ts` — store + types pass the new fields through.
-
-### pi-agent (consumer)
-
-- `packages/agents/pi-agent/workspace/.pi/agent/extensions/pi-rits/index.ts` — registers the `rits` provider, reads `RITS_URL`/`RITS_MODEL`/optional tuning env vars, mirrors to `~/.pi/agent/models.json`.
-- `packages/agents/pi-agent/Dockerfile` — `OPENCODE_API_KEY` dummy env for the pi-acp startup gate.
-- `packages/agents/pi-agent/README.md` — end-to-end setup (OneCLI secret with custom header `RITS_API_KEY`, host+path scoping, env vars).
-
-## Verification
-
-- `mise run check` — tsc + helm lint/render pass.
-- E2E: Connectors view → Add Secret → host `api.example.com`, path `/v1/*`, header `X-Custom-Auth`, format `Token {value}` → POSTed to OneCLI with all four fields → reload survives → edit clears path field → OneCLI drops the filter.
-- E2E (pi-agent RITS): granted a generic secret with `headerName: RITS_API_KEY`, `valueFormat: "{value}"`, host+path scoped to the RITS model URL → prompt in the UI → OneCLI log shows `injections_applied=1 status=200` on `POST .../chat/completions`.
-- Router rejection: POST an Anthropic secret with `hostPattern`/`pathPattern`/`injectionConfig` → 400 with all three fields reported in the single response.
+- Generic secrets cover providers the platform previously couldn't support, with no per-provider code. First concrete example shipped in the same PR: the pi-agent RITS extension (`packages/agents/pi-agent/README.md`) uses `headerName: RITS_API_KEY`, `valueFormat: {value}`, and a host+path pattern scoped to one model URL.
+- The "default injection" is now a shared constant. A future change (e.g. lowercasing the header name) is a one-line edit; today's UI placeholder mirrors whatever the server falls back to.
+- The update PATCH surface grows two optional fields, plus `null`-clear semantics. Callers that only ever touch `name` or `value` are unaffected.
+- Anthropic secrets and generic secrets drift further apart in schema shape. The router enforces the split; UI renders them with different forms. This is a deliberate trade — the Anthropic shape captures provider-specific constraints (OAuth vs API key) that don't generalize.
+- Depends on OneCLI already accepting `pathPattern` and `injectionConfig` in `Secret.metadata` (same JSONB column used by `envMappings` from ADR-024). No OneCLI fork change was needed beyond that prior patch.
