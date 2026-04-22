@@ -110,17 +110,11 @@ export function ConnectionsPicker({
         {genericSecrets.length > 0 && (
           <Section title="Secrets">
             {genericSecrets.map((s) => (
-              <ItemRow
+              <SecretItemRow
                 key={s.id}
+                secret={s}
                 checked={selSecrets.has(s.id)}
                 onToggle={() => onToggleSecret(s.id)}
-                icon={<Lock size={14} className="text-text-secondary" />}
-                label={s.name}
-                trailing={
-                  <span className="ml-auto text-[11px] font-mono text-text-muted">
-                    {s.hostPattern}
-                  </span>
-                }
               />
             ))}
           </Section>
@@ -200,6 +194,63 @@ function ItemRow({
       {icon}
       <span className="text-[13px] font-medium text-text flex-1">{label}</span>
       {trailing}
+    </label>
+  );
+}
+
+function SecretItemRow({
+  secret,
+  checked,
+  onToggle,
+}: {
+  secret: SecretView;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const headerName = secret.injectionConfig?.headerName;
+  const customHeader =
+    headerName && headerName.toLowerCase() !== "authorization" ? headerName : null;
+  const envNames = secret.envMappings?.map((m) => m.envName) ?? [];
+  return (
+    <label
+      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
+        checked ? "border-accent bg-accent-light" : "border-border-light"
+      }`}
+    >
+      <input
+        type="checkbox"
+        className="accent-[var(--color-accent)] w-4 h-4"
+        checked={checked}
+        onChange={onToggle}
+      />
+      <Lock size={14} className="text-text-secondary shrink-0 self-start mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium text-text truncate">
+          {secret.name}
+        </div>
+        <div className="text-[11px] font-mono text-text-muted truncate">
+          {secret.hostPattern}
+          {secret.pathPattern && (
+            <span className="text-text-secondary">{secret.pathPattern}</span>
+          )}
+        </div>
+        {customHeader && (
+          <div className="text-[11px] text-text-secondary truncate">
+            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+              header
+            </span>
+            <span className="font-mono">{customHeader}</span>
+          </div>
+        )}
+        {envNames.length > 0 && (
+          <div className="text-[11px] text-accent truncate">
+            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+              env
+            </span>
+            <span className="font-mono">{envNames.join(", ")}</span>
+          </div>
+        )}
+      </div>
     </label>
   );
 }

@@ -1,8 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
-import type { EnvMapping, SecretView } from "../types.js";
-import { isCustomSecret } from "../types.js";
+import { platform } from "../platform.js";
+import {
+  DEFAULT_INJECTION_CONFIG,
+  type EnvMapping,
+  type McpConnection,
+  type SecretView,
+  isCustomSecret,
+} from "../types.js";
+import type { AppConnectionView } from "api-server-api";
 import {
   EnvMappingsEditor,
   allEnvMappingsValid,
@@ -21,6 +28,15 @@ import {
   ExternalLink,
   X,
 } from "lucide-react";
+
+const emptySecretForm = {
+  name: "",
+  value: "",
+  hostPattern: "",
+  pathPattern: "",
+  headerName: "",
+  valueFormat: "",
+};
 
 export function ConnectionsView() {
   const secrets = useStore((s) => s.secrets);
@@ -46,11 +62,7 @@ export function ConnectionsView() {
 
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
-  const [secretForm, setSecretForm] = useState({
-    name: "",
-    value: "",
-    hostPattern: "",
-  });
+  const [secretForm, setSecretForm] = useState(emptySecretForm);
   const [secretEnvMappings, setSecretEnvMappings] = useState<EnvMapping[]>([]);
   const [savingSecret, setSavingSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
@@ -124,14 +136,24 @@ export function ConnectionsView() {
     setSavingSecret(true);
     try {
       const mappings = sanitizeEnvMappings(secretEnvMappings);
+      const pathPattern = secretForm.pathPattern.trim();
+      const headerName = secretForm.headerName.trim();
+      const valueFormat = secretForm.valueFormat.trim();
       await createSecret({
         type: "generic",
         name: secretForm.name.trim(),
         value: secretForm.value.trim(),
         hostPattern: secretForm.hostPattern.trim(),
+        ...(pathPattern.length > 0 && { pathPattern }),
+        ...(headerName.length > 0 && {
+          injectionConfig: {
+            headerName,
+            ...(valueFormat.length > 0 && { valueFormat }),
+          },
+        }),
         ...(mappings.length > 0 && { envMappings: mappings }),
       });
-      setSecretForm({ name: "", value: "", hostPattern: "" });
+      setSecretForm(emptySecretForm);
       setSecretEnvMappings([]);
       setShowAddSecret(false);
     } finally {
@@ -381,6 +403,17 @@ export function ConnectionsView() {
                   </div>
                   <div className="text-[12px] font-mono text-text-muted truncate">
                     {s.hostPattern}
+                    {s.pathPattern && (
+                      <span className="text-text-secondary">{s.pathPattern}</span>
+                    )}
+                    {s.envMappings && s.envMappings.length > 0 && (
+                      <>
+                        {" · "}
+                        <span className="text-accent">
+                          {s.envMappings.map((m) => m.envName).join(", ")}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-surface-raised text-text-muted border-border-light">
@@ -535,6 +568,71 @@ export function ConnectionsView() {
               <p className="text-[11px] text-text-muted">
                 Hostname the token applies to. Supports wildcards (e.g.{" "}
                 <span className="font-mono">*.example.com</span>).
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Path Pattern (optional)
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder="e.g. /v1/*"
+                value={secretForm.pathPattern}
+                onChange={(e) =>
+                  setSecretForm((p) => ({
+                    ...p,
+                    pathPattern: e.target.value,
+                  }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                Restrict injection to URL paths matching this pattern. Leave
+                blank to match every path on the host.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Header Name (optional)
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder={DEFAULT_INJECTION_CONFIG.headerName}
+                value={secretForm.headerName}
+                onChange={(e) =>
+                  setSecretForm((p) => ({ ...p, headerName: e.target.value }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                HTTP header OneCLI writes the secret into. Defaults to{" "}
+                <span className="font-mono">
+                  {DEFAULT_INJECTION_CONFIG.headerName}
+                </span>
+                .
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+                Value Format (optional)
+              </label>
+              <input
+                className={`${inp} font-mono`}
+                placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
+                value={secretForm.valueFormat}
+                onChange={(e) =>
+                  setSecretForm((p) => ({ ...p, valueFormat: e.target.value }))
+                }
+              />
+              <p className="text-[11px] text-text-muted">
+                Template for the header value. Use{" "}
+                <span className="font-mono">{`{value}`}</span> as the token
+                placeholder. Defaults to{" "}
+                <span className="font-mono">
+                  {DEFAULT_INJECTION_CONFIG.valueFormat}
+                </span>
+                .
               </p>
             </div>
 

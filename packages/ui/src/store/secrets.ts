@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 import { platform } from "../platform.js";
-import type { SecretView, EnvMapping } from "../types.js";
+import type { SecretView, EnvMapping, InjectionConfig } from "../types.js";
 import type { HumrStore } from "../store.js";
 import { runAction, runQuery, ACTION_FAILED } from "./query-helpers.js";
 
@@ -12,11 +12,20 @@ export interface SecretsSlice {
     name: string;
     value: string;
     hostPattern?: string;
+    pathPattern?: string;
+    injectionConfig?: InjectionConfig;
     envMappings?: EnvMapping[];
   }) => Promise<void>;
   updateSecret: (
     id: string,
-    patch: { name?: string; value?: string; envMappings?: EnvMapping[] },
+    patch: {
+      name?: string;
+      value?: string;
+      hostPattern?: string;
+      pathPattern?: string | null;
+      injectionConfig?: InjectionConfig | null;
+      envMappings?: EnvMapping[];
+    },
   ) => Promise<void>;
   deleteSecret: (id: string) => Promise<void>;
 }

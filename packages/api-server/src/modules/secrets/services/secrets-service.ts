@@ -7,7 +7,6 @@ import {
   type SecretType,
   type SecretView,
   type AgentAccess,
-  type EnvMapping,
 } from "api-server-api";
 import type {
   OnecliSecret,
@@ -19,17 +18,19 @@ import { hostPatternFor } from "../domain/types.js";
 const backfilled = new Set<string>();
 
 function toSecretView(s: OnecliSecret): SecretView {
-  const type = (s.type === "anthropic" ? "anthropic" : "generic") as SecretType;
-  return {
+  const type: SecretType = s.type === "anthropic" ? "anthropic" : "generic";
+  const view: SecretView = {
     id: s.id,
     name: s.name,
     type,
     hostPattern: s.hostPattern,
     createdAt: s.createdAt,
-    ...(s.metadata?.envMappings
-      ? { envMappings: s.metadata.envMappings }
-      : {}),
   };
+  if (s.pathPattern) view.pathPattern = s.pathPattern;
+  if (type === "generic" && s.injectionConfig) view.injectionConfig = s.injectionConfig;
+  if (type === "anthropic" && s.metadata?.authMode) view.authMode = s.metadata.authMode;
+  if (s.metadata?.envMappings) view.envMappings = s.metadata.envMappings;
+  return view;
 }
 
 export function createSecretsService(deps: {
@@ -70,13 +71,12 @@ export function createSecretsService(deps: {
     },
 
     async create(input: CreateSecretInput) {
-      const hp = hostPatternFor(input.type, input.hostPattern);
+      // Spread keeps new optional fields (pathPattern, injectionConfig) flowing through
+      // without enumerating them here; the anthropic default envMapping is filled in
+      // lazily by the list() backfill above.
       const created = await deps.port.createSecret({
-        name: input.name,
-        type: input.type,
-        value: input.value,
-        hostPattern: hp,
-        ...(input.envMappings ? { envMappings: input.envMappings } : {}),
+        ...input,
+        hostPattern: hostPatternFor(input.type, input.hostPattern),
       });
       // OneCLI may not echo metadata on create; fall back to the request's envMappings.
       if (!created.metadata?.envMappings && input.envMappings) {
@@ -88,16 +88,8 @@ export function createSecretsService(deps: {
       return toSecretView(created);
     },
 
-    async update(input: UpdateSecretInput) {
-      const patch: {
-        name?: string;
-        value?: string;
-        envMappings?: EnvMapping[];
-      } = {};
-      if (input.name !== undefined) patch.name = input.name;
-      if (input.value !== undefined) patch.value = input.value;
-      if (input.envMappings !== undefined) patch.envMappings = input.envMappings;
-      await deps.port.updateSecret(input.id, patch);
+    async update({ id, ...patch }: UpdateSecretInput) {
+      await deps.port.updateSecret(id, patch);
     },
 
     delete: (id) => deps.port.deleteSecret(id),

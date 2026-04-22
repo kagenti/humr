@@ -1,4 +1,4 @@
-import type { EnvMapping } from "api-server-api";
+import { DEFAULT_INJECTION_CONFIG, type EnvMapping, type InjectionConfig } from "api-server-api";
 import type { OnecliClient } from "../../../onecli.js";
 
 export interface OnecliSecret {
@@ -6,6 +6,10 @@ export interface OnecliSecret {
   name: string;
   type: string;
   hostPattern: string;
+  /** Optional URL-path filter applied on top of hostPattern. `null` when unset. */
+  pathPattern?: string | null;
+  /** Header-injection config; `null` when OneCLI hasn't stored one. */
+  injectionConfig?: InjectionConfig | null;
   createdAt: string;
   /** Type-specific metadata. `authMode` is server-owned (Anthropic only); `envMappings` is client-settable. */
   metadata?: {
@@ -29,6 +33,8 @@ export interface OnecliSecretsPort {
     type: string;
     value: string;
     hostPattern: string;
+    pathPattern?: string;
+    injectionConfig?: InjectionConfig;
     envMappings?: EnvMapping[];
   }): Promise<OnecliSecret>;
   updateSecret(
@@ -36,6 +42,12 @@ export interface OnecliSecretsPort {
     input: {
       name?: string;
       value?: string;
+      /** Only permitted on generic secrets. */
+      hostPattern?: string;
+      /** `null` clears the path pattern; `undefined` leaves it unchanged. */
+      pathPattern?: string | null;
+      /** `null` resets to OneCLI's default; `undefined` leaves it unchanged. */
+      injectionConfig?: InjectionConfig | null;
       envMappings?: EnvMapping[];
     },
   ): Promise<void>;
@@ -94,28 +106,23 @@ export function createOnecliSecretsPort(
   return {
     listSecrets: () => fetchJson<OnecliSecret[]>("/api/secrets"),
 
-    createSecret: (input) => {
-      const { envMappings, ...rest } = input;
+    createSecret: ({ envMappings, injectionConfig, ...rest }) => {
       return fetchJson<OnecliSecret>("/api/secrets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...rest,
-          // OneCLI requires injectionConfig for generic secrets — default to
-          // Authorization: Bearer which matches the UI description.
-          ...(input.type === "generic" && {
-            injectionConfig: {
-              headerName: "authorization",
-              valueFormat: "Bearer {value}",
-            },
+          // OneCLI requires injectionConfig for generic secrets; fall back
+          // to the default when the client doesn't override it.
+          ...(rest.type === "generic" && {
+            injectionConfig: injectionConfig ?? DEFAULT_INJECTION_CONFIG,
           }),
           ...(envMappings !== undefined && { metadata: { envMappings } }),
         }),
       });
     },
 
-    updateSecret: (id, input) => {
-      const { envMappings, ...rest } = input;
+    updateSecret: (id, { envMappings, ...rest }) => {
       return fetchVoid(`/api/secrets/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

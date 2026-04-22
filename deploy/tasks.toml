@@ -179,7 +179,10 @@ if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui humr-onecli
+  # Agent pods are managed by the controller (StatefulSets in humr-agents) and
+  # pin :latest too — delete them so they come back on the freshly loaded image.
+  kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all --ignore-not-found
 fi
 
 # 6. Wait for all Humr deployments to become Available (replaces helm --wait,

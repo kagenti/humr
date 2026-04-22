@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useStore } from "../store.js";
-import type { EnvMapping, SecretView } from "../types.js";
+import {
+  DEFAULT_INJECTION_CONFIG,
+  type EnvMapping,
+  type SecretView,
+} from "../types.js";
 import {
   EnvMappingsEditor,
   allEnvMappingsValid,
@@ -17,21 +21,44 @@ export function EditSecretDialog({
 }) {
   const updateSecret = useStore((s) => s.updateSecret);
   const [name, setName] = useState(secret.name);
+  const [hostPattern, setHostPattern] = useState(secret.hostPattern);
+  const [pathPattern, setPathPattern] = useState(secret.pathPattern ?? "");
+  const [headerName, setHeaderName] = useState(
+    secret.injectionConfig?.headerName ?? "",
+  );
+  const [valueFormat, setValueFormat] = useState(
+    secret.injectionConfig?.valueFormat ?? "",
+  );
   const [envMappings, setEnvMappings] = useState<EnvMapping[]>(
     secret.envMappings ?? [],
   );
   const [saving, setSaving] = useState(false);
 
+  const isGeneric = secret.type !== "anthropic";
   const trimmed = name.trim();
+  const trimmedHost = hostPattern.trim();
+  const trimmedPath = pathPattern.trim();
+  const trimmedHeader = headerName.trim();
+  const trimmedValueFormat = valueFormat.trim();
   const sanitized = sanitizeEnvMappings(envMappings);
   const nameChanged = trimmed !== secret.name;
+  const hostChanged = isGeneric && trimmedHost !== secret.hostPattern;
+  const pathChanged = isGeneric && trimmedPath !== (secret.pathPattern ?? "");
+  const injectionChanged =
+    isGeneric &&
+    (trimmedHeader !== (secret.injectionConfig?.headerName ?? "") ||
+      trimmedValueFormat !== (secret.injectionConfig?.valueFormat ?? ""));
   const mappingsChanged =
     JSON.stringify(sanitized) !== JSON.stringify(secret.envMappings ?? []);
+  const hostValid = !isGeneric || trimmedHost.length > 0;
+  const injectionValid = !isGeneric || trimmedHeader.length > 0;
   const canSave =
     !saving &&
     trimmed.length > 0 &&
+    hostValid &&
+    injectionValid &&
     allEnvMappingsValid(envMappings) &&
-    (nameChanged || mappingsChanged);
+    (nameChanged || hostChanged || pathChanged || injectionChanged || mappingsChanged);
 
   const save = async () => {
     if (!canSave) return;
@@ -39,6 +66,14 @@ export function EditSecretDialog({
     try {
       await updateSecret(secret.id, {
         ...(nameChanged && { name: trimmed }),
+        ...(hostChanged && { hostPattern: trimmedHost }),
+        ...(pathChanged && { pathPattern: trimmedPath === "" ? null : trimmedPath }),
+        ...(injectionChanged && {
+          injectionConfig: {
+            headerName: trimmedHeader,
+            ...(trimmedValueFormat.length > 0 && { valueFormat: trimmedValueFormat }),
+          },
+        }),
         ...(mappingsChanged && { envMappings: sanitized }),
       });
       onClose();
@@ -53,6 +88,9 @@ export function EditSecretDialog({
         <h2 className="text-[20px] font-bold text-text">Edit Connector</h2>
         <p className="text-[12px] text-text-muted mt-1 font-mono">
           {secret.hostPattern}
+          {secret.pathPattern && (
+            <span className="text-text-secondary">{secret.pathPattern}</span>
+          )}
         </p>
       </div>
 
@@ -68,6 +106,81 @@ export function EditSecretDialog({
             autoFocus
           />
         </label>
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Host Pattern
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder="e.g. api.example.com"
+              value={hostPattern}
+              onChange={(e) => setHostPattern(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              Hostname OneCLI matches against outbound requests. Required.
+            </span>
+          </label>
+        )}
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Path Pattern
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder="e.g. /v1/*"
+              value={pathPattern}
+              onChange={(e) => setPathPattern(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              Restrict injection to URL paths matching this pattern. Leave blank
+              to match every path on the host.
+            </span>
+          </label>
+        )}
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Header Name
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder={DEFAULT_INJECTION_CONFIG.headerName}
+              value={headerName}
+              onChange={(e) => setHeaderName(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              HTTP header OneCLI writes the secret into.
+            </span>
+          </label>
+        )}
+
+        {isGeneric && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Value Format
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
+              value={valueFormat}
+              onChange={(e) => setValueFormat(e.target.value)}
+              disabled={saving}
+            />
+            <span className="text-[11px] text-text-muted">
+              Template for the header value. Use{" "}
+              <span className="font-mono">{`{value}`}</span> as the token
+              placeholder.
+            </span>
+          </label>
+        )}
 
         <div className="flex flex-col gap-2">
           <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">

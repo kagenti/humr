@@ -16,11 +16,40 @@ Default model: `openai / gpt-5.4-mini`. Change in `workspace/.pi/agent/settings.
 ```
 workspace/
   .pi/agent/
-    settings.json        ← pi config + extension registration (→ ~/.pi/agent/)
+    settings.json        ← pi config (→ ~/.pi/agent/)
   work/
     .pi/
       APPEND_SYSTEM.md   ← appended to the system prompt (project-scoped)
+  .pi/agent/extensions/pi-rits/
+    index.ts             ← auto-discovered by pi on startup; registers the RITS provider from env vars
 ```
+
+## RITS (custom OpenAI-compatible provider)
+
+The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider tuned for vLLM (what RITS runs) and mirrors the config into `~/.pi/agent/models.json`.
+
+| Env var | Required | Default | Purpose |
+|---|---|---|---|
+| `RITS_URL` | yes | — | Endpoint URL; `/v1` is appended if missing. |
+| `RITS_MODEL` | yes | — | Model identifier. |
+| `RITS_REASONING` | no | `false` | Enable pi's thinking UI for reasoning-capable models. |
+| `RITS_CONTEXT_WINDOW` | no | `128000` | Context window in tokens. |
+| `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
+| `RITS_THINKING_FORMAT` | no | — | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
+
+The API key is **not** a pod env var. Configure it as a OneCLI generic secret with `RITS_API_KEY` as the custom injection header and a host pattern matching your RITS deployment. OneCLI injects the header on outbound traffic at the proxy layer.
+
+To make RITS the default model, edit `settings.json`:
+
+```json
+"defaultProvider": "rits",
+"defaultModel": "<value of RITS_MODEL>"
+```
+
+### pi-acp auth-gate workarounds ([#15](https://github.com/svkozak/pi-acp/issues/15))
+
+1. *Startup gate* — `pi-acp` refuses to spawn `pi` unless a recognized credential exists. Satisfied by the dummy `ENV OPENCODE_API_KEY=pi-acp-auth-gate-bypass` in the Dockerfile (allow-listed name, unused by any pi provider).
+2. *Per-session gate* — `pi-acp` re-checks `models.json.providers[*].apiKey` on every `session/prompt`. Satisfied by the extension mirroring its `registerProvider` config to `models.json` on load; the `apiKey` value there is a placeholder.
 
 Pi system prompt conventions:
 

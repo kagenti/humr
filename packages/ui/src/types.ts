@@ -147,9 +147,10 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EnvMapping, EnvVar } from "api-server-api";
+export type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
 export {
   DEFAULT_ENV_PLACEHOLDER,
+  DEFAULT_INJECTION_CONFIG,
   isValidEnvName,
   ANTHROPIC_OAUTH_ENV_MAPPING,
   ANTHROPIC_API_KEY_ENV_MAPPING,
@@ -160,6 +161,8 @@ export interface SecretView {
   name: string;
   type: SecretType;
   hostPattern: string;
+  pathPattern?: string;
+  injectionConfig?: import("api-server-api").InjectionConfig;
   createdAt: string;
   envMappings?: import("api-server-api").EnvMapping[];
 }

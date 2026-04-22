@@ -32,6 +32,22 @@ export const ANTHROPIC_OAUTH_ENV_MAPPING: EnvMapping = {
 };
 
 /**
+ * How OneCLI's gateway injects a generic secret into matching outbound
+ * requests. `valueFormat` may reference the literal token `{value}`;
+ * OneCLI defaults it to `{value}` when omitted.
+ */
+export interface InjectionConfig {
+  headerName: string;
+  valueFormat?: string;
+}
+
+/** Default used when the user doesn't override it: `Authorization: Bearer <value>`. */
+export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+};
+
+/**
  * API-key mode. Tools that read `ANTHROPIC_API_KEY` (e.g. `@anthropic-ai/sdk`)
  * send the sentinel via `x-api-key`, which OneCLI's gateway swaps for the
  * stored api-key credential.
@@ -46,6 +62,9 @@ export interface SecretView {
   name: string;
   type: SecretType;
   hostPattern: string;
+  pathPattern?: string;
+  /** Only set for generic secrets. */
+  injectionConfig?: InjectionConfig;
   createdAt: string;
   envMappings?: EnvMapping[];
 }
@@ -55,6 +74,8 @@ export interface CreateSecretInput {
   name: string;
   value: string;
   hostPattern?: string;
+  pathPattern?: string;
+  injectionConfig?: InjectionConfig;
   envMappings?: EnvMapping[];
 }
 
@@ -62,6 +83,12 @@ export interface UpdateSecretInput {
   id: string;
   name?: string;
   value?: string;
+  /** Only permitted on generic secrets. */
+  hostPattern?: string;
+  /** `null` clears the path pattern; `undefined` leaves it unchanged. */
+  pathPattern?: string | null;
+  /** `null` resets to the default; `undefined` leaves it unchanged. */
+  injectionConfig?: InjectionConfig | null;
   envMappings?: EnvMapping[];
 }
 

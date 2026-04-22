@@ -15,6 +15,11 @@ const envMappingSchema = z.object({
 
 const envMappingsSchema = z.array(envMappingSchema).max(32);
 
+const injectionConfigSchema = z.object({
+  headerName: z.string().min(1).max(255),
+  valueFormat: z.string().max(1000).optional(),
+});
+
 function messageForStatus(status: number): string {
   if (status === 401) return "Invalid credential.";
   if (status === 403) return "Credential lacks required permissions.";
@@ -34,27 +39,44 @@ export const secretsRouter = t.router({
           name: z.string().min(1).max(100),
           value: z.string().min(1),
           hostPattern: z.string().min(1).max(253).optional(),
+          pathPattern: z.string().min(1).max(1000).optional(),
+          injectionConfig: injectionConfigSchema.optional(),
           envMappings: envMappingsSchema.optional(),
         })
-        .refine(
-          (d) => d.type === "anthropic" || !!d.hostPattern,
-          { message: "hostPattern is required for generic secrets", path: ["hostPattern"] },
-        )
-        .refine(
-          (d) => d.type !== "anthropic" || !d.hostPattern,
-          { message: "hostPattern cannot be set for anthropic secrets", path: ["hostPattern"] },
-        ),
+        .superRefine((d, ctx) => {
+          if (d.type === "anthropic") {
+            for (const field of ["hostPattern", "pathPattern", "injectionConfig"] as const) {
+              if (d[field] != null) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: `${field} cannot be set for anthropic secrets`,
+                  path: [field],
+                });
+              }
+            }
+          } else if (!d.hostPattern) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "hostPattern is required for generic secrets",
+              path: ["hostPattern"],
+            });
+          }
+        }),
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
 
   update: t.procedure
     .input(
-      z.object({
-        id: z.string().min(1),
-        name: z.string().min(1).max(100).optional(),
-        value: z.string().min(1).optional(),
-        envMappings: envMappingsSchema.optional(),
-      }),
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string().min(1).max(100).optional(),
+          value: z.string().min(1).optional(),
+          hostPattern: z.string().min(1).max(253).optional(),
+          pathPattern: z.string().max(1000).nullable().optional(),
+          injectionConfig: injectionConfigSchema.nullable().optional(),
+          envMappings: envMappingsSchema.optional(),
+        }),
     )
     .mutation(({ ctx, input }) => ctx.secrets.update(input)),
 
