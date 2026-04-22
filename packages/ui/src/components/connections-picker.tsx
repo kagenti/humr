@@ -235,13 +235,19 @@ function SecretItemRow({
           )}
         </div>
         {customHeader && (
-          <div className="text-[11px] font-mono text-text-secondary truncate">
-            {customHeader}
+          <div className="text-[11px] text-text-secondary truncate">
+            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+              header
+            </span>
+            <span className="font-mono">{customHeader}</span>
           </div>
         )}
         {envNames.length > 0 && (
-          <div className="text-[11px] font-mono text-accent truncate">
-            {envNames.join(", ")}
+          <div className="text-[11px] text-accent truncate">
+            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+              env
+            </span>
+            <span className="font-mono">{envNames.join(", ")}</span>
           </div>
         )}
       </div>
