@@ -6,7 +6,8 @@ import { z } from "zod";
 import yaml from "js-yaml";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { LABEL_OWNER, LABEL_AGENT_REF, LABEL_TYPE, STATUS_KEY, SPEC_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { LABEL_INSTANCE_REF as FORK_LABEL_INSTANCE_REF, TYPE_AGENT_FORK } from "../../modules/forks/infrastructure/labels.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -64,6 +65,12 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
 }
 
 async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
+  if (await verifyOwnerAgentToken(k8s, instanceId, token)) return true;
+  if (await verifyActiveForkToken(k8s, instanceId, token)) return true;
+  return false;
+}
+
+async function verifyOwnerAgentToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
   const instanceCm = await k8s.getConfigMap(instanceId);
   if (!instanceCm) return false;
 
@@ -85,6 +92,19 @@ async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: strin
 
   const hash = createHash("sha256").update(token).digest("hex");
   return hash === status.accessTokenHash;
+}
+
+async function verifyActiveForkToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
+  const forks = await k8s.listConfigMaps(
+    `${LABEL_TYPE}=${TYPE_AGENT_FORK},${FORK_LABEL_INSTANCE_REF}=${instanceId}`,
+  );
+  for (const fork of forks) {
+    const specYaml = fork.data?.[SPEC_KEY];
+    if (!specYaml) continue;
+    const spec = yaml.load(specYaml) as { accessToken?: string };
+    if (spec?.accessToken && spec.accessToken === token) return true;
+  }
+  return false;
 }
 
 export function mountMcpRoutes(app: Hono, deps: {
