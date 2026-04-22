@@ -65,8 +65,9 @@ Each of these is expanded in a reference file. Severity in brackets.
 
 ### Components
 - [CRITICAL] A component that does more than one thing is too big. Files approaching **~300 lines** are a strong trigger to split — not a hard cap, but a warning that responsibilities probably aren't separated. See `references/components.md`.
+- [HIGH] **JSX weight** counts separately from file lines. Feature components ≤ ~60 lines of JSX; leaves ≤ ~25. Extract by region when the render block crosses that.
 - [HIGH] Props typed with `interface Props` (or `type Props`) and destructured in the function signature. **No `React.FC<>`.**
-- [HIGH] Inline-mapped JSX blocks longer than ~40 lines become their own subcomponent.
+- [HIGH] Anything non-trivial inside a `.map(...)` is its own component — >~10 lines of JSX, conditional branches, multi-statement handlers, or per-item derivations all qualify. Parent reads `{items.map((item) => <ItemCard … />)}` only.
 - [CRITICAL] No static `style={{}}` — that's a Tailwind class or a CSS variable. Dynamic runtime values via CSS custom props are fine. See `references/styling.md`.
 
 ### Hooks

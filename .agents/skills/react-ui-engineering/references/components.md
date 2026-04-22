@@ -13,15 +13,37 @@ Good size discipline in practice:
 - Feature component: 100–250 lines (one coherent responsibility)
 - Leaf / presentational: 20–80 lines
 
+### JSX weight is its own metric
+
+**[HIGH] Count JSX lines in a component's return separately from total file lines.** A 250-line file with 40 lines of JSX and 200 lines of logic is nothing like a 250-line file with 200 lines of nested JSX. Nested JSX is cognitively expensive — the indentation hides structure and every conditional or fragment compounds the noise.
+
+Targets for the JSX in a single component's render:
+- Leaf / presentational: ≤ ~25 lines of JSX.
+- Feature component: ≤ ~60 lines of JSX. If you can't scroll one region without losing the outer structure, split.
+
+When the return block passes these bounds, extract by region (header, body, row, footer) even if total file length is fine.
+
+### List-item rule
+
+**[CRITICAL] Anything non-trivial inside a `.map(...)` becomes its own component.** "Non-trivial" = more than ~10 lines of JSX, any conditional rendering branch, any local handler with a multi-statement body, or any local derivation (`isExpanded`, `sessions = ...`). A mapped list should read as:
+
+```tsx
+{items.map((item) => (
+  <ItemCard key={item.id} item={item} … />
+))}
+```
+
+The card keeps per-item state, per-item derivations, and per-item handlers — *not* the parent. This is stricter than "extract when the block exceeds ~40 lines" because list items tend to compound: a card that looks small today grows badges, actions, and an expanded view tomorrow, and then every edit touches a 200-line parent.
+
 ## Subcomponent extraction
 
 **[CRITICAL] Extract when any of the following is true:**
 
-1. **A mapped JSX block exceeds ~40 lines** of nested markup:
+1. **Anything non-trivial inside a `.map(...)`** — see the list-item rule above. In short:
    ```tsx
    ❌ {connections.map((c) => (
         <div key={c.id} className="flex ...">
-          {/* 30+ lines of nested JSX, handlers, conditional UI */}
+          {/* nested JSX, conditionals, local handlers, per-item derivations */}
         </div>
       ))}
 
@@ -30,11 +52,13 @@ Good size discipline in practice:
       ))}
    ```
 
-2. **The same markup repeats with small variations.** Three similar rows → one `<Row variant=...>` component.
+2. **JSX in a component's return passes the weight targets** (leaf ~25 lines, feature ~60 lines). Extract by region — header, body, footer, side panel.
 
-3. **A block has its own local state or effects.** If a fragment needs `useState`/`useEffect` to work, it should be its own component so the state is colocated.
+3. **The same markup repeats with small variations.** Three similar rows → one `<Row variant=...>` component.
 
-4. **A tab, section, or panel has enough internal structure to warrant a name.** Naming the extraction is the test: if you can't give it a clean name, maybe it's not a real boundary.
+4. **A block has its own local state or effects.** If a fragment needs `useState`/`useEffect` to work, it should be its own component so the state is colocated.
+
+5. **A tab, section, or panel has enough internal structure to warrant a name.** Naming the extraction is the test: if you can't give it a clean name, maybe it's not a real boundary.
 
 ### File layout for extracted subcomponents
 
