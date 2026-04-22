@@ -381,3 +381,20 @@ codeGuardianTemplate:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# -- OneDrive transcript processing agent template
+onedriveTranscriptTemplate:
+  enabled: false
+  name: onedrive-transcript
+  image:
+    repository: ghcr.io/kagenti/humr/onedrive-transcript
+    tag: ""
+    pullPolicy: IfNotPresent
+  description: "OneDrive Teams transcript processing agent"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"

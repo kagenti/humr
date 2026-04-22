@@ -56,6 +56,13 @@ codeGuardianTemplate:
     tag: latest
     pullPolicy: Never
 
+onedriveTranscriptTemplate:
+  enabled: true
+  image:
+    repository: humr-onedrive-transcript
+    tag: latest
+    pullPolicy: Never
+
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
 keycloak:
   testUser:
