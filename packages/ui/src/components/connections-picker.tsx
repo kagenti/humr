@@ -223,7 +223,7 @@ function SecretItemRow({
         checked={checked}
         onChange={onToggle}
       />
-      <Lock size={14} className="text-text-secondary shrink-0" />
+      <Lock size={14} className="text-text-secondary shrink-0 self-start mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-text truncate">
           {secret.name}
@@ -233,19 +233,17 @@ function SecretItemRow({
           {secret.pathPattern && (
             <span className="text-text-secondary">{secret.pathPattern}</span>
           )}
-          {customHeader && (
-            <>
-              {" · "}
-              <span className="text-text-secondary">{customHeader}</span>
-            </>
-          )}
-          {envNames.length > 0 && (
-            <>
-              {" · "}
-              <span className="text-accent">{envNames.join(", ")}</span>
-            </>
-          )}
         </div>
+        {customHeader && (
+          <div className="text-[11px] font-mono text-text-secondary truncate">
+            {customHeader}
+          </div>
+        )}
+        {envNames.length > 0 && (
+          <div className="text-[11px] font-mono text-accent truncate">
+            {envNames.join(", ")}
+          </div>
+        )}
       </div>
     </label>
   );
