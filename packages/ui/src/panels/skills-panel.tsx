@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
-import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
+import type {
+  LocalSkill,
+  Skill,
+  SkillPublishRecord,
+  SkillRef,
+  SkillSource,
+} from "api-server-api";
 import { platform } from "../platform.js";
 import { ACTION_FAILED, runAction } from "../store/query-helpers.js";
 import { useStore } from "../store.js";
@@ -20,16 +26,30 @@ function localSkillMdPath(skill: LocalSkill): string {
 }
 
 /**
- * Best-effort URL to the skill's SKILL.md at the installed commit. Assumes
- * the `skills/<name>/` layout (the de-facto convention our scanner tries
- * first). Falls back to the repo root for non-GitHub-like hosts.
+ * URL to open alongside a skill row. When the caller has confirmed drift
+ * (via contentHash comparison), pass `compareFrom` so we open a GitHub
+ * compare view between installed and latest — the concrete diff. Otherwise
+ * open the skill's SKILL.md at the pinned commit.
+ *
+ * Must NOT re-derive drift from version equality here: scan returns a
+ * uniform HEAD SHA for every skill in a source, so the versions can differ
+ * even when this specific skill's files haven't changed (a commit that
+ * touched a neighbour). The callsite's contentHash check is the source of
+ * truth; we only shape the URL from it.
  */
-function skillSourceUrl(source: string, version: string, name: string): string {
+function skillSourceUrl(
+  source: string,
+  version: string,
+  name: string,
+  compareFrom?: string,
+): string {
   const base = source.replace(/\.git$/, "").replace(/\/$/, "");
-  if (/(github|gitlab)\.com|bitbucket\.org/.test(base)) {
-    return `${base}/blob/${version}/skills/${name}/SKILL.md`;
+  const isGitLike = /(github|gitlab)\.com|bitbucket\.org/.test(base);
+  if (!isGitLike) return base;
+  if (compareFrom) {
+    return `${base}/compare/${compareFrom}...${version}`;
   }
-  return base;
+  return `${base}/blob/${version}/skills/${name}/SKILL.md`;
 }
 
 export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelProps) {
@@ -41,6 +61,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   const [errorBySource, setErrorBySource] = useState<Record<string, string | null>>({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
   const [localSkills, setLocalSkills] = useState<LocalSkill[]>([]);
+  const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", gitUrl: "" });
@@ -51,10 +72,15 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   const showToast = useStore((s) => s.showToast);
 
   const loadSkills = useCallback(async (sourceId: string) => {
+    // Public GitHub sources are scanned directly from the api-server, so no
+    // running instance is required. Private sources need the agent pod to
+    // delegate to — the server surfaces a PRECONDITION_FAILED in that case
+    // and we render it the same way any other per-source error renders.
+    if (!instanceId) return;
     setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
     setErrorBySource((e) => ({ ...e, [sourceId]: null }));
     try {
-      const list = await platform.skills.listSkills.query({ sourceId });
+      const list = await platform.skills.listSkills.query({ sourceId, instanceId });
       setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load skills";
@@ -63,7 +89,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     } finally {
       setLoadingBySource((l) => ({ ...l, [sourceId]: false }));
     }
-  }, []);
+  }, [instanceId]);
 
   const refreshSource = useCallback(async (sourceId: string) => {
     const ok = await runAction(
@@ -76,22 +102,27 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   useEffect(() => {
     let cancelled = false;
 
+    // Pulling both "installed" (tracked in spec.skills) and "standalone"
+    // (on-disk only) from the same reconciled endpoint keeps them
+    // consistent. The server cross-references spec.skills with the live
+    // filesystem, drops ghost SkillRefs (entries whose directories were
+    // deleted out-of-band), and persists the cleanup — so manual file
+    // deletions stop showing as "installed" the moment the panel polls.
     const refreshInstalled = async () => {
       if (!instanceId) {
         if (!cancelled) {
           setInstalled([]);
           setLocalSkills([]);
+          setPublishes([]);
         }
         return;
       }
       try {
-        const [inst, local] = await Promise.all([
-          platform.instances.get.query({ id: instanceId }),
-          platform.skills.listLocal.query({ instanceId }).catch(() => [] as LocalSkill[]),
-        ]);
+        const state = await platform.skills.state.query({ instanceId });
         if (!cancelled) {
-          setInstalled(inst?.skills ?? []);
-          setLocalSkills(local);
+          setInstalled(state.installed);
+          setLocalSkills(state.standalone);
+          setPublishes(state.publishes);
         }
       } catch {}
     };
@@ -123,8 +154,8 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   const isInstalled = (source: string, name: string) =>
     installed.some((s) => s.source === source && s.name === name);
 
-  const installedVersion = (source: string, name: string) =>
-    installed.find((s) => s.source === source && s.name === name)?.version;
+  const installedRef = (source: string, name: string) =>
+    installed.find((s) => s.source === source && s.name === name);
 
   const toggle = async (skill: Skill) => {
     if (!instanceId || !isRunning) return;
@@ -134,7 +165,13 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     const result = await runAction(
       () => currentlyInstalled
         ? platform.skills.uninstall.mutate({ instanceId, source: skill.source, name: skill.name })
-        : platform.skills.install.mutate({ instanceId, source: skill.source, name: skill.name, version: skill.version }),
+        : platform.skills.install.mutate({
+            instanceId,
+            source: skill.source,
+            name: skill.name,
+            version: skill.version,
+            contentHash: skill.contentHash,
+          }),
       `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
     );
     if (result !== ACTION_FAILED) setInstalled(result);
@@ -147,7 +184,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     setBusyRow(key);
     const result = await runAction(
       () => platform.skills.install.mutate({
-        instanceId, source: skill.source, name: skill.name, version: skill.version,
+        instanceId,
+        source: skill.source,
+        name: skill.name,
+        version: skill.version,
+        contentHash: skill.contentHash,
       }),
       `Failed to update ${skill.name}`,
     );
@@ -175,13 +216,16 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
   const publishableSources = sources.filter((s) => s.canPublish);
 
-  /** Names that appear in ANY source's catalog. Used to flag a Standalone
-   *  skill as "Published" once its upstream copy shows up (after the PR
-   *  gets merged and listSkills re-scans). Pure name-match: an authored
-   *  skill of the same name is presumed to be the same skill. */
-  const publishedNames = new Set<string>();
-  for (const list of Object.values(skillsBySource)) {
-    for (const skill of list) publishedNames.add(skill.name);
+  /** Latest publish record per skill name. Drives the "Published" badge +
+   *  View-PR link. Name-match would have false-positived on installed
+   *  skills that happen to collide with catalog names, so we rely on
+   *  the explicit server-side publish log instead. */
+  const latestPublishByName = new Map<string, SkillPublishRecord>();
+  for (const p of publishes) {
+    const current = latestPublishByName.get(p.skillName);
+    if (!current || p.publishedAt > current.publishedAt) {
+      latestPublishByName.set(p.skillName, p);
+    }
   }
 
   const openPublish = (skill: LocalSkill) => {
@@ -325,14 +369,21 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
-                  {publishedNames.has(skill.name) && (
-                    <span
-                      className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-success-light text-success border-success"
-                      title="A skill with this name exists in a connected source — you can delete the local copy via the Files tab."
-                    >
-                      Published
-                    </span>
-                  )}
+                  {(() => {
+                    const pub = latestPublishByName.get(skill.name);
+                    if (!pub) return null;
+                    return (
+                      <a
+                        href={pub.prUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-success-light text-success border-success hover:opacity-80"
+                        title={`Published to ${pub.sourceName} on ${new Date(pub.publishedAt).toLocaleString()} — click to view PR`}
+                      >
+                        Published <ExternalLink size={9} />
+                      </a>
+                    );
+                  })()}
                   {onOpenFile && (
                     <button
                       type="button"
@@ -456,20 +507,45 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               <div className="px-4 py-3 text-[11px] text-text-muted">Loading skills...</div>
             )}
 
-            {error && (
-              <div className="px-4 py-2 text-[11px] text-danger bg-danger-light">
-                {error}
-              </div>
-            )}
+            {error && (() => {
+              // publish/scan services encode a call-to-action URL as
+              // `\nhumr-cta:<url>` in the tRPC error message when OneCLI's
+              // gateway surfaces a structured error (not connected / agent
+              // access not granted / repo not in OAuth App's allowed list).
+              // Split it out so the banner offers a direct link to the fix.
+              const cta = error.match(/humr-cta:(\S+)/)?.[1];
+              const message = error.replace(/\nhumr-cta:\S+/, "").trim();
+              return (
+                <div className="px-4 py-2 text-[11px] text-danger bg-danger-light flex items-center gap-2">
+                  <span className="flex-1">{message}</span>
+                  {cta && (
+                    <a
+                      href={cta}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold underline hover:opacity-80 shrink-0"
+                    >
+                      Fix it →
+                    </a>
+                  )}
+                </div>
+              );
+            })()}
 
             {!loading && !error && list.length === 0 && (
               <p className="px-4 py-3 text-[11px] text-text-muted">No skills in this source.</p>
             )}
 
             {list.map((skill) => {
-              const installedVer = installedVersion(skill.source, skill.name);
-              const isInst = installedVer !== undefined;
-              const hasDrift = isInst && installedVer !== skill.version;
+              const installed = installedRef(skill.source, skill.name);
+              const isInst = installed !== undefined;
+              // Drift = contents changed. contentHash is missing only for
+              // skills installed before this field existed — we skip drift
+              // until the next install/update fills it in.
+              const hasDrift =
+                isInst &&
+                installed.contentHash !== undefined &&
+                installed.contentHash !== skill.contentHash;
               const key = skillKey(skill.source, skill.name);
               const rowBusy = busyRow === key;
               const disabled = !instanceId || !isRunning || rowBusy;
@@ -490,11 +566,16 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
                       <a
-                        href={skillSourceUrl(skill.source, skill.version, skill.name)}
+                        href={skillSourceUrl(
+                          skill.source,
+                          skill.version,
+                          skill.name,
+                          hasDrift ? installed?.version : undefined,
+                        )}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-text-muted hover:text-accent transition-colors shrink-0"
-                        title="View SKILL.md at the pinned commit"
+                        title={hasDrift ? "View changes since installed version" : "View SKILL.md at the pinned commit"}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <ExternalLink size={11} />
@@ -503,7 +584,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                         <button
                           type="button"
                           className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info hover:opacity-80 disabled:opacity-40"
-                          title={`Update available (installed ${installedVer?.slice(0, 8)} → ${skill.version.slice(0, 8)})`}
+                          title={`Skill contents changed since install (installed ${installed?.version.slice(0, 8)} → ${skill.version.slice(0, 8)})`}
                           disabled={disabled}
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateDrift(skill); }}
                         >

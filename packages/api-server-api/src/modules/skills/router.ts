@@ -20,12 +20,14 @@ const skillViewSchema = z.object({
   name: z.string(),
   description: z.string(),
   version: z.string(),
+  contentHash: z.string(),
 });
 
 const skillRefSchema = z.object({
   source: z.string(),
   name: z.string(),
   version: z.string(),
+  contentHash: z.string().optional(),
 });
 
 const localSkillSchema = z.object({
@@ -58,12 +60,15 @@ export const skillsRouter = t.router({
   }),
 
   listSkills: t.procedure
-    .input(z.object({ sourceId: z.string().min(1) }))
+    .input(z.object({
+      sourceId: z.string().min(1),
+      instanceId: z.string().min(1),
+    }))
     .output(z.array(skillViewSchema))
     .query(async ({ ctx, input }) => {
       const src = await ctx.skills.getSource(input.sourceId);
       if (!src) throw new TRPCError({ code: "NOT_FOUND" });
-      return ctx.skills.listSkills(input.sourceId);
+      return ctx.skills.listSkills(input.sourceId, input.instanceId);
     }),
 
   install: t.procedure
@@ -72,6 +77,7 @@ export const skillsRouter = t.router({
       source: z.string().url(),
       name: z.string().min(1),
       version: z.string().min(1),
+      contentHash: z.string().optional(),
     }))
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.installSkill(input)),
@@ -89,6 +95,37 @@ export const skillsRouter = t.router({
     .input(z.object({ instanceId: z.string().min(1) }))
     .output(z.array(localSkillSchema))
     .query(({ ctx, input }) => ctx.skills.listLocal(input.instanceId)),
+
+  /**
+   * Reconciled skills view for an instance — drops ghost SkillRefs (entries
+   * in spec.skills whose directories were removed out-of-band) before
+   * returning. Persists the cleanup so subsequent reads see a consistent
+   * declarative state. Use this from the UI in preference to
+   * `instances.get().skills` + `skills.listLocal` — same two pieces of data,
+   * one trip, self-healing.
+   *
+   * `publishes` is the explicit log of successful publish events used to
+   * drive the "Published" badge on standalone skills.
+   */
+  state: t.procedure
+    .input(z.object({ instanceId: z.string().min(1) }))
+    .output(
+      z.object({
+        installed: z.array(skillRefSchema),
+        standalone: z.array(localSkillSchema),
+        publishes: z.array(
+          z.object({
+            skillName: z.string(),
+            sourceId: z.string(),
+            sourceName: z.string(),
+            sourceGitUrl: z.string(),
+            prUrl: z.string(),
+            publishedAt: z.string(),
+          }),
+        ),
+      }),
+    )
+    .query(({ ctx, input }) => ctx.skills.getState(input.instanceId)),
 
   publish: t.procedure
     .input(z.object({

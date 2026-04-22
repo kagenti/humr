@@ -90,6 +90,8 @@ export type {
   SkillRef,
   SkillSource,
   SkillsService,
+  SkillsState,
+  SkillPublishRecord,
   CreateSkillSourceInput,
   InstallSkillInput,
   UninstallSkillInput,

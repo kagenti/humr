@@ -1,4 +1,4 @@
-import type { LocalSkill } from "api-server-api";
+import type { LocalSkill, Skill } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface InstallSkillCall {
@@ -47,8 +47,12 @@ export interface UpstreamGatewayError {
   };
 }
 
+export interface InstallSkillResult {
+  contentHash: string;
+}
+
 export interface AgentRuntimeSkillsClient {
-  install(instanceId: string, token: string, body: InstallSkillCall): Promise<void>;
+  install(instanceId: string, token: string, body: InstallSkillCall): Promise<InstallSkillResult>;
   uninstall(instanceId: string, token: string, body: UninstallSkillCall): Promise<void>;
   listLocal(instanceId: string, token: string, skillPaths: string[]): Promise<LocalSkill[]>;
   readLocal(
@@ -58,6 +62,7 @@ export interface AgentRuntimeSkillsClient {
     skillPaths: string[],
   ): Promise<LocalSkillFile[]>;
   publish(instanceId: string, token: string, body: PublishSkillCall): Promise<PublishSkillResult>;
+  scan(instanceId: string, token: string, source: string): Promise<Skill[]>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -124,7 +129,8 @@ async function assertOk(res: Response, url: string): Promise<void> {
 export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeSkillsClient {
   const base = (instanceId: string) => `http://${podBaseUrl(instanceId, namespace)}`;
   return {
-    install: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/install`, token, body),
+    install: (instanceId, token, body) =>
+      postJson<InstallSkillResult>(`${base(instanceId)}/api/skills/install`, token, body),
     uninstall: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/uninstall`, token, body),
     async listLocal(instanceId, token, skillPaths) {
       const qs = skillPaths.map((p) => `skillPaths=${encodeURIComponent(p)}`).join("&");
@@ -140,5 +146,13 @@ export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeS
     },
     publish: (instanceId, token, body) =>
       postJson<PublishSkillResult>(`${base(instanceId)}/api/skills/publish`, token, body),
+    async scan(instanceId, token, source) {
+      const { skills } = await postJson<{ skills: Skill[] }>(
+        `${base(instanceId)}/api/skills/scan`,
+        token,
+        { source },
+      );
+      return skills;
+    },
   };
 }

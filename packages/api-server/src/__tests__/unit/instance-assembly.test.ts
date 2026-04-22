@@ -9,6 +9,7 @@ function infra(overrides: Partial<InfraInstance> = {}): InfraInstance {
     desiredState: "running",
     podReady: true,
     skills: [],
+    publishes: [],
     ...overrides,
   };
 }

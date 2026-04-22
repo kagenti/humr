@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -11,6 +12,38 @@ export const installSkillInputSchema = z.object({
   skillPaths: z.array(z.string().min(1)).min(1),
 });
 
+export const scanSkillSourceInputSchema = z.object({
+  source: z.string().min(1),
+});
+export type ScanSkillSourceInput = z.infer<typeof scanSkillSourceInputSchema>;
+
+export interface ScannedSkill {
+  source: string;
+  name: string;
+  description: string;
+  version: string;
+  contentHash: string;
+}
+
+/**
+ * Deterministic SHA-256 of a skill directory's contents — hashes every file
+ * under the dir in sorted-path order, mixing the relative path and body bytes.
+ * Used as the drift signal: changes iff the skill's files change, completely
+ * independent of git commit history. Matches api-server's computeContentHash.
+ */
+export async function computeContentHash(absDir: string): Promise<string> {
+  const files = (await walkFiles(absDir)).sort();
+  const h = createHash("sha256");
+  for (const abs of files) {
+    const rel = path.relative(absDir, abs);
+    h.update(rel);
+    h.update(Buffer.from([0]));
+    h.update(await fs.readFile(abs));
+    h.update(Buffer.from([0]));
+  }
+  return h.digest("hex");
+}
+
 export interface LocalSkill {
   name: string;
   description: string;
@@ -22,15 +55,52 @@ export interface LocalSkill {
  * skill-scanner. Duplicated intentionally so agent-runtime doesn't grow a
  * shared package dependency.
  */
-function parseFrontmatter(content: string): { name?: string; description?: string } {
+/**
+ * Extract `name` and `description` from a SKILL.md's YAML frontmatter.
+ * Handles plain scalars (`description: foo`), folded block scalars
+ * (`description: >`), and literal block scalars (`description: |`) —
+ * apocohq's catalog uses `>` with line continuations, which a naive parser
+ * surfaces as the literal character `>`.
+ */
+export function parseFrontmatter(content: string): { name?: string; description?: string } {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
+  const lines = match[1].split(/\r?\n/);
   const out: { name?: string; description?: string } = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const m = /^(name|description):\s*(.*)$/.exec(line);
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(name|description):\s*(.*)$/.exec(lines[i]);
     if (!m) continue;
-    const raw = m[2].trim().replace(/^["']|["']$/g, "");
-    if (raw) out[m[1] as "name" | "description"] = raw;
+    const key = m[1] as "name" | "description";
+    const raw = m[2].trim();
+
+    // Block scalars — `>` (folded, lines joined with a space) or `|` (literal,
+    // lines joined with newlines). The header line itself has no content; the
+    // value lives in the following indented lines.
+    const blockMatch = /^([>|])[+-]?$/.exec(raw);
+    if (blockMatch) {
+      const folded = blockMatch[1] === ">";
+      const collected: string[] = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        const line = lines[j];
+        if (line.trim() === "") {
+          collected.push("");
+          j++;
+          continue;
+        }
+        if (!/^\s+/.test(line)) break;
+        collected.push(line.replace(/^\s+/, ""));
+        j++;
+      }
+      while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+      out[key] = folded ? collected.join(" ") : collected.join("\n");
+      i = j - 1;
+      continue;
+    }
+
+    const unquoted = raw.replace(/^["']|["']$/g, "");
+    if (unquoted) out[key] = unquoted;
   }
   return out;
 }
@@ -118,25 +188,47 @@ interface GithubError {
   provider?: string;
 }
 
-/** Call an `api.github.com` endpoint. Passes the sentinel bearer; OneCLI's MITM
- *  swaps it for the user's OAuth token. Throws a structured Error whose
- *  `cause` carries OneCLI's JSON payload so the caller can extract
- *  connect_url/manage_url. */
-async function githubFetch(path: string, init?: RequestInit): Promise<Response> {
+/**
+ * Call an `api.github.com` endpoint.
+ *
+ * When `withAuth` is true, attach the sentinel bearer — OneCLI's MITM swaps
+ * it for the user's OAuth token. Needed for mutating endpoints (publish)
+ * and for endpoints that fail "quietly" with 404 when unauthenticated
+ * (so we'd rather get the structured `app_not_connected` CTA instead).
+ *
+ * When `withAuth` is false, send no Authorization header. OneCLI passes
+ * through anonymous reads for public resources and *still* injects the
+ * user's token automatically if they're Connected (confirmed empirically
+ * against private repos). This is the hard-requirement path for scan:
+ * public repos must work even when the user hasn't Connected GitHub yet.
+ *
+ * Thrown Error's `cause` carries OneCLI's JSON payload so callers can
+ * extract connect_url/manage_url.
+ */
+async function githubFetch(
+  path: string,
+  init?: RequestInit,
+  opts: { withAuth?: boolean } = {},
+): Promise<Response> {
+  const withAuth = opts.withAuth ?? true;
   const token = process.env.GH_TOKEN ?? "humr:sentinel";
   return fetch(`${GITHUB_API}${path}`, {
     ...init,
     headers: {
       Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
+      ...(withAuth ? { Authorization: `Bearer ${token}` } : {}),
       "X-GitHub-Api-Version": "2022-11-28",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
     },
   });
 }
 
-async function githubJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await githubFetch(path, init);
+async function githubJson<T>(
+  path: string,
+  init?: RequestInit,
+  opts: { withAuth?: boolean } = {},
+): Promise<T> {
+  const res = await githubFetch(path, init, opts);
   const text = await res.text();
   let body: unknown = null;
   try {
@@ -243,6 +335,210 @@ export async function publishSkill(opts: PublishSkillOpts): Promise<PublishSkill
   });
 
   return { prUrl: pr.html_url, branch };
+}
+
+interface DetectedOwnerRepo { owner: string; repo: string; }
+
+/** Mirrors api-server's detectHost but inline — agent-runtime avoids a
+ *  cross-package dependency. Only GitHub is recognized; other hosts skip
+ *  the pre-flight and fall through to an anonymous clone. */
+function detectGithubOwnerRepo(gitUrl: string): DetectedOwnerRepo | null {
+  const trimmed = gitUrl.replace(/\/+$/, "").replace(/\.git$/, "").replace(/\/+$/, "");
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(trimmed);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+
+/**
+ * Walk a freshly-cloned repo and return every directory (relative to the
+ * clone root) that contains a SKILL.md. Prefers `skills/*` first, falls back
+ * to top-level `*` — same search order resolveSkillDir uses for install.
+ */
+async function findSkillDirsInClone(repoDir: string): Promise<string[]> {
+  const found: string[] = [];
+  const candidates = [path.join(repoDir, "skills"), repoDir];
+  for (const root of candidates) {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+      const dir = path.join(root, ent.name);
+      try {
+        await fs.access(path.join(dir, "SKILL.md"));
+        found.push(path.relative(repoDir, dir));
+      } catch {}
+    }
+    if (found.length > 0) return found;
+  }
+  return found;
+}
+
+async function runCapture(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; timeoutMs?: number } = {},
+): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const proc = spawn(cmd, args, {
+      cwd: opts.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const timeoutMs = opts.timeoutMs ?? COMMAND_TIMEOUT_MS;
+    const timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      reject(new Error(`${cmd} ${args.join(" ")} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
+    proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve(Buffer.concat(stdoutChunks).toString("utf8"));
+        return;
+      }
+      const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+      reject(new Error(`${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`));
+    });
+  });
+}
+
+/**
+ * Enumerate skills in a remote git source.
+ *
+ * For GitHub URLs we walk the repo via `api.github.com` (tree → blob → commits).
+ * Reasons:
+ *   - OneCLI's Bearer-sentinel swap on `api.github.com` is stable; the
+ *     Basic-auth swap on `github.com/*.git` git-protocol traffic has been
+ *     observed to flip to returning 401 "invalid credentials" after a burst
+ *     of concurrent requests (symptom: every subsequent `git clone` through
+ *     the proxy gets rejected until OneCLI is restarted).
+ *   - Same proven path publish already uses — one codepath, one auth
+ *     surface, one set of structured-error cases to handle.
+ *   - OneCLI's 401 responses on `/repos/:owner/:repo` carry `connect_url` /
+ *     `manage_url` — surfaces the three user-correctable preconditions
+ *     (not connected, agent not granted, repo not in OAuth App's allowed
+ *     list) with no extra plumbing.
+ *
+ * For non-GitHub URLs we fall back to an anonymous `git clone`. Non-GitHub
+ * authenticated discovery is out of scope (ADR-marked).
+ */
+export async function scanSource(gitUrl: string): Promise<ScannedSkill[]> {
+  const host = detectGithubOwnerRepo(gitUrl);
+  if (host) return scanGithubSource(gitUrl, host);
+  return scanViaGitClone(gitUrl);
+}
+
+interface CommitObject { sha: string; }
+
+async function scanGithubSource(
+  gitUrl: string,
+  host: DetectedOwnerRepo,
+): Promise<ScannedSkill[]> {
+  // Two calls, flat-scaling: resolve HEAD SHA, then pull the whole tree as a
+  // tarball and walk locally. The previous tree+blobs+commits-per-skill path
+  // hit 1 + 2N api.github.com requests — fine at 3 skills, unpleasant at 30.
+  //
+  // Trade-off vs per-skill last-touching SHA: `version` is now the source's
+  // HEAD commit at scan time, uniform across the catalogue. Drift-detection
+  // lights up the Update badge on *every* installed skill whenever the source
+  // gets any commit, not just when the skill dir itself was touched. The
+  // Update click still does the right thing (re-installs at current HEAD);
+  // it's just noisier. Accepted trade: scan stays fast and predictable.
+  const base = `/repos/${host.owner}/${host.repo}`;
+
+  // Anonymous preflight. OneCLI passes public repos through and auto-injects
+  // the user's token for private repos when they're Connected — so the happy
+  // path is one call. A 404 here is ambiguous: could be truly-not-found, OR
+  // could be a private repo the caller can't see because they're not
+  // Connected. We retry with the sentinel to let OneCLI's gateway return
+  // the structured `app_not_connected` / `access_restricted` error with the
+  // CTA URL, which the UI renders as "Connect GitHub →".
+  let headCommit: CommitObject;
+  try {
+    headCommit = await githubJson<CommitObject>(`${base}/commits/HEAD`, undefined, { withAuth: false });
+  } catch (err) {
+    const cause = (err as Error & { cause?: { status?: number } }).cause;
+    if (cause?.status === 404) {
+      headCommit = await githubJson<CommitObject>(`${base}/commits/HEAD`, undefined, { withAuth: true });
+    } else {
+      throw err;
+    }
+  }
+  const version = headCommit.sha;
+
+  // Tarball is served by api.github.com (with a redirect to codeload.github.com
+  // that OneCLI follows transparently — verified empirically). For a typical
+  // skill repo this is ~50-500 KB, fetched in ~1 s.
+  const tarballRes = await githubFetch(`${base}/tarball/${version}`, undefined, { withAuth: false });
+  if (!tarballRes.ok) {
+    const text = await tarballRes.text().catch(() => "");
+    throw new Error(`github GET ${base}/tarball/${version} → ${tarballRes.status}: ${text.slice(0, 200)}`);
+  }
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "humr-skills-scan-"));
+  try {
+    const tgz = path.join(tmp, "src.tgz");
+    await fs.writeFile(tgz, Buffer.from(await tarballRes.arrayBuffer()));
+    await run("tar", ["-xzf", tgz, "-C", tmp]);
+    await fs.rm(tgz);
+
+    // GitHub tarballs wrap contents in a single top-level dir like
+    // `{owner}-{repo}-{short-sha}`. Find it and scan from there.
+    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter((e) => e.isDirectory());
+    if (extracted.length === 0) throw new Error("tarball contained no directories");
+    const repoDir = path.join(tmp, extracted[0].name);
+
+    const skillDirs = await findSkillDirsInClone(repoDir);
+    const out = await Promise.all(
+      skillDirs.map(async (rel) => {
+        const absDir = path.join(repoDir, rel);
+        const content = await fs.readFile(path.join(absDir, "SKILL.md"), "utf8");
+        const fm = parseFrontmatter(content);
+        const contentHash = await computeContentHash(absDir);
+        return {
+          source: gitUrl,
+          name: fm.name?.trim() || path.basename(rel),
+          description: fm.description?.trim() || "",
+          version,
+          contentHash,
+        };
+      }),
+    );
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+}
+
+async function scanViaGitClone(gitUrl: string): Promise<ScannedSkill[]> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "humr-skills-scan-"));
+  try {
+    await run("git", ["clone", "--quiet", "--depth", "50", gitUrl, tmp]);
+    const skillDirs = await findSkillDirsInClone(tmp);
+    const out: ScannedSkill[] = [];
+    for (const rel of skillDirs) {
+      const absDir = path.join(tmp, rel);
+      const content = await fs.readFile(path.join(absDir, "SKILL.md"), "utf8");
+      const fm = parseFrontmatter(content);
+      const name = fm.name?.trim() || path.basename(rel);
+      const description = fm.description?.trim() || "";
+      const version = (await runCapture("git", ["-C", tmp, "log", "-1", "--format=%H", "--", rel])).trim();
+      const contentHash = await computeContentHash(absDir);
+      out.push({ source: gitUrl, name, description, version, contentHash });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
 }
 
 function branchTimestamp(): string {
@@ -391,11 +687,25 @@ async function run(
 }
 
 /**
- * Fetch the source at a specific commit SHA into dest. Prefers a shallow
- * init+fetch (works on GitHub and other hosts that allow SHA fetches); falls
- * back to a full clone + checkout if the host rejects SHA fetches.
+ * Fetch the source at a specific commit SHA into dest.
+ *
+ * For GitHub URLs we use `api.github.com/repos/:o/:r/tarball/:sha`: anonymous
+ * first (works for public repos and for Connected users via OneCLI's auto-
+ * injection), retried with the Bearer sentinel on 404 so private-without-
+ * Connect-GitHub surfaces the structured `app_not_connected` / `access_
+ * restricted` CTA. This sidesteps OneCLI's Basic-auth swap flip bug on
+ * github.com git-protocol traffic that makes `git clone` through the proxy
+ * unreliable under concurrent load.
+ *
+ * Non-GitHub URLs fall back to a plain `git clone` (uncommon today;
+ * authenticated discovery for those hosts isn't implemented).
  */
 async function cloneAtVersion(source: string, version: string, dest: string): Promise<void> {
+  const host = detectGithubOwnerRepo(source);
+  if (host) {
+    await extractGithubTarball(host, version, dest);
+    return;
+  }
   try {
     await run("git", ["init", "--quiet", dest]);
     await run("git", ["-C", dest, "remote", "add", "origin", source]);
@@ -408,6 +718,44 @@ async function cloneAtVersion(source: string, version: string, dest: string): Pr
   }
   await run("git", ["clone", "--quiet", source, dest]);
   await run("git", ["-C", dest, "checkout", "--quiet", version]);
+}
+
+/**
+ * Download a GitHub tarball at the given commit SHA and untar it into dest
+ * (which must be empty). `--strip-components=1` removes the tarball's
+ * auto-generated `{owner}-{repo}-{shortsha}/` wrapper so dest ends up with
+ * the repo contents at its root — matching the shape the rest of installSkill
+ * expects.
+ */
+async function extractGithubTarball(
+  host: DetectedOwnerRepo,
+  version: string,
+  dest: string,
+): Promise<void> {
+  const urlPath = `/repos/${host.owner}/${host.repo}/tarball/${encodeURIComponent(version)}`;
+  let res = await githubFetch(urlPath, undefined, { withAuth: false });
+  if (res.status === 404) {
+    // Could be private and the caller isn't Connected / agent not granted —
+    // retry with the sentinel so OneCLI can return a structured CTA body
+    // instead of an opaque 404.
+    res = await githubFetch(urlPath, undefined, { withAuth: true });
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let body: unknown = null;
+    try { body = text ? JSON.parse(text) : text; } catch { body = text; }
+    const detail = typeof body === "object" && body !== null && "message" in body
+      ? (body as { message?: string }).message ?? ""
+      : (typeof body === "string" ? body.slice(0, 200) : "");
+    const e = new Error(`github tarball ${urlPath} → ${res.status}: ${detail}`);
+    (e as Error & { cause?: unknown }).cause = { status: res.status, body };
+    throw e;
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  const tgz = path.join(dest, "_src.tgz");
+  await fs.writeFile(tgz, buf);
+  await run("tar", ["-xzf", tgz, "--strip-components=1", "-C", dest]);
+  await fs.rm(tgz);
 }
 
 /**
@@ -426,7 +774,15 @@ export async function resolveSkillDir(tmp: string, name: string): Promise<string
   );
 }
 
-export async function installSkill(input: InstallSkillInput): Promise<void> {
+export interface InstallSkillResult {
+  /** Deterministic SHA-256 of the installed skill dir. Returned so the
+   *  api-server can persist it to `spec.skills` even when the install
+   *  request didn't ship one — important for agent-initiated installs via
+   *  the MCP tool, which skip the scan step entirely. */
+  contentHash: string;
+}
+
+export async function installSkill(input: InstallSkillInput): Promise<InstallSkillResult> {
   assertSafeSkillName(input.name);
   for (const p of input.skillPaths) assertAbsoluteSkillPath(p);
 
@@ -440,6 +796,12 @@ export async function installSkill(input: InstallSkillInput): Promise<void> {
       await fs.rm(dst, { recursive: true, force: true });
       await fs.cp(srcDir, dst, { recursive: true });
     }
+    // All install targets receive the same contents, so hashing the first
+    // is sufficient. Computed from the installed dir (rather than from the
+    // source tmpdir) so the hash reflects what actually landed on the pod.
+    const firstTarget = path.join(input.skillPaths[0], input.name);
+    const contentHash = await computeContentHash(firstTarget);
+    return { contentHash };
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

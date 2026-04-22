@@ -6,6 +6,7 @@ import {
   SkillSourceProtectedError,
   type SkillsRepository,
 } from "../../modules/skills/infrastructure/skills-repository.js";
+import { PublicArchiveNotFoundError } from "../../modules/skills/infrastructure/public-archive-scanner.js";
 import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { AgentRuntimeSkillsClient } from "../../modules/skills/infrastructure/agent-runtime-client.js";
@@ -39,6 +40,7 @@ function makeInfraInstance(overrides: Partial<InfraInstance> = {}): InfraInstanc
     currentState: "running",
     podReady: true,
     skills: [],
+    publishes: [],
     ...overrides,
   };
 }
@@ -78,7 +80,7 @@ function makeEnv(opts: {
   const agentsGet = vi.fn().mockResolvedValue(opts.agent ?? makeAgent(["/home/agent/.claude/skills/"]));
   const runtimeInstall = opts.runtimeError
     ? vi.fn().mockRejectedValue(opts.runtimeError)
-    : vi.fn().mockResolvedValue(undefined);
+    : vi.fn().mockResolvedValue({ contentHash: "runtime-computed-hash" });
   const runtimeUninstall = opts.runtimeUninstallError
     ? vi.fn().mockRejectedValue(opts.runtimeUninstallError)
     : vi.fn().mockResolvedValue(undefined);
@@ -91,6 +93,7 @@ function makeEnv(opts: {
     listLocal: vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]),
     readLocal: vi.fn<AgentRuntimeSkillsClient["readLocal"]>().mockResolvedValue([]),
     publish: vi.fn<AgentRuntimeSkillsClient["publish"]>().mockResolvedValue({ prUrl: "x", branch: "y" }),
+    scan: vi.fn<AgentRuntimeSkillsClient["scan"]>().mockResolvedValue([]),
   };
 
   const getAgentToken = vi.fn<(agentId: string) => Promise<string>>().mockResolvedValue("agent-token-xyz");
@@ -102,8 +105,9 @@ function makeEnv(opts: {
     runtimeClient,
     getAgentToken,
     owner: OWNER,
-    scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
-      invalidateScan: vi.fn(),
+    scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+    invalidateScan: vi.fn(),
+    scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
   });
 
   return { instancesGet, instancesUpdate, agentsGet, runtimeInstall, runtimeUninstall, getAgentToken, svc };
@@ -130,9 +134,17 @@ describe("skills-service install", () => {
     });
     expect(env.instancesUpdate).toHaveBeenCalledTimes(1);
     expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
-      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1" }],
+      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" }],
     });
-    expect(result).toEqual([{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1" }]);
+    expect(result).toEqual([{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" }]);
+  });
+
+  it("prefers the UI-scan-provided contentHash over the agent-runtime-computed one", async () => {
+    const env = makeEnv();
+    await env.svc.installSkill({ ...installInput, contentHash: "from-scan" });
+    expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
+      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "from-scan" }],
+    });
   });
 
   it("replaces an existing entry with the same (source,name) rather than duplicating", async () => {
@@ -147,7 +159,7 @@ describe("skills-service install", () => {
     expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
       skills: [
         { source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" },
-        { source: SOURCE.gitUrl, name: "adr", version: "sha-v1" },
+        { source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" },
       ],
     });
   });
@@ -242,11 +254,13 @@ describe("skills-service listLocal", () => {
         listLocal: runtimeListLocal,
         readLocal: vi.fn(),
         publish: vi.fn(),
+        scan: vi.fn(),
       },
       getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
-      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
 
     const result = await svc.listLocal(INSTANCE_ID);
@@ -277,11 +291,13 @@ describe("skills-service listLocal", () => {
         listLocal: runtimeListLocal,
         readLocal: vi.fn(),
         publish: vi.fn(),
+        scan: vi.fn(),
       },
       getAgentToken: async () => "t",
       owner: OWNER,
-      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
 
     expect(await svc.listLocal(INSTANCE_ID)).toEqual([]);
@@ -301,15 +317,238 @@ describe("skills-service listLocal", () => {
         listLocal: runtimeListLocal,
         readLocal: vi.fn(),
         publish: vi.fn(),
+        scan: vi.fn(),
       },
       getAgentToken: async () => "t",
       owner: OWNER,
-      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
 
     expect(await svc.listLocal("ghost")).toEqual([]);
     expect(runtimeListLocal).not.toHaveBeenCalled();
+  });
+});
+
+describe("skills-service listSkills routing", () => {
+  type RuntimeScan = AgentRuntimeSkillsClient["scan"];
+  type PublicScan = (gitUrl: string) => Promise<Skill[]>;
+  function buildSvc(opts: {
+    runtimeScan: ReturnType<typeof vi.fn<RuntimeScan>>;
+    publicScan: ReturnType<typeof vi.fn<PublicScan>>;
+    source?: { id: string; name: string; gitUrl: string };
+    instance?: InfraInstance | null;
+  }) {
+    const src = opts.source ?? SOURCE;
+    const instance = opts.instance === undefined ? makeInfraInstance() : opts.instance;
+    const runtimeClient: AgentRuntimeSkillsClient = {
+      install: vi.fn(),
+      uninstall: vi.fn(),
+      listLocal: vi.fn(),
+      readLocal: vi.fn(),
+      publish: vi.fn(),
+      scan: opts.runtimeScan,
+    };
+    // The scan cache wrapper simply calls through to whatever scanner is
+    // passed in — tests don't exercise caching directly.
+    const scanCache = async (gitUrl: string, scanner: (u: string) => Promise<Skill[]>) =>
+      scanner(gitUrl);
+
+    return createSkillsService({
+      repo: { ...makeRepo(), get: async (id) => (id === src.id ? src : null) },
+      instancesRepo: {
+        get: vi.fn().mockResolvedValue(instance),
+      } as unknown as InstancesRepository,
+      agentsRepo: {
+        get: vi.fn().mockResolvedValue({
+          id: AGENT_ID,
+          name: "a",
+          spec: { skillPaths: ["/home/agent/.claude/skills/"] },
+        }),
+      } as unknown as AgentsRepository,
+      runtimeClient,
+      getAgentToken: async () => "token",
+      owner: OWNER,
+      scanSource: scanCache,
+      invalidateScan: vi.fn(),
+      scanPublic: opts.publicScan,
+    });
+  }
+
+  it("uses the public archive path when it succeeds (no agent-runtime call)", async () => {
+    const publicScan = vi.fn<PublicScan>().mockResolvedValue([
+      { source: SOURCE.gitUrl, name: "adr", description: "", version: "sha", contentHash: "h" },
+    ]);
+    const runtimeScan = vi.fn<RuntimeScan>();
+    const svc = buildSvc({ publicScan, runtimeScan });
+
+    const result = await svc.listSkills(SOURCE.id, INSTANCE_ID);
+
+    expect(publicScan).toHaveBeenCalledWith(SOURCE.gitUrl);
+    expect(runtimeScan).not.toHaveBeenCalled();
+    expect(result).toEqual([
+      { source: SOURCE.gitUrl, name: "adr", description: "", version: "sha", contentHash: "h" },
+    ]);
+  });
+
+  it("falls back to agent-runtime on PublicArchiveNotFoundError (private repo)", async () => {
+    const publicScan = vi.fn<PublicScan>().mockRejectedValue(new PublicArchiveNotFoundError(SOURCE.gitUrl));
+    const runtimeScan = vi.fn<RuntimeScan>().mockResolvedValue([
+      { source: SOURCE.gitUrl, name: "secret", description: "priv", version: "sha", contentHash: "h" },
+    ]);
+    const svc = buildSvc({ publicScan, runtimeScan });
+
+    const result = await svc.listSkills(SOURCE.id, INSTANCE_ID);
+
+    expect(publicScan).toHaveBeenCalled();
+    expect(runtimeScan).toHaveBeenCalledWith(INSTANCE_ID, "token", SOURCE.gitUrl);
+    expect(result[0].name).toBe("secret");
+  });
+
+  it("does not require a running instance for a public scan", async () => {
+    const publicScan = vi.fn<PublicScan>().mockResolvedValue([]);
+    const runtimeScan = vi.fn<RuntimeScan>();
+    const svc = buildSvc({
+      publicScan,
+      runtimeScan,
+      instance: makeInfraInstance({ currentState: "hibernated" }),
+    });
+
+    await svc.listSkills(SOURCE.id, INSTANCE_ID);
+
+    expect(publicScan).toHaveBeenCalled();
+    expect(runtimeScan).not.toHaveBeenCalled();
+  });
+
+  it("throws PRECONDITION_FAILED when falling back to agent-runtime requires a running instance but it isn't", async () => {
+    const publicScan = vi.fn<PublicScan>().mockRejectedValue(new PublicArchiveNotFoundError(SOURCE.gitUrl));
+    const runtimeScan = vi.fn<RuntimeScan>();
+    const svc = buildSvc({
+      publicScan,
+      runtimeScan,
+      instance: makeInfraInstance({ currentState: "hibernated" }),
+    });
+
+    await expect(svc.listSkills(SOURCE.id, INSTANCE_ID)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+    expect(runtimeScan).not.toHaveBeenCalled();
+  });
+
+  it("rethrows non-404 public errors without calling agent-runtime", async () => {
+    const publicScan = vi.fn<PublicScan>().mockRejectedValue(new Error("network blew up"));
+    const runtimeScan = vi.fn<RuntimeScan>();
+    const svc = buildSvc({ publicScan, runtimeScan });
+
+    await expect(svc.listSkills(SOURCE.id, INSTANCE_ID)).rejects.toThrow(/network blew up/);
+    expect(runtimeScan).not.toHaveBeenCalled();
+  });
+});
+
+describe("skills-service getState (ghost reconciliation)", () => {
+  function build(opts: {
+    instance?: InfraInstance | null;
+    local?: Array<{ name: string; description: string; skillPath: string }>;
+  }) {
+    const infra = opts.instance === undefined ? makeInfraInstance() : opts.instance;
+    const instancesGet = vi.fn().mockResolvedValue(infra);
+    const instancesUpdate = vi.fn().mockResolvedValue(null);
+    const runtimeClient: AgentRuntimeSkillsClient = {
+      install: vi.fn(),
+      uninstall: vi.fn(),
+      listLocal: vi.fn().mockResolvedValue(opts.local ?? []),
+      readLocal: vi.fn(),
+      publish: vi.fn(),
+      scan: vi.fn(),
+    };
+    const svc = createSkillsService({
+      repo: makeRepo(),
+      instancesRepo: {
+        get: instancesGet,
+        updateSpec: instancesUpdate,
+      } as unknown as InstancesRepository,
+      agentsRepo: {
+        get: vi.fn().mockResolvedValue({
+          id: AGENT_ID,
+          name: "a",
+          spec: { skillPaths: ["/home/agent/.claude/skills/"] },
+        }),
+      } as unknown as AgentsRepository,
+      runtimeClient,
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+    return { svc, instancesGet, instancesUpdate, runtimeClient };
+  }
+
+  it("drops SkillRefs whose dirs are missing on disk and persists the cleanup", async () => {
+    const infra = makeInfraInstance({
+      skills: [
+        { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
+        { source: SOURCE.gitUrl, name: "ghost", version: "v1", contentHash: "h1" },
+      ],
+    });
+    const { svc, instancesUpdate } = build({
+      instance: infra,
+      local: [{ name: "adr", description: "", skillPath: "/home/agent/.claude/skills/" }],
+    });
+
+    const state = await svc.getState(INSTANCE_ID);
+
+    expect(state.installed).toEqual([
+      { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
+    ]);
+    expect(state.standalone).toEqual([]);
+    expect(instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
+      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" }],
+    });
+  });
+
+  it("returns on-disk skills not tracked in spec.skills as standalone", async () => {
+    const infra = makeInfraInstance({
+      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" }],
+    });
+    const { svc, instancesUpdate } = build({
+      instance: infra,
+      local: [
+        { name: "adr", description: "tracked", skillPath: "/home/agent/.claude/skills/" },
+        { name: "my-draft", description: "new one", skillPath: "/home/agent/.claude/skills/" },
+      ],
+    });
+
+    const state = await svc.getState(INSTANCE_ID);
+
+    expect(state.installed.map((s) => s.name)).toEqual(["adr"]);
+    expect(state.standalone.map((s) => s.name)).toEqual(["my-draft"]);
+    // Nothing to clean up, so no update call.
+    expect(instancesUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not reconcile when the instance isn't running (safe during restart)", async () => {
+    const infra = makeInfraInstance({
+      currentState: "hibernated",
+      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" }],
+    });
+    const { svc, instancesUpdate, runtimeClient } = build({ instance: infra, local: [] });
+
+    const state = await svc.getState(INSTANCE_ID);
+
+    // Return spec.skills as-is; we can't see the filesystem so we can't
+    // tell if the ref is really a ghost.
+    expect(state.installed).toEqual(infra.skills);
+    expect(state.standalone).toEqual([]);
+    expect(runtimeClient.listLocal).not.toHaveBeenCalled();
+    expect(instancesUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns empty when the instance is missing", async () => {
+    const { svc } = build({ instance: null });
+    const state = await svc.getState("nope");
+    expect(state).toEqual({ installed: [], standalone: [], publishes: [] });
   });
 });
 
@@ -323,12 +562,83 @@ describe("skills-service deleteSource", () => {
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
-      scanSource: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
 
     await expect(svc.deleteSource("skill-src-seed")).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+  });
+
+  it("scrubs instance.skills entries that reference the deleted source's gitUrl", async () => {
+    const otherUrl = "https://github.com/other/skills";
+    const instA = makeInfraInstance({
+      id: "inst-A",
+      skills: [
+        { source: SOURCE.gitUrl, name: "adr", version: "v1" },
+        { source: otherUrl, name: "other", version: "v1" },
+      ],
+    });
+    const instB = makeInfraInstance({
+      id: "inst-B",
+      skills: [{ source: SOURCE.gitUrl, name: "grill-me", version: "v2" }],
+    });
+    const instancesList = vi.fn().mockResolvedValue([instA, instB]);
+    const instancesUpdate = vi.fn().mockResolvedValue(null);
+    const del = vi.fn().mockResolvedValue(undefined);
+
+    const svc = createSkillsService({
+      repo: { ...makeRepo(), delete: del },
+      instancesRepo: {
+        list: instancesList,
+        updateSpec: instancesUpdate,
+      } as unknown as InstancesRepository,
+      agentsRepo: {} as AgentsRepository,
+      runtimeClient: {} as AgentRuntimeSkillsClient,
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    await svc.deleteSource(SOURCE.id);
+
+    expect(del).toHaveBeenCalledWith(SOURCE.id, OWNER);
+    // inst-A: the source-matched adr entry is dropped, other stays.
+    expect(instancesUpdate).toHaveBeenCalledWith("inst-A", OWNER, {
+      skills: [{ source: otherUrl, name: "other", version: "v1" }],
+    });
+    // inst-B: the only entry matched, list is emptied.
+    expect(instancesUpdate).toHaveBeenCalledWith("inst-B", OWNER, { skills: [] });
+  });
+
+  it("skips the scrub when no instance references the deleted source", async () => {
+    const instA = makeInfraInstance({
+      id: "inst-A",
+      skills: [{ source: "https://github.com/other/skills", name: "x", version: "v" }],
+    });
+    const instancesList = vi.fn().mockResolvedValue([instA]);
+    const instancesUpdate = vi.fn().mockResolvedValue(null);
+
+    const svc = createSkillsService({
+      repo: makeRepo(),
+      instancesRepo: {
+        list: instancesList,
+        updateSpec: instancesUpdate,
+      } as unknown as InstancesRepository,
+      agentsRepo: {} as AgentsRepository,
+      runtimeClient: {} as AgentRuntimeSkillsClient,
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    await svc.deleteSource(SOURCE.id);
+    expect(instancesUpdate).not.toHaveBeenCalled();
   });
 });

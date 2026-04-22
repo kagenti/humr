@@ -1,5 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import type { PublishSkillInput, PublishSkillResult } from "api-server-api";
+import type {
+  PublishSkillInput,
+  PublishSkillResult,
+  SkillPublishRecord,
+} from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import type { InstancesRepository } from "../../agents/infrastructure/instances-repository.js";
 import {
@@ -8,6 +12,7 @@ import {
 } from "../infrastructure/agent-runtime-client.js";
 import { detectHost } from "../infrastructure/git-host.js";
 import type { SkillsRepository } from "../infrastructure/skills-repository.js";
+import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
 
 const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
@@ -60,8 +65,9 @@ export async function publishSkill(
     : DEFAULT_SKILL_PATHS;
   const token = await deps.getAgentToken(infra.agentId);
 
+  let result;
   try {
-    return await deps.runtimeClient.publish(input.instanceId, token, {
+    result = await deps.runtimeClient.publish(input.instanceId, token, {
       name: input.name,
       skillPaths,
       owner: host.owner,
@@ -75,36 +81,23 @@ export async function publishSkill(
     }
     throw err;
   }
-}
 
-/**
- * Translate an OneCLI gateway error (relayed by agent-runtime as HTTP 502
- * with a `.upstream` envelope) into a tRPC error the UI can act on.
- *
- * We encode the `connect_url` / `manage_url` into the message as a
- * `humr-cta:<url>` prefix segment that the client can split back out. Keeps
- * the server → client contract simple (no tRPC data extension needed).
- */
-function upstreamToTrpc(err: AgentRuntimeUpstreamError): TRPCError {
-  const { status, body } = err.upstream;
-  const message = body?.message ?? err.message;
-  const cta = body?.connect_url ?? body?.manage_url;
-  const encoded = cta ? `${message}\nhumr-cta:${cta}` : message;
-
-  if (body?.error === "app_not_connected" || body?.error === "access_restricted") {
-    return new TRPCError({ code: "PRECONDITION_FAILED", message: encoded });
-  }
-  if (status === 403) {
-    return new TRPCError({
-      code: "FORBIDDEN",
-      message: `GitHub rejected the request (${message}). Reconnect GitHub in OneCLI with the repo scope.`,
-    });
-  }
-  if (status === 404) {
-    return new TRPCError({ code: "NOT_FOUND", message: `GitHub: ${message}` });
-  }
-  return new TRPCError({
-    code: "INTERNAL_SERVER_ERROR",
-    message: `GitHub ${status}: ${message}`,
+  // Explicit publish record. Drives the UI's Published badge + View PR link
+  // so we don't fall back to a name-match heuristic that false-positives on
+  // unrelated skills sharing a catalog entry's name. Source fields are
+  // denormalized so the record survives source renames/deletions.
+  const record: SkillPublishRecord = {
+    skillName: input.name,
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceGitUrl: source.gitUrl,
+    prUrl: result.prUrl,
+    publishedAt: new Date().toISOString(),
+  };
+  await deps.instances.updateSpec(input.instanceId, deps.owner, {
+    publishes: [...infra.publishes, record],
   });
+
+  return result;
 }
+

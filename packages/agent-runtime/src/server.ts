@@ -16,6 +16,8 @@ import {
   PayloadTooLargeError,
   publishSkill,
   readLocalSkill,
+  scanSkillSourceInputSchema,
+  scanSource,
   uninstallSkill,
   uninstallSkillInputSchema,
 } from "./modules/skills.js";
@@ -200,10 +202,19 @@ const server = http.createServer((req, res) => {
         return;
       }
       try {
-        await installSkill(parsed.data);
-        writeJson(res, 200, { ok: true });
+        const result = await installSkill(parsed.data);
+        writeJson(res, 200, result);
       } catch (err) {
-        writeJson(res, 500, { error: (err as Error).message });
+        // Same upstream-error envelope the scan + publish routes use, so the
+        // api-server's tRPC layer surfaces Connect-GitHub / Grant-agent CTAs
+        // when install fails because of OneCLI gating on a private repo.
+        const e = err as Error & { cause?: { status?: number; body?: unknown } };
+        const cause = e.cause;
+        if (cause && typeof cause === "object" && typeof cause.status === "number") {
+          writeJson(res, 502, { error: e.message, upstream: cause });
+          return;
+        }
+        writeJson(res, 500, { error: e.message });
       }
     })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
@@ -234,6 +245,34 @@ const server = http.createServer((req, res) => {
           return;
         }
         writeJson(res, 500, { error: e.message });
+      }
+    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
+    return;
+  }
+
+  if (req.url === "/api/skills/scan" && req.method === "POST") {
+    if (!isAuthorizedAgentCaller(req)) {
+      writeJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    (async () => {
+      const body = await readJsonBody(req);
+      const parsed = scanSkillSourceInputSchema.safeParse(body);
+      if (!parsed.success) {
+        writeJson(res, 400, { error: parsed.error.message });
+        return;
+      }
+      try {
+        const skills = await scanSource(parsed.data.source);
+        writeJson(res, 200, { skills });
+      } catch (err) {
+        const e = err as Error & { cause?: { status?: number; body?: unknown } };
+        const cause = e.cause;
+        if (cause && typeof cause === "object" && typeof cause.status === "number") {
+          writeJson(res, 502, { error: e.message, upstream: cause });
+          return;
+        }
+        writeJson(res, 502, { error: e.message });
       }
     })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
