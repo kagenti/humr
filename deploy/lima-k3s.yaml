@@ -19,6 +19,11 @@ provision:
   - mode: system
     script: |
       #!/bin/sh
+      set -e
+      echo "[humr-provision] Installing nfs-common (required for humr-rwx NFS mounts)..."
+      DEBIAN_FRONTEND=noninteractive apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+      echo "[humr-provision] mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
       if [ ! -d /var/lib/rancher/k3s ]; then
         curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16443" sh -
       fi

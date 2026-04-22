@@ -7,6 +7,7 @@ import type {
 } from "api-server-api";
 import { SPEC_VERSION, ChannelType } from "api-server-api";
 import type { InstancesRepository } from "./../infrastructure/instances-repository.js";
+import type { KeycloakUserDirectory } from "./../infrastructure/keycloak-user-directory.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -23,7 +24,25 @@ export function createInstancesService(deps: {
   listAllowedUsersByInstance: (instanceId: string) => Promise<string[]>;
   setAllowedUsers: (instanceId: string, subs: string[]) => Promise<void>;
   deleteAllowedUsersByInstanceIds: (instanceIds: string[]) => Promise<void>;
+  userDirectory: KeycloakUserDirectory;
 }): InstancesService {
+  async function subsToEmails(subs: string[]): Promise<string[]> {
+    if (subs.length === 0) return [];
+    const map = await deps.userDirectory.resolveManyBySub(subs);
+    return subs.map((s) => map.get(s) ?? s);
+  }
+
+  async function emailsToSubs(emails: string[]): Promise<string[]> {
+    const resolved = await Promise.all(
+      emails.map(async (e) => ({ email: e, sub: await deps.userDirectory.resolveByEmail(e) })),
+    );
+    const missing = resolved.filter((r) => r.sub === null).map((r) => r.email);
+    if (missing.length > 0) {
+      throw new Error(`User not found in Keycloak: ${missing.join(", ")}`);
+    }
+    return resolved.map((r) => r.sub!);
+  }
+
   return {
     async list() {
       const [infraInstances, channelMap, allowedUsersMap] = await Promise.all([
@@ -46,19 +65,27 @@ export function createInstancesService(deps: {
         }
       }
 
-      return infraInstances.map((infra) =>
-        assembleInstance(infra, channelMap.get(infra.id) ?? [], allowedUsersMap.get(infra.id) ?? []),
-      );
+      const allSubs = [...new Set([...allowedUsersMap.values()].flat())];
+      const subEmailMap = allSubs.length > 0
+        ? await deps.userDirectory.resolveManyBySub(allSubs)
+        : new Map<string, string>();
+
+      return infraInstances.map((infra) => {
+        const subs = allowedUsersMap.get(infra.id) ?? [];
+        const emails = subs.map((s) => subEmailMap.get(s) ?? s);
+        return assembleInstance(infra, channelMap.get(infra.id) ?? [], emails);
+      });
     },
 
     async get(id) {
-      const [infra, channels, allowed] = await Promise.all([
+      const [infra, channels, allowedSubs] = await Promise.all([
         deps.repo.get(id, deps.owner),
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
       if (!infra) return null;
-      return assembleInstance(infra, channels, allowed);
+      const emails = await subsToEmails(allowedSubs);
+      return assembleInstance(infra, channels, emails);
     },
 
     async create(input: CreateInstanceInput) {
@@ -75,10 +102,12 @@ export function createInstancesService(deps: {
         description: input.description,
       };
       const infra = await deps.repo.create(input.agentId, spec, deps.owner ?? "");
-      if (input.allowedUsers && input.allowedUsers.length > 0) {
-        await deps.setAllowedUsers(infra.id, input.allowedUsers);
+      const emails = input.allowedUserEmails ?? [];
+      if (emails.length > 0) {
+        const subs = await emailsToSubs(emails);
+        await deps.setAllowedUsers(infra.id, subs);
       }
-      const instance = assembleInstance(infra, [], input.allowedUsers ?? []);
+      const instance = assembleInstance(infra, [], emails);
 
       emit({ type: EventType.InstanceCreated, instanceId: instance.id, agentId: input.agentId });
       return instance;
@@ -90,14 +119,16 @@ export function createInstancesService(deps: {
         secretRef: input.secretRef,
       });
       if (!infra) return null;
-      if (input.allowedUsers !== undefined) {
-        await deps.setAllowedUsers(input.id, input.allowedUsers);
+      if (input.allowedUserEmails !== undefined) {
+        const subs = await emailsToSubs(input.allowedUserEmails);
+        await deps.setAllowedUsers(input.id, subs);
       }
-      const [channels, allowed] = await Promise.all([
+      const [channels, allowedSubs] = await Promise.all([
         deps.listChannelsByInstance(input.id),
         deps.listAllowedUsersByInstance(input.id),
       ]);
-      const instance = assembleInstance(infra, channels, allowed);
+      const emails = await subsToEmails(allowedSubs);
+      const instance = assembleInstance(infra, channels, emails);
 
       emit({ type: EventType.InstanceUpdated, instanceId: input.id });
       return instance;
@@ -107,11 +138,12 @@ export function createInstancesService(deps: {
       if (deps.owner && !await deps.repo.isOwnedBy(id, deps.owner)) return null;
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
-      const [channels, allowed] = await Promise.all([
+      const [channels, allowedSubs] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      const instance = assembleInstance(infra, channels, allowed);
+      const emails = await subsToEmails(allowedSubs);
+      const instance = assembleInstance(infra, channels, emails);
 
       if (infra.desiredState === "running") {
         emit({ type: EventType.InstanceWoken, instanceId: id });
@@ -127,11 +159,12 @@ export function createInstancesService(deps: {
       await deps.upsertChannel(id, channel);
       emit({ type: EventType.SlackConnected, instanceId: id, slackChannelId });
 
-      const [channels, allowed] = await Promise.all([
+      const [channels, allowedSubs] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      return assembleInstance(infra, channels, allowed);
+      const emails = await subsToEmails(allowedSubs);
+      return assembleInstance(infra, channels, emails);
     },
 
     async disconnectSlack(id) {
@@ -141,11 +174,12 @@ export function createInstancesService(deps: {
       await deps.deleteChannelByType(id, ChannelType.Slack);
       emit({ type: EventType.SlackDisconnected, instanceId: id });
 
-      const [channels, allowed] = await Promise.all([
+      const [channels, allowedSubs] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
       ]);
-      return assembleInstance(infra, channels, allowed);
+      const emails = await subsToEmails(allowedSubs);
+      return assembleInstance(infra, channels, emails);
     },
 
     async delete(id) {
@@ -154,6 +188,11 @@ export function createInstancesService(deps: {
         await deps.deleteAllowedUsersByInstanceIds([id]);
         emit({ type: EventType.InstanceDeleted, instanceId: id });
       }
+    },
+
+    async isAllowedUser(instanceId, keycloakSub) {
+      const subs = await deps.listAllowedUsersByInstance(instanceId);
+      return subs.includes(keycloakSub);
     },
 
     async restart(id) {

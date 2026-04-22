@@ -21,8 +21,15 @@ import { createAgentsService } from "./services/agents-service.js";
 import { createInstancesService } from "./services/instances-service.js";
 import { createSchedulesService } from "./services/schedules-service.js";
 import { createSessionsService } from "./services/sessions-service.js";
+import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 
-export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner: string, db: Db): {
+export function composeAgentsModule(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  owner: string,
+  db: Db,
+  userDirectory: KeycloakUserDirectory,
+): {
   templates: TemplatesService;
   agents: AgentsService;
   instances: InstancesService;
@@ -57,6 +64,7 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
       listAllowedUsersByInstance: listAllowedUsersByInstance(db, owner),
       setAllowedUsers: setAllowedUsers(db, owner),
       deleteAllowedUsersByInstanceIds: deleteAllowedUsersByInstanceIds(db, owner),
+      userDirectory,
     }),
     schedules: createSchedulesService({ repo: schedulesRepo, owner }),
     sessions: createSessionsService({
@@ -73,7 +81,12 @@ export function composeAgentsModule(api: k8s.CoreV1Api, namespace: string, owner
   };
 }
 
-export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db: Db): InstancesService {
+export function composeSystemInstances(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  db: Db,
+  userDirectory: KeycloakUserDirectory,
+): InstancesService {
   const k8s = createK8sClient(api, namespace);
   const templatesRepo = createTemplatesRepository(k8s);
   const agentsRepo = createAgentsRepository(k8s);
@@ -98,5 +111,6 @@ export function composeSystemInstances(api: k8s.CoreV1Api, namespace: string, db
     listAllowedUsersByInstance: listAllowedUsersByInstance(db, ""),
     setAllowedUsers: setAllowedUsers(db, ""),
     deleteAllowedUsersByInstanceIds: deleteAllowedUsersByInstanceIds(db, ""),
+    userDirectory,
   });
 }

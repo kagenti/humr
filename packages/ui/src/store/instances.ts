@@ -20,7 +20,7 @@ export interface InstancesSlice {
   createInstance: (agentId: string, name: string) => Promise<void>;
   restartInstance: (id: string) => Promise<void>;
   wakeInstance: (id: string) => Promise<void>;
-  updateInstance: (id: string, updates: { allowedUsers?: string[] }) => Promise<void>;
+  updateInstance: (id: string, updates: { allowedUserEmails?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;

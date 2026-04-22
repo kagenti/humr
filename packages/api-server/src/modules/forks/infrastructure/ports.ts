@@ -1,0 +1,30 @@
+import type { ForkSpec, ForkStatus } from "../domain/fork.js";
+import type { Result } from "../domain/result.js";
+
+export type ForeignCredentialMintError =
+  | { kind: "TokenExchangeFailed"; detail?: string }
+  | { kind: "OnecliRegistrationFailed"; detail?: string }
+  | { kind: "AccessDenied"; detail?: string };
+
+export interface ForeignCredentialsPort {
+  mintForeignToken(args: {
+    foreignSub: string;
+    instanceId: string;
+  }): Promise<Result<string, ForeignCredentialMintError>>;
+}
+
+export type OrchestratorCreateError =
+  | { kind: "WriteFailed"; detail?: string }
+  | { kind: "AlreadyExists" };
+
+export interface ForkOrchestratorPort {
+  createFork(args: {
+    forkId: string;
+    spec: ForkSpec;
+    accessToken: string;
+  }): Promise<Result<void, OrchestratorCreateError>>;
+
+  watchStatus(forkId: string): AsyncIterable<ForkStatus>;
+
+  deleteFork(forkId: string): Promise<void>;
+}

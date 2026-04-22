@@ -164,8 +164,11 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
 
 	// 1 PVC (home-agent)
-	assert.Len(t, ss.Spec.VolumeClaimTemplates, 1)
-	assert.Equal(t, "home-agent", ss.Spec.VolumeClaimTemplates[0].Name)
+	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
+	pvc := ss.Spec.VolumeClaimTemplates[0]
+	assert.Equal(t, "home-agent", pvc.Name)
+	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, pvc.Spec.AccessModes)
+	assert.Nil(t, pvc.Spec.StorageClassName, "unset AgentStorageClass → PVC gets cluster-default class")
 
 	// EmptyDir for /tmp + emptyDir for CA cert
 	volMap := make(map[string]corev1.Volume)
@@ -184,6 +187,18 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	assert.Equal(t, "home-agent", mountPaths["/home/agent"])
 	assert.Equal(t, "tmp", mountPaths["/tmp"])
 	assert.Equal(t, "ca-cert", mountPaths["/etc/humr/ca"])
+}
+
+func TestBuildStatefulSet_AgentStorageClass(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentStorageClass = "humr-rwx"
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil)
+
+	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
+	pvc := ss.Spec.VolumeClaimTemplates[0]
+	require.NotNil(t, pvc.Spec.StorageClassName)
+	assert.Equal(t, "humr-rwx", *pvc.Spec.StorageClassName)
 }
 
 func TestBuildStatefulSet_ConnectorEnvs(t *testing.T) {

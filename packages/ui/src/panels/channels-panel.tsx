@@ -15,7 +15,7 @@ export function ChannelsPanel() {
 
   const [enabled, setEnabled] = useState(!!slackChannel);
   const [channelId, setChannelId] = useState(slackChannel?.slackChannelId ?? "");
-  const [users, setUsers] = useState<string[]>(inst?.allowedUsers ?? []);
+  const [users, setUsers] = useState<string[]>(inst?.allowedUserEmails ?? []);
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -24,7 +24,7 @@ export function ChannelsPanel() {
     const sc = inst?.channels.find(c => c.type === "slack");
     setEnabled(!!sc);
     setChannelId(sc?.slackChannelId ?? "");
-    setUsers(inst?.allowedUsers ?? []);
+    setUsers(inst?.allowedUserEmails ?? []);
     setDirty(false);
   }, [inst]);
 
@@ -53,7 +53,7 @@ export function ChannelsPanel() {
         await disconnectSlack(inst.id);
         await connectSlack(inst.id, channelId.trim());
       }
-      await updateInstance(inst.id, { allowedUsers: users });
+      await updateInstance(inst.id, { allowedUserEmails: users });
       setDirty(false);
     } finally {
       setSaving(false);
@@ -113,11 +113,11 @@ export function ChannelsPanel() {
               </div>
               <div className="flex gap-1 mt-1">
                 <input
-                  type="text"
+                  type="email"
                   value={userInput}
                   onChange={e => setUserInput(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
-                  placeholder="Keycloak user ID"
+                  placeholder="user@example.com"
                   className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
                 />
                 <button

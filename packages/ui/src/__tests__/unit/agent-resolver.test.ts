@@ -8,7 +8,7 @@ const agent = (id: string): AgentView => ({
 });
 
 const inst = (id: string, agentId: string, state: InstanceView["state"]): InstanceView => ({
-  id, name: id, agentId, state, channels: [], allowedUsers: [],
+  id, name: id, agentId, state, channels: [], allowedUserEmails: [],
 });
 
 describe("resolveAgentDisplay", () => {

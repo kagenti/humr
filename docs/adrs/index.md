@@ -32,6 +32,7 @@ This directory contains ADRs for the Humr project.
 | [024](024-connector-declared-envs.md) | Connector-declared pod envs + per-agent env overrides | @tomas |
 | [025](025-thread-session.md) | Persistent ACP session per Slack thread | @tomkis |
 | [026](026-session-log-replay.md) | Persistent ACP sessions via per-session log and cursor fan-out | @jezekra1 |
+| [027](027-slack-user-impersonation.md) | Slack per-turn user impersonation — foreign repliers fork the instance into a K8s Job | @tomkis |
 
 ## Drafts
 
