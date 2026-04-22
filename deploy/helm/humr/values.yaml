@@ -257,8 +257,17 @@ controller:
   # -- StorageClass for per-instance agent PVCs. Must support ReadWriteMany
   # so per-turn foreign-user fork pods can mount the same /home/agent volume
   # concurrently with the main pod (see ADR DRAFT — Slack per-turn user
-  # impersonation). Empty = cluster default (which must itself support RWX).
-  # Set to "humr-rwx" to use the bundled in-cluster NFS provisioner below.
+  # impersonation).
+  #
+  # WARNING: leaving this empty falls back to the cluster default, and the
+  # default on most managed platforms is block storage that only supports
+  # ReadWriteOnce. Symptoms: PVCs stuck Pending with a provisioner error like
+  # "VolumeCapabilitiesNotSupported". Pick an RWX class for your platform:
+  #   IKS (IBM Cloud) ......... ibmc-vpc-file-* (enable VPC File CSI add-on)
+  #   EKS (AWS) ............... an EFS-backed class (e.g. efs-sc)
+  #   GKE (Google Cloud) ...... a Filestore-backed class (enterprise/basic)
+  #   AKS (Azure) ............. azurefile-csi / azurefile-csi-premium
+  #   Dev (k3s/kind/minikube) . "humr-rwx" with nfsProvisioner.enabled=true
   agentStorageClass: ""
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
