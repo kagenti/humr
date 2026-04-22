@@ -2,6 +2,8 @@ package reconciler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"time"
@@ -72,7 +74,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	connectorEnvs := r.collectForeignConnectorEnvs(ctx, agentCM, agentName, forkSpec.ForeignSub)
+	connectorEnvs := r.collectForeignConnectorEnvs(ctx, agentCM, forkSpec.Instance, forkSpec.ForeignSub)
 
 	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, connectorEnvs)
 
@@ -146,22 +148,33 @@ func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*cor
 	return nil, nil
 }
 
-func (r *ForkReconciler) collectForeignConnectorEnvs(ctx context.Context, agentCM *corev1.ConfigMap, agentName, foreignSub string) []corev1.EnvVar {
+func (r *ForkReconciler) collectForeignConnectorEnvs(ctx context.Context, agentCM *corev1.ConfigMap, instanceID, foreignSub string) []corev1.EnvVar {
 	if r.factory == nil {
 		return nil
 	}
 	_ = agentCM
+	forkAgentIdentifier := buildForkOnecliIdentifier(instanceID, foreignSub)
 	oc, err := r.factory.ClientForOwner(ctx, foreignSub)
 	if err != nil {
-		slog.Warn("could not get OneCLI client for foreign user; skipping connector envs", "agent", agentName, "sub", foreignSub, "error", err)
+		slog.Warn("could not get OneCLI client for foreign user; skipping connector envs", "agent", forkAgentIdentifier, "sub", foreignSub, "error", err)
 		return nil
 	}
-	secrets, err := oc.ListSecretsForAgent(ctx, agentName)
+	secrets, err := oc.ListSecretsForAgent(ctx, forkAgentIdentifier)
 	if err != nil {
-		slog.Warn("could not list secrets for agent under foreign user; skipping connector envs", "agent", agentName, "sub", foreignSub, "error", err)
+		slog.Warn("could not list secrets for fork agent under foreign user; skipping connector envs", "agent", forkAgentIdentifier, "sub", foreignSub, "error", err)
 		return nil
 	}
 	return envMappingsToEnvVars(secrets)
+}
+
+// buildForkOnecliIdentifier mirrors the api-server TS implementation:
+// `fork-{instanceId}-{sha256(foreignSub)[0:12]}`. The api-server creates the
+// OneCLI agent under this identifier; the controller must look up secrets
+// under the same identifier so the fork pod inherits env-mappings like
+// CLAUDE_CODE_OAUTH_TOKEN=humr:sentinel.
+func buildForkOnecliIdentifier(instanceID, foreignSub string) string {
+	h := sha256.Sum256([]byte(foreignSub))
+	return fmt.Sprintf("fork-%s-%s", instanceID, hex.EncodeToString(h[:])[:12])
 }
 
 func readForkPhase(cm *corev1.ConfigMap) string {
