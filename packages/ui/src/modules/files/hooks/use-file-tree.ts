@@ -1,7 +1,8 @@
-import { useEffect, useCallback, useMemo } from "react";
-import { useStore } from "../store.js";
-import { createInstanceTrpc } from "../instance-trpc.js";
-import { runAction, runQuery, ACTION_FAILED } from "../store/query-helpers.js";
+import { useCallback, useEffect, useMemo } from "react";
+
+import { createInstanceTrpc } from "../../../instance-trpc.js";
+import { useStore } from "../../../store.js";
+import { ACTION_FAILED,runAction, runQuery } from "../../../store/query-helpers.js";
 
 /**
  * Polls the agent's file tree and manages the open-file viewer.

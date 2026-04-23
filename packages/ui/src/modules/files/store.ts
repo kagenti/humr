@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
-import type { TreeEntry } from "../types.js";
-import type { HumrStore } from "../store.js";
+
+import type { HumrStore } from "../../store.js";
+import type { TreeEntry } from "../../types.js";
 
 export type RightTab = "files" | "log" | "configuration";
 

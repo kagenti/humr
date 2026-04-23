@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
-import { useStore } from "../store.js";
-import { ArrowLeft, ChevronRight, ChevronDown, Folder, FileText, Eye, Code, Download, Image as ImageIcon } from "lucide-react";
-import { Markdown } from "./../components/markdown.js";
-import { HighlightedCode } from "./../components/highlighted-code.js";
+import { ArrowLeft, ChevronDown, ChevronRight, Code, Download, Eye, FileText, Folder, Image as ImageIcon } from "lucide-react";
+import { useCallback, useEffect,useState } from "react";
+
+import { HighlightedCode } from "../../../components/highlighted-code.js";
+import { Markdown } from "../../../components/markdown.js";
+import { useStore } from "../../../store.js";
 
 function hexDump(base64: string): string {
   const raw = atob(base64);
@@ -65,7 +66,7 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
   const toggleDir = useCallback((path: string) => {
     setToggled(prev => {
       const next = new Set(prev);
-      next.has(path) ? next.delete(path) : next.add(path);
+      if (next.has(path)) next.delete(path); else next.add(path);
       return next;
     });
   }, []);
