@@ -20,11 +20,12 @@ var testForkOwnerCM = &corev1.ConfigMap{
 }
 
 var testForkSpec = &types.ForkSpec{
-	Version:     types.SpecVersion,
-	Instance:    "my-instance",
-	ForeignSub:  "kc|user-42",
-	SessionID:   "sess-1",
-	AccessToken: "onecli-foreign-token",
+	Version:             types.SpecVersion,
+	Instance:            "my-instance",
+	ForeignSub:          "kc|user-42",
+	ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc",
+	SessionID:           "sess-1",
+	AccessToken:         "onecli-foreign-token",
 }
 
 var testForkInstance = &types.InstanceSpec{

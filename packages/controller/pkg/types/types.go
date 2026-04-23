@@ -93,11 +93,12 @@ type ScheduleStatus struct {
 // --- Fork ---
 
 type ForkSpec struct {
-	Version     string `yaml:"version"`
-	Instance    string `yaml:"instance"`
-	ForeignSub  string `yaml:"foreignSub"`
-	SessionID   string `yaml:"sessionId,omitempty"`
-	AccessToken string `yaml:"accessToken"`
+	Version             string `yaml:"version"`
+	Instance            string `yaml:"instance"`
+	ForeignSub          string `yaml:"foreignSub"`
+	ForkAgentIdentifier string `yaml:"forkAgentIdentifier"`
+	SessionID           string `yaml:"sessionId,omitempty"`
+	AccessToken         string `yaml:"accessToken"`
 }
 
 type ForkError struct {
@@ -179,6 +180,9 @@ func ParseForkSpec(data string) (*ForkSpec, error) {
 	}
 	if spec.AccessToken == "" {
 		return nil, fmt.Errorf("fork spec: accessToken is required")
+	}
+	if spec.ForkAgentIdentifier == "" {
+		return nil, fmt.Errorf("fork spec: forkAgentIdentifier is required")
 	}
 	return &spec, nil
 }

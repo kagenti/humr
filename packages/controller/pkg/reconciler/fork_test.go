@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
@@ -71,7 +72,7 @@ func readStatus(t *testing.T, client *fake.Clientset, name string) *types.ForkSt
 func TestForkReconcile_CreatesJob(t *testing.T) {
 	spec := &types.ForkSpec{
 		Version: types.SpecVersion, Instance: "my-instance",
-		ForeignSub: "kc|user-42", AccessToken: "tok",
+		ForeignSub: "kc|user-42", ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc", AccessToken: "tok",
 	}
 	cm := forkCM(t, "fork-1", spec, time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
@@ -95,7 +96,7 @@ func TestForkReconcile_CreatesJob(t *testing.T) {
 func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
 	spec := &types.ForkSpec{
 		Version: types.SpecVersion, Instance: "my-instance",
-		ForeignSub: "kc|user-42", AccessToken: "tok",
+		ForeignSub: "kc|user-42", ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc", AccessToken: "tok",
 	}
 	cm := forkCM(t, "fork-2", spec, time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
@@ -129,7 +130,7 @@ func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
 func TestForkReconcile_TimeoutEmitsFailed(t *testing.T) {
 	spec := &types.ForkSpec{
 		Version: types.SpecVersion, Instance: "my-instance",
-		ForeignSub: "kc|user-42", AccessToken: "tok",
+		ForeignSub: "kc|user-42", ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc", AccessToken: "tok",
 	}
 	cm := forkCM(t, "fork-3", spec, time.Unix(1_000_000-200, 0))
 	r, client := setupForkReconciler(t,
@@ -151,7 +152,7 @@ func TestForkReconcile_TimeoutEmitsFailed(t *testing.T) {
 func TestForkReconcile_JobFailedEmitsPodNotReady(t *testing.T) {
 	spec := &types.ForkSpec{
 		Version: types.SpecVersion, Instance: "my-instance",
-		ForeignSub: "kc|user-42", AccessToken: "tok",
+		ForeignSub: "kc|user-42", ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc", AccessToken: "tok",
 	}
 	cm := forkCM(t, "fork-4", spec, time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
@@ -183,7 +184,7 @@ func TestForkReconcile_JobFailedEmitsPodNotReady(t *testing.T) {
 func TestForkReconcile_MissingInstanceEmitsOrchestrationFailed(t *testing.T) {
 	spec := &types.ForkSpec{
 		Version: types.SpecVersion, Instance: "ghost-instance",
-		ForeignSub: "kc|user-42", AccessToken: "tok",
+		ForeignSub: "kc|user-42", ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc", AccessToken: "tok",
 	}
 	cm := forkCM(t, "fork-5", spec, time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
@@ -224,10 +225,80 @@ func TestForkReconcile_InvalidSpecEmitsOrchestrationFailed(t *testing.T) {
 	assert.Equal(t, types.ForkPhaseFailed, status.Phase)
 }
 
+// Regression for issue #278: the fork reconciler must look up secrets using
+// the fork-agent's identifier (carried in ForkSpec.ForkAgentIdentifier), not
+// the instance owner's agent identifier — the foreign user's OneCLI account
+// never contains the owner's agent.
+func TestForkReconcile_LooksUpSecretsByForkAgentIdentifier(t *testing.T) {
+	spec := &types.ForkSpec{
+		Version:             types.SpecVersion,
+		Instance:            "my-instance",
+		ForeignSub:          "kc|user-42",
+		ForkAgentIdentifier: "fork-my-instance-abc123def456",
+		AccessToken:         "tok",
+	}
+	cm := forkCM(t, "fork-8", spec, time.Unix(1_000_000-1, 0))
+	r, client := setupForkReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		cm,
+		instanceCM("running"),
+	)
+
+	capture := &captureFactory{}
+	capture.client = &captureClient{
+		factory: capture,
+		secrets: []onecli.Secret{{
+			ID: "s1",
+			Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
+				{EnvName: "CLAUDE_CODE_OAUTH_TOKEN", Placeholder: onecli.DefaultEnvPlaceholder},
+			}},
+		}},
+	}
+	r.factory = capture
+
+	require.NoError(t, r.Reconcile(context.Background(), cm))
+
+	assert.Equal(t, []string{"kc|user-42"}, capture.owners,
+		"ClientForOwner must be called with the foreign user's sub")
+	assert.Equal(t, []string{"fork-my-instance-abc123def456"}, capture.client.listedIdentifiers,
+		"ListSecretsForAgent must be called with ForkSpec.ForkAgentIdentifier, not the owner's agent name")
+
+	job, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "fork-8", metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, onecli.DefaultEnvPlaceholder, env["CLAUDE_CODE_OAUTH_TOKEN"],
+		"fork pod must receive the sentinel env injected from the foreign user's linked secret")
+}
+
+type captureFactory struct {
+	owners []string
+	client *captureClient
+}
+
+func (f *captureFactory) ClientForOwner(_ context.Context, owner string) (onecli.Client, error) {
+	f.owners = append(f.owners, owner)
+	return f.client, nil
+}
+
+type captureClient struct {
+	onecli.NoopClient
+	factory           *captureFactory
+	listedIdentifiers []string
+	secrets           []onecli.Secret
+}
+
+func (c *captureClient) ListSecretsForAgent(_ context.Context, identifier string) ([]onecli.Secret, error) {
+	c.listedIdentifiers = append(c.listedIdentifiers, identifier)
+	return c.secrets, nil
+}
+
 func TestForkReconcile_TerminalPhasesAreNoOp(t *testing.T) {
 	spec := &types.ForkSpec{
 		Version: types.SpecVersion, Instance: "my-instance",
-		ForeignSub: "kc|user-42", AccessToken: "tok",
+		ForeignSub: "kc|user-42", ForkAgentIdentifier: "fork-my-instance-aaaabbbbcccc", AccessToken: "tok",
 	}
 	cm := forkCM(t, "fork-7", spec, time.Unix(1_000_000-1, 0))
 	cm.Data["status.yaml"] = "version: humr.ai/v1\nphase: Completed\n"

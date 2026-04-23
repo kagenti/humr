@@ -3,6 +3,7 @@ import {
   type ForeignCredentialMintError,
   type ForeignCredentialsPort,
   type ForeignRegistrationKey,
+  type MintedForeignCredential,
 } from "../domain/foreign-registration.js";
 import { err, ok, type Result } from "../domain/result.js";
 import {
@@ -18,13 +19,13 @@ export function createForeignRegistrationService(deps: {
   port: OnecliForeignCredentialsPort;
   buildIdentifier?: (instanceId: string, foreignSub: string) => string;
 }): ForeignRegistrationService {
-  const cache = new Map<string, string>();
+  const cache = new Map<string, MintedForeignCredential>();
   const buildId = deps.buildIdentifier ?? buildForkIdentifier;
 
   async function mintForeignToken(args: {
     foreignSub: string;
     instanceId: string;
-  }): Promise<Result<string, ForeignCredentialMintError>> {
+  }): Promise<Result<MintedForeignCredential, ForeignCredentialMintError>> {
     const key = cacheKey(args);
     const cached = cache.get(key);
     if (cached !== undefined) return ok(cached);
@@ -36,20 +37,22 @@ export function createForeignRegistrationService(deps: {
       return err({ kind: "TokenExchangeFailed", detail: errorDetail(e) });
     }
 
-    let agentToken: string;
+    const agentIdentifier = buildId(args.instanceId, args.foreignSub);
+    let accessToken: string;
     try {
       const result = await deps.port.createOrFindAgent({
         onecliToken,
-        identifier: buildId(args.instanceId, args.foreignSub),
+        identifier: agentIdentifier,
         displayName: `Fork for ${args.foreignSub} on ${args.instanceId}`,
       });
-      agentToken = result.accessToken;
+      accessToken = result.accessToken;
     } catch (e) {
       return err({ kind: "OnecliRegistrationFailed", detail: errorDetail(e) });
     }
 
-    cache.set(key, agentToken);
-    return ok(agentToken);
+    const minted: MintedForeignCredential = { accessToken, agentIdentifier };
+    cache.set(key, minted);
+    return ok(minted);
   }
 
   return {
