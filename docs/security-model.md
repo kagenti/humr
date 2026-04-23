@@ -65,6 +65,12 @@ Simon Willison, an open-source developer who writes widely about AI safety, has 
 
 Take away any one of the three legs and the attack becomes much harder. In practice, the third leg tends to be the most controllable: you usually have more say over where the agent is allowed to send things than over what text it might encounter.
 
+Meta's ["Agents Rule of Two"](https://ai.meta.com/blog/practical-ai-agent-security/) frames the same idea as a per-session rule. Label the three legs **[A]** untrusted input, **[B]** access to sensitive data, **[C]** external state change or communication. An agent should hold at most two of these at a time; if all three are genuinely needed, a human has to approve the dangerous step. Their worked examples are a useful illustration of the thinking:
+
+- **Travel agent [AB]**: takes untrusted web content and private booking data, but a human confirms every actual booking, so the external-action leg is gated.
+- **Research assistant [AC]**: browses arbitrary URLs and returns results, but runs sandboxed with no session credentials loaded, so untrusted content never meets sensitive data.
+- **Internal coder [BC]**: reads production data and makes stateful changes, but filters its inputs by *author lineage* (only accepting code from trusted contributors), so the untrusted-input leg never arises in the first place.
+
 A natural question is: "Can't we just detect and block the malicious instructions?" Guardrail vendors claim around 95% accuracy, and as Simon puts it, *95% is a failing grade in web application security*. An attacker only has to succeed once, and new phrasings and languages keep slipping through.
 
 In practice, the best thing a Humr operator can do is shrink leg 3 (the outbound path). That means:
@@ -74,5 +80,11 @@ In practice, the best thing a Humr operator can do is shrink leg 3 (the outbound
 - **Curate recipients.** Pre-approve the list of people and channels the agent is allowed to email or message.
 
 None of this makes the system *safe*. A determined attacker who controls text the agent reads still has options. What it does is make casual, drive-by prompt injections expensive enough to fail. Better defenses are an open problem, and one we're actively working on.
+
+## References
+
+- Simon Willison, [*The lethal trifecta for AI agents: private data, untrusted content, and external communication*](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — the three-legged framing of when an agent becomes exploitable.
+- Debenedetti et al., [*Defeating Prompt Injections by Design (CaMeL)*](https://arxiv.org/abs/2503.18813) — Google DeepMind's trusted/quarantined split with dirty-data tracking.
+- Meta AI, [*Agents Rule of Two: A Practical Approach to AI Agent Security*](https://ai.meta.com/blog/practical-ai-agent-security/) — session-scoped rule that an agent should hold at most two of: untrusted input, sensitive data access, external state change.
 
 [^1]: A *zero-day* is a security bug that the people who could fix it don't know about yet, so there's no patch, and anyone who discovers it first can use it freely until someone notices.
