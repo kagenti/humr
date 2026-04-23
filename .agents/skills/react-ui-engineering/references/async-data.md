@@ -278,6 +278,34 @@ return <ConnectionsList connections={data ?? []} />;
 
 Where `useConnections` is a `trpc.connections.list.useQuery()` wrapper (or a `useQuery` with a Zod-validated fetcher for non-tRPC endpoints).
 
+## Stable refs vs per-render state
+
+**[CRITICAL]** The object returned by `useQuery` / `useMutation` has a **new identity every render** — it's a snapshot of the current state. But the callable fields on it are **stable references** that never change across renders:
+
+| Stable (safe in deps) | Unstable (never put the *object* in deps) |
+|---|---|
+| `query.refetch`, `query.fetchNextPage` | `query.data`, `query.isFetching`, `query.isPending` |
+| `mutation.mutate`, `mutation.mutateAsync`, `mutation.reset` | `mutation.isPending`, `mutation.data`, `mutation.error` |
+
+Putting the whole query/mutation object into a `useCallback` / `useEffect` / `useMemo` dep array is the classic TQ foot-gun: the callback reinvalidates every render, the effect fires every render, the effect triggers a refetch, the refetch re-renders, repeat — your tab sits there hammering the API.
+
+```tsx
+❌ const load = useCallback(async () => {
+     await secretsQuery.refetch();
+   }, [secretsQuery]);   // new identity every render → infinite loop
+
+✅ const load = useCallback(async () => {
+     await secretsQuery.refetch();
+   }, [secretsQuery.refetch]);   // stable ref — deps don't change
+```
+
+Works whether you keep the encapsulated style (`secretsQuery.refetch`) or destructure (`const { refetch } = useSecrets()`). Pick one per codebase, but in deps always reach for the **specific stable field**, never the whole object.
+
+When a component reads many stable fields, destructuring up top is often clearer:
+```tsx
+const { data = [], refetch, isFetching } = useSecrets();
+```
+
 ## Anti-patterns
 
 - **`useEffect` + `fetch`/`tRPC` in a component** — convert to `useQuery`.
@@ -286,3 +314,4 @@ Where `useConnections` is a `trpc.connections.list.useQuery()` wrapper (or a `us
 - **Inline `queryClient.invalidateQueries` in `onSuccess`** — use `meta.invalidates`.
 - **Shadow-copying TQ data into local `useState` for optimism** — use `onMutate`.
 - **A Zustand slice holding a server list** — migrate to TQ.
+- **The whole query/mutation object in a deps array** — see "Stable refs vs per-render state".

@@ -80,7 +80,7 @@ export function ConnectionsView() {
     ]);
     loaded.current = true;
     setLoading(false);
-  }, [fetchMcpConnections, fetchAppConnections, secretsQuery]);
+  }, [fetchMcpConnections, fetchAppConnections, secretsQuery.refetch]);
 
   useEffect(() => {
     load();
