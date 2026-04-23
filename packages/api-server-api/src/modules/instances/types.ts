@@ -11,7 +11,11 @@ export interface SlackChannel extends Channel {
   slackChannelId: string;
 }
 
-export type ChannelConfig = SlackChannel;
+export interface TelegramChannel extends Channel {
+  type: ChannelType.Telegram;
+}
+
+export type ChannelConfig = SlackChannel | TelegramChannel;
 
 export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
 
@@ -52,5 +56,7 @@ export interface InstancesService {
   wake: (id: string) => Promise<Instance | null>;
   connectSlack: (id: string, slackChannelId: string) => Promise<Instance | null>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
+  connectTelegram: (id: string, botToken: string) => Promise<Instance | null>;
+  disconnectTelegram: (id: string) => Promise<Instance | null>;
   isAllowedUser: (instanceId: string, keycloakSub: string) => Promise<boolean>;
 }

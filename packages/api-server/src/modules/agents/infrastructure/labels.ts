@@ -6,12 +6,14 @@ export const LABEL_TEMPLATE_REF = "humr.ai/template";
 export const LABEL_AGENT_REF = "humr.ai/agent";
 export const LABEL_INSTANCE_REF = "humr.ai/instance";
 export const LABEL_OWNER = "humr.ai/owner";
+export const LABEL_CHANNEL_TYPE = "humr.ai/channel-type";
 
 // ---- Label values for LABEL_TYPE ----
 export const TYPE_TEMPLATE = "agent-template";
 export const TYPE_AGENT = "agent";
 export const TYPE_INSTANCE = "agent-instance";
 export const TYPE_SCHEDULE = "agent-schedule";
+export const TYPE_CHANNEL_SECRET = "channel-secret";
 
 // ---- ConfigMap data keys ----
 export const SPEC_KEY = "spec.yaml";

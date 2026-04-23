@@ -11,11 +11,14 @@ export const channels = pgTable("channels", {
 ]);
 
 export const identityLinks = pgTable("identity_links", {
-  slackUserId: text("slack_user_id").primaryKey(),
+  provider: text("provider").notNull(),
+  externalUserId: text("external_user_id").notNull(),
   keycloakSub: text("keycloak_sub").notNull(),
   refreshToken: text("refresh_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  primaryKey({ columns: [table.provider, table.externalUserId] }),
+]);
 
 export const allowedUsers = pgTable("allowed_users", {
   instanceId: text("instance_id").notNull(),
@@ -23,6 +26,15 @@ export const allowedUsers = pgTable("allowed_users", {
   keycloakSub: text("keycloak_sub").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.instanceId, table.keycloakSub] }),
+]);
+
+export const telegramThreads = pgTable("telegram_threads", {
+  instanceId: text("instance_id").notNull(),
+  threadId: text("thread_id").notNull(),
+  authorizedBy: text("authorized_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.instanceId, table.threadId] }),
 ]);
 
 export const sessions = pgTable("sessions", {

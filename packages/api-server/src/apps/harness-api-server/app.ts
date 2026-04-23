@@ -8,16 +8,18 @@ import { createAcpClient } from "../../acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
+import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
+  channelSecretStore: ChannelSecretStore;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
-  const { config, api, db, channelManager } = deps;
+  const { config, api, db, channelManager, channelSecretStore } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
 
@@ -34,7 +36,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
-      const { sessions } = composeAgentsModule(api, config.namespace, "_system", db, userDirectory);
+      const { sessions } = composeAgentsModule(api, config.namespace, "_system", db, userDirectory, channelSecretStore);
 
       let resumeSessionId: string | undefined;
       if (mode === "continuous") {

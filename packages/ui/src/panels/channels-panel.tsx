@@ -7,14 +7,21 @@ export function ChannelsPanel() {
   const selectedInstance = useStore(s => s.selectedInstance);
   const connectSlack = useStore(s => s.connectSlack);
   const disconnectSlack = useStore(s => s.disconnectSlack);
+  const connectTelegram = useStore(s => s.connectTelegram);
+  const disconnectTelegram = useStore(s => s.disconnectTelegram);
   const updateInstance = useStore(s => s.updateInstance);
   const slackAvailable = useStore(s => !!s.availableChannels.slack);
+  const telegramAvailable = useStore(s => !!s.availableChannels.telegram);
 
   const inst = instances.find(i => i.id === selectedInstance);
   const slackChannel = inst?.channels.find(c => c.type === "slack");
+  const telegramChannel = inst?.channels.find(c => c.type === "telegram");
 
-  const [enabled, setEnabled] = useState(!!slackChannel);
-  const [channelId, setChannelId] = useState(slackChannel?.slackChannelId ?? "");
+  const [slackEnabled, setSlackEnabled] = useState(!!slackChannel);
+  const [channelId, setChannelId] = useState(slackChannel?.type === "slack" ? slackChannel.slackChannelId : "");
+  const [telegramEnabled, setTelegramEnabled] = useState(!!telegramChannel);
+  const [botToken, setBotToken] = useState("");
+  const [editingBotToken, setEditingBotToken] = useState(!telegramChannel);
   const [users, setUsers] = useState<string[]>(inst?.allowedUserEmails ?? []);
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -22,11 +29,15 @@ export function ChannelsPanel() {
 
   useEffect(() => {
     const sc = inst?.channels.find(c => c.type === "slack");
-    setEnabled(!!sc);
-    setChannelId(sc?.slackChannelId ?? "");
+    const tc = inst?.channels.find(c => c.type === "telegram");
+    setSlackEnabled(!!sc);
+    setChannelId(sc?.type === "slack" ? sc.slackChannelId : "");
+    setTelegramEnabled(!!tc);
+    setBotToken("");
+    setEditingBotToken(!tc);
     setUsers(inst?.allowedUserEmails ?? []);
     setDirty(false);
-  }, [inst]);
+  }, [inst?.id]);
 
   const addUser = () => {
     const v = userInput.trim();
@@ -45,13 +56,21 @@ export function ChannelsPanel() {
     if (!inst) return;
     setSaving(true);
     try {
-      if (enabled && !slackChannel && channelId.trim()) {
+      if (slackEnabled && !slackChannel && channelId.trim()) {
         await connectSlack(inst.id, channelId.trim());
-      } else if (!enabled && slackChannel) {
+      } else if (!slackEnabled && slackChannel) {
         await disconnectSlack(inst.id);
-      } else if (enabled && slackChannel && channelId.trim() !== slackChannel.slackChannelId) {
+      } else if (slackEnabled && slackChannel && slackChannel.type === "slack" && channelId.trim() !== slackChannel.slackChannelId) {
         await disconnectSlack(inst.id);
         await connectSlack(inst.id, channelId.trim());
+      }
+      if (telegramEnabled && !telegramChannel && botToken.trim()) {
+        await connectTelegram(inst.id, botToken.trim());
+      } else if (!telegramEnabled && telegramChannel) {
+        await disconnectTelegram(inst.id);
+      } else if (telegramEnabled && telegramChannel && botToken.trim()) {
+        await disconnectTelegram(inst.id);
+        await connectTelegram(inst.id, botToken.trim());
       }
       await updateInstance(inst.id, { allowedUserEmails: users });
       setDirty(false);
@@ -60,31 +79,31 @@ export function ChannelsPanel() {
     }
   };
 
-  if (!slackAvailable) {
+  if (!slackAvailable && !telegramAvailable) {
     return (
       <div className="px-4 py-4 text-[12px] text-text-muted">
-        Slack is not configured for this installation.
+        No channels are configured for this installation.
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto">
-      <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
-        <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Slack</legend>
+      {slackAvailable && (
+        <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Slack</legend>
 
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={e => { setEnabled(e.target.checked); setDirty(true); }}
-            className="w-4 h-4 accent-[var(--color-accent)]"
-          />
-          <span className="text-[13px] font-semibold text-text">Enabled</span>
-        </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={slackEnabled}
+              onChange={e => { setSlackEnabled(e.target.checked); setDirty(true); }}
+              className="w-4 h-4 accent-[var(--color-accent)]"
+            />
+            <span className="text-[13px] font-semibold text-text">Enabled</span>
+          </label>
 
-        {enabled && (
-          <>
+          {slackEnabled && (
             <div className="flex flex-col gap-1">
               <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Channel ID</label>
               <input
@@ -95,42 +114,93 @@ export function ChannelsPanel() {
                 className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
               />
             </div>
+          )}
+        </fieldset>
+      )}
 
+      {telegramAvailable && (
+        <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Telegram</legend>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={telegramEnabled}
+              onChange={e => {
+                setTelegramEnabled(e.target.checked);
+                if (e.target.checked && !telegramChannel) setEditingBotToken(true);
+                setDirty(true);
+              }}
+              className="w-4 h-4 accent-[var(--color-accent)]"
+            />
+            <span className="text-[13px] font-semibold text-text">Enabled</span>
+          </label>
+
+          {telegramEnabled && (
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Allowed Users</label>
-              {users.length === 0 && (
-                <span className="text-[12px] text-text-muted italic">Unrestricted — all channel members can interact</span>
+              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Bot token</label>
+              {editingBotToken ? (
+                <>
+                  <input
+                    type="password"
+                    value={botToken}
+                    onChange={e => { setBotToken(e.target.value); setDirty(true); }}
+                    placeholder="123456:ABC-..."
+                    className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
+                  />
+                  <span className="text-[11px] text-text-muted mt-1">
+                    Create a bot with @BotFather in Telegram and paste the token here.
+                  </span>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="flex-1 text-[13px] text-text-muted font-mono">••••••••</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBotToken(true)}
+                    className="h-7 px-2 rounded-md border border-border-light text-[11px] font-semibold text-text hover:border-accent hover:text-accent"
+                  >
+                    Change
+                  </button>
+                </div>
               )}
-              <div className="flex flex-col gap-1">
-                {users.map(u => (
-                  <div key={u} className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1">
-                    <span className="flex-1 text-[12px] font-mono text-text truncate">{u}</span>
-                    <button onClick={() => removeUser(u)} className="text-text-muted hover:text-danger shrink-0">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-1 mt-1">
-                <input
-                  type="email"
-                  value={userInput}
-                  onChange={e => setUserInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
-                  placeholder="user@example.com"
-                  className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
-                />
-                <button
-                  onClick={addUser}
-                  disabled={!userInput.trim()}
-                  className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent disabled:opacity-30"
-                >
-                  <Plus size={12} />
-                </button>
-              </div>
             </div>
-          </>
+          )}
+        </fieldset>
+      )}
+
+      <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
+        <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Allowed users</legend>
+        {users.length === 0 && (
+          <span className="text-[12px] text-text-muted italic">Unrestricted — any linked user can interact</span>
         )}
+        <div className="flex flex-col gap-1">
+          {users.map(u => (
+            <div key={u} className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1">
+              <span className="flex-1 text-[12px] font-mono text-text truncate">{u}</span>
+              <button onClick={() => removeUser(u)} className="text-text-muted hover:text-danger shrink-0">
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-1 mt-1">
+          <input
+            type="email"
+            value={userInput}
+            onChange={e => setUserInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
+            placeholder="user@example.com"
+            className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
+          />
+          <button
+            onClick={addUser}
+            disabled={!userInput.trim()}
+            className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent disabled:opacity-30"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
       </fieldset>
 
       <button

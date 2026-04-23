@@ -5,6 +5,7 @@ import { SessionType } from "./types.js";
 const sessionType = z.enum([
   SessionType.Regular,
   SessionType.ChannelSlack,
+  SessionType.ChannelTelegram,
   SessionType.ScheduleCron,
 ]);
 

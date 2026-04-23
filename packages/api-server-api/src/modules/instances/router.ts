@@ -80,4 +80,24 @@ export const instancesRouter = t.router({
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return inst;
     }),
+
+  connectTelegram: t.procedure
+    .input(z.object({
+      id: z.string().min(1),
+      botToken: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.channels.available.telegram) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Telegram channel not enabled" });
+      const inst = await ctx.instances.connectTelegram(input.id, input.botToken);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return inst;
+    }),
+
+  disconnectTelegram: t.procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const inst = await ctx.instances.disconnectTelegram(input.id);
+      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
+      return inst;
+    }),
 });

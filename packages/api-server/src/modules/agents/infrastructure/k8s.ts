@@ -15,6 +15,12 @@ export interface K8sClient {
   replaceConfigMap(name: string, body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
   deleteConfigMap(name: string): Promise<void>;
 
+  listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
+  getSecret(name: string): Promise<k8s.V1Secret | null>;
+  createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
+  replaceSecret(name: string, body: k8s.V1Secret): Promise<k8s.V1Secret>;
+  deleteSecret(name: string): Promise<void>;
+
   listPods(labelSelector: string): Promise<k8s.V1Pod[]>;
   getPod(name: string): Promise<k8s.V1Pod | null>;
   patchPod(name: string, body: object): Promise<void>;
@@ -62,6 +68,37 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
 
     async deleteConfigMap(name) {
       await api.deleteNamespacedConfigMap({ name, namespace });
+    },
+
+    async listSecrets(labelSelector) {
+      const res = await api.listNamespacedSecret({ namespace, labelSelector });
+      return res.items ?? [];
+    },
+
+    async getSecret(name) {
+      try {
+        return await api.readNamespacedSecret({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
+
+    async createSecret(body) {
+      return api.createNamespacedSecret({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async replaceSecret(name, body) {
+      return api.replaceNamespacedSecret({ name, namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async deleteSecret(name) {
+      try {
+        await api.deleteNamespacedSecret({ name, namespace });
+      } catch (err) {
+        if (is404(err)) return;
+        throw err;
+      }
     },
 
     async listPods(labelSelector) {

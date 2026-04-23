@@ -8,6 +8,7 @@ import type {
 import { SPEC_VERSION, ChannelType } from "api-server-api";
 import type { InstancesRepository } from "./../infrastructure/instances-repository.js";
 import type { KeycloakUserDirectory } from "./../infrastructure/keycloak-user-directory.js";
+import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -20,6 +21,7 @@ export function createInstancesService(deps: {
   upsertChannel: (instanceId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (instanceId: string, type: ChannelType) => Promise<void>;
   deleteChannelsByInstanceIds: (instanceIds: string[]) => Promise<void>;
+  channelSecretStore: ChannelSecretStore;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
   listAllowedUsersByInstance: (instanceId: string) => Promise<string[]>;
   setAllowedUsers: (instanceId: string, subs: string[]) => Promise<void>;
@@ -155,7 +157,7 @@ export function createInstancesService(deps: {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
 
-      const channel = { type: ChannelType.Slack, slackChannelId } as ChannelConfig;
+      const channel: ChannelConfig = { type: ChannelType.Slack, slackChannelId };
       await deps.upsertChannel(id, channel);
       emit({ type: EventType.SlackConnected, instanceId: id, slackChannelId });
 
@@ -173,6 +175,38 @@ export function createInstancesService(deps: {
 
       await deps.deleteChannelByType(id, ChannelType.Slack);
       emit({ type: EventType.SlackDisconnected, instanceId: id });
+
+      const [channels, allowedSubs] = await Promise.all([
+        deps.listChannelsByInstance(id),
+        deps.listAllowedUsersByInstance(id),
+      ]);
+      const emails = await subsToEmails(allowedSubs);
+      return assembleInstance(infra, channels, emails);
+    },
+
+    async connectTelegram(id, botToken) {
+      const infra = await deps.repo.get(id, deps.owner);
+      if (!infra) return null;
+
+      await deps.channelSecretStore.storeTelegramToken(id, botToken);
+      await deps.upsertChannel(id, { type: ChannelType.Telegram });
+      emit({ type: EventType.TelegramConnected, instanceId: id });
+
+      const [channels, allowedSubs] = await Promise.all([
+        deps.listChannelsByInstance(id),
+        deps.listAllowedUsersByInstance(id),
+      ]);
+      const emails = await subsToEmails(allowedSubs);
+      return assembleInstance(infra, channels, emails);
+    },
+
+    async disconnectTelegram(id) {
+      const infra = await deps.repo.get(id, deps.owner);
+      if (!infra) return null;
+
+      await deps.deleteChannelByType(id, ChannelType.Telegram);
+      await deps.channelSecretStore.deleteChannelSecret(id, ChannelType.Telegram);
+      emit({ type: EventType.TelegramDisconnected, instanceId: id });
 
       const [channels, allowedSubs] = await Promise.all([
         deps.listChannelsByInstance(id),

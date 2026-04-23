@@ -23,6 +23,8 @@ export interface InstancesSlice {
   updateInstance: (id: string, updates: { allowedUserEmails?: string[] }) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (id: string) => Promise<void>;
+  connectTelegram: (id: string, botToken: string) => Promise<void>;
+  disconnectTelegram: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;
   goBack: () => void;
 }
@@ -114,6 +116,22 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
     const ok = await runAction(
       () => platform.instances.disconnectSlack.mutate({ id }),
       "Failed to disconnect Slack",
+    );
+    if (ok !== ACTION_FAILED) await get().fetchInstances();
+  },
+
+  connectTelegram: async (id, botToken) => {
+    const ok = await runAction(
+      () => platform.instances.connectTelegram.mutate({ id, botToken }),
+      "Failed to connect Telegram",
+    );
+    if (ok !== ACTION_FAILED) await get().fetchInstances();
+  },
+
+  disconnectTelegram: async (id) => {
+    const ok = await runAction(
+      () => platform.instances.disconnectTelegram.mutate({ id }),
+      "Failed to disconnect Telegram",
     );
     if (ok !== ACTION_FAILED) await get().fetchInstances();
   },
