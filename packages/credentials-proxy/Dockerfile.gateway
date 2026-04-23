@@ -1,0 +1,31 @@
+# Gateway sidecar image — runs inside every agent pod.
+#
+# The build stage is the same as the API image (same package, single tsup config
+# produces both bundles). The runtime stage ships ONLY the gateway bundle so the
+# container surface in agent pods is minimal.
+
+FROM node:22-slim AS build
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY packages/credentials-proxy/package.json packages/credentials-proxy/
+COPY packages/db/package.json packages/db/
+
+RUN pnpm install --frozen-lockfile --filter credentials-proxy...
+
+COPY packages/db/ packages/db/
+COPY packages/credentials-proxy/ packages/credentials-proxy/
+
+RUN pnpm --filter credentials-proxy build
+
+FROM node:22-slim
+
+WORKDIR /app
+COPY --from=build /app/packages/credentials-proxy/dist/gateway ./dist/gateway
+
+EXPOSE 10255
+
+CMD ["node", "dist/gateway/index.js"]

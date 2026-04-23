@@ -1,0 +1,29 @@
+{
+  "name": "credentials-proxy",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "migrate-from-onecli": "tsx src/cli/migrate-from-onecli.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.3",
+    "@peculiar/x509": "^1.12.3",
+    "db": "workspace:*",
+    "hono": "^4.7.11",
+    "ipaddr.js": "^2.2.0",
+    "jose": "^6.0.11",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

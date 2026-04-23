@@ -133,6 +133,80 @@ onecli:
       cpu: "1"
       memory: 1Gi
 
+# -- Humr-native credentials proxy (replaces OneCLI).
+#
+# Two workloads, one package, two container images:
+#   api     — Deployment, holds the global KEK + DB R/W + OAuth client secrets
+#   gateway — sidecar injected into every agent pod by the controller,
+#             listens on 127.0.0.1 inside each pod, autonomous
+credentialsProxy:
+  enabled: false
+
+  # API workload (Deployment)
+  api:
+    image: humr/credentials-proxy-api:dev
+    replicas: 2
+    port: 10254
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
+
+  # Gateway sidecar (controller injects this image into every agent pod)
+  gateway:
+    image: humr/credentials-proxy-gateway:dev
+    port: 10255
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits:   { cpu: 200m, memory: 128Mi }
+
+  # Shared Postgres database for credentials (uses the cluster-local postgres by default)
+  db:
+    host: ""
+    port: 5432
+    database: credentials
+    # Roles (credentials generated into K8s Secrets if unset):
+    #   apiUser      — R/W for the API pod
+    #   sidecarUser  — SELECT-only for agent-pod sidecars
+    apiUser: cp_api
+    apiPassword: ""
+    sidecarUser: cp_sidecar
+    sidecarPassword: ""
+
+  # Envelope-lite key ring. Leave empty to auto-generate v1 on install; add
+  # v2, v3, etc. to support KEK rotation (each is a base64-encoded 32 bytes).
+  secretEncryptionKeys:
+    v1: ""
+
+  # HMAC key for OAuth state tokens (base64-encoded, >= 32 bytes).
+  oauthStateMacKey: ""
+
+  # OAuth providers. Register a confidential client with each provider pointing
+  # its callback URL at https://creds.<domain>/api/oauth/callback.
+  oauth:
+    github:
+      clientId: ""
+      clientSecret: ""
+      scopes: "repo read:user"
+    google:
+      clientId: ""
+      clientSecret: ""
+      scopes: "openid email profile"
+
+  # Egress NetworkPolicy for the API pod (sidecars inherit the agent pod's policy).
+  networkPolicy:
+    enabled: true
+    serviceCIDR: ""
+    blockedCIDRs:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 100.64.0.0/10
+      - 169.254.0.0/16
+      - 127.0.0.0/8
+      - 0.0.0.0/8
+      - 224.0.0.0/4
+      - 240.0.0.0/4
+
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true

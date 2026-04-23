@@ -1,0 +1,14 @@
+["credentials-proxy:test:unit"]
+description = "Run credentials-proxy unit tests"
+dir = "{{config_root}}"
+run = 'pnpm --filter credentials-proxy exec vitest run'
+
+["credentials-proxy:build"]
+description = "Build credentials-proxy (API + gateway bundles)"
+dir = "{{config_root}}"
+run = 'pnpm --filter credentials-proxy build'
+
+["credentials-proxy:typecheck"]
+description = "Typecheck credentials-proxy"
+dir = "{{config_root}}"
+run = 'pnpm --filter credentials-proxy typecheck'
