@@ -44,6 +44,13 @@ const genericSchema = z.object({
 
 type EditSecretValues = z.infer<typeof anthropicSchema>;
 
+const INPUT_CLASS =
+  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
+const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
+const FIELD_LABEL_CLASS =
+  "text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]";
+const FIELD_HINT_CLASS = "text-[11px] text-text-muted";
+
 interface UpdateSecretPatch {
   id: string;
   name?: string;
@@ -117,11 +124,9 @@ export function EditSecretDialog({ secret, onClose }: Props) {
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-              Name
-            </span>
+            <span className={FIELD_LABEL_CLASS}>Name</span>
             <input
-              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+              className={INPUT_CLASS}
               autoFocus
               {...register("name")}
             />
@@ -130,16 +135,14 @@ export function EditSecretDialog({ secret, onClose }: Props) {
 
           {isGeneric && (
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Host Pattern
-              </span>
+              <span className={FIELD_LABEL_CLASS}>Host Pattern</span>
               <input
-                className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+                className={MONO_INPUT_CLASS}
                 placeholder="e.g. api.example.com"
                 disabled={saving}
                 {...register("hostPattern")}
               />
-              <span className="text-[11px] text-text-muted">
+              <span className={FIELD_HINT_CLASS}>
                 Hostname OneCLI matches against outbound requests. Required.
               </span>
               <FormError message={errors.hostPattern?.message} />
@@ -148,16 +151,14 @@ export function EditSecretDialog({ secret, onClose }: Props) {
 
           {isGeneric && (
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Path Pattern
-              </span>
+              <span className={FIELD_LABEL_CLASS}>Path Pattern</span>
               <input
-                className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+                className={MONO_INPUT_CLASS}
                 placeholder="e.g. /v1/*"
                 disabled={saving}
                 {...register("pathPattern")}
               />
-              <span className="text-[11px] text-text-muted">
+              <span className={FIELD_HINT_CLASS}>
                 Restrict injection to URL paths matching this pattern. Leave blank
                 to match every path on the host.
               </span>
@@ -166,16 +167,14 @@ export function EditSecretDialog({ secret, onClose }: Props) {
 
           {isGeneric && (
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Header Name
-              </span>
+              <span className={FIELD_LABEL_CLASS}>Header Name</span>
               <input
-                className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+                className={MONO_INPUT_CLASS}
                 placeholder={DEFAULT_INJECTION_CONFIG.headerName}
                 disabled={saving}
                 {...register("headerName")}
               />
-              <span className="text-[11px] text-text-muted">
+              <span className={FIELD_HINT_CLASS}>
                 HTTP header OneCLI writes the secret into.
               </span>
               <FormError message={errors.headerName?.message} />
@@ -184,16 +183,14 @@ export function EditSecretDialog({ secret, onClose }: Props) {
 
           {isGeneric && (
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Value Format
-              </span>
+              <span className={FIELD_LABEL_CLASS}>Value Format</span>
               <input
-                className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]"
+                className={MONO_INPUT_CLASS}
                 placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
                 disabled={saving}
                 {...register("valueFormat")}
               />
-              <span className="text-[11px] text-text-muted">
+              <span className={FIELD_HINT_CLASS}>
                 Template for the header value. Use{" "}
                 <span className="font-mono">{`{value}`}</span> as the token
                 placeholder.
@@ -202,10 +199,8 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           )}
 
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-              Pod Env Vars
-            </span>
-            <p className="text-[11px] text-text-muted">
+            <span className={FIELD_LABEL_CLASS}>Pod Env Vars</span>
+            <p className={FIELD_HINT_CLASS}>
               Applied to every instance granted this connector on next pod
               restart.
             </p>
