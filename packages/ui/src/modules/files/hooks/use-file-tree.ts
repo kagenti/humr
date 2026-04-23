@@ -1,82 +1,60 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect } from "react";
 
-import { createInstanceTrpc } from "../../../instance-trpc.js";
 import { useStore } from "../../../store.js";
-import { ACTION_FAILED,runAction, runQuery } from "../../../store/query-helpers.js";
+import { fetchFileContent, useFileContentQuery, useFileTreeQuery } from "../api/queries.js";
 
 /**
- * Polls the agent's file tree and manages the open-file viewer.
- * Includes a no-op guard: skips store updates when tree hasn't changed.
+ * Drives the file tree + open-file viewer for the given instance. Backed by
+ * TanStack Query; the 2-second poll is the refetchInterval, and TQ's
+ * structuralSharing keeps the fileTree reference stable when the tree hasn't
+ * changed — so the store effect below only fires when it actually did.
  */
 export function useFileTree(selectedInstance: string | null) {
   const setFileTree = useStore((s) => s.setFileTree);
   const setOpenFile = useStore((s) => s.setOpenFile);
   const setRightTab = useStore((s) => s.setRightTab);
   const openFile = useStore((s) => s.openFile);
+  const showToast = useStore((s) => s.showToast);
 
-  const instanceTrpc = useMemo(
-    () => (selectedInstance ? createInstanceTrpc(selectedInstance) : null),
-    [selectedInstance],
+  const { data: fileTree } = useFileTreeQuery(selectedInstance);
+  const { data: openFileContent, error: openFileError } = useFileContentQuery(
+    selectedInstance,
+    openFile?.path ?? null,
   );
 
-  // Initial fetch
   useEffect(() => {
-    if (!instanceTrpc) return;
-    (async () => {
-      const res = await runQuery(
-        "file-tree",
-        () => instanceTrpc.files.tree.query(),
-        { fallback: "Couldn't load file tree" },
-      );
-      if (res) setFileTree(res.entries);
-    })();
-  }, [instanceTrpc, setFileTree]);
+    if (fileTree) setFileTree(fileTree);
+  }, [fileTree, setFileTree]);
 
-  // Poll every 2s with no-op guard
   useEffect(() => {
-    if (!instanceTrpc) return;
-    let prevJson = "";
-    const i = setInterval(async () => {
-      const res = await runQuery(
-        "file-tree",
-        () => instanceTrpc.files.tree.query(),
-        { fallback: "Couldn't refresh file tree" },
-      );
-      if (!res) return;
-      const json = JSON.stringify(res.entries);
-      if (json !== prevJson) {
-        prevJson = json;
-        setFileTree(res.entries);
-      }
-      const cur = useStore.getState().openFile;
-      if (cur) {
-        // Close the viewer if the file is gone — don't surface that as an
-        // error; files disappear legitimately (deletes, git switches).
-        try {
-          const d = await instanceTrpc.files.read.query({ path: cur.path });
-          const next = { path: d.path, content: d.content ?? "", binary: d.binary, mimeType: d.mimeType };
-          // Skip if nothing meaningful changed — avoids recreating blob URLs and flashing previews.
-          if (cur.path === next.path && cur.content === next.content && cur.binary === next.binary && cur.mimeType === next.mimeType) return;
-          setOpenFile(next);
-        } catch { setOpenFile(null); }
-      }
-    }, 2000);
-    return () => clearInterval(i);
-  }, [instanceTrpc, setFileTree, setOpenFile]);
+    if (openFileContent) setOpenFile(openFileContent);
+  }, [openFileContent, setOpenFile]);
+
+  // Close the viewer if the file is gone — don't surface as an error; files
+  // disappear legitimately (deletes, git switches).
+  useEffect(() => {
+    if (openFileError) setOpenFile(null);
+  }, [openFileError, setOpenFile]);
 
   const openFileHandler = useCallback(
     async (path: string) => {
-      if (!instanceTrpc) return;
-      if (openFile?.path === path) { setOpenFile(null); return; }
-      const d = await runAction(
-        () => instanceTrpc.files.read.query({ path }),
-        `Couldn't open ${path}`,
-      );
-      if (d === ACTION_FAILED) return;
-      setOpenFile({ path: d.path, content: d.content ?? "", binary: d.binary, mimeType: d.mimeType });
-      setRightTab("files");
+      if (!selectedInstance) return;
+      if (openFile?.path === path) {
+        setOpenFile(null);
+        return;
+      }
+      try {
+        const content = await fetchFileContent(selectedInstance, path);
+        setOpenFile(content);
+        setRightTab("files");
+      } catch (err) {
+        showToast({
+          kind: "error",
+          message: err instanceof Error && err.message ? err.message : `Couldn't open ${path}`,
+        });
+      }
     },
-    [instanceTrpc, openFile, setOpenFile, setRightTab],
+    [selectedInstance, openFile, setOpenFile, setRightTab, showToast],
   );
 
   return { openFileHandler };
