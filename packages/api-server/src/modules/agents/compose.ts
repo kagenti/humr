@@ -11,6 +11,7 @@ import {
   listChannelsByOwner, listChannelsByInstance,
   upsertChannel, deleteChannelByType,
   deleteChannelsByInstanceIds,
+  findBySlackChannelId,
 } from "./infrastructure/channels-repository.js";
 import {
   listAllowedUsersByOwner, listAllowedUsersByInstance,
@@ -59,6 +60,7 @@ export function composeAgentsModule(
       getAgent: (id) => agents.get(id),
       listChannelsByOwner: listChannelsByOwner(db, owner),
       listChannelsByInstance: listChannelsByInstance(db, owner),
+      findBySlackChannelId: findBySlackChannelId(db),
       upsertChannel: upsertChannel(db, owner),
       deleteChannelByType: deleteChannelByType(db, owner),
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db, owner),
@@ -108,6 +110,7 @@ export function composeSystemInstances(
     getAgent: (id) => agents.get(id),
     listChannelsByOwner: listChannelsByOwner(db, ""),
     listChannelsByInstance: listChannelsByInstance(db, ""),
+    findBySlackChannelId: findBySlackChannelId(db),
     upsertChannel: upsertChannel(db, ""),
     deleteChannelByType: deleteChannelByType(db, ""),
     deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db, ""),

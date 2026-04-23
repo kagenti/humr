@@ -8,6 +8,9 @@ export const channels = pgTable("channels", {
   config: jsonb("config").notNull(),
 }, (table) => [
   uniqueIndex("channels_instance_type_idx").on(table.instanceId, table.type),
+  uniqueIndex("channels_slack_channel_unique_idx")
+    .on(sql`(${table.config}->>'slackChannelId')`)
+    .where(sql`${table.type} = 'slack'`),
 ]);
 
 export const identityLinks = pgTable("identity_links", {

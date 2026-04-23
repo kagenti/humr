@@ -4,10 +4,10 @@ import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } 
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
 import { createKeycloakUserDirectory } from "./modules/agents/infrastructure/keycloak-user-directory.js";
-import { deleteChannelsByInstance, listChannelsByOwner } from "./modules/agents/infrastructure/channels-repository.js";
-import { upsertSession, findByInstanceAndThreadTs, findInstanceByThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
+import { deleteChannelsByInstance, listChannelsByOwner, findBySlackChannelId, findSlackChannelByInstance } from "./modules/agents/infrastructure/channels-repository.js";
+import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
-import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
+import { createSlackWorker, type SlackOAuthPending, type ChannelRegistry } from "./modules/channels/infrastructure/slack.js";
 import { createTelegramWorker, type TelegramOAuthPending } from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
 import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
@@ -15,10 +15,6 @@ import { createIdentityLinkService } from "./modules/channels/services/identity-
 import {
   findIdentityByExternalUser, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
-import {
-  startOnForkReadySaga,
-  startOnForkFailedSaga,
-} from "./modules/channels/index.js";
 import {
   isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
   deleteThreadsByInstance,
@@ -110,6 +106,12 @@ const chatSdkState = config.telegramEnabled
   ? createPostgresState({ url: config.databaseUrl, keyPrefix: "chat-sdk" })
   : undefined;
 
+const channelRegistry: ChannelRegistry = {
+  resolveInstanceBySlackChannel: async (slackChannelId) =>
+    (await findBySlackChannelId(db)(slackChannelId))?.instanceId ?? null,
+  resolveSlackChannelByInstance: findSlackChannelByInstance(db),
+};
+
 const slackWorker = config.slackBotToken && config.slackAppToken
   ? createSlackWorker(
       config.namespace,
@@ -128,10 +130,10 @@ const slackWorker = config.slackBotToken && config.slackAppToken
       pendingSlackOAuthFlows,
       {
         find: findByInstanceAndThreadTs(db),
-        findInstance: findInstanceByThreadTs(db),
         touch: touchSession(db),
       },
       (instanceId) => instancesRepo.getOwner(instanceId),
+      channelRegistry,
     )
   : undefined;
 
@@ -164,9 +166,6 @@ const telegramWorker = config.telegramEnabled && chatSdkState
 
 const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
 
-const onForkReadySub = slackWorker ? startOnForkReadySaga(slackWorker) : undefined;
-const onForkFailedSub = slackWorker ? startOnForkFailedSaga(slackWorker) : undefined;
-
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows,
@@ -187,8 +186,6 @@ async function shutdown() {
   onecliSyncSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();
-  onForkReadySub?.unsubscribe();
-  onForkFailedSub?.unsubscribe();
   await channelManager.stopAll();
   await sql.end();
   harnessApiServer.close();

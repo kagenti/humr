@@ -5,7 +5,7 @@ import {
   type ForeignRegistrationKey,
   type MintedForeignCredential,
 } from "../domain/foreign-registration.js";
-import { err, ok, type Result } from "../domain/result.js";
+import { err, ok, type Result } from "../../../core/result.js";
 import {
   buildForkIdentifier,
   type OnecliForeignCredentialsPort,

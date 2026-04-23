@@ -1,6 +1,7 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewareArgs } from "@slack/bolt";
-import crypto from "node:crypto";
-import { ChannelType, SessionType, type SlackChannel, type InstancesService } from "api-server-api";
+import { filter, merge, take } from "rxjs";
+import { match, P } from "ts-pattern";
+import { ChannelType, SessionType, type InstancesService } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
 import {
   createAcpClient,
@@ -10,34 +11,17 @@ import {
 import {
   EventType,
   emit as defaultEmit,
+  events$,
+  ofType,
   type DomainEvent,
   type ForkFailed,
   type ForkReady,
 } from "../../../events.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
 import { buildAuthorizeUrl, generatePkce, type KeycloakOAuthConfig } from "./identity-oauth.js";
+import { formatError } from "../../../core/format-error.js";
 
 type BoltApp = InstanceType<typeof App>;
-
-function formatError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  if (err !== null && typeof err === "object") {
-    const obj = err as { message?: unknown; code?: unknown };
-    if (typeof obj.message === "string") {
-      if (typeof obj.code === "number" || typeof obj.code === "string") {
-        return `${obj.message} (code ${obj.code})`;
-      }
-      return obj.message;
-    }
-    try {
-      return JSON.stringify(err);
-    } catch {
-      return String(err);
-    }
-  }
-  return String(err);
-}
 
 async function getContextMessages(
   app: BoltApp,
@@ -66,6 +50,11 @@ async function getContextMessages(
     .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
 }
 
+export interface ChannelRegistry {
+  resolveInstanceBySlackChannel(slackChannelId: string): Promise<string | null>;
+  resolveSlackChannelByInstance(instanceId: string): Promise<string | null>;
+}
+
 export interface SlackWorker {
   type: ChannelType.Slack;
   start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
@@ -73,8 +62,6 @@ export interface SlackWorker {
   stopAll(): Promise<void>;
   listConversations(instanceName: string): Promise<{ id: string; title: string }[]>;
   postMessage(instanceName: string, text: string, conversationId?: string): Promise<{ ok: true } | { error: string }>;
-  onForkReady(event: ForkReady): Promise<void>;
-  onForkFailed(event: ForkFailed): Promise<void>;
 }
 
 export interface SlackOAuthPending {
@@ -82,24 +69,6 @@ export interface SlackOAuthPending {
   channelId: string;
   codeVerifier: string;
   createdAt: number;
-}
-
-interface PendingSelection {
-  text: string;
-  channel: string;
-  slackUserId: string;
-  keycloakSub: string;
-  threadTs: string;
-  eventTs: string;
-}
-
-interface BufferedForeignReply {
-  channel: string;
-  threadTs: string;
-  instanceName: string;
-  slackUserId: string;
-  prompt: string;
-  existingSessionId?: string;
 }
 
 export function createSlackWorker(
@@ -113,73 +82,16 @@ export function createSlackWorker(
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
   threadSessions: {
     find: (instanceId: string, threadTs: string) => Promise<{ sessionId: string } | null>;
-    findInstance: (threadTs: string) => Promise<string | null>;
     touch: (sessionId: string) => Promise<void>;
   },
   getInstanceOwner: (instanceId: string) => Promise<string | null>,
+  channelRegistry: ChannelRegistry,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
-  const channelMap = new Map<string, Set<string>>();
-  const instanceChannels = new Map<string, Set<string>>();
-  const threadRoutes = new Map<string, string>();
-  const pendingSelections = new Map<string, PendingSelection>();
-  const foreignReplyBuffer = new Map<string, BufferedForeignReply>();
-
   let app: BoltApp | null = null;
 
-  function registerMapping(slackChannelId: string, instanceName: string) {
-    let ins = channelMap.get(slackChannelId);
-    if (!ins) {
-      ins = new Set();
-      channelMap.set(slackChannelId, ins);
-    }
-    ins.add(instanceName);
-
-    let channels = instanceChannels.get(instanceName);
-    if (!channels) {
-      channels = new Set();
-      instanceChannels.set(instanceName, channels);
-    }
-    channels.add(slackChannelId);
-  }
-
-  function unregisterInstance(instanceName: string) {
-    const channels = instanceChannels.get(instanceName);
-    if (!channels) return;
-    for (const ch of channels) {
-      const ins = channelMap.get(ch);
-      if (ins) {
-        ins.delete(instanceName);
-        if (ins.size === 0) channelMap.delete(ch);
-      }
-    }
-    instanceChannels.delete(instanceName);
-
-    for (const [ts, name] of threadRoutes) {
-      if (name === instanceName) threadRoutes.delete(ts);
-    }
-  }
-
-  async function hasAccess(instanceName: string, keycloakSub: string): Promise<boolean> {
-    const [ownerSub, isAllowed] = await Promise.all([
-      getInstanceOwner(instanceName),
-      instances().isAllowedUser(instanceName, keycloakSub),
-    ]);
-    if (ownerSub !== null && ownerSub === keycloakSub) return true;
-    return isAllowed;
-  }
-
-  async function filterAccessible(
-    instanceNames: string[],
-    keycloakSub: string,
-  ): Promise<string[]> {
-    const checks = await Promise.all(
-      instanceNames.map(async (n) => ((await hasAccess(n, keycloakSub)) ? n : null)),
-    );
-    return checks.filter((n): n is string => n !== null);
-  }
-
   async function relayOwnerTurn(ctx: {
+    instanceName: string;
     channel: string;
     threadTs: string;
     eventTs: string;
@@ -187,8 +99,7 @@ export function createSlackWorker(
     hasThread: boolean;
   }) {
     if (!app) return;
-    const instanceName = threadRoutes.get(ctx.threadTs);
-    if (!instanceName) return;
+    const { instanceName } = ctx;
 
     await app.client.reactions.add({
       channel: ctx.channel,
@@ -276,15 +187,30 @@ export function createSlackWorker(
       hasThread: args.hasThread,
     });
     const existing = await threadSessions.find(args.instanceName, args.threadTs);
-
     const replyId = args.eventTs;
-    foreignReplyBuffer.set(replyId, {
-      channel: args.channel,
-      threadTs: args.threadTs,
-      instanceName: args.instanceName,
-      slackUserId: args.slackUserId,
-      prompt,
-      ...(existing ? { existingSessionId: existing.sessionId } : {}),
+    const existingSessionId = existing?.sessionId;
+
+    const ready$ = events$().pipe(
+      ofType<ForkReady>(EventType.ForkReady),
+      filter((e) => e.replyId === replyId),
+    );
+    const failed$ = events$().pipe(
+      ofType<ForkFailed>(EventType.ForkFailed),
+      filter((e) => e.replyId === replyId),
+    );
+    merge(ready$, failed$).pipe(take(1)).subscribe({
+      next: (outcome) => {
+        handleForkOutcome(outcome, {
+          channel: args.channel,
+          threadTs: args.threadTs,
+          instanceName: args.instanceName,
+          slackUserId: args.slackUserId,
+          prompt,
+          existingSessionId,
+        }).catch((err) => {
+          process.stderr.write(`[slack/fork] outcome handler error: ${formatError(err)}\n`);
+        });
+      },
     });
 
     emit({
@@ -300,6 +226,59 @@ export function createSlackWorker(
         userSlackId: args.slackUserId,
       },
     });
+  }
+
+  async function handleForkOutcome(
+    outcome: ForkReady | ForkFailed,
+    ctx: {
+      channel: string;
+      threadTs: string;
+      instanceName: string;
+      slackUserId: string;
+      prompt: string;
+      existingSessionId: string | undefined;
+    },
+  ) {
+    if (!app) return;
+    const bolt = app;
+
+    await match(outcome)
+      .with({ type: EventType.ForkReady }, async (event) => {
+        try {
+          const acp = createForkAcpClient({
+            podIP: event.podIP,
+            onSessionCreated: (sid) =>
+              persistSession(sid, ctx.instanceName, SessionType.ChannelSlack, ctx.threadTs),
+          });
+          const response = ctx.existingSessionId
+            ? await acp.sendPrompt(ctx.prompt, { resumeSessionId: ctx.existingSessionId })
+            : await acp.sendPrompt(ctx.prompt);
+          if (ctx.existingSessionId) await threadSessions.touch(ctx.existingSessionId);
+          await postAssistantMessage(ctx.channel, ctx.threadTs, ctx.instanceName, response);
+        } catch (err) {
+          process.stderr.write(`[slack/fork ${event.forkId}] ACP error: ${err}\n`);
+          await bolt.client.chat.postMessage({
+            channel: ctx.channel,
+            thread_ts: ctx.threadTs,
+            text: `Error: ${formatError(err)}`,
+          });
+        } finally {
+          emit({
+            type: EventType.SlackTurnRelayed,
+            replyId: event.replyId,
+            forkId: event.forkId,
+          });
+        }
+      })
+      .with({ type: EventType.ForkFailed }, async (event) => {
+        const detail = event.detail ? ` (${event.detail})` : "";
+        await bolt.client.chat.postEphemeral({
+          channel: ctx.channel,
+          user: ctx.slackUserId,
+          text: `Could not run turn as you: ${event.reason}${detail}.`,
+        });
+      })
+      .exhaustive();
   }
 
   async function buildThreadPrompt(boltApp: BoltApp, ctx: {
@@ -326,45 +305,45 @@ export function createSlackWorker(
   async function handleCommand({ command, ack }: SlackCommandMiddlewareArgs) {
     const subcommand = command.text.trim().toLowerCase();
 
-    if (subcommand === "login") {
-      const existing = await identityLinks.resolve("slack", command.user_id);
-      if (existing) {
-        await ack({ response_type: "ephemeral", text: "You are already linked. Use `/humr logout` to unlink first." });
-        return;
-      }
+    await match(subcommand)
+      .with("login", async () => {
+        const existing = await identityLinks.resolve("slack", command.user_id);
+        if (existing) {
+          await ack({ response_type: "ephemeral", text: "You are already linked. Use `/humr logout` to unlink first." });
+          return;
+        }
 
-      const { state, codeVerifier, codeChallenge } = generatePkce();
-      pendingOAuthFlows.set(state, {
-        slackUserId: command.user_id,
-        channelId: command.channel_id,
-        codeVerifier,
-        createdAt: Date.now(),
-      });
+        const { state, codeVerifier, codeChallenge } = generatePkce();
+        pendingOAuthFlows.set(state, {
+          slackUserId: command.user_id,
+          channelId: command.channel_id,
+          codeVerifier,
+          createdAt: Date.now(),
+        });
 
-      const loginUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
-      await ack({
-        response_type: "ephemeral",
-        text: `<${loginUrl}|Click here to link your Keycloak account>`,
-      });
-      return;
-    }
+        const loginUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
+        await ack({
+          response_type: "ephemeral",
+          text: `<${loginUrl}|Click here to link your Keycloak account>`,
+        });
+      })
+      .with("logout", async () => {
+        const existing = await identityLinks.resolve("slack", command.user_id);
+        if (!existing) {
+          await ack({ response_type: "ephemeral", text: "You don't have a linked account." });
+          return;
+        }
 
-    if (subcommand === "logout") {
-      const existing = await identityLinks.resolve("slack", command.user_id);
-      if (!existing) {
-        await ack({ response_type: "ephemeral", text: "You don't have a linked account." });
-        return;
-      }
-
-      await identityLinks.unlink("slack", command.user_id);
-      await ack({ response_type: "ephemeral", text: "Account unlinked." });
-      return;
-    }
-
-    await ack({
-      response_type: "ephemeral",
-      text: "Usage: `/humr login` or `/humr logout`",
-    });
+        await identityLinks.unlink("slack", command.user_id);
+        await ack({ response_type: "ephemeral", text: "Account unlinked." });
+      })
+      .with(P.string, async () => {
+        await ack({
+          response_type: "ephemeral",
+          text: "Usage: `/humr login` or `/humr logout`",
+        });
+      })
+      .exhaustive();
   }
 
   async function handleAppMention({ event }: SlackEventMiddlewareArgs<"app_mention">) {
@@ -384,38 +363,8 @@ export function createSlackWorker(
     }
 
     const threadTs = event.thread_ts ?? event.ts;
-    let routedInstance: string | null = null;
-    if (event.thread_ts) {
-      routedInstance =
-        threadRoutes.get(event.thread_ts) ??
-        (await threadSessions.findInstance(event.thread_ts));
-      if (routedInstance) threadRoutes.set(event.thread_ts, routedInstance);
-    }
-
-    if (routedInstance) {
-      if (!(await hasAccess(routedInstance, keycloakSub))) {
-        await app.client.chat.postEphemeral({
-          channel: event.channel,
-          user: slackUserId,
-          text: "You don't have access to the instance handling this thread.",
-        });
-        return;
-      }
-      await routeReply({
-        channel: event.channel,
-        threadTs,
-        eventTs: event.ts,
-        text: event.text,
-        hasThread: !!event.thread_ts,
-        slackUserId,
-        keycloakSub,
-        instanceName: routedInstance,
-      });
-      return;
-    }
-
-    const channelInstances = [...(channelMap.get(event.channel) ?? [])];
-    if (channelInstances.length === 0) {
+    const instanceName = await channelRegistry.resolveInstanceBySlackChannel(event.channel);
+    if (!instanceName) {
       await app.client.chat.postEphemeral({
         channel: event.channel,
         user: slackUserId,
@@ -424,59 +373,15 @@ export function createSlackWorker(
       return;
     }
 
-    const accessibleInstances = await filterAccessible(channelInstances, keycloakSub);
-    if (accessibleInstances.length === 0) {
-      await app.client.chat.postEphemeral({
-        channel: event.channel,
-        user: slackUserId,
-        text: "You don't have access to any instance in this channel.",
-      });
-      return;
-    }
-
-    if (accessibleInstances.length === 1) {
-      await routeReply({
-        channel: event.channel,
-        threadTs,
-        eventTs: event.ts,
-        text: event.text,
-        hasThread: !!event.thread_ts,
-        slackUserId,
-        keycloakSub,
-        instanceName: accessibleInstances[0],
-      });
-      return;
-    }
-
-    const selectionId = crypto.randomUUID();
-    pendingSelections.set(selectionId, {
-      text: event.text,
+    await routeReply({
       channel: event.channel,
-      slackUserId,
-      keycloakSub,
       threadTs,
       eventTs: event.ts,
-    });
-
-    await app.client.chat.postEphemeral({
-      channel: event.channel,
-      user: slackUserId,
-      text: "Multiple instances are available. Pick one:",
-      blocks: [
-        {
-          type: "section",
-          text: { type: "mrkdwn", text: "Multiple instances are available. Pick one:" },
-          accessory: {
-            type: "static_select",
-            action_id: `instance_select:${selectionId}`,
-            placeholder: { type: "plain_text", text: "Choose instance" },
-            options: accessibleInstances.map((name) => ({
-              text: { type: "plain_text" as const, text: name },
-              value: name,
-            })),
-          },
-        },
-      ],
+      text: event.text,
+      hasThread: !!event.thread_ts,
+      slackUserId,
+      keycloakSub,
+      instanceName,
     });
   }
 
@@ -506,47 +411,18 @@ export function createSlackWorker(
       return;
     }
 
-    threadRoutes.set(args.threadTs, args.instanceName);
-
     if (!isOwner) {
       await beginForeignTurn(args);
       return;
     }
 
     await relayOwnerTurn({
+      instanceName: args.instanceName,
       channel: args.channel,
       threadTs: args.threadTs,
       eventTs: args.eventTs,
       text: args.text,
       hasThread: args.hasThread,
-    });
-  }
-
-  async function handleInstanceSelect({ action, ack, body }: {
-    action: { action_id: string; selected_option?: { value: string } };
-    ack: () => Promise<void>;
-    body: { user: { id: string } };
-  }) {
-    await ack();
-    if (!app) return;
-
-    const selectionId = action.action_id.replace("instance_select:", "");
-    const pending = pendingSelections.get(selectionId);
-    pendingSelections.delete(selectionId);
-
-    if (!pending || !action.selected_option) return;
-
-    const instanceName = action.selected_option.value;
-
-    await routeReply({
-      channel: pending.channel,
-      threadTs: pending.threadTs,
-      eventTs: pending.eventTs,
-      text: pending.text,
-      hasThread: pending.threadTs !== pending.eventTs,
-      slackUserId: body.user.id,
-      keycloakSub: pending.keycloakSub,
-      instanceName,
     });
   }
 
@@ -565,7 +441,6 @@ export function createSlackWorker(
 
     bolt.event("app_mention", handleAppMention);
     bolt.command("/humr", handleCommand);
-    bolt.action(/^instance_select:/, handleInstanceSelect as Parameters<BoltApp["action"]>[1]);
 
     bolt.error(async (error) => {
       process.stderr.write(`[slack] Bolt error: ${error}\n`);
@@ -587,28 +462,20 @@ export function createSlackWorker(
   return {
     type: ChannelType.Slack,
 
-    async start(instanceName: string, channel: StoredChannelConfig) {
-      const { slackChannelId } = channel as SlackChannel;
-      registerMapping(slackChannelId, instanceName);
+    async start(instanceName: string, _channel: StoredChannelConfig) {
       const started = await ensureApp();
       if (!started) {
         process.stderr.write(`Slack: skipping ${instanceName} — bot not connected\n`);
         return;
       }
-      process.stderr.write(`Slack: registered ${instanceName} → channel ${slackChannelId}\n`);
+      process.stderr.write(`Slack: registered ${instanceName}\n`);
     },
 
     async stop(instanceName: string) {
-      unregisterInstance(instanceName);
       process.stderr.write(`Slack: unregistered ${instanceName}\n`);
     },
 
     async stopAll() {
-      channelMap.clear();
-      instanceChannels.clear();
-      threadRoutes.clear();
-      pendingSelections.clear();
-      foreignReplyBuffer.clear();
       if (app) {
         await app.stop();
         app = null;
@@ -616,14 +483,13 @@ export function createSlackWorker(
     },
 
     async listConversations(instanceName: string) {
-      const channels = instanceChannels.get(instanceName);
-      if (!channels) return [];
-      return [...channels].map((id) => ({ id, title: id }));
+      const slackChannelId = await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      return slackChannelId ? [{ id: slackChannelId, title: slackChannelId }] : [];
     },
 
-    async postMessage(instanceName: string, text: string, conversationId?: string) {
-      const channels = instanceChannels.get(instanceName);
-      if (!channels || channels.size === 0) {
+    async postMessage(instanceName: string, text: string, _conversationId?: string) {
+      const slackChannelId = await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      if (!slackChannelId) {
         return { error: "no channel connected" };
       }
 
@@ -631,9 +497,6 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
-      const slackChannelId = conversationId && channels.has(conversationId)
-        ? conversationId
-        : [...channels][0];
       try {
         await app.client.chat.postMessage({
           channel: slackChannelId,
@@ -647,52 +510,6 @@ export function createSlackWorker(
       } catch (err) {
         return { error: formatError(err) };
       }
-    },
-
-    async onForkReady(event: ForkReady) {
-      const buffered = foreignReplyBuffer.get(event.replyId);
-      if (!buffered || !app) return;
-      foreignReplyBuffer.delete(event.replyId);
-
-      const { instanceName, channel, threadTs, prompt, existingSessionId } = buffered;
-      try {
-        const acp = createForkAcpClient({
-          podIP: event.podIP,
-          onSessionCreated: (sid) =>
-            persistSession(sid, instanceName, SessionType.ChannelSlack, threadTs),
-        });
-        const response = existingSessionId
-          ? await acp.sendPrompt(prompt, { resumeSessionId: existingSessionId })
-          : await acp.sendPrompt(prompt);
-        if (existingSessionId) await threadSessions.touch(existingSessionId);
-        await postAssistantMessage(channel, threadTs, instanceName, response);
-      } catch (err) {
-        process.stderr.write(`[slack/fork ${event.forkId}] ACP error: ${err}\n`);
-        await app.client.chat.postMessage({
-          channel,
-          thread_ts: threadTs,
-          text: `Error: ${formatError(err)}`,
-        });
-      } finally {
-        emit({
-          type: EventType.SlackTurnRelayed,
-          replyId: event.replyId,
-          forkId: event.forkId,
-        });
-      }
-    },
-
-    async onForkFailed(event: ForkFailed) {
-      const buffered = foreignReplyBuffer.get(event.replyId);
-      if (!buffered || !app) return;
-      foreignReplyBuffer.delete(event.replyId);
-
-      const detail = event.detail ? ` (${event.detail})` : "";
-      await app.client.chat.postEphemeral({
-        channel: buffered.channel,
-        user: buffered.slackUserId,
-        text: `Could not run turn as you: ${event.reason}${detail}.`,
-      });
     },
   };
 }

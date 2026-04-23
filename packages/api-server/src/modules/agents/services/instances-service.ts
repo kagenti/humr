@@ -10,6 +10,7 @@ import type { InstancesRepository } from "./../infrastructure/instances-reposito
 import type { KeycloakUserDirectory } from "./../infrastructure/keycloak-user-directory.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
+import { ok, err } from "../../../core/result.js";
 import { emit, EventType } from "../../../events.js";
 
 export function createInstancesService(deps: {
@@ -18,6 +19,7 @@ export function createInstancesService(deps: {
   getAgent: (id: string) => Promise<Agent | null>;
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByInstance: (instanceId: string) => Promise<ChannelConfig[]>;
+  findBySlackChannelId: (slackChannelId: string) => Promise<{ instanceId: string } | null>;
   upsertChannel: (instanceId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (instanceId: string, type: ChannelType) => Promise<void>;
   deleteChannelsByInstanceIds: (instanceIds: string[]) => Promise<void>;
@@ -155,7 +157,10 @@ export function createInstancesService(deps: {
 
     async connectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
+      if (!infra) return err({ type: "InstanceNotFound" });
+
+      const existing = await deps.findBySlackChannelId(slackChannelId);
+      if (existing) return err({ type: "ChannelAlreadyBound" });
 
       const channel: ChannelConfig = { type: ChannelType.Slack, slackChannelId };
       await deps.upsertChannel(id, channel);
@@ -166,7 +171,7 @@ export function createInstancesService(deps: {
         deps.listAllowedUsersByInstance(id),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      return assembleInstance(infra, channels, emails);
+      return ok(assembleInstance(infra, channels, emails));
     },
 
     async disconnectSlack(id) {
