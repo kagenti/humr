@@ -1,7 +1,7 @@
 # ADR-011: Skills via Claude plugin marketplace
 
 **Date:** 2026-04-03
-**Status:** Accepted
+**Status:** Superseded by ADR-030
 **Owner:** @pilartomas
 
 ## Context

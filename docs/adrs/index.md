@@ -16,7 +16,7 @@ This directory contains ADRs for the Humr project.
 | [008](008-trigger-files.md)                   | Controller-owned cron with exec-based trigger delivery | @jezekra1 |
 | [009](009-go-and-typescript.md)               | Go for Controller, TypeScript for API Server | @jezekra1 |
 | [010](010-onecli-deployment.md)               | OneCLI deployment — single image, two Services | @pilartomas |
-| [011](011-skills-claude-marketplace.md)       | Skills via Claude plugin marketplace | @pilartomas |
+| [011](011-skills-claude-marketplace.md)       | Skills via Claude plugin marketplace — superseded by ADR-030 | @pilartomas |
 | [012](012-runtime-lifetime.md)                | Runtime lifetime — single-use Jobs | @JanPokorny |
 | [013](013-ui-approach.md)                     | UI approach — chat-primary, dashboard for inspection | @PetrBulanek |
 | [014](014-integration-testing.md)             | E2E integration testing against dedicated k3s cluster | @tomkis |
@@ -35,10 +35,10 @@ This directory contains ADRs for the Humr project.
 | [027](027-slack-user-impersonation.md)        | Slack per-turn user impersonation — foreign repliers fork the instance into a K8s Job | @tomkis |
 | [028](028-generic-secret-injection-config.md) | Configurable injection on generic secrets (host/path + custom header) | @tomas2d |
 | [029](029-per-instance-channels.md)           | Per-instance messenger channels — secrets in k8s Secrets, per-thread authorization | @pilartomas |
+| [030](030-skills-marketplace.md)              | Skills — connectable sources and install | @PetrBulanek |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
-| [DRAFT](DRAFT-skills-harness-native.md) | Skills — harness-native, not platform-managed | @pilartomas |
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
