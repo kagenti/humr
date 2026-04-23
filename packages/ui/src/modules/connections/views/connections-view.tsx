@@ -117,8 +117,7 @@ export function ConnectionsView() {
                 href={`${onecliUrl}/connections`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-brutal h-9 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-text inline-flex items-center gap-1.5"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-text inline-flex items-center gap-1.5 shadow-brutal-sm"
               >
                 Manage in OneCLI <ExternalLink size={13} />
               </a>

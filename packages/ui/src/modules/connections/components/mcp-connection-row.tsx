@@ -47,8 +47,7 @@ export function McpConnectionRow({ connection, animationDelayMs, onReconnect }: 
       {expired && (
         <button
           onClick={() => onReconnect(hostname)}
-          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white"
-          style={{ boxShadow: "2px 2px 0 var(--color-accent)" }}
+          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white shadow-[2px_2px_0_var(--color-accent)]"
         >
           Reconnect
         </button>
