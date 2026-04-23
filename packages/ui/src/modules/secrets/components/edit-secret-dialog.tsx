@@ -8,6 +8,7 @@ import {
   sanitizeEnvMappings,
 } from "../../../components/env-mappings-editor.js";
 import { FormError } from "../../../components/form-error.js";
+import { FormField } from "../../../components/form-field.js";
 import { Modal } from "../../../components/modal.js";
 import {
   DEFAULT_INJECTION_CONFIG,
@@ -30,7 +31,7 @@ const baseShape = {
   valueFormat: z.string().trim(),
   envMappings: z
     .array(envMappingSchema)
-    .refine(allEnvMappingsValid, "All mappings need an env name and a secret field"),
+    .refine(allEnvMappingsValid, "All mappings need an env name and a placeholder"),
 };
 
 const anthropicSchema = z.object(baseShape);
@@ -47,9 +48,6 @@ type EditSecretValues = z.infer<typeof anthropicSchema>;
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
 const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
-const FIELD_LABEL_CLASS =
-  "text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]";
-const FIELD_HINT_CLASS = "text-[11px] text-text-muted";
 
 interface UpdateSecretPatch {
   id: string;
@@ -83,9 +81,8 @@ export function EditSecretDialog({ secret, onClose }: Props) {
     },
   });
   const { errors, isDirty, dirtyFields } = formState;
-  // Only gate on "something to save" and "not mid-save". Validity is enforced
-  // by handleSubmit — clicking an invalid form populates field errors instead
-  // of silently no-op'ing a disabled button.
+  // Validity is enforced by handleSubmit — clicking an invalid form populates
+  // field errors instead of silently no-op'ing a disabled button.
   const canSave = isDirty && !saving;
 
   const onSubmit = handleSubmit((values) => {
@@ -126,84 +123,79 @@ export function EditSecretDialog({ secret, onClose }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
-          <label className="flex flex-col gap-1.5">
-            <span className={FIELD_LABEL_CLASS}>Name</span>
-            <input
-              className={INPUT_CLASS}
-              autoFocus
-              {...register("name")}
-            />
-            <FormError message={errors.name?.message} />
-          </label>
+          <FormField label="Name" error={errors.name?.message}>
+            <input className={INPUT_CLASS} autoFocus {...register("name")} />
+          </FormField>
 
           {isGeneric && (
-            <label className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL_CLASS}>Host Pattern</span>
+            <FormField
+              label="Host Pattern"
+              hint="Hostname OneCLI matches against outbound requests. Required."
+              error={errors.hostPattern?.message}
+            >
               <input
                 className={MONO_INPUT_CLASS}
                 placeholder="e.g. api.example.com"
                 disabled={saving}
                 {...register("hostPattern")}
               />
-              <span className={FIELD_HINT_CLASS}>
-                Hostname OneCLI matches against outbound requests. Required.
-              </span>
-              <FormError message={errors.hostPattern?.message} />
-            </label>
+            </FormField>
           )}
 
           {isGeneric && (
-            <label className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL_CLASS}>Path Pattern</span>
+            <FormField
+              label="Path Pattern"
+              hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
+            >
               <input
                 className={MONO_INPUT_CLASS}
                 placeholder="e.g. /v1/*"
                 disabled={saving}
                 {...register("pathPattern")}
               />
-              <span className={FIELD_HINT_CLASS}>
-                Restrict injection to URL paths matching this pattern. Leave blank
-                to match every path on the host.
-              </span>
-            </label>
+            </FormField>
           )}
 
           {isGeneric && (
-            <label className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL_CLASS}>Header Name</span>
+            <FormField
+              label="Header Name"
+              hint="HTTP header OneCLI writes the secret into."
+              error={errors.headerName?.message}
+            >
               <input
                 className={MONO_INPUT_CLASS}
                 placeholder={DEFAULT_INJECTION_CONFIG.headerName}
                 disabled={saving}
                 {...register("headerName")}
               />
-              <span className={FIELD_HINT_CLASS}>
-                HTTP header OneCLI writes the secret into.
-              </span>
-              <FormError message={errors.headerName?.message} />
-            </label>
+            </FormField>
           )}
 
           {isGeneric && (
-            <label className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL_CLASS}>Value Format</span>
+            <FormField
+              label="Value Format"
+              hint={
+                <>
+                  Template for the header value. Use{" "}
+                  <span className="font-mono">{`{value}`}</span> as the token
+                  placeholder.
+                </>
+              }
+            >
               <input
                 className={MONO_INPUT_CLASS}
                 placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
                 disabled={saving}
                 {...register("valueFormat")}
               />
-              <span className={FIELD_HINT_CLASS}>
-                Template for the header value. Use{" "}
-                <span className="font-mono">{`{value}`}</span> as the token
-                placeholder.
-              </span>
-            </label>
+            </FormField>
           )}
 
           <div className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Pod Env Vars</span>
-            <p className={FIELD_HINT_CLASS}>
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Pod Env Vars
+            </span>
+            <p className="text-[11px] text-text-muted">
               Applied to every instance granted this connector on next pod
               restart.
             </p>

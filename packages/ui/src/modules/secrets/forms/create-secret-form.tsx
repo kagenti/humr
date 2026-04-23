@@ -8,6 +8,7 @@ import {
   sanitizeEnvMappings,
 } from "../../../components/env-mappings-editor.js";
 import { FormError } from "../../../components/form-error.js";
+import { FormField } from "../../../components/form-field.js";
 import { Modal } from "../../../components/modal.js";
 import { DEFAULT_INJECTION_CONFIG } from "../../../types.js";
 import { useCreateSecret } from "../api/mutations.js";
@@ -34,9 +35,6 @@ type CreateSecretValues = z.infer<typeof createSecretSchema>;
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
 const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
-const FIELD_LABEL_CLASS =
-  "text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]";
-const FIELD_HINT_CLASS = "text-[11px] text-text-muted";
 
 interface Props {
   onCancel: () => void;
@@ -101,91 +99,104 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
-          <label className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Name</span>
+          <FormField
+            label="Name"
+            hint="A label so you can identify this secret later."
+            error={errors.name?.message}
+          >
             <input
               className={INPUT_CLASS}
               placeholder="e.g. Linear Token"
               autoFocus
               {...register("name")}
             />
-            <span className={FIELD_HINT_CLASS}>A label so you can identify this secret later.</span>
-            <FormError message={errors.name?.message} />
-          </label>
+          </FormField>
 
-          <label className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Token</span>
+          <FormField
+            label="Token"
+            hint={
+              <>
+                Injected as{" "}
+                <span className="font-mono">Authorization: Bearer &lt;value&gt;</span>. Stored
+                encrypted — the agent never sees the raw value.
+              </>
+            }
+            error={errors.value?.message}
+          >
             <input
               className={INPUT_CLASS}
               type="password"
               placeholder="The secret value to inject"
               {...register("value")}
             />
-            <span className={FIELD_HINT_CLASS}>
-              Injected as <span className="font-mono">Authorization: Bearer &lt;value&gt;</span>.
-              Stored encrypted — the agent never sees the raw value.
-            </span>
-            <FormError message={errors.value?.message} />
-          </label>
+          </FormField>
 
-          <label className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Host Pattern</span>
+          <FormField
+            label="Host Pattern"
+            hint={
+              <>
+                Hostname the token applies to. Supports wildcards (e.g.{" "}
+                <span className="font-mono">*.example.com</span>).
+              </>
+            }
+            error={errors.hostPattern?.message}
+          >
             <input
               className={MONO_INPUT_CLASS}
               placeholder="e.g. api.linear.app"
               {...register("hostPattern")}
             />
-            <span className={FIELD_HINT_CLASS}>
-              Hostname the token applies to. Supports wildcards (e.g.{" "}
-              <span className="font-mono">*.example.com</span>).
-            </span>
-            <FormError message={errors.hostPattern?.message} />
-          </label>
+          </FormField>
 
-          <label className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Path Pattern (optional)</span>
+          <FormField
+            label="Path Pattern (optional)"
+            hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
+          >
             <input
               className={MONO_INPUT_CLASS}
               placeholder="e.g. /v1/*"
               {...register("pathPattern")}
             />
-            <span className={FIELD_HINT_CLASS}>
-              Restrict injection to URL paths matching this pattern. Leave blank
-              to match every path on the host.
-            </span>
-          </label>
+          </FormField>
 
-          <label className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Header Name (optional)</span>
+          <FormField
+            label="Header Name (optional)"
+            hint={
+              <>
+                HTTP header OneCLI writes the secret into. Defaults to{" "}
+                <span className="font-mono">{DEFAULT_INJECTION_CONFIG.headerName}</span>.
+              </>
+            }
+          >
             <input
               className={MONO_INPUT_CLASS}
               placeholder={DEFAULT_INJECTION_CONFIG.headerName}
               {...register("headerName")}
             />
-            <span className={FIELD_HINT_CLASS}>
-              HTTP header OneCLI writes the secret into. Defaults to{" "}
-              <span className="font-mono">{DEFAULT_INJECTION_CONFIG.headerName}</span>.
-            </span>
-          </label>
+          </FormField>
 
-          <label className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Value Format (optional)</span>
+          <FormField
+            label="Value Format (optional)"
+            hint={
+              <>
+                Template for the header value. Use{" "}
+                <span className="font-mono">{`{value}`}</span> as the token placeholder. Defaults
+                to <span className="font-mono">{DEFAULT_INJECTION_CONFIG.valueFormat}</span>.
+              </>
+            }
+          >
             <input
               className={MONO_INPUT_CLASS}
               placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
               {...register("valueFormat")}
             />
-            <span className={FIELD_HINT_CLASS}>
-              Template for the header value. Use{" "}
-              <span className="font-mono">{`{value}`}</span> as the token
-              placeholder. Defaults to{" "}
-              <span className="font-mono">{DEFAULT_INJECTION_CONFIG.valueFormat}</span>.
-            </span>
-          </label>
+          </FormField>
 
           <div className="flex flex-col gap-2">
-            <span className={FIELD_LABEL_CLASS}>Pod Env Vars (optional)</span>
-            <p className={FIELD_HINT_CLASS}>
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Pod Env Vars (optional)
+            </span>
+            <p className="text-[11px] text-text-muted">
               Inject env vars into every agent instance granted this secret.
               The placeholder (typically{" "}
               <span className="font-mono">humr:sentinel</span>) is swapped
