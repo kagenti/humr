@@ -16,6 +16,12 @@ export interface SkillSource {
   gitUrl: string;
   /** True when the source is managed by the cluster admin (Helm-seeded). Users can't delete it. */
   system?: boolean;
+  /** Present when the source was declared by an agent template (spec.skillSources).
+   *  UI-only hint for the "Agent" badge — backend treats template sources as read-only. */
+  fromTemplate?: {
+    templateId: string;
+    templateName: string;
+  };
   /** True when the current user has a publish credential stored for this source. */
   canPublish?: boolean;
 }
@@ -109,7 +115,7 @@ export interface SkillsState {
 }
 
 export interface SkillsService {
-  listSources: () => Promise<SkillSource[]>;
+  listSources: (instanceId?: string) => Promise<SkillSource[]>;
   getSource: (id: string) => Promise<SkillSource | null>;
   createSource: (input: CreateSkillSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;

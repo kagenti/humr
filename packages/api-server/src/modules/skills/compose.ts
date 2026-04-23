@@ -2,6 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Skill, SkillsService } from "api-server-api";
 import { createAgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import { createInstancesRepository } from "../agents/infrastructure/instances-repository.js";
+import { createTemplatesRepository } from "../agents/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { createAgentTokenResolver } from "./infrastructure/agent-token.js";
@@ -57,6 +58,7 @@ export function composeSkillsModule(
     repo: createSkillsRepository(k8s),
     instancesRepo: createInstancesRepository(k8s),
     agentsRepo: createAgentsRepository(k8s),
+    templatesRepo: createTemplatesRepository(k8s),
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     getAgentToken: createAgentTokenResolver(k8s),
     owner,

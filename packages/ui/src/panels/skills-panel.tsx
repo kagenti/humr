@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
 import type {
   LocalSkill,
   Skill,
@@ -10,6 +10,38 @@ import type {
 import { platform } from "../platform.js";
 import { ACTION_FAILED, runAction } from "../store/query-helpers.js";
 import { useStore } from "../store.js";
+
+/** localStorage key for per-user persistence of collapsed source ids. Per
+ *  browser, not per instance — catalog preferences apply everywhere. */
+const COLLAPSED_STORAGE_KEY = "humr:skills:collapsed";
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsed(set: Set<string>): void {
+  try {
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify([...set]));
+  } catch {
+    // Quota / private-mode / disabled storage — collapse still works for the
+    // current session, just won't persist. Not worth surfacing to the user.
+  }
+}
+
+/** True when a source should default to collapsed on first-ever visit —
+ *  i.e. before the user has toggled anything. Admin-curated rows (Platform
+ *  + Agent) start closed so a 50-skill catalog doesn't wall off the panel
+ *  for a user who only cares about their own skills. */
+function isCuratedSource(src: SkillSource): boolean {
+  return !!src.system || !!src.fromTemplate;
+}
 
 interface SkillsPanelProps {
   instanceId: string | null;
@@ -71,6 +103,33 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   const [publishBusy, setPublishBusy] = useState(false);
   const showToast = useStore((s) => s.showToast);
 
+  /**
+   * Ids whose collapse state is *inverted from the kind-level default*:
+   *   - curated (Platform/Agent) ids in the set → user opted in to expand
+   *   - user ids in the set → user collapsed their own row
+   * This keeps the persisted value minimal and means brand-new sources
+   * automatically honour the right default without pre-seeding storage.
+   */
+  const [collapseOverrides, setCollapseOverrides] = useState<Set<string>>(loadCollapsed);
+
+  const isCollapsed = useCallback(
+    (src: SkillSource): boolean => {
+      const defaultCollapsed = isCuratedSource(src);
+      return collapseOverrides.has(src.id) ? !defaultCollapsed : defaultCollapsed;
+    },
+    [collapseOverrides],
+  );
+
+  const toggleCollapsed = useCallback((id: string) => {
+    setCollapseOverrides((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      saveCollapsed(next);
+      return next;
+    });
+  }, []);
+
   const loadSkills = useCallback(async (sourceId: string) => {
     // Public GitHub sources are scanned directly from the api-server, so no
     // running instance is required. Private sources need the agent pod to
@@ -129,7 +188,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
     (async () => {
       try {
-        const srcs = await platform.skills.sources.list.query();
+        // Pass instanceId so the backend composes user + platform + agent
+        // (template-seeded) sources into a single ordered list.
+        const srcs = await platform.skills.sources.list.query(
+          instanceId ? { instanceId } : undefined,
+        );
         if (!cancelled) setSources(srcs);
       } catch {
         if (!cancelled) setSources([]);
@@ -144,12 +207,18 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   }, [instanceId]);
 
   useEffect(() => {
+    // Only fetch for expanded sources. A collapsed row is invisible, so
+    // scanning GitHub (or worse, delegating through agent-runtime for a
+    // private repo) would be pure wasted bandwidth. When the user expands
+    // a not-yet-loaded source, this effect re-runs on the state change
+    // and loads it lazily.
     for (const src of sources) {
+      if (isCollapsed(src)) continue;
       if (skillsBySource[src.id] === undefined && !loadingBySource[src.id]) {
         loadSkills(src.id);
       }
     }
-  }, [sources, skillsBySource, loadingBySource, loadSkills]);
+  }, [sources, skillsBySource, loadingBySource, loadSkills, isCollapsed]);
 
   const isInstalled = (source: string, name: string) =>
     installed.some((s) => s.source === source && s.name === name);
@@ -469,45 +538,83 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
         const list = skillsBySource[src.id] ?? [];
         const loading = !!loadingBySource[src.id];
         const error = errorBySource[src.id];
+        const collapsed = isCollapsed(src);
         return (
           <div key={src.id} className="border-b border-border-light">
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised">
+            {/* Whole header is the click target for collapse/expand. Nested
+                buttons (refresh, delete) stop propagation so they don't
+                accidentally toggle the section. */}
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(src.id)}
+              className="w-full flex items-center gap-2 px-4 py-2.5 bg-surface-raised hover:bg-[var(--color-border-light)] transition-colors text-left"
+              aria-expanded={!collapsed}
+              aria-label={`${collapsed ? "Expand" : "Collapse"} ${src.name}`}
+            >
+              {collapsed
+                ? <ChevronRight size={14} className="text-text-muted shrink-0" />
+                : <ChevronDown size={14} className="text-text-muted shrink-0" />}
               <span className="text-[12px] font-bold text-text flex-1 truncate">{src.name}</span>
               {src.system && (
                 <span
                   className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info"
-                  title="Provided by the cluster admin"
+                  title="Configured by the cluster admin, visible to every user"
                 >
-                  Admin
+                  Platform
+                </span>
+              )}
+              {src.fromTemplate && (
+                <span
+                  className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-template-light text-template border-template"
+                  title={`Included with the ${src.fromTemplate.templateName} agent template`}
+                >
+                  Agent
                 </span>
               )}
               <span className="text-[11px] text-text-muted truncate max-w-[200px]" title={src.gitUrl}>
                 {src.gitUrl.replace(/^https:\/\/github\.com\//, "")}
               </span>
-              <button
-                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""}`}
-                onClick={() => refreshSource(src.id)}
+              <span
+                role="button"
+                tabIndex={0}
+                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
+                onClick={(e) => { e.stopPropagation(); if (!loading) void refreshSource(src.id); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!loading) void refreshSource(src.id);
+                  }
+                }}
                 title="Re-scan this source"
-                disabled={loading}
               >
                 <RefreshCw size={12} />
-              </button>
-              {!src.system && (
-                <button
+              </span>
+              {!src.system && !src.fromTemplate && (
+                <span
+                  role="button"
+                  tabIndex={0}
                   className="text-text-muted hover:text-danger transition-colors"
-                  onClick={() => deleteSource(src)}
+                  onClick={(e) => { e.stopPropagation(); void deleteSource(src); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void deleteSource(src);
+                    }
+                  }}
                   title="Remove source"
                 >
                   <X size={13} />
-                </button>
+                </span>
               )}
-            </div>
+            </button>
 
-            {loading && (
+            {!collapsed && loading && (
               <div className="px-4 py-3 text-[11px] text-text-muted">Loading skills...</div>
             )}
 
-            {error && (() => {
+            {!collapsed && error && (() => {
               // publish/scan services encode a call-to-action URL as
               // `\nhumr-cta:<url>` in the tRPC error message when OneCLI's
               // gateway surfaces a structured error (not connected / agent
@@ -532,11 +639,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               );
             })()}
 
-            {!loading && !error && list.length === 0 && (
+            {!collapsed && !loading && !error && list.length === 0 && (
               <p className="px-4 py-3 text-[11px] text-text-muted">No skills in this source.</p>
             )}
 
-            {list.map((skill) => {
+            {!collapsed && list.map((skill) => {
               const installed = installedRef(skill.source, skill.name);
               const isInst = installed !== undefined;
               // Drift = contents changed. contentHash is missing only for
