@@ -1,6 +1,14 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+
+export function prefetchSchedules(instanceId: string) {
+  return queryClient.prefetchQuery({
+    ...trpc.schedules.list.queryOptions({ instanceId }),
+    staleTime: 5000,
+  });
+}
 
 export function useSchedules(instanceId: string | null) {
   return useQuery({

@@ -12,6 +12,7 @@ import { FilesPanel } from "./../panels/files-panel.js";
 import { LogPanel } from "./../panels/log-panel.js";
 import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
+import { prefetchSchedules } from "./../modules/schedules/api/queries.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
 import type { SessionError } from "../store.js";
 import type { InstanceView } from "../types.js";
@@ -123,12 +124,18 @@ export function ChatView() {
   const rightPanelContent = (
     <>
       <div className="flex border-b border-border-light shrink-0">
-        {rightTabs.map(tab => (
-          <button key={tab} onClick={() => setRightTab(tab)}
-            className={`flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
-            {tab === "configuration" ? "config" : tab}
-          </button>
-        ))}
+        {rightTabs.map(tab => {
+          const warmCache = tab === "configuration" && selectedInstance
+            ? () => prefetchSchedules(selectedInstance)
+            : undefined;
+          return (
+            <button key={tab} onClick={() => setRightTab(tab)}
+              onMouseEnter={warmCache} onFocus={warmCache}
+              className={`flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}>
+              {tab === "configuration" ? "config" : tab}
+            </button>
+          );
+        })}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
