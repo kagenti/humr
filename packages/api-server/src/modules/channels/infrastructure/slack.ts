@@ -1,5 +1,5 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewareArgs } from "@slack/bolt";
-import { filter, merge, take } from "rxjs";
+import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
 import { ChannelType, SessionType, type InstancesService } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
@@ -22,6 +22,8 @@ import { buildAuthorizeUrl, generatePkce, type KeycloakOAuthConfig } from "./ide
 import { formatError } from "../../../core/format-error.js";
 
 type BoltApp = InstanceType<typeof App>;
+
+const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
 
 async function getContextMessages(
   app: BoltApp,
@@ -198,20 +200,36 @@ export function createSlackWorker(
       ofType<ForkFailed>(EventType.ForkFailed),
       filter((e) => e.replyId === replyId),
     );
-    merge(ready$, failed$).pipe(take(1)).subscribe({
-      next: (outcome) => {
-        handleForkOutcome(outcome, {
-          channel: args.channel,
-          threadTs: args.threadTs,
-          instanceName: args.instanceName,
-          slackUserId: args.slackUserId,
-          prompt,
-          existingSessionId,
-        }).catch((err) => {
-          process.stderr.write(`[slack/fork] outcome handler error: ${formatError(err)}\n`);
-        });
-      },
-    });
+    merge(ready$, failed$)
+      .pipe(take(1), timeout({ first: FORK_OUTCOME_TIMEOUT_MS }))
+      .subscribe({
+        next: (outcome) => {
+          handleForkOutcome(outcome, {
+            channel: args.channel,
+            threadTs: args.threadTs,
+            instanceName: args.instanceName,
+            slackUserId: args.slackUserId,
+            prompt,
+            existingSessionId,
+          }).catch((err) => {
+            process.stderr.write(`[slack/fork] outcome handler error: ${formatError(err)}\n`);
+          });
+        },
+        error: (err) => {
+          process.stderr.write(`[slack/fork] fork outcome timeout for reply ${replyId}: ${formatError(err)}\n`);
+          const bolt = app;
+          if (!bolt) return;
+          bolt.client.chat
+            .postEphemeral({
+              channel: args.channel,
+              user: args.slackUserId,
+              text: "Could not run turn as you: fork provisioning timed out. Try again or contact the instance owner.",
+            })
+            .catch((postErr) => {
+              process.stderr.write(`[slack/fork] postEphemeral after timeout failed: ${formatError(postErr)}\n`);
+            });
+        },
+      });
 
     emit({
       type: EventType.ForeignReplyReceived,
@@ -272,11 +290,17 @@ export function createSlackWorker(
       })
       .with({ type: EventType.ForkFailed }, async (event) => {
         const detail = event.detail ? ` (${event.detail})` : "";
-        await bolt.client.chat.postEphemeral({
-          channel: ctx.channel,
-          user: ctx.slackUserId,
-          text: `Could not run turn as you: ${event.reason}${detail}.`,
-        });
+        try {
+          await bolt.client.chat.postEphemeral({
+            channel: ctx.channel,
+            user: ctx.slackUserId,
+            text: `Could not run turn as you: ${event.reason}${detail}.`,
+          });
+        } catch (err) {
+          process.stderr.write(
+            `[slack/fork] failed to notify ${ctx.slackUserId} of fork failure "${event.reason}": ${formatError(err)}\n`,
+          );
+        }
       })
       .exhaustive();
   }
@@ -487,10 +511,16 @@ export function createSlackWorker(
       return slackChannelId ? [{ id: slackChannelId, title: slackChannelId }] : [];
     },
 
-    async postMessage(instanceName: string, text: string, _conversationId?: string) {
+    async postMessage(instanceName: string, text: string, conversationId?: string) {
       const slackChannelId = await channelRegistry.resolveSlackChannelByInstance(instanceName);
       if (!slackChannelId) {
         return { error: "no channel connected" };
+      }
+
+      if (conversationId && conversationId !== slackChannelId) {
+        return {
+          error: `conversationId ${conversationId} does not match the channel bound to this instance (${slackChannelId})`,
+        };
       }
 
       if (!app) {
