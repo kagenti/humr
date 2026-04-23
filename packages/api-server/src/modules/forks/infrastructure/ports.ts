@@ -6,11 +6,16 @@ export type ForeignCredentialMintError =
   | { kind: "OnecliRegistrationFailed"; detail?: string }
   | { kind: "AccessDenied"; detail?: string };
 
+export interface MintedForeignCredential {
+  readonly accessToken: string;
+  readonly agentIdentifier: string;
+}
+
 export interface ForeignCredentialsPort {
   mintForeignToken(args: {
     foreignSub: string;
     instanceId: string;
-  }): Promise<Result<string, ForeignCredentialMintError>>;
+  }): Promise<Result<MintedForeignCredential, ForeignCredentialMintError>>;
 }
 
 export type OrchestratorCreateError =

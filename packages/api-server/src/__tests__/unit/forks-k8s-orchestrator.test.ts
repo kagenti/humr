@@ -12,6 +12,7 @@ import { toForeignSub } from "../../modules/forks/domain/fork.js";
 const spec: ForkSpec = {
   instanceId: "inst-abc",
   foreignSub: toForeignSub("kc|user-42"),
+  forkAgentIdentifier: "fork-inst-abc-abcd1234abcd",
   sessionId: "sess-1",
 };
 
@@ -31,6 +32,7 @@ describe("buildForkConfigMap", () => {
       version: "humr.ai/v1",
       instance: "inst-abc",
       foreignSub: "kc|user-42",
+      forkAgentIdentifier: "fork-inst-abc-abcd1234abcd",
       sessionId: "sess-1",
       accessToken: "tok",
     });
@@ -40,6 +42,7 @@ describe("buildForkConfigMap", () => {
     const withoutSession: ForkSpec = {
       instanceId: "inst-abc",
       foreignSub: toForeignSub("kc|user-42"),
+      forkAgentIdentifier: "fork-inst-abc-abcd1234abcd",
     };
     const cm = buildForkConfigMap({
       forkId: "fork-1",

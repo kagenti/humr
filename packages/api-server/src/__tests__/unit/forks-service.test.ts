@@ -60,7 +60,8 @@ function makeHarness(overrides: {
   }
 
   const foreignCredentials: ForeignCredentialsPort = {
-    mintForeignToken: async () => ok("fake-token"),
+    mintForeignToken: async () =>
+      ok({ accessToken: "fake-token", agentIdentifier: "fork-inst-1-aaaabbbbcccc" }),
     ...overrides.foreignCredentials,
   };
 

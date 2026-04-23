@@ -223,6 +223,7 @@ func TestNewScheduleStatus(t *testing.T) {
 const fixtureForkYAML = `version: humr.ai/v1
 instance: inst-abc
 foreignSub: kc|user-42
+forkAgentIdentifier: fork-inst-abc-aaaabbbbcccc
 sessionId: sess-1
 accessToken: onecli-xyz
 `
@@ -233,6 +234,7 @@ func TestParseForkSpec(t *testing.T) {
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "inst-abc", spec.Instance)
 	assert.Equal(t, "kc|user-42", spec.ForeignSub)
+	assert.Equal(t, "fork-inst-abc-aaaabbbbcccc", spec.ForkAgentIdentifier)
 	assert.Equal(t, "sess-1", spec.SessionID)
 	assert.Equal(t, "onecli-xyz", spec.AccessToken)
 }
@@ -241,6 +243,7 @@ func TestParseForkSpec_Minimal(t *testing.T) {
 	spec, err := ParseForkSpec(`version: humr.ai/v1
 instance: inst-abc
 foreignSub: kc|user-42
+forkAgentIdentifier: fork-inst-abc-aaaabbbbcccc
 accessToken: onecli-xyz
 `)
 	require.NoError(t, err)
@@ -249,9 +252,10 @@ accessToken: onecli-xyz
 
 func TestParseForkSpec_MissingRequired(t *testing.T) {
 	cases := map[string]string{
-		"missing instance":    `version: humr.ai/v1` + "\n" + `foreignSub: kc|u` + "\n" + `accessToken: t`,
-		"missing foreignSub":  `version: humr.ai/v1` + "\n" + `instance: inst-abc` + "\n" + `accessToken: t`,
-		"missing accessToken": `version: humr.ai/v1` + "\n" + `instance: inst-abc` + "\n" + `foreignSub: kc|u`,
+		"missing instance":            `version: humr.ai/v1` + "\n" + `foreignSub: kc|u` + "\n" + `forkAgentIdentifier: fork-x-y` + "\n" + `accessToken: t`,
+		"missing foreignSub":          `version: humr.ai/v1` + "\n" + `instance: inst-abc` + "\n" + `forkAgentIdentifier: fork-x-y` + "\n" + `accessToken: t`,
+		"missing accessToken":         `version: humr.ai/v1` + "\n" + `instance: inst-abc` + "\n" + `foreignSub: kc|u` + "\n" + `forkAgentIdentifier: fork-x-y`,
+		"missing forkAgentIdentifier": `version: humr.ai/v1` + "\n" + `instance: inst-abc` + "\n" + `foreignSub: kc|u` + "\n" + `accessToken: t`,
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {

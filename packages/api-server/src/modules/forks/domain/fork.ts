@@ -12,6 +12,7 @@ export type ForkPhase = "Pending" | "Ready" | "Failed" | "Completed";
 export interface ForkSpec {
   readonly instanceId: string;
   readonly foreignSub: ForeignSub;
+  readonly forkAgentIdentifier: string;
   readonly sessionId?: string;
 }
 

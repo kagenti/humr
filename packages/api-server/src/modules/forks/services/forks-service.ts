@@ -83,30 +83,43 @@ export function createForksService(deps: {
   return {
     async openFork(input) {
       const forkId = generateForkId();
+
+      const minted = await deps.foreignCredentials.mintForeignToken({
+        foreignSub: input.foreignSub,
+        instanceId: input.instanceId,
+      });
+      if (!minted.ok) {
+        const pending = createFork({
+          forkId,
+          replyId: input.replyId,
+          spec: {
+            instanceId: input.instanceId,
+            foreignSub: toForeignSub(input.foreignSub),
+            forkAgentIdentifier: "",
+            ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+          },
+        });
+        open.set(forkId, pending);
+        emitFailed(pending, "CredentialMintFailed", minted.error.detail);
+        return;
+      }
+
       const fork = createFork({
         forkId,
         replyId: input.replyId,
         spec: {
           instanceId: input.instanceId,
           foreignSub: toForeignSub(input.foreignSub),
+          forkAgentIdentifier: minted.value.agentIdentifier,
           ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
         },
       });
       open.set(forkId, fork);
 
-      const token = await deps.foreignCredentials.mintForeignToken({
-        foreignSub: input.foreignSub,
-        instanceId: input.instanceId,
-      });
-      if (!token.ok) {
-        emitFailed(fork, "CredentialMintFailed", token.error.detail);
-        return;
-      }
-
       const created = await deps.orchestrator.createFork({
         forkId,
         spec: fork.spec,
-        accessToken: token.value,
+        accessToken: minted.value.accessToken,
       });
       if (!created.ok) {
         const detail =

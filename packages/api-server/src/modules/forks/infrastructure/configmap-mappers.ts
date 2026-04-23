@@ -16,6 +16,7 @@ interface ForkSpecYaml {
   version: string;
   instance: string;
   foreignSub: string;
+  forkAgentIdentifier: string;
   sessionId?: string;
   accessToken: string;
 }
@@ -37,6 +38,7 @@ export function buildForkConfigMap(args: {
     version: SPEC_VERSION,
     instance: args.spec.instanceId,
     foreignSub: args.spec.foreignSub,
+    forkAgentIdentifier: args.spec.forkAgentIdentifier,
     accessToken: args.accessToken,
   };
   if (args.spec.sessionId !== undefined) body.sessionId = args.spec.sessionId;

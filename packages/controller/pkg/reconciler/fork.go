@@ -67,12 +67,12 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	if agentName == "" {
 		agentName = instanceSpec.AgentName
 	}
-	agentCM, agentSpec, err := r.resolver.Resolve(agentName)
+	_, agentSpec, err := r.resolver.Resolve(agentName)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	connectorEnvs := r.collectForeignConnectorEnvs(ctx, agentCM, agentName, forkSpec.ForeignSub)
+	connectorEnvs := r.collectForeignConnectorEnvs(ctx, forkSpec.ForkAgentIdentifier, forkSpec.ForeignSub)
 
 	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, connectorEnvs)
 
@@ -146,19 +146,18 @@ func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*cor
 	return nil, nil
 }
 
-func (r *ForkReconciler) collectForeignConnectorEnvs(ctx context.Context, agentCM *corev1.ConfigMap, agentName, foreignSub string) []corev1.EnvVar {
+func (r *ForkReconciler) collectForeignConnectorEnvs(ctx context.Context, forkAgentIdentifier, foreignSub string) []corev1.EnvVar {
 	if r.factory == nil {
 		return nil
 	}
-	_ = agentCM
 	oc, err := r.factory.ClientForOwner(ctx, foreignSub)
 	if err != nil {
-		slog.Warn("could not get OneCLI client for foreign user; skipping connector envs", "agent", agentName, "sub", foreignSub, "error", err)
+		slog.Warn("could not get OneCLI client for foreign user; skipping connector envs", "forkAgent", forkAgentIdentifier, "sub", foreignSub, "error", err)
 		return nil
 	}
-	secrets, err := oc.ListSecretsForAgent(ctx, agentName)
+	secrets, err := oc.ListSecretsForAgent(ctx, forkAgentIdentifier)
 	if err != nil {
-		slog.Warn("could not list secrets for agent under foreign user; skipping connector envs", "agent", agentName, "sub", foreignSub, "error", err)
+		slog.Warn("could not list secrets for fork agent under foreign user; skipping connector envs", "forkAgent", forkAgentIdentifier, "sub", foreignSub, "error", err)
 		return nil
 	}
 	return envMappingsToEnvVars(secrets)

@@ -24,12 +24,15 @@ describe("ForeignRegistrationService", () => {
 
     const result = await svc.mintForeignToken({ foreignSub: "kc|u1", instanceId: "inst-a" });
 
-    expect(result).toEqual({ ok: true, value: "agent-tok" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.accessToken).toBe("agent-tok");
+    expect(result.value.agentIdentifier).toMatch(/^fork-inst-a-[a-f0-9]{12}$/);
     expect(exchange).toHaveBeenCalledWith("kc|u1");
     expect(createOrFind).toHaveBeenCalledTimes(1);
     const firstCallArgs = createOrFind.mock.calls[0]?.[0];
     expect(firstCallArgs?.onecliToken).toBe("sa-token");
-    expect(firstCallArgs?.identifier).toMatch(/^fork-inst-a-[a-f0-9]{12}$/);
+    expect(firstCallArgs?.identifier).toBe(result.value.agentIdentifier);
   });
 
   it("returns cached token on second call with same (instance, foreignSub)", async () => {
@@ -42,7 +45,8 @@ describe("ForeignRegistrationService", () => {
     await svc.mintForeignToken({ foreignSub: "kc|u1", instanceId: "inst-a" });
     const second = await svc.mintForeignToken({ foreignSub: "kc|u1", instanceId: "inst-a" });
 
-    expect(second).toEqual({ ok: true, value: "agent-tok" });
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.accessToken).toBe("agent-tok");
     expect(exchange).toHaveBeenCalledTimes(1);
     expect(createOrFind).toHaveBeenCalledTimes(1);
   });
@@ -111,7 +115,8 @@ describe("ForeignRegistrationService", () => {
     expect(first.ok).toBe(false);
 
     const second = await svc.mintForeignToken({ foreignSub: "kc|u1", instanceId: "inst-a" });
-    expect(second).toEqual({ ok: true, value: "agent-tok" });
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.accessToken).toBe("agent-tok");
   });
 
   it("evict() causes next call to re-mint", async () => {
