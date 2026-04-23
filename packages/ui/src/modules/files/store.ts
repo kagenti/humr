@@ -1,24 +1,22 @@
 import type { StateCreator } from "zustand";
 
 import type { HumrStore } from "../../store.js";
-import type { TreeEntry } from "../../types.js";
 
 export type RightTab = "files" | "log" | "configuration";
 
 export interface FilesSlice {
-  fileTree: TreeEntry[];
-  openFile: { path: string; content: string; binary?: boolean; mimeType?: string } | null;
+  /** Path of the file currently open in the viewer. The content itself lives
+   *  in the TanStack Query cache (see modules/files/api/queries.ts); this
+   *  field is the UI-state side of the pair. */
+  openFilePath: string | null;
   rightTab: RightTab;
-  setFileTree: (entries: TreeEntry[]) => void;
-  setOpenFile: (file: FilesSlice["openFile"]) => void;
+  setOpenFilePath: (path: string | null) => void;
   setRightTab: (tab: RightTab) => void;
 }
 
 export const createFilesSlice: StateCreator<HumrStore, [], [], FilesSlice> = (set) => ({
-  fileTree: [],
-  openFile: null,
+  openFilePath: null,
   rightTab: "files",
-  setFileTree: (entries) => set({ fileTree: entries }),
-  setOpenFile: (file) => set({ openFile: file }),
+  setOpenFilePath: (path) => set({ openFilePath: path }),
   setRightTab: (tab) => set({ rightTab: tab }),
 });

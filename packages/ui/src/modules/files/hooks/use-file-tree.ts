@@ -1,51 +1,31 @@
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
-import { fetchFileContent, useFileContentQuery, useFileTreeQuery } from "../api/queries.js";
+import { fetchFileContent } from "../api/queries.js";
 
 /**
- * Drives the file tree + open-file viewer for the given instance. Backed by
- * TanStack Query; the 2-second poll is the refetchInterval, and TQ's
- * structuralSharing keeps the fileTree reference stable when the tree hasn't
- * changed — so the store effect below only fires when it actually did.
+ * Exposes a single `openFileHandler` for opening a file from anywhere in the
+ * chat surface (side panel click, Markdown link, etc.). The resulting content
+ * lives in the TanStack Query cache; components render via useFileContentQuery.
  */
 export function useFileTree(selectedInstance: string | null) {
-  const setFileTree = useStore((s) => s.setFileTree);
-  const setOpenFile = useStore((s) => s.setOpenFile);
+  const openFilePath = useStore((s) => s.openFilePath);
+  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const setRightTab = useStore((s) => s.setRightTab);
-  const openFile = useStore((s) => s.openFile);
   const showToast = useStore((s) => s.showToast);
-
-  const { data: fileTree } = useFileTreeQuery(selectedInstance);
-  const { data: openFileContent, error: openFileError } = useFileContentQuery(
-    selectedInstance,
-    openFile?.path ?? null,
-  );
-
-  useEffect(() => {
-    if (fileTree) setFileTree(fileTree);
-  }, [fileTree, setFileTree]);
-
-  useEffect(() => {
-    if (openFileContent) setOpenFile(openFileContent);
-  }, [openFileContent, setOpenFile]);
-
-  // Close the viewer if the file is gone — don't surface as an error; files
-  // disappear legitimately (deletes, git switches).
-  useEffect(() => {
-    if (openFileError) setOpenFile(null);
-  }, [openFileError, setOpenFile]);
 
   const openFileHandler = useCallback(
     async (path: string) => {
       if (!selectedInstance) return;
-      if (openFile?.path === path) {
-        setOpenFile(null);
+      if (openFilePath === path) {
+        setOpenFilePath(null);
         return;
       }
       try {
-        const content = await fetchFileContent(selectedInstance, path);
-        setOpenFile(content);
+        // Pre-warm the content cache before switching the viewer so the UI
+        // doesn't flash empty while the poll-driven subscription catches up.
+        await fetchFileContent(selectedInstance, path);
+        setOpenFilePath(path);
         setRightTab("files");
       } catch (err) {
         showToast({
@@ -54,7 +34,7 @@ export function useFileTree(selectedInstance: string | null) {
         });
       }
     },
-    [selectedInstance, openFile, setOpenFile, setRightTab, showToast],
+    [selectedInstance, openFilePath, setOpenFilePath, setRightTab, showToast],
   );
 
   return { openFileHandler };

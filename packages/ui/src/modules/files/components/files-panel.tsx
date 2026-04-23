@@ -1,9 +1,10 @@
 import { ArrowLeft, ChevronDown, ChevronRight, Code, Download, Eye, FileText, Folder, Image as ImageIcon } from "lucide-react";
-import { useCallback, useEffect,useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
+import { useFileContentQuery, useFileTreeQuery } from "../api/queries.js";
 
 function hexDump(base64: string): string {
   const raw = atob(base64);
@@ -35,9 +36,19 @@ function isDotName(path: string): boolean {
 }
 
 export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void }) {
-  const fileTree = useStore(s => s.fileTree);
-  const openFile = useStore(s => s.openFile);
-  const setOpenFile = useStore(s => s.setOpenFile);
+  const selectedInstance = useStore(s => s.selectedInstance);
+  const openFilePath = useStore(s => s.openFilePath);
+  const setOpenFilePath = useStore(s => s.setOpenFilePath);
+
+  const { data: fileTree = [] } = useFileTreeQuery(selectedInstance);
+  const { data: openFile, error: openFileError } = useFileContentQuery(selectedInstance, openFilePath);
+
+  // If the file disappeared (rename, delete, git switch), close the viewer
+  // silently rather than surface the error.
+  useEffect(() => {
+    if (openFileError) setOpenFilePath(null);
+  }, [openFileError, setOpenFilePath]);
+
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
   // Tracks user-explicit toggles only. Dot-dirs default to collapsed unless toggled open.
@@ -115,7 +126,7 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
   if (openFile) return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border-light shrink-0">
-        <button className="flex items-center gap-1 text-[12px] font-semibold text-text-muted hover:text-accent transition-colors shrink-0" onClick={() => setOpenFile(null)}>
+        <button className="flex items-center gap-1 text-[12px] font-semibold text-text-muted hover:text-accent transition-colors shrink-0" onClick={() => setOpenFilePath(null)}>
           <ArrowLeft size={12} /> Back
         </button>
         <span className="text-[12px] font-mono text-text-secondary truncate flex-1">{openFile.path}</span>
