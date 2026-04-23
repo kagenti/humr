@@ -1,7 +1,7 @@
-# DRAFT: Skills — connectable sources and install
+# ADR-030: Skills — connectable sources and install
 
 **Date:** 2026-04-17
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @PetrBulanek
 
 ## Context
@@ -11,7 +11,7 @@ One user's breakthrough workflow never propagates. New users face a blank slate.
 Prior decisions:
 
 - [ADR-011](011-skills-claude-marketplace.md) — standardize on Claude's plugin marketplace (single-harness assumption).
-- [DRAFT-skills-harness-native](DRAFT-skills-harness-native.md) — platform does nothing; each harness brings its own registry.
+- DRAFT-skills-harness-native (closed) — platform does nothing; each harness brings its own registry.
 - [ADR-023](023-harness-agnostic-base-image.md) — narrow harness contract; "skill registries are the harness's business."
 
 Since then: [agentskills.io](https://agentskills.io) is an open cross-harness standard (38+ adopters); Pi ships alongside Claude Code; public skill marketplaces exist (skills.sh, ClawHub, LobeHub, Anthropic's repo, OpenAI's catalog).
@@ -97,7 +97,7 @@ A real recommender (Sensei/Glass pattern) needs role, usage telemetry, and cross
 
 ## Consequences
 
-- Supersedes [ADR-011](011-skills-claude-marketplace.md); closes [DRAFT-skills-harness-native](DRAFT-skills-harness-native.md).
+- Supersedes [ADR-011](011-skills-claude-marketplace.md); closes the harness-native draft.
 - New: `humr.ai/type=skill-source`, `InstanceSpec.skills: []`, `AgentSpec.skillPaths: []` (default `["/home/agent/.agents/skills/"]`).
 - Agent-runtime gains `POST /api/skills/install` and `/api/skills/uninstall` endpoints; the API server calls them on user action. The controller is not involved in skill sync.
 - UI gains a Skills tab in the Configure dialog and a "connect source" flow analogous to connecting an MCP server.
