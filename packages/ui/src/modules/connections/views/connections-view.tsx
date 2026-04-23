@@ -1,26 +1,16 @@
-import {
-  ExternalLink,
-  Globe,
-  KeyRound,
-  Lock,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Unplug,
-  X,
-} from "lucide-react";
+import { ExternalLink, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 import { getAuthConfig } from "../../../auth.js";
-import { AppStatusPill } from "../../../components/app-status-pill.js";
-import { useStore } from "../../../store.js";
 import { isCustomSecret, type SecretView } from "../../../types.js";
-import { useDeleteSecret } from "../../secrets/api/mutations.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js";
 import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
-import { useDisconnectMcp, useStartMcpOAuth } from "../api/mutations.js";
 import { useAppConnections, useMcpConnections } from "../api/queries.js";
+import { AppConnectionRow } from "../components/app-connection-row.js";
+import { McpConnectionRow } from "../components/mcp-connection-row.js";
+import { SecretRow } from "../components/secret-row.js";
+import { AddMcpForm } from "../forms/add-mcp-form.js";
 
 export function ConnectionsView() {
   const {
@@ -42,64 +32,25 @@ export function ConnectionsView() {
     isPending: isPendingAppConnections,
   } = useAppConnections();
 
-  const deleteSecret = useDeleteSecret();
-  const startMcpOAuth = useStartMcpOAuth();
-  const disconnectMcp = useDisconnectMcp();
-
-  const showToast = useStore((s) => s.showToast);
-  const showConfirm = useStore((s) => s.showConfirm);
-
+  const [addMcpInitialUrl, setAddMcpInitialUrl] = useState("");
   const [showAddMcp, setShowAddMcp] = useState(false);
-  const [mcpUrl, setMcpUrl] = useState("");
-
   const [showAddSecret, setShowAddSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
+  const customSecrets = secrets.filter(isCustomSecret);
 
   const refreshAll = () => {
     refetchAppConnections();
     refetchMcpConnections();
     refetchSecrets();
   };
-  const isFetching =
-    isFetchingAppConnections || isFetchingMcpConnections;
+  const isFetching = isFetchingAppConnections || isFetchingMcpConnections;
 
-  const customSecrets = secrets.filter(isCustomSecret);
-
-  // --- MCP actions ---
-
-  const handleStartMcpOAuth = () => {
-    const url = mcpUrl.trim();
-    if (!url) return;
-    startMcpOAuth.mutate(url, {
-      onSuccess: (data) => {
-        if (data.error) {
-          showToast({ kind: "error", message: data.error });
-          return;
-        }
-        if (data.authUrl) {
-          sessionStorage.setItem("humr-return-view", "connections");
-          window.location.href = data.authUrl;
-        }
-      },
-    });
+  const openAddMcp = (initialUrl = "") => {
+    setAddMcpInitialUrl(initialUrl);
+    setShowAddMcp(true);
   };
-
-  const handleDisconnectMcp = async (hostname: string) => {
-    if (!(await showConfirm(`Disconnect "${hostname}"?`, "Disconnect"))) return;
-    disconnectMcp.mutate(hostname);
-  };
-
-  // --- Secret actions ---
-
-  const removeSecret = async (id: string, name: string) => {
-    if (!(await showConfirm(`Delete "${name}"?`, "Delete Secret"))) return;
-    deleteSecret.mutate({ id });
-  };
-
-  const inp =
-    "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
   return (
     <div className="w-full max-w-2xl">
@@ -155,31 +106,7 @@ export function ConnectionsView() {
           {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
             <div className="flex flex-col gap-3">
               {appConnections.map((c, i) => (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
-                  style={{
-                    boxShadow: "var(--shadow-brutal)",
-                    animationDelay: `${i * 50}ms`,
-                  }}
-                >
-                  <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                    <KeyRound size={16} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[14px] font-semibold text-text truncate">
-                      {c.label}
-                    </div>
-                    <div className="text-[12px] font-mono text-text-muted truncate">
-                      {c.identity
-                        ? c.identity
-                        : c.connectedAt
-                          ? `Connected ${new Date(c.connectedAt).toLocaleDateString()}`
-                          : c.provider}
-                    </div>
-                  </div>
-                  <AppStatusPill status={c.status} size="md" />
-                </div>
+                <AppConnectionRow key={c.id} connection={c} animationDelayMs={i * 50} />
               ))}
             </div>
           )}
@@ -224,57 +151,12 @@ export function ConnectionsView() {
         {!isPendingMcpConnections && mcpConnections.length > 0 && (
           <div className="flex flex-col gap-3">
             {mcpConnections.map((c, i) => (
-              <div
+              <McpConnectionRow
                 key={c.hostname}
-                className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
-                style={{
-                  boxShadow: "var(--shadow-brutal)",
-                  animationDelay: `${i * 50}ms`,
-                }}
-              >
-                <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                  <Globe size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[14px] font-semibold text-text truncate">
-                    {c.hostname}
-                  </div>
-                  <div className="text-[12px] font-mono text-text-muted truncate">
-                    {c.expired
-                      ? "Expired"
-                      : `Connected ${new Date(c.connectedAt).toLocaleDateString()}`}
-                  </div>
-                </div>
-                <span
-                  className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
-                    c.expired
-                      ? "bg-danger-light text-danger border-danger"
-                      : "bg-info-light text-info border-info"
-                  }`}
-                >
-                  {c.expired ? "Expired" : "Connected"}
-                </span>
-                {c.expired && (
-                  <button
-                    onClick={() => {
-                      setMcpUrl(`https://${c.hostname}/mcp`);
-                      setShowAddMcp(true);
-                    }}
-                    className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white"
-                    style={{ boxShadow: "2px 2px 0 var(--color-accent)" }}
-                  >
-                    Reconnect
-                  </button>
-                )}
-                <button
-                  onClick={() => handleDisconnectMcp(c.hostname)}
-                  disabled={disconnectMcp.isPending && disconnectMcp.variables === c.hostname}
-                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
-                  title="Disconnect"
-                >
-                  <Unplug size={13} />
-                </button>
-              </div>
+                connection={c}
+                animationDelayMs={i * 50}
+                onReconnect={(host) => openAddMcp(`https://${host}/mcp`)}
+              />
             ))}
           </div>
         )}
@@ -282,7 +164,7 @@ export function ConnectionsView() {
         {!isPendingMcpConnections && (
           <div className="mt-4">
             <button
-              onClick={() => setShowAddMcp(true)}
+              onClick={() => openAddMcp()}
               className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5 shadow-brutal-accent"
             >
               <Plus size={14} /> Connect MCP Server
@@ -315,56 +197,12 @@ export function ConnectionsView() {
         {!isPendingSecrets && (
           <div className="flex flex-col gap-3">
             {customSecrets.map((s, i) => (
-              <div
+              <SecretRow
                 key={s.id}
-                className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
-                style={{
-                  boxShadow: "var(--shadow-brutal)",
-                  animationDelay: `${i * 50}ms`,
-                }}
-              >
-                <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-                  <Lock size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[14px] font-semibold text-text truncate">
-                    {s.name}
-                  </div>
-                  <div className="text-[12px] font-mono text-text-muted truncate">
-                    {s.hostPattern}
-                    {s.pathPattern && (
-                      <span className="text-text-secondary">{s.pathPattern}</span>
-                    )}
-                    {s.envMappings && s.envMappings.length > 0 && (
-                      <>
-                        {" · "}
-                        <span className="text-accent">
-                          {s.envMappings.map((m) => m.envName).join(", ")}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-surface-raised text-text-muted border-border-light">
-                  Secret
-                </span>
-                <button
-                  onClick={() => setEditingSecret(s)}
-                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-accent hover:border-accent"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                  title="Edit"
-                >
-                  <Pencil size={13} />
-                </button>
-                <button
-                  onClick={() => removeSecret(s.id, s.name)}
-                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                  title="Remove"
-                >
-                  <X size={13} />
-                </button>
-              </div>
+                secret={s}
+                animationDelayMs={i * 50}
+                onEdit={setEditingSecret}
+              />
             ))}
           </div>
         )}
@@ -381,46 +219,11 @@ export function ConnectionsView() {
         )}
       </section>
 
-      {/* Connect MCP Server dialog */}
       {showAddMcp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => setShowAddMcp(false)}>
-          <div
-            className="w-[480px] max-w-[calc(100vw-2rem)] rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
-            style={{ boxShadow: "var(--shadow-brutal)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-[20px] font-bold text-text">Connect MCP Server</h2>
-            <p className="text-[13px] text-text-secondary">
-              Enter the URL of a remote MCP server to connect via OAuth.
-            </p>
-            <div className="flex gap-3">
-              <input
-                className={inp}
-                value={mcpUrl}
-                onChange={(e) => setMcpUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleStartMcpOAuth()}
-                placeholder="https://example.com/mcp"
-                autoFocus
-              />
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                onClick={() => setShowAddMcp(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-                onClick={handleStartMcpOAuth}
-                disabled={!mcpUrl.trim() || startMcpOAuth.isPending}
-              >
-                {startMcpOAuth.isPending ? "..." : "Connect"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddMcpForm
+          initialUrl={addMcpInitialUrl}
+          onCancel={() => setShowAddMcp(false)}
+        />
       )}
 
       {showAddSecret && (
