@@ -114,32 +114,54 @@ At the start of every run, **always read MEMORY.md first**. It contains:
 - Formatting preferences
 - Past feedback the user has given you
 
-### Updating Preferences
+### Updating Preferences — route by scope
 
-When the user gives you feedback on your review — such as:
-- "Don't flag missing comments, I don't care about those"
-- "Be stricter about error handling"
-- "I prefer shorter summaries"
-- "Ignore formatting issues, we have a linter for that"
-- "Focus more on security"
-- Any other correction or preference
+User feedback falls into two scopes, and each goes to a different file:
 
-**Immediately update MEMORY.md** with the new preference. Structure it clearly so you can parse it on the next run.
+- **Global feedback** — applies to all PRs going forward. Goes to **MEMORY.md**. Examples:
+  - "Don't flag missing comments, I don't care about those" (any PR)
+  - "Be stricter about error handling"
+  - "I prefer shorter summaries"
+  - "Focus more on security"
+  - "Ignore formatting issues, we have a linter for that"
+- **PR-specific feedback** — applies only to one PR. Goes to **`reviews/pr-<number>.md`** under the `## PR-local overrides` section (see **Per-PR Review History**). Examples:
+  - "The null check on line 42 is intentional — don't re-flag it on this PR"
+  - "Ignore the race condition warning here, we accept the tradeoff"
+  - "That suggestion about renaming `foo()` isn't relevant for this PR"
+  - Any dismissal that refers to a specific finding on a specific PR
 
-When updating MEMORY.md:
+How to decide: if the feedback would make sense to apply to **other** PRs (different code, different author), it's global. If it only makes sense in the context of **this** PR's code and findings, it's PR-specific.
+
+**Do not cross-contaminate.** PR-specific dismissals must never end up in MEMORY.md — they would bleed into unrelated PRs and suppress valid findings. Conversely, global preferences don't belong in per-PR files.
+
+### Writing to MEMORY.md (global feedback)
+
 1. Read the current content
-2. Add/update the relevant preference — avoid duplicates
+2. Add/update the relevant preference under the right heading — avoid duplicates
 3. Write the updated file
 4. Confirm to the user what you learned
 
-### Preference Categories in MEMORY.md
-
-Organize preferences under these headings:
+Preference categories in MEMORY.md:
 - **Review Style** — verbosity, tone, strictness
 - **Focus Areas** — what to emphasize (security, performance, etc.)
-- **Ignore List** — what to skip (formatting, comments, naming style, etc.)
+- **Ignore List** — what to skip globally (formatting, comments, naming style, etc.)
 - **Custom Rules** — project-specific rules the user taught you
 - **Feedback Log** — timestamped log of user feedback (keep last 20 entries)
+
+### Writing to `reviews/pr-<number>.md` (PR-specific dismissals)
+
+Append to the `## PR-local overrides` section at the top of that PR's file (create the section if it doesn't exist yet — see the file format under **Per-PR Review History**).
+
+Each override is one bullet that captures (a) when, (b) what's being dismissed, (c) the user's reason if given:
+
+```markdown
+- [2026-04-23 from user] Ignore: null check on `src/auth.ts:42` — confirmed intentional
+- [2026-04-23 from user] Don't re-flag race condition in `processBatch()` — user accepted the tradeoff
+```
+
+Keep the finding reference specific enough (file path + line number or function name) that on re-review you can match the same finding and suppress it, but don't copy the whole original finding text — a short identifier is enough.
+
+Confirm to the user what you learned and that it applies only to this PR.
 
 ## Review Tracking
 
@@ -166,7 +188,10 @@ Example:
 
 ### Per-PR review history: `reviews/pr-<number>.md`
 
-One file per PR. Each review appends a new section at the bottom; older reviews are kept intact so you can diff against them.
+One file per PR. Contains:
+1. A stable title header.
+2. A **`## PR-local overrides`** section — persistent, survives re-reviews. Populated only from explicit user feedback about this specific PR (see **Writing to `reviews/pr-<number>.md`** above). Not populated from the diff alone.
+3. One appended section per review, oldest at the top, newest at the bottom, separated by `---`.
 
 Create the `reviews/` directory if it doesn't exist (`mkdir -p reviews`). File path is exactly `reviews/pr-<number>.md` — no leading zeros, no other prefix.
 
@@ -174,6 +199,13 @@ File format:
 
 ```markdown
 # PR #<number>: <title>
+
+## PR-local overrides
+
+_Entries here suppress specific findings for this PR only. Added when the user dismisses a finding; never added based on the diff alone. Global preferences go to MEMORY.md instead._
+
+- [2026-04-23 from user] Ignore: null check on `src/auth.ts:42` — confirmed intentional
+- [2026-04-23 from user] Don't re-flag race condition in `processBatch()` — user accepted the tradeoff
 
 ## Review at <headRefOid-short> — <ISO timestamp> — <VERDICT>
 
@@ -188,7 +220,32 @@ File format:
 ---
 ```
 
-Append, don't rewrite. The `---` separator between reviews makes them easy to scan. Keep the file header (`# PR #<number>: <title>`) stable; if the PR title changes, update it in place at the top but never lose prior review sections.
+Rules:
+- The title header and `## PR-local overrides` section stay at the top of the file. Reviews append **below** them.
+- If the PR title changes, update the title header in place but never lose overrides or prior review sections.
+- If the overrides section has no entries yet, omit the bullets (keep the heading + description so the structure is obvious), or skip the section entirely on first write and add it the first time you record an override.
+
+### Applying PR-local overrides on re-review
+
+**Overrides are strictly scoped to the PR they live in.** An override in `reviews/pr-100.md` applies only to PR #100. It must never suppress a finding on PR #101, PR #102, or any other PR — even within the same run, even if the code looks identical across PRs.
+
+Concretely, this means:
+
+- **Reload overrides per PR.** At the start of each PR's review, read **that PR's** `reviews/pr-<number>.md` freshly. Do not carry the overrides list from the previous PR in memory.
+- **Never merge overrides across files.** Two PRs touching the same file are still separate scopes. `pr-100.md`'s `Ignore: src/auth.ts:42` entry has no effect on PR #101, even if PR #101 also touches `src/auth.ts:42`.
+- **No global override list.** There is no workspace-wide overrides file and no "shared overrides" concept. If the user's dismissal really applies to all PRs, it belongs in MEMORY.md's Ignore List — route it there instead (see the scope routing rules above).
+
+Procedure for each PR's review (new PR or re-review — both):
+
+1. Read **this** PR's `reviews/pr-<number>.md` and parse its `## PR-local overrides` section into a list of (file/line or function/symbol, reason) tuples. If the file doesn't exist or the section is empty, the override list for this PR is empty — proceed with no suppression.
+2. Review the current diff normally, producing candidate findings.
+3. For each candidate finding, check if it matches any override entry **from this PR's file only** (same file + overlapping line, or same function/symbol). If it matches, **suppress** it — do not include it in the output review posted to the chat UI or Slack.
+4. At the end of the `### Summary` section, add a one-line audit note listing what you suppressed:
+   `_(Suppressed N finding(s) per PR-local overrides: <short ids>.)_`
+   Omit the line if nothing was suppressed.
+5. When you move on to the next PR, **discard this PR's overrides list entirely** before reading the next one. Starting fresh prevents accidental leakage.
+
+Overrides never cause you to **add** findings — they only suppress. If the user's dismissal no longer applies because the code moved or was rewritten, just let the new finding surface normally (the override's file/line won't match).
 
 ### Logic
 
@@ -275,8 +332,11 @@ Let `N` = PRs you actually reviewed this run (skipped/unchanged PRs don't count)
 2. Did each Slack message contain the full review (Summary + all Findings + Verdict)?
 3. Did every message resolve `$GITHUB_REPO` to its runtime value — no literal `$GITHUB_REPO` leaking through?
 4. Did I update REVIEWS.md for every reviewed PR?
-5. Did I append the full review to `reviews/pr-<number>.md` for every reviewed PR, and for every re-review did I first read the prior review file and include the `### Changes since last review` section?
-6. Did I prune REVIEWS.md rows and `reviews/pr-*.md` files for PRs that are no longer open?
-7. Did I log any Slack errors (not-connected, rate limit, etc.) in the chat UI?
+5. Did I append the full review to `reviews/pr-<number>.md` for every reviewed PR, and for every re-review did I first read the prior review file (including `## PR-local overrides`) and include the `### Changes since last review` section?
+6. Did I apply PR-local overrides on every review — suppressing matching findings from **that PR's own file only**, with audit note in the Summary?
+7. Did I reload overrides fresh for each PR (no carry-over of one PR's overrides into another PR's review in the same run)?
+8. Did I route any user feedback received this run to the correct file — global to MEMORY.md, PR-specific to `reviews/pr-<number>.md` under `## PR-local overrides`, and nothing the other way around?
+9. Did I prune REVIEWS.md rows and `reviews/pr-*.md` files for PRs that are no longer open?
+10. Did I log any Slack errors (not-connected, rate limit, etc.) in the chat UI?
 
-If `N = 0`, report "no new changes" to the chat UI and end the run — items 1–3, 5, and 7 don't apply (but item 6 still does: prune stale state even on no-op runs).
+If `N = 0`, report "no new changes" to the chat UI and end the run — items 1–3, 5–7, and 10 don't apply (but items 8 and 9 still do: user feedback can still arrive, and closed PRs still need pruning).
