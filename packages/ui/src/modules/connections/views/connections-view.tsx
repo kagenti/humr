@@ -1,33 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useStore } from "../store.js";
-import { getAuthConfig, authFetch } from "../auth.js";
-import { platform } from "../platform.js";
 import {
-  type McpConnection,
-  type SecretView,
-  isCustomSecret,
-} from "../types.js";
-import type { AppConnectionView } from "api-server-api";
-import { EditSecretDialog } from "../modules/secrets/components/edit-secret-dialog.js";
-import { CreateSecretForm } from "../modules/secrets/forms/create-secret-form.js";
-import { useSecrets } from "../modules/secrets/api/queries.js";
-import { useDeleteSecret } from "../modules/secrets/api/mutations.js";
-import { AppStatusPill } from "../components/app-status-pill.js";
-import {
-  RefreshCw,
-  Lock,
-  KeyRound,
-  Globe,
-  Unplug,
-  Plus,
-  Pencil,
   ExternalLink,
+  Globe,
+  KeyRound,
+  Lock,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Unplug,
   X,
 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { authFetch, getAuthConfig } from "../../../auth.js";
+import { AppStatusPill } from "../../../components/app-status-pill.js";
+import { useStore } from "../../../store.js";
+import { isCustomSecret, type SecretView } from "../../../types.js";
+import { useDeleteSecret } from "../../secrets/api/mutations.js";
+import { useSecrets } from "../../secrets/api/queries.js";
+import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js";
+import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
 
 export function ConnectionsView() {
-  const secretsQuery = useSecrets();
-  const secrets = secretsQuery.data ?? [];
+  const { data: secrets = [], refetch: refetchSecrets } = useSecrets();
   const deleteSecret = useDeleteSecret();
   const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -57,11 +51,11 @@ export function ConnectionsView() {
     await Promise.all([
       fetchMcpConnections(),
       fetchAppConnections(),
-      secretsQuery.refetch(),
+      refetchSecrets(),
     ]);
     loaded.current = true;
     setLoading(false);
-  }, [fetchMcpConnections, fetchAppConnections, secretsQuery.refetch]);
+  }, [fetchMcpConnections, fetchAppConnections, refetchSecrets]);
 
   useEffect(() => {
     load();

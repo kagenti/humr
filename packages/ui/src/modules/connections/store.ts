@@ -1,10 +1,11 @@
-import type { StateCreator } from "zustand";
-import { platform } from "../platform.js";
-import { authFetch } from "../auth.js";
-import type { McpConnection } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
-import type { HumrStore } from "../store.js";
-import { runQuery } from "./query-helpers.js";
+import type { StateCreator } from "zustand";
+
+import { authFetch } from "../../auth.js";
+import { platform } from "../../platform.js";
+import type { HumrStore } from "../../store.js";
+import { runQuery } from "../../store/query-helpers.js";
+import type { McpConnection } from "../../types.js";
 
 export interface ConnectionsSlice {
   // OneCLI app connections (Google, GitHub, Slack, …) and MCP server connections.
