@@ -9,9 +9,9 @@ import {
   Unplug,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
-import { authFetch, getAuthConfig } from "../../../auth.js";
+import { getAuthConfig } from "../../../auth.js";
 import { AppStatusPill } from "../../../components/app-status-pill.js";
 import { useStore } from "../../../store.js";
 import { isCustomSecret, type SecretView } from "../../../types.js";
@@ -19,89 +19,76 @@ import { useDeleteSecret } from "../../secrets/api/mutations.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js";
 import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
+import { useDisconnectMcp, useStartMcpOAuth } from "../api/mutations.js";
+import { useAppConnections, useMcpConnections } from "../api/queries.js";
 
 export function ConnectionsView() {
-  const { data: secrets = [], refetch: refetchSecrets } = useSecrets();
+  const {
+    data: secrets = [],
+    refetch: refetchSecrets,
+    isPending: isPendingSecrets,
+  } = useSecrets();
+  const {
+    data: mcpConnections = [],
+    refetch: refetchMcpConnections,
+    isFetching: isFetchingMcpConnections,
+    isPending: isPendingMcpConnections,
+  } = useMcpConnections();
+  const {
+    data: appConnections = [],
+    error: appConnectionsError,
+    refetch: refetchAppConnections,
+    isFetching: isFetchingAppConnections,
+    isPending: isPendingAppConnections,
+  } = useAppConnections();
+
   const deleteSecret = useDeleteSecret();
+  const startMcpOAuth = useStartMcpOAuth();
+  const disconnectMcp = useDisconnectMcp();
+
   const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
-  const connections = useStore((s) => s.mcpConnections);
-  const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
-  const appConnections = useStore((s) => s.appConnections);
-  const appsError = useStore((s) => s.appConnectionsError);
-  const fetchAppConnections = useStore((s) => s.fetchAppConnections);
 
-  const [loading, setLoading] = useState(true);
-  const loaded = useRef(false);
-
-  // MCP state
   const [showAddMcp, setShowAddMcp] = useState(false);
   const [mcpUrl, setMcpUrl] = useState("");
-  const [connecting, setConnecting] = useState(false);
-  const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
-  // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
 
-  const load = useCallback(async () => {
-    if (!loaded.current) setLoading(true);
-    await Promise.all([
-      fetchMcpConnections(),
-      fetchAppConnections(),
-      refetchSecrets(),
-    ]);
-    loaded.current = true;
-    setLoading(false);
-  }, [fetchMcpConnections, fetchAppConnections, refetchSecrets]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const refreshAll = () => {
+    refetchAppConnections();
+    refetchMcpConnections();
+    refetchSecrets();
+  };
+  const isFetching =
+    isFetchingAppConnections || isFetchingMcpConnections;
 
   const customSecrets = secrets.filter(isCustomSecret);
 
   // --- MCP actions ---
 
-  const startMcpOAuth = async () => {
-    if (!mcpUrl.trim()) return;
-    setConnecting(true);
-    try {
-      const res = await authFetch("/api/oauth/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mcpServerUrl: mcpUrl.trim() }),
-      });
-      const data = (await res.json()) as { authUrl?: string; error?: string };
-      if (data.error) {
-        showToast({ kind: "error", message: data.error });
-        setConnecting(false);
-        return;
-      }
-      if (data.authUrl) {
-        sessionStorage.setItem("humr-return-view", "connections");
-        window.location.href = data.authUrl;
-      }
-    } catch (err) {
-      showToast({ kind: "error", message: `Connection failed: ${err}` });
-      setConnecting(false);
-    }
+  const handleStartMcpOAuth = () => {
+    const url = mcpUrl.trim();
+    if (!url) return;
+    startMcpOAuth.mutate(url, {
+      onSuccess: (data) => {
+        if (data.error) {
+          showToast({ kind: "error", message: data.error });
+          return;
+        }
+        if (data.authUrl) {
+          sessionStorage.setItem("humr-return-view", "connections");
+          window.location.href = data.authUrl;
+        }
+      },
+    });
   };
 
-  const disconnectMcp = async (hostname: string) => {
+  const handleDisconnectMcp = async (hostname: string) => {
     if (!(await showConfirm(`Disconnect "${hostname}"?`, "Disconnect"))) return;
-    setDisconnecting(hostname);
-    try {
-      await authFetch(`/api/mcp/connections/${encodeURIComponent(hostname)}`, {
-        method: "DELETE",
-      });
-      await load();
-    } catch (err) {
-      showToast({ kind: "error", message: `Disconnect failed: ${err}` });
-    }
-    setDisconnecting(null);
+    disconnectMcp.mutate(hostname);
   };
 
   // --- Secret actions ---
@@ -119,11 +106,10 @@ export function ConnectionsView() {
       <div className="flex items-center gap-3 mb-8">
         <h1 className="text-[20px] md:text-[24px] font-bold text-text">Connections</h1>
         <button
-          onClick={load}
-          className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          onClick={refreshAll}
+          className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal shadow-brutal-sm"
         >
-          <span className={loading ? "anim-spin" : ""}>
+          <span className={isFetching ? "anim-spin" : ""}>
             <RefreshCw size={13} />
           </span>
         </button>
@@ -143,30 +129,30 @@ export function ConnectionsView() {
             OAuth apps like GitHub, Google, and Slack — connect and manage in OneCLI.
           </p>
 
-          {!loaded.current && (
+          {isPendingAppConnections && (
             <div className="flex flex-col gap-3">
               <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
             </div>
           )}
 
-          {loaded.current && appsError && (
+          {!isPendingAppConnections && appConnectionsError && (
             <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in">
               <div className="text-[13px] font-semibold text-danger">
                 Couldn't load app connections from OneCLI.
               </div>
               <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
-                {appsError}
+                {appConnectionsError.message}
               </div>
             </div>
           )}
 
-          {loaded.current && !appsError && appConnections.length === 0 && (
+          {!isPendingAppConnections && !appConnectionsError && appConnections.length === 0 && (
             <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
               No OAuth apps connected yet
             </div>
           )}
 
-          {loaded.current && !appsError && appConnections.length > 0 && (
+          {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
             <div className="flex flex-col gap-3">
               {appConnections.map((c, i) => (
                 <div
@@ -198,7 +184,7 @@ export function ConnectionsView() {
             </div>
           )}
 
-          {loaded.current && (
+          {!isPendingAppConnections && (
             <div className="mt-4">
               <a
                 href={`${onecliUrl}/connections`}
@@ -223,21 +209,21 @@ export function ConnectionsView() {
           Remote tool servers connected via OAuth. They provide tools your agents can use during sessions.
         </p>
 
-        {!loaded.current && (
+        {isPendingMcpConnections && (
           <div className="flex flex-col gap-3">
             <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
           </div>
         )}
 
-        {loaded.current && connections.length === 0 && !showAddMcp && (
+        {!isPendingMcpConnections && mcpConnections.length === 0 && !showAddMcp && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
             No MCP servers connected yet
           </div>
         )}
 
-        {loaded.current && connections.length > 0 && (
+        {!isPendingMcpConnections && mcpConnections.length > 0 && (
           <div className="flex flex-col gap-3">
-            {connections.map((c, i) => (
+            {mcpConnections.map((c, i) => (
               <div
                 key={c.hostname}
                 className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] anim-in"
@@ -281,10 +267,9 @@ export function ConnectionsView() {
                   </button>
                 )}
                 <button
-                  onClick={() => disconnectMcp(c.hostname)}
-                  disabled={disconnecting === c.hostname}
-                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
-                  style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                  onClick={() => handleDisconnectMcp(c.hostname)}
+                  disabled={disconnectMcp.isPending && disconnectMcp.variables === c.hostname}
+                  className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
                   title="Disconnect"
                 >
                   <Unplug size={13} />
@@ -294,12 +279,11 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {loaded.current && (
+        {!isPendingMcpConnections && (
           <div className="mt-4">
             <button
               onClick={() => setShowAddMcp(true)}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5 shadow-brutal-accent"
             >
               <Plus size={14} /> Connect MCP Server
             </button>
@@ -316,19 +300,19 @@ export function ConnectionsView() {
           Custom bearer tokens injected into outbound requests matching a host pattern.
         </p>
 
-        {!loaded.current && (
+        {isPendingSecrets && (
           <div className="flex flex-col gap-3">
             <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
           </div>
         )}
 
-        {loaded.current && customSecrets.length === 0 && !showAddSecret && (
+        {!isPendingSecrets && customSecrets.length === 0 && !showAddSecret && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
             No custom secrets yet
           </div>
         )}
 
-        {loaded.current && (
+        {!isPendingSecrets && (
           <div className="flex flex-col gap-3">
             {customSecrets.map((s, i) => (
               <div
@@ -385,12 +369,11 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {loaded.current && (
+        {!isPendingSecrets && (
           <div className="mt-4">
             <button
               onClick={() => setShowAddSecret(true)}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5 shadow-brutal-accent"
             >
               <Plus size={14} /> Add Secret
             </button>
@@ -415,7 +398,7 @@ export function ConnectionsView() {
                 className={inp}
                 value={mcpUrl}
                 onChange={(e) => setMcpUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && startMcpOAuth()}
+                onKeyDown={(e) => e.key === "Enter" && handleStartMcpOAuth()}
                 placeholder="https://example.com/mcp"
                 autoFocus
               />
@@ -429,12 +412,11 @@ export function ConnectionsView() {
                 Cancel
               </button>
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                onClick={startMcpOAuth}
-                disabled={!mcpUrl.trim() || connecting}
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
+                onClick={handleStartMcpOAuth}
+                disabled={!mcpUrl.trim() || startMcpOAuth.isPending}
               >
-                {connecting ? "..." : "Connect"}
+                {startMcpOAuth.isPending ? "..." : "Connect"}
               </button>
             </div>
           </div>
