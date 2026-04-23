@@ -68,9 +68,14 @@ export const instancesRouter = t.router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Slack app token not configured" });
-      const inst = await ctx.instances.connectSlack(input.id, input.slackChannelId);
-      if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
-      return inst;
+      const res = await ctx.instances.connectSlack(input.id, input.slackChannelId);
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "InstanceNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "ChannelAlreadyBound":
+          throw new TRPCError({ code: "CONFLICT", message: "Slack channel already bound" });
+      }
     }),
 
   disconnectSlack: t.procedure

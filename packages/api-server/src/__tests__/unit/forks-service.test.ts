@@ -6,7 +6,7 @@ import type {
   ForeignCredentialsPort,
   ForkOrchestratorPort,
 } from "../../modules/forks/infrastructure/ports.js";
-import { err, ok } from "../../modules/forks/domain/result.js";
+import { err, ok } from "../../core/result.js";
 
 type Harness = {
   events: DomainEvent[];

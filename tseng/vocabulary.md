@@ -23,6 +23,7 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 | Term | Definition |
 |------|-----------|
 | Channel | An external communication pathway connecting users to an agent instance (e.g., Slack) |
+| Channel Binding | The 1:1 linkage between a Slack channel and an Instance; a Slack channel may be bound to at most one Instance globally; Instance delete or Slack disconnect releases the binding |
 | Channel Worker | A long-running process that bridges an external service to an agent instance |
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Instance |
 | Foreign Replier | A linked Slack user in an instance's `allowedUsers` list whose identity differs from the Instance owner; triggers a Fork for the turn |

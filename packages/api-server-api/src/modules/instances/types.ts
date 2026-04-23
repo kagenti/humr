@@ -46,6 +46,14 @@ export interface UpdateInstanceInput {
   allowedUserEmails?: string[];
 }
 
+export type ConnectSlackError =
+  | { type: "InstanceNotFound" }
+  | { type: "ChannelAlreadyBound" };
+
+export type ConnectSlackResult =
+  | { ok: true; value: Instance }
+  | { ok: false; error: ConnectSlackError };
+
 export interface InstancesService {
   list: () => Promise<Instance[]>;
   get: (id: string) => Promise<Instance | null>;
@@ -54,7 +62,7 @@ export interface InstancesService {
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Instance | null>;
-  connectSlack: (id: string, slackChannelId: string) => Promise<Instance | null>;
+  connectSlack: (id: string, slackChannelId: string) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
   connectTelegram: (id: string, botToken: string) => Promise<Instance | null>;
   disconnectTelegram: (id: string) => Promise<Instance | null>;

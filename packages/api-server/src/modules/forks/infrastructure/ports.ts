@@ -1,5 +1,5 @@
 import type { ForkSpec, ForkStatus } from "../domain/fork.js";
-import type { Result } from "../domain/result.js";
+import type { Result } from "../../../core/result.js";
 
 export type ForeignCredentialMintError =
   | { kind: "TokenExchangeFailed"; detail?: string }

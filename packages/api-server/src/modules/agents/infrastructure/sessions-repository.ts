@@ -54,18 +54,6 @@ export function findByInstanceAndThreadTs(db: Db) {
   };
 }
 
-export function findInstanceByThreadTs(db: Db) {
-  return async (threadTs: string): Promise<string | null> => {
-    const rows = await db
-      .select({ instanceId: sessions.instanceId })
-      .from(sessions)
-      .where(eq(sessions.threadTs, threadTs))
-      .orderBy(desc(sessions.updatedAt))
-      .limit(1);
-    return rows[0]?.instanceId ?? null;
-  };
-}
-
 export function upsertSession(db: Db) {
   return async (
     sessionId: string,

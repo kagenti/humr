@@ -10,6 +10,9 @@ import type { InstancesRepository } from "./../infrastructure/instances-reposito
 import type { KeycloakUserDirectory } from "./../infrastructure/keycloak-user-directory.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
+import { isSlackChannelUniqueViolation } from "../infrastructure/channels-repository.js";
+import { ok, err } from "../../../core/result.js";
+import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
 
 export function createInstancesService(deps: {
@@ -20,6 +23,11 @@ export function createInstancesService(deps: {
   listChannelsByInstance: (instanceId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (instanceId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (instanceId: string, type: ChannelType) => Promise<void>;
+  unitOfWork: UnitOfWork;
+  channelsTxRepo: {
+    upsertChannel: (tx: Tx, instanceId: string, channel: ChannelConfig) => Promise<void>;
+    listByInstance: (tx: Tx, instanceId: string) => Promise<ChannelConfig[]>;
+  };
   deleteChannelsByInstanceIds: (instanceIds: string[]) => Promise<void>;
   channelSecretStore: ChannelSecretStore;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
@@ -155,18 +163,31 @@ export function createInstancesService(deps: {
 
     async connectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
+      if (!infra) return err({ type: "InstanceNotFound" });
 
-      const channel: ChannelConfig = { type: ChannelType.Slack, slackChannelId };
-      await deps.upsertChannel(id, channel);
+      const txResult = await deps.unitOfWork(async (tx) => {
+        try {
+          await deps.channelsTxRepo.upsertChannel(tx, id, {
+            type: ChannelType.Slack,
+            slackChannelId,
+          });
+        } catch (e) {
+          if (isSlackChannelUniqueViolation(e)) {
+            return err({ type: "ChannelAlreadyBound" as const });
+          }
+          throw e;
+        }
+        const channels = await deps.channelsTxRepo.listByInstance(tx, id);
+        return ok({ channels });
+      });
+
+      if (!txResult.ok) return txResult;
+
       emit({ type: EventType.SlackConnected, instanceId: id, slackChannelId });
 
-      const [channels, allowedSubs] = await Promise.all([
-        deps.listChannelsByInstance(id),
-        deps.listAllowedUsersByInstance(id),
-      ]);
+      const allowedSubs = await deps.listAllowedUsersByInstance(id);
       const emails = await subsToEmails(allowedSubs);
-      return assembleInstance(infra, channels, emails);
+      return ok(assembleInstance(infra, txResult.value.channels, emails));
     },
 
     async disconnectSlack(id) {
