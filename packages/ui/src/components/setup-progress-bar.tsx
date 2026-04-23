@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useStore } from "../store.js";
 import { isCustomSecret } from "../types.js";
 import {
@@ -10,43 +9,28 @@ import {
   type StepStatus,
 } from "../lib/onboarding.js";
 import { Check, ChevronRight } from "lucide-react";
+import { useAppConnections, useMcpConnections } from "../modules/connections/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
   const agents = useStore((s) => s.agents);
-  const appConnections = useStore((s) => s.appConnections);
-  const mcpConnections = useStore((s) => s.mcpConnections);
   const loadedOnce = useStore((s) => s.loadedOnce);
   const setView = useStore((s) => s.setView);
-  const fetchAppConnections = useStore((s) => s.fetchAppConnections);
-  const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
 
   // Gate on every signal the bar reads being loaded — otherwise the bar briefly
   // flashes the wrong state (e.g. step 2 pending for a user who already has
   // connections) while the initial fetches are in flight.
   const onOnboardingView = view === "list" || view === "providers" || view === "connections";
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({ enabled: onOnboardingView });
+  const { data: appConnections = [], isSuccess: appConnectionsLoaded } = useAppConnections({ enabled: onOnboardingView });
+  const { data: mcpConnections = [], isSuccess: mcpConnectionsLoaded } = useMcpConnections({ enabled: onOnboardingView });
   const fullyLoaded =
     loadedOnce.agents &&
     secretsLoaded &&
-    loadedOnce.appConnections &&
-    loadedOnce.mcpConnections;
+    appConnectionsLoaded &&
+    mcpConnectionsLoaded;
   const shouldRender = onOnboardingView && fullyLoaded && agents.length === 0;
-
-  // Kick off first fetch only — subsequent view changes don't refetch. Each
-  // fetcher flips its `loadedOnce` flag so this effect is idempotent.
-  useEffect(() => {
-    if (!onOnboardingView) return;
-    if (!loadedOnce.appConnections) fetchAppConnections();
-    if (!loadedOnce.mcpConnections) fetchMcpConnections();
-  }, [
-    onOnboardingView,
-    loadedOnce.appConnections,
-    loadedOnce.mcpConnections,
-    fetchAppConnections,
-    fetchMcpConnections,
-  ]);
 
   if (!shouldRender) return null;
 

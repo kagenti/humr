@@ -3,7 +3,7 @@ import { useStore } from "./store.js";
 import { ListView } from "./views/list-view.js";
 import { ChatView } from "./views/chat-view.js";
 import { ProvidersView } from "./views/providers-view.js";
-import { ConnectionsView } from "./views/connections-view.js";
+import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { SettingsView } from "./views/settings-view.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { OfflineBanner } from "./components/offline-banner.js";

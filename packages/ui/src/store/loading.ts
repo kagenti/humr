@@ -16,8 +16,6 @@ export interface LoadingSlice {
   loadedOnce: {
     agents: boolean;
     instances: boolean;
-    appConnections: boolean;
-    mcpConnections: boolean;
   };
   setLoadingSessions: (loading: boolean) => void;
   setLoadingSession: (loading: boolean) => void;
@@ -28,8 +26,6 @@ export const createLoadingSlice: StateCreator<HumrStore, [], [], LoadingSlice> =
   loadedOnce: {
     agents: false,
     instances: false,
-    appConnections: false,
-    mcpConnections: false,
   },
   setLoadingSessions: (loading) => set((s) => ({ loading: { ...s.loading, sessions: loading } })),
   setLoadingSession: (loading) => set((s) => ({ loading: { ...s.loading, session: loading } })),
