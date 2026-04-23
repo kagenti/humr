@@ -256,7 +256,7 @@ metadata:
     app.kubernetes.io/component: nfs-provisioner
 provisioner: {{ $provisioner }}
 reclaimPolicy: Delete
-volumeBindingMode: Immediate
+volumeBindingMode: WaitForFirstConsumer
 parameters:
   mountOptions: "vers=4.1"
 {{- end }}
