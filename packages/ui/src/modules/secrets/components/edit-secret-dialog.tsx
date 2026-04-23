@@ -35,11 +35,11 @@ const baseShape = {
 
 const anthropicSchema = z.object(baseShape);
 
-// Generic secrets additionally require a non-empty host and header name.
+// Generic secrets additionally require a non-empty host pattern. Header name,
+// path pattern, and value format stay optional — matches the create form.
 const genericSchema = z.object({
   ...baseShape,
   hostPattern: z.string().trim().min(1, "Required"),
-  headerName: z.string().trim().min(1, "Required"),
 });
 
 type EditSecretValues = z.infer<typeof anthropicSchema>;
@@ -82,8 +82,11 @@ export function EditSecretDialog({ secret, onClose }: Props) {
       envMappings: secret.envMappings ?? [],
     },
   });
-  const { errors, isValid, isDirty, dirtyFields } = formState;
-  const canSave = isValid && isDirty && !saving;
+  const { errors, isDirty, dirtyFields } = formState;
+  // Only gate on "something to save" and "not mid-save". Validity is enforced
+  // by handleSubmit — clicking an invalid form populates field errors instead
+  // of silently no-op'ing a disabled button.
+  const canSave = isDirty && !saving;
 
   const onSubmit = handleSubmit((values) => {
     const patch: UpdateSecretPatch = { id: secret.id };
@@ -113,7 +116,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
     <Modal onClose={onClose} widthClass="w-[540px]">
       <form onSubmit={onSubmit} className="contents">
         <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
-          <h2 className="text-[20px] font-bold text-text">Edit Connector</h2>
+          <h2 className="text-[20px] font-bold text-text">Edit Secret</h2>
           <p className="text-[12px] text-text-muted mt-1 font-mono">
             {secret.hostPattern}
             {secret.pathPattern && (

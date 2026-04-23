@@ -3,21 +3,15 @@ import { useStore } from "../store.js";
 import { getAuthConfig, authFetch } from "../auth.js";
 import { platform } from "../platform.js";
 import {
-  DEFAULT_INJECTION_CONFIG,
-  type EnvMapping,
   type McpConnection,
   type SecretView,
   isCustomSecret,
 } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
-import {
-  EnvMappingsEditor,
-  allEnvMappingsValid,
-  sanitizeEnvMappings,
-} from "../components/env-mappings-editor.js";
 import { EditSecretDialog } from "../modules/secrets/components/edit-secret-dialog.js";
+import { CreateSecretForm } from "../modules/secrets/forms/create-secret-form.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
-import { useCreateSecret, useDeleteSecret } from "../modules/secrets/api/mutations.js";
+import { useDeleteSecret } from "../modules/secrets/api/mutations.js";
 import { AppStatusPill } from "../components/app-status-pill.js";
 import {
   RefreshCw,
@@ -31,19 +25,9 @@ import {
   X,
 } from "lucide-react";
 
-const emptySecretForm = {
-  name: "",
-  value: "",
-  hostPattern: "",
-  pathPattern: "",
-  headerName: "",
-  valueFormat: "",
-};
-
 export function ConnectionsView() {
   const secretsQuery = useSecrets();
   const secrets = secretsQuery.data ?? [];
-  const createSecret = useCreateSecret();
   const deleteSecret = useDeleteSecret();
   const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -64,9 +48,6 @@ export function ConnectionsView() {
 
   // Secret state
   const [showAddSecret, setShowAddSecret] = useState(false);
-  const [secretForm, setSecretForm] = useState(emptySecretForm);
-  const [secretEnvMappings, setSecretEnvMappings] = useState<EnvMapping[]>([]);
-  const [savingSecret, setSavingSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
 
   const onecliUrl = getAuthConfig()?.onecliUrl;
@@ -130,42 +111,6 @@ export function ConnectionsView() {
   };
 
   // --- Secret actions ---
-
-  const saveSecret = async () => {
-    if (
-      !secretForm.name.trim() ||
-      !secretForm.value.trim() ||
-      !secretForm.hostPattern.trim()
-    )
-      return;
-    if (!allEnvMappingsValid(secretEnvMappings)) return;
-    setSavingSecret(true);
-    try {
-      const mappings = sanitizeEnvMappings(secretEnvMappings);
-      const pathPattern = secretForm.pathPattern.trim();
-      const headerName = secretForm.headerName.trim();
-      const valueFormat = secretForm.valueFormat.trim();
-      await createSecret.mutateAsync({
-        type: "generic",
-        name: secretForm.name.trim(),
-        value: secretForm.value.trim(),
-        hostPattern: secretForm.hostPattern.trim(),
-        ...(pathPattern.length > 0 && { pathPattern }),
-        ...(headerName.length > 0 && {
-          injectionConfig: {
-            headerName,
-            ...(valueFormat.length > 0 && { valueFormat }),
-          },
-        }),
-        ...(mappings.length > 0 && { envMappings: mappings }),
-      });
-      setSecretForm(emptySecretForm);
-      setSecretEnvMappings([]);
-      setShowAddSecret(false);
-    } finally {
-      setSavingSecret(false);
-    }
-  };
 
   const removeSecret = async (id: string, name: string) => {
     if (!(await showConfirm(`Delete "${name}"?`, "Delete Secret"))) return;
@@ -502,188 +447,11 @@ export function ConnectionsView() {
         </div>
       )}
 
-      {/* Add Secret dialog */}
       {showAddSecret && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={() => setShowAddSecret(false)}>
-          <div
-            className="w-[480px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
-            style={{ boxShadow: "var(--shadow-brutal)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-[20px] font-bold text-text">Add Secret</h2>
-            <p className="text-[13px] text-text-secondary leading-relaxed">
-              Injects a bearer token into outgoing HTTP requests whose host
-              matches the pattern below.
-            </p>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Name
-              </label>
-              <input
-                className={inp}
-                placeholder="e.g. Linear Token"
-                value={secretForm.name}
-                onChange={(e) =>
-                  setSecretForm((p) => ({ ...p, name: e.target.value }))
-                }
-                autoFocus
-              />
-              <p className="text-[11px] text-text-muted">
-                A label so you can identify this secret later.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Token
-              </label>
-              <input
-                className={inp}
-                type="password"
-                placeholder="The secret value to inject"
-                value={secretForm.value}
-                onChange={(e) =>
-                  setSecretForm((p) => ({ ...p, value: e.target.value }))
-                }
-              />
-              <p className="text-[11px] text-text-muted">
-                Injected as{" "}
-                <span className="font-mono">
-                  Authorization: Bearer &lt;value&gt;
-                </span>
-                . Stored encrypted — the agent never sees the raw value.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Host Pattern
-              </label>
-              <input
-                className={`${inp} font-mono`}
-                placeholder="e.g. api.linear.app"
-                value={secretForm.hostPattern}
-                onChange={(e) =>
-                  setSecretForm((p) => ({
-                    ...p,
-                    hostPattern: e.target.value,
-                  }))
-                }
-              />
-              <p className="text-[11px] text-text-muted">
-                Hostname the token applies to. Supports wildcards (e.g.{" "}
-                <span className="font-mono">*.example.com</span>).
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Path Pattern (optional)
-              </label>
-              <input
-                className={`${inp} font-mono`}
-                placeholder="e.g. /v1/*"
-                value={secretForm.pathPattern}
-                onChange={(e) =>
-                  setSecretForm((p) => ({
-                    ...p,
-                    pathPattern: e.target.value,
-                  }))
-                }
-              />
-              <p className="text-[11px] text-text-muted">
-                Restrict injection to URL paths matching this pattern. Leave
-                blank to match every path on the host.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Header Name (optional)
-              </label>
-              <input
-                className={`${inp} font-mono`}
-                placeholder={DEFAULT_INJECTION_CONFIG.headerName}
-                value={secretForm.headerName}
-                onChange={(e) =>
-                  setSecretForm((p) => ({ ...p, headerName: e.target.value }))
-                }
-              />
-              <p className="text-[11px] text-text-muted">
-                HTTP header OneCLI writes the secret into. Defaults to{" "}
-                <span className="font-mono">
-                  {DEFAULT_INJECTION_CONFIG.headerName}
-                </span>
-                .
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Value Format (optional)
-              </label>
-              <input
-                className={`${inp} font-mono`}
-                placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
-                value={secretForm.valueFormat}
-                onChange={(e) =>
-                  setSecretForm((p) => ({ ...p, valueFormat: e.target.value }))
-                }
-              />
-              <p className="text-[11px] text-text-muted">
-                Template for the header value. Use{" "}
-                <span className="font-mono">{`{value}`}</span> as the token
-                placeholder. Defaults to{" "}
-                <span className="font-mono">
-                  {DEFAULT_INJECTION_CONFIG.valueFormat}
-                </span>
-                .
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Pod Env Vars (optional)
-              </label>
-              <p className="text-[11px] text-text-muted">
-                Inject env vars into every agent instance granted this secret.
-                The placeholder (typically{" "}
-                <span className="font-mono">humr:sentinel</span>) is swapped
-                for the real value on the wire by OneCLI.
-              </p>
-              <EnvMappingsEditor
-                value={secretEnvMappings}
-                onChange={setSecretEnvMappings}
-                disabled={savingSecret}
-              />
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-                onClick={() => setShowAddSecret(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                onClick={saveSecret}
-                disabled={
-                  savingSecret ||
-                  !secretForm.name.trim() ||
-                  !secretForm.value.trim() ||
-                  !secretForm.hostPattern.trim() ||
-                  !allEnvMappingsValid(secretEnvMappings)
-                }
-              >
-                {savingSecret ? "..." : "Add Secret"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CreateSecretForm
+          onCancel={() => setShowAddSecret(false)}
+          onCreated={() => setShowAddSecret(false)}
+        />
       )}
 
       {editingSecret && (
