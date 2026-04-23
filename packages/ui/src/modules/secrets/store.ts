@@ -1,8 +1,9 @@
 import type { StateCreator } from "zustand";
-import { platform } from "../platform.js";
-import type { SecretView, EnvMapping, InjectionConfig } from "../types.js";
-import type { HumrStore } from "../store.js";
-import { runAction, runQuery, ACTION_FAILED } from "./query-helpers.js";
+
+import { platform } from "../../platform.js";
+import type { HumrStore } from "../../store.js";
+import { ACTION_FAILED, runAction, runQuery } from "../../store/query-helpers.js";
+import type { EnvMapping, InjectionConfig, SecretView } from "../../types.js";
 
 export interface SecretsSlice {
   secrets: SecretView[];

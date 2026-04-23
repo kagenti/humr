@@ -15,7 +15,7 @@ import {
   allEnvMappingsValid,
   sanitizeEnvMappings,
 } from "../components/env-mappings-editor.js";
-import { EditSecretDialog } from "../dialogs/edit-secret-dialog.js";
+import { EditSecretDialog } from "../modules/secrets/components/edit-secret-dialog.js";
 import { AppStatusPill } from "../components/app-status-pill.js";
 import {
   RefreshCw,

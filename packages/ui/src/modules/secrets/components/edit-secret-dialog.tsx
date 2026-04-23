@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { useStore } from "../store.js";
+
+import {
+  allEnvMappingsValid,
+  EnvMappingsEditor,
+  sanitizeEnvMappings,
+} from "../../../components/env-mappings-editor.js";
+import { Modal } from "../../../components/modal.js";
+import { useStore } from "../../../store.js";
 import {
   DEFAULT_INJECTION_CONFIG,
   type EnvMapping,
   type SecretView,
-} from "../types.js";
-import {
-  EnvMappingsEditor,
-  allEnvMappingsValid,
-  sanitizeEnvMappings,
-} from "../components/env-mappings-editor.js";
-import { Modal } from "../components/modal.js";
+} from "../../../types.js";
 
 export function EditSecretDialog({
   secret,
