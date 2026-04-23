@@ -11,8 +11,9 @@ import {
   listChannelsByOwner, listChannelsByInstance,
   upsertChannel, deleteChannelByType,
   deleteChannelsByInstanceIds,
-  findBySlackChannelId,
+  upsertChannelTx, listChannelsByInstanceTx,
 } from "./infrastructure/channels-repository.js";
+import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   listAllowedUsersByOwner, listAllowedUsersByInstance,
   setAllowedUsers, deleteAllowedUsersByInstanceIds,
@@ -60,10 +61,14 @@ export function composeAgentsModule(
       getAgent: (id) => agents.get(id),
       listChannelsByOwner: listChannelsByOwner(db, owner),
       listChannelsByInstance: listChannelsByInstance(db, owner),
-      findBySlackChannelId: findBySlackChannelId(db),
       upsertChannel: upsertChannel(db, owner),
       deleteChannelByType: deleteChannelByType(db, owner),
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db, owner),
+      unitOfWork: createUnitOfWork(db),
+      channelsTxRepo: {
+        upsertChannel: (tx, instanceId, channel) => upsertChannelTx(tx, owner, instanceId, channel),
+        listByInstance: (tx, instanceId) => listChannelsByInstanceTx(tx, owner, instanceId),
+      },
       channelSecretStore,
       listAllowedUsersByOwner: listAllowedUsersByOwner(db, owner),
       listAllowedUsersByInstance: listAllowedUsersByInstance(db, owner),
@@ -110,10 +115,14 @@ export function composeSystemInstances(
     getAgent: (id) => agents.get(id),
     listChannelsByOwner: listChannelsByOwner(db, ""),
     listChannelsByInstance: listChannelsByInstance(db, ""),
-    findBySlackChannelId: findBySlackChannelId(db),
     upsertChannel: upsertChannel(db, ""),
     deleteChannelByType: deleteChannelByType(db, ""),
     deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db, ""),
+    unitOfWork: createUnitOfWork(db),
+    channelsTxRepo: {
+      upsertChannel: (tx, instanceId, channel) => upsertChannelTx(tx, "", instanceId, channel),
+      listByInstance: (tx, instanceId) => listChannelsByInstanceTx(tx, "", instanceId),
+    },
     channelSecretStore,
     listAllowedUsersByOwner: listAllowedUsersByOwner(db, ""),
     listAllowedUsersByInstance: listAllowedUsersByInstance(db, ""),

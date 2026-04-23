@@ -1,6 +1,7 @@
 import type { Db } from "db";
 import { channels, eq, and, inArray, sql } from "db";
 import { ChannelType, type ChannelConfig } from "api-server-api";
+import type { Tx } from "../../../core/unit-of-work.js";
 
 function toChannelConfig(row: {
   type: string;
@@ -47,6 +48,36 @@ export function upsertChannel(db: Db, owner: string) {
         set: { config, owner },
       });
   };
+}
+
+export async function upsertChannelTx(
+  tx: Tx,
+  owner: string,
+  instanceId: string,
+  channel: ChannelConfig,
+): Promise<void> {
+  const { type, ...config } = channel;
+  await tx
+    .insert(channels)
+    .values({ instanceId, owner, type, config })
+    .onConflictDoUpdate({
+      target: [channels.instanceId, channels.type],
+      set: { config, owner },
+    });
+}
+
+export async function listChannelsByInstanceTx(
+  tx: Tx,
+  owner: string,
+  instanceId: string,
+): Promise<ChannelConfig[]> {
+  const rows = await tx
+    .select()
+    .from(channels)
+    .where(
+      and(eq(channels.instanceId, instanceId), eq(channels.owner, owner)),
+    );
+  return rows.map(toChannelConfig);
 }
 
 export function deleteChannelsByInstance(db: Db) {
@@ -107,6 +138,15 @@ export function findBySlackChannelId(db: Db) {
       .limit(1);
     return rows[0] ?? null;
   };
+}
+
+export function isSlackChannelUniqueViolation(e: unknown): boolean {
+  if (e === null || typeof e !== "object") return false;
+  const obj = e as { code?: unknown; constraint_name?: unknown };
+  return (
+    obj.code === "23505" &&
+    obj.constraint_name === "channels_slack_channel_unique_idx"
+  );
 }
 
 export function findSlackChannelByInstance(db: Db) {
