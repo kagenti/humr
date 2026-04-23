@@ -7,6 +7,7 @@ import {
   useResetScheduleSession,
   useToggleSchedule,
 } from "../api/mutations.js";
+import { ScheduleSessionRow } from "./schedule-session-row.js";
 
 interface Props {
   schedule: Schedule;
@@ -95,18 +96,11 @@ export function ScheduleCard({
             <p className="px-4 py-3 text-[11px] text-text-muted pl-9">No sessions yet</p>
           )}
           {sessions.map(session => (
-            <div
+            <ScheduleSessionRow
               key={session.sessionId}
-              onClick={() => onResumeSession?.(session.sessionId)}
-              className="flex items-center gap-2 px-4 py-2.5 pl-9 cursor-pointer hover:bg-accent-light transition-colors border-b border-border-light last:border-b-0"
-            >
-              <span className="text-[12px] text-text font-medium truncate flex-1">
-                {session.title || session.sessionId.slice(0, 12)}
-              </span>
-              <span className="text-[10px] text-text-muted shrink-0">
-                created at: {new Date(session.updatedAt ?? session.createdAt).toLocaleString()}
-              </span>
-            </div>
+              session={session}
+              onResume={onResumeSession}
+            />
           ))}
           {sessionMode === "continuous" && sessions.length > 0 && (
             <div className="px-4 py-2 pl-9">
