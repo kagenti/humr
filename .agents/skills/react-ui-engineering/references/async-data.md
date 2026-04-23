@@ -278,6 +278,44 @@ return <ConnectionsList connections={data ?? []} />;
 
 Where `useConnections` is a `trpc.connections.list.useQuery()` wrapper (or a `useQuery` with a Zod-validated fetcher for non-tRPC endpoints).
 
+## Consuming query and mutation hooks
+
+**[HIGH] Destructure queries. Keep mutations encapsulated.**
+
+The objects returned by `useQuery` / `useMutation` have a **new identity every render** — they're snapshots of the current state. Their callable fields (`refetch`, `mutate`, `mutateAsync`) are stable refs under the hood, but `react-hooks/exhaustive-deps` can't see that: it flags any access through the object as "you used `query`, put `query` in deps." Putting the object in deps re-invalidates every render and loops the effect.
+
+The rule that avoids both the runtime loop and the lint noise:
+
+```tsx
+// Query — destructure up top. Deps arrays reference local variables.
+const { data = [], refetch, isFetching, isPending } = useSecrets();
+
+useEffect(() => { refetch(); }, [refetch]);   // ✅ exhaustive-deps satisfied
+
+// Mutation — keep encapsulated. Fields are consumed at event handlers,
+// not deps arrays, so the object's per-render identity never bites.
+const updateSecret = useUpdateSecret();
+<button onClick={() => updateSecret.mutate(values)} disabled={updateSecret.isPending}>
+```
+
+Why the asymmetry:
+
+- Queries produce values the render consumes (`data`, `isPending`) and stable callables that genuinely land in deps (`refetch`). Destructuring makes both flow cleanly.
+- Mutations are almost always fired from event handlers and render state (`isPending`) read inline. Their `mutate` rarely needs to be in deps. Encapsulating them (`createSecret.mutate(...)`) keeps the name signal — you're calling a mutation — without forcing a destructure that most consumers don't benefit from.
+
+**[CRITICAL] Never `eslint-disable react-hooks/exhaustive-deps` to paper over the object-in-deps problem.** If the rule complains, you're putting something non-stable into deps. Destructure the stable field as a local variable and the warning disappears on its own.
+
+```tsx
+❌ // Disabling the rule because "we know refetch is stable":
+   }, [fetchX, fetchY, query.refetch]);
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+
+✅ // Destructure so exhaustive-deps has nothing to complain about:
+   const { refetch } = useXxx();
+   …
+   }, [fetchX, fetchY, refetch]);
+```
+
 ## Anti-patterns
 
 - **`useEffect` + `fetch`/`tRPC` in a component** — convert to `useQuery`.
@@ -286,3 +324,5 @@ Where `useConnections` is a `trpc.connections.list.useQuery()` wrapper (or a `us
 - **Inline `queryClient.invalidateQueries` in `onSuccess`** — use `meta.invalidates`.
 - **Shadow-copying TQ data into local `useState` for optimism** — use `onMutate`.
 - **A Zustand slice holding a server list** — migrate to TQ.
+- **The whole query/mutation object in a deps array** — see "Consuming query and mutation hooks".
+- **`eslint-disable react-hooks/exhaustive-deps` to silence the loop warning** — destructure the stable field instead; the rule exists to catch real bugs.

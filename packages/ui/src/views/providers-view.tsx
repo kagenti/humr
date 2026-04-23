@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store.js";
 import { platform } from "../platform.js";
 import {
@@ -8,6 +8,12 @@ import {
   type SecretView,
 } from "../types.js";
 import { Sparkles, RefreshCw, X, Copy, Check, Pencil } from "lucide-react";
+import { useSecrets } from "../modules/secrets/api/queries.js";
+import {
+  useCreateSecret,
+  useDeleteSecret,
+  useUpdateSecret,
+} from "../modules/secrets/api/mutations.js";
 
 type Mode = "oauth" | "api-key";
 
@@ -56,28 +62,19 @@ function mismatchError(value: string, mode: Mode): string | null {
 }
 
 export function ProvidersView() {
-  const secrets = useStore((s) => s.secrets);
   const agents = useStore((s) => s.agents);
-  const fetchSecrets = useStore((s) => s.fetchSecrets);
-  const createSecret = useStore((s) => s.createSecret);
-  const updateSecret = useStore((s) => s.updateSecret);
-  const deleteSecret = useStore((s) => s.deleteSecret);
   const showConfirm = useStore((s) => s.showConfirm);
   const setView = useStore((s) => s.setView);
 
-  const [loading, setLoading] = useState(true);
-  const loaded = useRef(false);
-
-  const load = useCallback(async () => {
-    if (!loaded.current) setLoading(true);
-    await fetchSecrets();
-    loaded.current = true;
-    setLoading(false);
-  }, [fetchSecrets]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const {
+    data: secrets = [],
+    refetch: refetchSecrets,
+    isFetching: isFetchingSecrets,
+    isPending: isPendingSecrets,
+  } = useSecrets();
+  const createSecret = useCreateSecret();
+  const updateSecret = useUpdateSecret();
+  const deleteSecret = useDeleteSecret();
 
   const anthropic = secrets.find((s) => s.type === "anthropic");
 
@@ -86,11 +83,11 @@ export function ProvidersView() {
       <div className="flex items-center gap-3 mb-8">
         <h1 className="text-[20px] md:text-[24px] font-bold text-text">Providers</h1>
         <button
-          onClick={load}
+          onClick={() => refetchSecrets()}
           className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal"
           style={{ boxShadow: "var(--shadow-brutal-sm)" }}
         >
-          <span className={loading ? "anim-spin" : ""}>
+          <span className={isFetchingSecrets ? "anim-spin" : ""}>
             <RefreshCw size={13} />
           </span>
         </button>
@@ -101,17 +98,18 @@ export function ProvidersView() {
       </p>
 
       <section className="mb-8">
-        {!loaded.current ? (
+        {isPendingSecrets ? (
           <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />
         ) : anthropic ? (
           <AnthropicConnected
             secret={anthropic}
             onRemove={async () => {
               if (!(await showConfirm("Remove Anthropic API key?", "Remove Key"))) return;
-              await deleteSecret(anthropic.id);
+              deleteSecret.mutate({ id: anthropic.id });
             }}
             onSave={async ({ mode, value }) => {
-              await updateSecret(anthropic.id, {
+              await updateSecret.mutateAsync({
+                id: anthropic.id,
                 value,
                 envMappings: [MODES[mode].mapping],
               });
@@ -123,7 +121,7 @@ export function ProvidersView() {
             initialMode="oauth"
             onSave={async ({ mode, value }) => {
               const isFirst = agents.length === 0;
-              await createSecret({
+              await createSecret.mutateAsync({
                 type: "anthropic",
                 name: "Anthropic API Key",
                 value,

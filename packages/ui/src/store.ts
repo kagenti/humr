@@ -9,7 +9,6 @@ import { createAgentsSlice, type AgentsSlice } from "./store/agents.js";
 import { createInstancesSlice, type InstancesSlice } from "./store/instances.js";
 import { createSessionsSlice, type SessionsSlice } from "./store/sessions.js";
 import { createSessionConfigSlice, type SessionConfigSlice } from "./store/session-config.js";
-import { createSecretsSlice, type SecretsSlice } from "./store/secrets.js";
 import { createFilesSlice, type FilesSlice } from "./store/files.js";
 import { createPermissionsSlice, type PermissionsSlice } from "./store/permissions.js";
 import { createConnectionsSlice, type ConnectionsSlice } from "./store/connections.js";
@@ -30,7 +29,6 @@ export type HumrStore =
   & InstancesSlice
   & SessionsSlice
   & SessionConfigSlice
-  & SecretsSlice
   & FilesSlice
   & PermissionsSlice
   & ConnectionsSlice;
@@ -46,7 +44,6 @@ export const useStore = create<HumrStore>()((...a) => ({
   ...createInstancesSlice(...a),
   ...createSessionsSlice(...a),
   ...createSessionConfigSlice(...a),
-  ...createSecretsSlice(...a),
   ...createFilesSlice(...a),
   ...createPermissionsSlice(...a),
   ...createConnectionsSlice(...a),

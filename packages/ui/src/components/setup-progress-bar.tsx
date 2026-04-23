@@ -10,26 +10,26 @@ import {
   type StepStatus,
 } from "../lib/onboarding.js";
 import { Check, ChevronRight } from "lucide-react";
+import { useSecrets } from "../modules/secrets/api/queries.js";
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
   const agents = useStore((s) => s.agents);
-  const secrets = useStore((s) => s.secrets);
   const appConnections = useStore((s) => s.appConnections);
   const mcpConnections = useStore((s) => s.mcpConnections);
   const loadedOnce = useStore((s) => s.loadedOnce);
   const setView = useStore((s) => s.setView);
   const fetchAppConnections = useStore((s) => s.fetchAppConnections);
   const fetchMcpConnections = useStore((s) => s.fetchMcpConnections);
-  const fetchSecrets = useStore((s) => s.fetchSecrets);
 
   // Gate on every signal the bar reads being loaded — otherwise the bar briefly
   // flashes the wrong state (e.g. step 2 pending for a user who already has
   // connections) while the initial fetches are in flight.
   const onOnboardingView = view === "list" || view === "providers" || view === "connections";
+  const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({ enabled: onOnboardingView });
   const fullyLoaded =
     loadedOnce.agents &&
-    loadedOnce.secrets &&
+    secretsLoaded &&
     loadedOnce.appConnections &&
     loadedOnce.mcpConnections;
   const shouldRender = onOnboardingView && fullyLoaded && agents.length === 0;
@@ -38,15 +38,12 @@ export function SetupProgressBar() {
   // fetcher flips its `loadedOnce` flag so this effect is idempotent.
   useEffect(() => {
     if (!onOnboardingView) return;
-    if (!loadedOnce.secrets) fetchSecrets();
     if (!loadedOnce.appConnections) fetchAppConnections();
     if (!loadedOnce.mcpConnections) fetchMcpConnections();
   }, [
     onOnboardingView,
-    loadedOnce.secrets,
     loadedOnce.appConnections,
     loadedOnce.mcpConnections,
-    fetchSecrets,
     fetchAppConnections,
     fetchMcpConnections,
   ]);
