@@ -99,13 +99,13 @@ export function createTelegramWorker(
     lastThread.set(instanceName, thread);
 
     const context = thread.isDM
-      ? `This is a 1:1 direct message from ${author.fullName} (@${author.userName}, id=${author.userId}).`
+      ? `This is a 1:1 direct message from ${author.fullName} (@${author.userName}, id=${author.userId}). Every message here is directed at you — always reply.`
       : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; only respond when it makes sense — stay quiet when the conversation isn't for you.`;
 
     const freshPrompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
-      `To reply, call \`send_channel_message\` with channel="telegram" and chatId="${thread.id}". You may also choose not to reply.`,
+      `To reply, call \`send_channel_message\` with channel="telegram" and chatId="${thread.id}".`,
       "",
       `Message: ${text}`,
     ].join("\n");
