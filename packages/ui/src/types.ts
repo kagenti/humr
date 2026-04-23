@@ -110,7 +110,7 @@ export interface InstanceView {
   description?: string;
   state: InstanceState;
   error?: string;
-  channels: { type: string; slackChannelId: string }[];
+  channels: ({ type: "slack"; slackChannelId: string } | { type: "telegram" })[];
   allowedUserEmails: string[];
 }
 

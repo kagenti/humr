@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import yaml from "js-yaml";
+import { ChannelType } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
@@ -37,11 +38,25 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
   });
 
   server.tool(
-    "send_slack_message",
-    "Send a message to the Slack channel connected to this agent instance",
-    { text: z.string() },
-    async ({ text }) => {
-      const result = await channelManager.postMessage(instanceId, text);
+    "describe_channel",
+    "Describe a channel on this agent instance. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
+    { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
+    async ({ channel }) => {
+      const chats = await channelManager.listConversations(instanceId, channel);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ chats }) }] };
+    },
+  );
+
+  server.tool(
+    "send_channel_message",
+    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      text: z.string(),
+      chatId: z.string().optional(),
+    },
+    async ({ channel, text, chatId }) => {
+      const result = await channelManager.postMessage(instanceId, channel, text, chatId);
       if ("error" in result) {
         return { content: [{ type: "text" as const, text: result.error }], isError: true };
       }

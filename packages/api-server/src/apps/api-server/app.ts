@@ -12,6 +12,11 @@ import { createInstancesRepository } from "./../../modules/agents/infrastructure
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
+import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
+import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
+import {
+  isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
+} from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "../../acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import type { Config } from "../../config.js";
@@ -22,6 +27,7 @@ import { createSecretsService } from "./../../modules/secrets/services/secrets-s
 import { createOnecliConnectionsPort } from "./../../modules/connections/infrastructure/onecli-connections-port.js";
 import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
+import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 
@@ -31,12 +37,14 @@ export interface ApiServerAppDeps {
   db: Db;
   onecli: OnecliClient;
   channelManager: ChannelManager;
+  channelSecretStore: ChannelSecretStore;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
+  pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows } = deps;
+  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -77,10 +85,33 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     app.route("/", createSlackOAuthRoutes({
       pendingFlows: pendingSlackOAuthFlows,
       identityLinks: identityLinkService,
-      keycloakUrl: config.keycloakUrl,
-      keycloakRealm: config.keycloakRealm,
-      keycloakClientId: config.keycloakClientId,
-      callbackUrl: slackOauthCallbackUrl,
+      oauthConfig: {
+        keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakUrl: config.keycloakUrl,
+        keycloakRealm: config.keycloakRealm,
+        keycloakClientId: config.keycloakClientId,
+        callbackUrl: slackOauthCallbackUrl,
+      },
+    }));
+  }
+
+  if (config.telegramEnabled) {
+    app.route("/", createTelegramOAuthRoutes({
+      pendingFlows: pendingTelegramOAuthFlows,
+      threads: {
+        isAuthorized: isThreadAuthorized(db),
+        authorize: authorizeThread(db),
+        list: listAuthorizedThreads(db),
+        revoke: revokeThread(db),
+      },
+      isInstanceOwner: (instanceId, sub) => instancesRepo.isOwnedBy(instanceId, sub),
+      oauthConfig: {
+        keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakUrl: config.keycloakUrl,
+        keycloakRealm: config.keycloakRealm,
+        keycloakClientId: config.keycloakClientId,
+        callbackUrl: `${config.uiBaseUrl}/api/telegram/oauth/callback`,
+      },
     }));
   }
 
@@ -118,7 +149,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const userJwt = c.req.header("authorization")!.slice(7);
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory);
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
     });

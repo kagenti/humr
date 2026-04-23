@@ -14,6 +14,8 @@ export enum EventType {
   InstanceWoken = "InstanceWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
+  TelegramConnected = "TelegramConnected",
+  TelegramDisconnected = "TelegramDisconnected",
   ForkReady = "ForkReady",
   ForkFailed = "ForkFailed",
   ForkCompleted = "ForkCompleted",
@@ -61,6 +63,16 @@ export type SlackConnected = {
 
 export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
+  instanceId: string;
+};
+
+export type TelegramConnected = {
+  type: EventType.TelegramConnected;
+  instanceId: string;
+};
+
+export type TelegramDisconnected = {
+  type: EventType.TelegramDisconnected;
   instanceId: string;
 };
 
@@ -119,6 +131,8 @@ export type DomainEvent =
   | InstanceWoken
   | SlackConnected
   | SlackDisconnected
+  | TelegramConnected
+  | TelegramDisconnected
   | ForkReady
   | ForkFailed
   | ForkCompleted

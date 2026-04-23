@@ -2,6 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { TemplatesService, AgentsService, InstancesService, SchedulesService, SessionsApiService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
+import type { ChannelSecretStore } from "../channels/infrastructure/channel-secret-store.js";
 import { createTemplatesRepository } from "./infrastructure/templates-repository.js";
 import { createAgentsRepository } from "./infrastructure/agents-repository.js";
 import { createInstancesRepository } from "./infrastructure/instances-repository.js";
@@ -29,6 +30,7 @@ export function composeAgentsModule(
   owner: string,
   db: Db,
   userDirectory: KeycloakUserDirectory,
+  channelSecretStore: ChannelSecretStore,
 ): {
   templates: TemplatesService;
   agents: AgentsService;
@@ -60,6 +62,7 @@ export function composeAgentsModule(
       upsertChannel: upsertChannel(db, owner),
       deleteChannelByType: deleteChannelByType(db, owner),
       deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db, owner),
+      channelSecretStore,
       listAllowedUsersByOwner: listAllowedUsersByOwner(db, owner),
       listAllowedUsersByInstance: listAllowedUsersByInstance(db, owner),
       setAllowedUsers: setAllowedUsers(db, owner),
@@ -86,6 +89,7 @@ export function composeSystemInstances(
   namespace: string,
   db: Db,
   userDirectory: KeycloakUserDirectory,
+  channelSecretStore: ChannelSecretStore,
 ): InstancesService {
   const k8s = createK8sClient(api, namespace);
   const templatesRepo = createTemplatesRepository(k8s);
@@ -107,6 +111,7 @@ export function composeSystemInstances(
     upsertChannel: upsertChannel(db, ""),
     deleteChannelByType: deleteChannelByType(db, ""),
     deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(db, ""),
+    channelSecretStore,
     listAllowedUsersByOwner: listAllowedUsersByOwner(db, ""),
     listAllowedUsersByInstance: listAllowedUsersByInstance(db, ""),
     setAllowedUsers: setAllowedUsers(db, ""),

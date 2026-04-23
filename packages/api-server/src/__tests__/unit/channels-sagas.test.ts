@@ -17,6 +17,9 @@ function makeWorker(): {
     async start() {},
     async stop() {},
     async stopAll() {},
+    async listConversations() {
+      return [];
+    },
     async postMessage() {
       return { ok: true as const };
     },

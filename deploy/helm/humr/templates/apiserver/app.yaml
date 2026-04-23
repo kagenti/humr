@@ -33,6 +33,8 @@ metadata:
     app.kubernetes.io/component: apiserver
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/component: apiserver
@@ -77,6 +79,10 @@ spec:
             {{- if .Values.apiServer.slackAppToken }}
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.telegramEnabled }}
+            - name: TELEGRAM_ENABLED
+              value: "true"
             {{- end }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL

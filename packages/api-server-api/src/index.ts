@@ -30,6 +30,7 @@ export type {
   InstanceState,
   Channel,
   SlackChannel,
+  TelegramChannel,
   ChannelConfig,
   CreateInstanceInput,
   UpdateInstanceInput,

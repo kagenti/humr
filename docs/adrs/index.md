@@ -34,6 +34,7 @@ This directory contains ADRs for the Humr project.
 | [026](026-session-log-replay.md)              | Persistent ACP sessions via per-session log and cursor fan-out | @jezekra1 |
 | [027](027-slack-user-impersonation.md)        | Slack per-turn user impersonation — foreign repliers fork the instance into a K8s Job | @tomkis |
 | [028](028-generic-secret-injection-config.md) | Configurable injection on generic secrets (host/path + custom header) | @tomas2d |
+| [029](029-per-instance-channels.md)           | Per-instance messenger channels — secrets in k8s Secrets, per-thread authorization | @pilartomas |
 
 ## Drafts
 

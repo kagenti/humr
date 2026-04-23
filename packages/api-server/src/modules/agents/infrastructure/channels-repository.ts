@@ -1,7 +1,6 @@
 import type { Db } from "db";
 import { channels, eq, and, inArray } from "db";
-import type { ChannelConfig } from "api-server-api";
-import { ChannelType } from "api-server-api";
+import { ChannelType, type ChannelConfig } from "api-server-api";
 
 function toChannelConfig(row: { type: string; config: unknown }): ChannelConfig {
   const config = row.config as Record<string, unknown>;

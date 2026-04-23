@@ -1,22 +1,27 @@
 import type { Db } from "db";
-import { identityLinks, eq } from "db";
+import { identityLinks, eq, and } from "db";
 
 export interface IdentityLink {
-  slackUserId: string;
+  provider: string;
+  externalUserId: string;
   keycloakSub: string;
   refreshToken: string | null;
 }
 
-export function findIdentityBySlackUser(db: Db) {
-  return async (slackUserId: string): Promise<IdentityLink | null> => {
+export function findIdentityByExternalUser(db: Db) {
+  return async (provider: string, externalUserId: string): Promise<IdentityLink | null> => {
     const rows = await db
       .select()
       .from(identityLinks)
-      .where(eq(identityLinks.slackUserId, slackUserId))
+      .where(and(
+        eq(identityLinks.provider, provider),
+        eq(identityLinks.externalUserId, externalUserId),
+      ))
       .limit(1);
     if (rows.length === 0) return null;
     return {
-      slackUserId: rows[0].slackUserId,
+      provider: rows[0].provider,
+      externalUserId: rows[0].externalUserId,
       keycloakSub: rows[0].keycloakSub,
       refreshToken: rows[0].refreshToken,
     };
@@ -24,19 +29,27 @@ export function findIdentityBySlackUser(db: Db) {
 }
 
 export function upsertIdentityLink(db: Db) {
-  return async (slackUserId: string, keycloakSub: string, refreshToken: string | null): Promise<void> => {
+  return async (
+    provider: string,
+    externalUserId: string,
+    keycloakSub: string,
+    refreshToken: string | null,
+  ): Promise<void> => {
     await db
       .insert(identityLinks)
-      .values({ slackUserId, keycloakSub, refreshToken })
+      .values({ provider, externalUserId, keycloakSub, refreshToken })
       .onConflictDoUpdate({
-        target: identityLinks.slackUserId,
+        target: [identityLinks.provider, identityLinks.externalUserId],
         set: { keycloakSub, refreshToken },
       });
   };
 }
 
 export function deleteIdentityLink(db: Db) {
-  return async (slackUserId: string): Promise<void> => {
-    await db.delete(identityLinks).where(eq(identityLinks.slackUserId, slackUserId));
+  return async (provider: string, externalUserId: string): Promise<void> => {
+    await db.delete(identityLinks).where(and(
+      eq(identityLinks.provider, provider),
+      eq(identityLinks.externalUserId, externalUserId),
+    ));
   };
 }

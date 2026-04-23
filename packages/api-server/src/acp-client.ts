@@ -105,6 +105,7 @@ async function withAcpConnection<T>(
       },
       async writeTextFile() { return {}; },
       async readTextFile() { return { content: "" }; },
+      async extNotification() {},
     }),
     stream,
   );
@@ -184,6 +185,7 @@ function createAcpClientForUrl(opts: {
           async sessionUpdate() {},
           async writeTextFile() { return {}; },
           async readTextFile() { return { content: "" }; },
+          async extNotification() {},
         }),
         stream,
       );
@@ -217,11 +219,17 @@ function createAcpClientForUrl(opts: {
       }, async (connection) => {
         let sessionId: string;
         if (sendOpts?.resumeSessionId) {
-          await connection.unstable_resumeSession({
+          // loadSession (not unstable_resumeSession) survives the agent-runtime's
+          // idle reap — the runtime replays history from its log or cold-bootstraps
+          // the session in the agent subprocess.
+          await connection.loadSession({
             sessionId: sendOpts.resumeSessionId,
             cwd: ".",
             mcpServers: [],
           });
+          // History replay arrives as agent_message_chunk notifications; drop them
+          // so the caller only sees this turn's response.
+          responseChunks.length = 0;
           sessionId = sendOpts.resumeSessionId;
         } else {
           const s = await connection.newSession({ cwd: ".", mcpServers: [] });

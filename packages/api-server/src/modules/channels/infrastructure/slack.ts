@@ -1,6 +1,7 @@
 import { App, LogLevel, type SlackEventMiddlewareArgs, type SlackCommandMiddlewareArgs } from "@slack/bolt";
 import crypto from "node:crypto";
-import { ChannelType, SessionType, type ChannelConfig, type SlackChannel, type InstancesService } from "api-server-api";
+import { ChannelType, SessionType, type SlackChannel, type InstancesService } from "api-server-api";
+import type { StoredChannelConfig } from "../stored-channel.js";
 import {
   createAcpClient,
   createForkAcpClient,
@@ -14,6 +15,7 @@ import {
   type ForkReady,
 } from "../../../events.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
+import { buildAuthorizeUrl, generatePkce, type KeycloakOAuthConfig } from "./identity-oauth.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -66,10 +68,11 @@ async function getContextMessages(
 
 export interface SlackWorker {
   type: ChannelType.Slack;
-  start(instanceName: string, channel: ChannelConfig): Promise<void>;
+  start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
-  postMessage(instanceName: string, text: string): Promise<{ ok: true } | { error: string }>;
+  listConversations(instanceName: string): Promise<{ id: string; title: string }[]>;
+  postMessage(instanceName: string, text: string, conversationId?: string): Promise<{ ok: true } | { error: string }>;
   onForkReady(event: ForkReady): Promise<void>;
   onForkFailed(event: ForkFailed): Promise<void>;
 }
@@ -106,12 +109,7 @@ export function createSlackWorker(
   instances: () => InstancesService,
   persistSession: (sessionId: string, instanceId: string, type: SessionType, threadTs?: string) => Promise<void>,
   identityLinks: IdentityLinkService,
-  oauthConfig: {
-    keycloakExternalUrl: string;
-    keycloakRealm: string;
-    keycloakClientId: string;
-    callbackUrl: string;
-  },
+  oauthConfig: KeycloakOAuthConfig,
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
   threadSessions: {
     find: (instanceId: string, threadTs: string) => Promise<{ sessionId: string } | null>;
@@ -325,33 +323,17 @@ export function createSlackWorker(
     return parts.join("\n\n");
   }
 
-  function buildLoginUrl(state: string, codeChallenge: string): string {
-    const authEndpoint = `${oauthConfig.keycloakExternalUrl}/realms/${oauthConfig.keycloakRealm}/protocol/openid-connect/auth`;
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: oauthConfig.keycloakClientId,
-      redirect_uri: oauthConfig.callbackUrl,
-      state,
-      scope: "openid",
-      code_challenge: codeChallenge,
-      code_challenge_method: "S256",
-    });
-    return `${authEndpoint}?${params}`;
-  }
-
   async function handleCommand({ command, ack }: SlackCommandMiddlewareArgs) {
     const subcommand = command.text.trim().toLowerCase();
 
     if (subcommand === "login") {
-      const existing = await identityLinks.resolve(command.user_id);
+      const existing = await identityLinks.resolve("slack", command.user_id);
       if (existing) {
         await ack({ response_type: "ephemeral", text: "You are already linked. Use `/humr logout` to unlink first." });
         return;
       }
 
-      const state = crypto.randomUUID();
-      const codeVerifier = crypto.randomBytes(32).toString("base64url");
-      const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+      const { state, codeVerifier, codeChallenge } = generatePkce();
       pendingOAuthFlows.set(state, {
         slackUserId: command.user_id,
         channelId: command.channel_id,
@@ -359,7 +341,7 @@ export function createSlackWorker(
         createdAt: Date.now(),
       });
 
-      const loginUrl = buildLoginUrl(state, codeChallenge);
+      const loginUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
       await ack({
         response_type: "ephemeral",
         text: `<${loginUrl}|Click here to link your Keycloak account>`,
@@ -368,13 +350,13 @@ export function createSlackWorker(
     }
 
     if (subcommand === "logout") {
-      const existing = await identityLinks.resolve(command.user_id);
+      const existing = await identityLinks.resolve("slack", command.user_id);
       if (!existing) {
         await ack({ response_type: "ephemeral", text: "You don't have a linked account." });
         return;
       }
 
-      await identityLinks.unlink(command.user_id);
+      await identityLinks.unlink("slack", command.user_id);
       await ack({ response_type: "ephemeral", text: "Account unlinked." });
       return;
     }
@@ -391,7 +373,7 @@ export function createSlackWorker(
     const slackUserId = event.user;
     if (!slackUserId) return;
 
-    const keycloakSub = await identityLinks.resolve(slackUserId);
+    const keycloakSub = await identityLinks.resolve("slack", slackUserId);
     if (!keycloakSub) {
       await app.client.chat.postEphemeral({
         channel: event.channel,
@@ -605,7 +587,7 @@ export function createSlackWorker(
   return {
     type: ChannelType.Slack,
 
-    async start(instanceName: string, channel: ChannelConfig) {
+    async start(instanceName: string, channel: StoredChannelConfig) {
       const { slackChannelId } = channel as SlackChannel;
       registerMapping(slackChannelId, instanceName);
       const started = await ensureApp();
@@ -633,7 +615,13 @@ export function createSlackWorker(
       }
     },
 
-    async postMessage(instanceName: string, text: string) {
+    async listConversations(instanceName: string) {
+      const channels = instanceChannels.get(instanceName);
+      if (!channels) return [];
+      return [...channels].map((id) => ({ id, title: id }));
+    },
+
+    async postMessage(instanceName: string, text: string, conversationId?: string) {
       const channels = instanceChannels.get(instanceName);
       if (!channels || channels.size === 0) {
         return { error: "no channel connected" };
@@ -643,7 +631,9 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
-      const slackChannelId = [...channels][0];
+      const slackChannelId = conversationId && channels.has(conversationId)
+        ? conversationId
+        : [...channels][0];
       try {
         await app.client.chat.postMessage({
           channel: slackChannelId,

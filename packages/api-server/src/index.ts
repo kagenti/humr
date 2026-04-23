@@ -4,18 +4,24 @@ import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } 
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
 import { createKeycloakUserDirectory } from "./modules/agents/infrastructure/keycloak-user-directory.js";
-import { deleteChannelsByInstance } from "./modules/agents/infrastructure/channels-repository.js";
+import { deleteChannelsByInstance, listChannelsByOwner } from "./modules/agents/infrastructure/channels-repository.js";
 import { upsertSession, findByInstanceAndThreadTs, findInstanceByThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
+import { createPostgresState } from "@chat-adapter/state-pg";
 import { createSlackWorker, type SlackOAuthPending } from "./modules/channels/infrastructure/slack.js";
+import { createTelegramWorker, type TelegramOAuthPending } from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
+import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
-  findIdentityBySlackUser, upsertIdentityLink, deleteIdentityLink,
+  findIdentityByExternalUser, upsertIdentityLink, deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
   startOnForkReadySaga,
   startOnForkFailedSaga,
 } from "./modules/channels/index.js";
+import {
+  isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
+} from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { composeConnectionsModule } from "./modules/connections/index.js";
 import {
   composeForksModule,
@@ -43,12 +49,13 @@ const { api } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
-const k8sCleanupSub = startK8sCleanupSaga(createK8sClient(api, config.namespace));
-const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
-const onecliSyncSub = startOnecliSyncSaga(onecli);
-
 const k8sClient = createK8sClient(api, config.namespace);
 const instancesRepo = createInstancesRepository(k8sClient);
+const channelSecretStore = createChannelSecretStore(k8sClient);
+
+const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
+const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
+const onecliSyncSub = startOnecliSyncSaga(onecli);
 
 const { foreignCredentials } = composeConnectionsModule({
   foreignCredentialsConfig: {
@@ -75,21 +82,29 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory);
+const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory, channelSecretStore);
 const persistSession = upsertSession(db);
 const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
   persistSession(sessionId, instanceId, type, undefined, threadTs);
+const persistTelegramSession: typeof persistSession = (sessionId, instanceId, type, threadId?) =>
+  persistSession(sessionId, instanceId, type, undefined, threadId);
 
 const identityLinkService = createIdentityLinkService({
-  findBySlackUser: findIdentityBySlackUser(db),
+  findByExternalUser: findIdentityByExternalUser(db),
   upsert: upsertIdentityLink(db),
   delete: deleteIdentityLink(db),
 });
 
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
+const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
 
 const slackOauthCallbackUrl = config.slackOauthCallbackUrl
   ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
+
+const chatSdkState = config.telegramEnabled
+  ? createPostgresState({ url: config.databaseUrl, keyPrefix: "chat-sdk" })
+  : undefined;
 
 const slackWorker = config.slackBotToken && config.slackAppToken
   ? createSlackWorker(
@@ -101,6 +116,7 @@ const slackWorker = config.slackBotToken && config.slackAppToken
       identityLinkService,
       {
         keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakUrl: config.keycloakUrl,
         keycloakRealm: config.keycloakRealm,
         keycloakClientId: config.keycloakClientId,
         callbackUrl: slackOauthCallbackUrl,
@@ -115,21 +131,49 @@ const slackWorker = config.slackBotToken && config.slackAppToken
     )
   : undefined;
 
-const channelManager = createChannelManager({ slackWorker });
+const telegramWorker = config.telegramEnabled && chatSdkState
+  ? createTelegramWorker(
+      config.namespace,
+      chatSdkState,
+      () => systemInstances,
+      persistTelegramSession,
+      {
+        isAuthorized: isThreadAuthorized(db),
+        authorize: authorizeThread(db),
+        list: listAuthorizedThreads(db),
+        revoke: revokeThread(db),
+      },
+      {
+        keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakUrl: config.keycloakUrl,
+        keycloakRealm: config.keycloakRealm,
+        keycloakClientId: config.keycloakClientId,
+        callbackUrl: telegramOauthCallbackUrl,
+      },
+      pendingTelegramOAuthFlows,
+      {
+        find: findByInstanceAndThreadTs(db),
+        touch: touchSession(db),
+      },
+    )
+  : undefined;
+
+const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
 
 const onForkReadySub = slackWorker ? startOnForkReadySaga(slackWorker) : undefined;
 const onForkFailedSub = slackWorker ? startOnForkFailedSaga(slackWorker) : undefined;
 
 const { server: apiServer } = startApiServerApp({
-  config, api, db, onecli, channelManager, identityLinkService, pendingSlackOAuthFlows,
+  config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
+  pendingSlackOAuthFlows, pendingTelegramOAuthFlows,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
-  config, api, db, channelManager,
+  config, api, db, channelManager, channelSecretStore,
 });
 
-systemInstances.list().then((all) => {
-  channelManager.bootstrap(all);
+listChannelsByOwner(db, "")().then((channelsByInstance) => {
+  channelManager.bootstrap(channelsByInstance);
 }).catch(() => {});
 
 async function shutdown() {

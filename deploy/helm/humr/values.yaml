@@ -227,6 +227,8 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
+  # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
+  telegramEnabled: false
 
   # -- Database connection (empty host = use shared local postgres)
   db:
