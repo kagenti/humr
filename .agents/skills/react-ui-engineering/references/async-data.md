@@ -278,32 +278,42 @@ return <ConnectionsList connections={data ?? []} />;
 
 Where `useConnections` is a `trpc.connections.list.useQuery()` wrapper (or a `useQuery` with a Zod-validated fetcher for non-tRPC endpoints).
 
-## Stable refs vs per-render state
+## Consuming query and mutation hooks
 
-**[CRITICAL]** The object returned by `useQuery` / `useMutation` has a **new identity every render** — it's a snapshot of the current state. But the callable fields on it are **stable references** that never change across renders:
+**[HIGH] Destructure queries. Keep mutations encapsulated.**
 
-| Stable (safe in deps) | Unstable (never put the *object* in deps) |
-|---|---|
-| `query.refetch`, `query.fetchNextPage` | `query.data`, `query.isFetching`, `query.isPending` |
-| `mutation.mutate`, `mutation.mutateAsync`, `mutation.reset` | `mutation.isPending`, `mutation.data`, `mutation.error` |
+The objects returned by `useQuery` / `useMutation` have a **new identity every render** — they're snapshots of the current state. Their callable fields (`refetch`, `mutate`, `mutateAsync`) are stable refs under the hood, but `react-hooks/exhaustive-deps` can't see that: it flags any access through the object as "you used `query`, put `query` in deps." Putting the object in deps re-invalidates every render and loops the effect.
 
-Putting the whole query/mutation object into a `useCallback` / `useEffect` / `useMemo` dep array is the classic TQ foot-gun: the callback reinvalidates every render, the effect fires every render, the effect triggers a refetch, the refetch re-renders, repeat — your tab sits there hammering the API.
+The rule that avoids both the runtime loop and the lint noise:
 
 ```tsx
-❌ const load = useCallback(async () => {
-     await secretsQuery.refetch();
-   }, [secretsQuery]);   // new identity every render → infinite loop
+// Query — destructure up top. Deps arrays reference local variables.
+const { data = [], refetch, isFetching, isPending } = useSecrets();
 
-✅ const load = useCallback(async () => {
-     await secretsQuery.refetch();
-   }, [secretsQuery.refetch]);   // stable ref — deps don't change
+useEffect(() => { refetch(); }, [refetch]);   // ✅ exhaustive-deps satisfied
+
+// Mutation — keep encapsulated. Fields are consumed at event handlers,
+// not deps arrays, so the object's per-render identity never bites.
+const updateSecret = useUpdateSecret();
+<button onClick={() => updateSecret.mutate(values)} disabled={updateSecret.isPending}>
 ```
 
-Works whether you keep the encapsulated style (`secretsQuery.refetch`) or destructure (`const { refetch } = useSecrets()`). Pick one per codebase, but in deps always reach for the **specific stable field**, never the whole object.
+Why the asymmetry:
 
-When a component reads many stable fields, destructuring up top is often clearer:
+- Queries produce values the render consumes (`data`, `isPending`) and stable callables that genuinely land in deps (`refetch`). Destructuring makes both flow cleanly.
+- Mutations are almost always fired from event handlers and render state (`isPending`) read inline. Their `mutate` rarely needs to be in deps. Encapsulating them (`createSecret.mutate(...)`) keeps the name signal — you're calling a mutation — without forcing a destructure that most consumers don't benefit from.
+
+**[CRITICAL] Never `eslint-disable react-hooks/exhaustive-deps` to paper over the object-in-deps problem.** If the rule complains, you're putting something non-stable into deps. Destructure the stable field as a local variable and the warning disappears on its own.
+
 ```tsx
-const { data = [], refetch, isFetching } = useSecrets();
+❌ // Disabling the rule because "we know refetch is stable":
+   }, [fetchX, fetchY, query.refetch]);
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+
+✅ // Destructure so exhaustive-deps has nothing to complain about:
+   const { refetch } = useXxx();
+   …
+   }, [fetchX, fetchY, refetch]);
 ```
 
 ## Anti-patterns
@@ -314,4 +324,5 @@ const { data = [], refetch, isFetching } = useSecrets();
 - **Inline `queryClient.invalidateQueries` in `onSuccess`** — use `meta.invalidates`.
 - **Shadow-copying TQ data into local `useState` for optimism** — use `onMutate`.
 - **A Zustand slice holding a server list** — migrate to TQ.
-- **The whole query/mutation object in a deps array** — see "Stable refs vs per-render state".
+- **The whole query/mutation object in a deps array** — see "Consuming query and mutation hooks".
+- **`eslint-disable react-hooks/exhaustive-deps` to silence the loop warning** — destructure the stable field instead; the rule exists to catch real bugs.

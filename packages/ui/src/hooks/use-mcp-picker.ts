@@ -14,7 +14,7 @@ export function useMcpPicker(selectedInstance: string | null) {
   const agentAccess = useStore((s) => s.agentAccess);
   const fetchAgentAccess = useStore((s) => s.fetchAgentAccess);
 
-  const secrets = useSecrets().data ?? [];
+  const { data: secrets = [] } = useSecrets();
 
   const currentAgentId = useMemo(
     () => instances.find((i) => i.id === selectedInstance)?.agentId,

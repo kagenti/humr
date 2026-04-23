@@ -66,8 +66,12 @@ export function ProvidersView() {
   const showConfirm = useStore((s) => s.showConfirm);
   const setView = useStore((s) => s.setView);
 
-  const secretsQuery = useSecrets();
-  const secrets = secretsQuery.data ?? [];
+  const {
+    data: secrets = [],
+    refetch: refetchSecrets,
+    isFetching: isFetchingSecrets,
+    isPending: isPendingSecrets,
+  } = useSecrets();
   const createSecret = useCreateSecret();
   const updateSecret = useUpdateSecret();
   const deleteSecret = useDeleteSecret();
@@ -79,11 +83,11 @@ export function ProvidersView() {
       <div className="flex items-center gap-3 mb-8">
         <h1 className="text-[20px] md:text-[24px] font-bold text-text">Providers</h1>
         <button
-          onClick={() => secretsQuery.refetch()}
+          onClick={() => refetchSecrets()}
           className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal"
           style={{ boxShadow: "var(--shadow-brutal-sm)" }}
         >
-          <span className={secretsQuery.isFetching ? "anim-spin" : ""}>
+          <span className={isFetchingSecrets ? "anim-spin" : ""}>
             <RefreshCw size={13} />
           </span>
         </button>
@@ -94,7 +98,7 @@ export function ProvidersView() {
       </p>
 
       <section className="mb-8">
-        {secretsQuery.isPending ? (
+        {isPendingSecrets ? (
           <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />
         ) : anthropic ? (
           <AnthropicConnected

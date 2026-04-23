@@ -26,11 +26,10 @@ export function SetupProgressBar() {
   // flashes the wrong state (e.g. step 2 pending for a user who already has
   // connections) while the initial fetches are in flight.
   const onOnboardingView = view === "list" || view === "providers" || view === "connections";
-  const secretsQuery = useSecrets({ enabled: onOnboardingView });
-  const secrets = secretsQuery.data ?? [];
+  const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({ enabled: onOnboardingView });
   const fullyLoaded =
     loadedOnce.agents &&
-    secretsQuery.isSuccess &&
+    secretsLoaded &&
     loadedOnce.appConnections &&
     loadedOnce.mcpConnections;
   const shouldRender = onOnboardingView && fullyLoaded && agents.length === 0;
