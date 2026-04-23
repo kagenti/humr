@@ -21,6 +21,7 @@ import {
 } from "./modules/channels/index.js";
 import {
   isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
+  deleteThreadsByInstance,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { composeConnectionsModule } from "./modules/connections/index.js";
 import {
@@ -54,7 +55,10 @@ const instancesRepo = createInstancesRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
-const channelCleanupSub = startChannelCleanupSaga(deleteChannelsByInstance(db));
+const channelCleanupSub = startChannelCleanupSaga(
+  deleteChannelsByInstance(db),
+  deleteThreadsByInstance(db),
+);
 const onecliSyncSub = startOnecliSyncSaga(onecli);
 
 const { foreignCredentials } = composeConnectionsModule({

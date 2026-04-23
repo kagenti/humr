@@ -45,3 +45,9 @@ export function revokeThread(db: Db) {
     ));
   };
 }
+
+export function deleteThreadsByInstance(db: Db) {
+  return async (instanceId: string): Promise<void> => {
+    await db.delete(telegramThreads).where(eq(telegramThreads.instanceId, instanceId));
+  };
+}
