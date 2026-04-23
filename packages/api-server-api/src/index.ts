@@ -11,6 +11,7 @@ export type {
   Mount,
   Resources,
   SecurityContext,
+  SkillSourceSeed,
 } from "./modules/templates/types.js";
 
 export type {

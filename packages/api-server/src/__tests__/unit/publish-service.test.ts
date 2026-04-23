@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
 import type { AgentRuntimeSkillsClient } from "../../modules/skills/infrastructure/agent-runtime-client.js";
 import { AgentRuntimeUpstreamError } from "../../modules/skills/infrastructure/agent-runtime-client.js";
-import type { SkillsRepository } from "../../modules/skills/infrastructure/skills-repository.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
 import type { InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
@@ -32,13 +31,11 @@ function makeDeps() {
     get: vi.fn().mockResolvedValue(makeInfra()),
     updateSpec: vi.fn().mockResolvedValue(null),
   } as unknown as InstancesRepository;
-  const sources = {
-    get: vi.fn().mockResolvedValue({
-      id: SOURCE_ID,
-      name: "Apocohq",
-      gitUrl: "https://github.com/foo/bar",
-    }),
-  } as unknown as SkillsRepository;
+  const resolveSource = vi.fn().mockResolvedValue({
+    id: SOURCE_ID,
+    name: "Apocohq",
+    gitUrl: "https://github.com/foo/bar",
+  });
   const agents = {
     get: vi.fn().mockResolvedValue({
       id: AGENT_ID,
@@ -62,13 +59,14 @@ function makeDeps() {
   return {
     deps: {
       owner: OWNER,
-      sources,
+      resolveSource,
       instances,
       agents,
       runtimeClient,
       getAgentToken,
     },
     runtimeClient,
+    resolveSource,
   };
 }
 
@@ -165,8 +163,8 @@ describe("publishSkill — thin proxy", () => {
   });
 
   it("NOT_IMPLEMENTED when source host is unsupported", async () => {
-    const { deps } = makeDeps();
-    (deps.sources as any).get = vi.fn().mockResolvedValue({
+    const { deps, resolveSource } = makeDeps();
+    resolveSource.mockResolvedValue({
       id: SOURCE_ID,
       name: "Foo",
       gitUrl: "https://gitlab.com/foo/bar",

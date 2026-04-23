@@ -38,5 +38,12 @@ data:
     securityContext:
       readOnlyRootFilesystem: false
     skillPaths:
-      - /home/agent/.agents/skills/
+      - /home/agent/.pi/agent/skills/
+    {{- with .Values.piAgentTemplate.skillSources }}
+    skillSources:
+      {{- range . }}
+      - name: {{ .name | quote }}
+        gitUrl: {{ .gitUrl | quote }}
+      {{- end }}
+    {{- end }}
 {{- end }}

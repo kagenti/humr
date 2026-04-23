@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
-import type { Agent, Skill, SkillRef, SkillSource } from "api-server-api";
-import { createSkillsService } from "../../modules/skills/services/skills-service.js";
+import type { Agent, Skill, SkillRef, SkillSource, Template } from "api-server-api";
+import {
+  createSkillsService,
+  templateSourceId,
+} from "../../modules/skills/services/skills-service.js";
 import {
   SkillSourceProtectedError,
   type SkillsRepository,
@@ -9,8 +12,17 @@ import {
 import { PublicArchiveNotFoundError } from "../../modules/skills/infrastructure/public-archive-scanner.js";
 import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import type { TemplatesRepository } from "../../modules/agents/infrastructure/templates-repository.js";
 import type { AgentRuntimeSkillsClient } from "../../modules/skills/infrastructure/agent-runtime-client.js";
 import type { InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
+
+function emptyTemplatesRepo(): TemplatesRepository {
+  return {
+    list: async () => [],
+    get: async () => null,
+    readSpec: async () => null,
+  };
+}
 
 const OWNER = "user-1";
 const INSTANCE_ID = "inst-42";
@@ -102,6 +114,7 @@ function makeEnv(opts: {
     repo: makeRepo(),
     instancesRepo,
     agentsRepo,
+    templatesRepo: emptyTemplatesRepo(),
     runtimeClient,
     getAgentToken,
     owner: OWNER,
@@ -169,6 +182,58 @@ describe("skills-service install", () => {
     await env.svc.installSkill(installInput);
     expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", expect.objectContaining({
       skillPaths: ["/home/agent/.agents/skills/"],
+    }));
+  });
+
+  it("rescues a legacy agent (no skillPaths on spec) by reading the template's skillPaths", async () => {
+    // Agent ConfigMap written before spec-assembly was fixed: templateId is
+    // set but the spec itself is missing skillPaths. The service should
+    // consult the template instead of silently using the hardcoded default.
+    const legacyAgent: Agent = {
+      id: AGENT_ID,
+      name: "a",
+      templateId: "claude-code",
+      spec: { version: "humr.ai/v1", name: "a", image: "x" },
+    };
+    const template: Template = {
+      id: "claude-code",
+      name: "claude-code",
+      spec: {
+        version: "humr.ai/v1",
+        image: "x",
+        skillPaths: ["/home/agent/.claude/skills/"],
+      },
+    };
+    const env = makeEnv({ agent: legacyAgent });
+    // Swap in a templates repo that returns the template by id.
+    const svc = createSkillsService({
+      repo: makeRepo(),
+      instancesRepo: { get: env.instancesGet, updateSpec: env.instancesUpdate } as unknown as InstancesRepository,
+      agentsRepo: { get: env.agentsGet } as unknown as AgentsRepository,
+      templatesRepo: {
+        list: async () => [],
+        get: async (id) => (id === template.id ? template : null),
+        readSpec: async () => null,
+      },
+      runtimeClient: {
+        install: env.runtimeInstall,
+        uninstall: env.runtimeUninstall,
+        listLocal: vi.fn(),
+        readLocal: vi.fn(),
+        publish: vi.fn(),
+        scan: vi.fn(),
+      },
+      getAgentToken: async () => "agent-token-xyz",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    await svc.installSkill(installInput);
+
+    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", expect.objectContaining({
+      skillPaths: ["/home/agent/.claude/skills/"],
     }));
   });
 
@@ -248,6 +313,7 @@ describe("skills-service listLocal", () => {
       repo: makeRepo(),
       instancesRepo: { get: env.instancesGet, updateSpec: env.instancesUpdate } as unknown as InstancesRepository,
       agentsRepo: { get: env.agentsGet } as unknown as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
@@ -285,6 +351,7 @@ describe("skills-service listLocal", () => {
       repo: makeRepo(),
       instancesRepo: { get: instancesGet, updateSpec: vi.fn() } as unknown as InstancesRepository,
       agentsRepo: { get: vi.fn() } as unknown as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
@@ -311,6 +378,7 @@ describe("skills-service listLocal", () => {
       repo: makeRepo(),
       instancesRepo: { get: instancesGet, updateSpec: vi.fn() } as unknown as InstancesRepository,
       agentsRepo: { get: vi.fn() } as unknown as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
@@ -367,6 +435,7 @@ describe("skills-service listSkills routing", () => {
           spec: { skillPaths: ["/home/agent/.claude/skills/"] },
         }),
       } as unknown as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient,
       getAgentToken: async () => "token",
       owner: OWNER,
@@ -444,6 +513,75 @@ describe("skills-service listSkills routing", () => {
     await expect(svc.listSkills(SOURCE.id, INSTANCE_ID)).rejects.toThrow(/network blew up/);
     expect(runtimeScan).not.toHaveBeenCalled();
   });
+
+  it("scans a template:* source id by resolving it via the templates repo (regression: was 404ing against the K8s CM lookup)", async () => {
+    const templateId = "tmpl-gw";
+    const templateName = "Google Workspace";
+    const templateUrl = "https://github.com/anthropics/google-workspace-skills";
+    const publicScan = vi.fn<PublicScan>().mockResolvedValue([
+      { source: templateUrl, name: "drive", description: "", version: "sha", contentHash: "h" },
+    ]);
+    const runtimeScan = vi.fn<RuntimeScan>();
+    const scanCache = async (gitUrl: string, scanner: (u: string) => Promise<Skill[]>) =>
+      scanner(gitUrl);
+    const templatesRepo: TemplatesRepository = {
+      list: async () => [],
+      get: async (id) =>
+        id === templateId
+          ? {
+              id: templateId,
+              name: templateName,
+              spec: {
+                version: "humr.ai/v1",
+                image: "x",
+                skillSources: [{ name: "GW Skills", gitUrl: templateUrl }],
+              },
+            }
+          : null,
+      readSpec: async () => null,
+    };
+    const svc = createSkillsService({
+      // The real repo never sees template:* ids — fail loudly if it does.
+      repo: {
+        ...makeRepo(),
+        get: async (id) => {
+          if (id.startsWith("template:")) throw new Error("template:* must not hit the CM repo");
+          return null;
+        },
+      },
+      instancesRepo: {
+        get: vi.fn().mockResolvedValue(makeInfraInstance()),
+      } as unknown as InstancesRepository,
+      agentsRepo: {
+        get: vi.fn().mockResolvedValue({
+          id: AGENT_ID,
+          name: "a",
+          spec: { skillPaths: ["/home/agent/.claude/skills/"] },
+        }),
+      } as unknown as AgentsRepository,
+      templatesRepo,
+      runtimeClient: {
+        install: vi.fn(),
+        uninstall: vi.fn(),
+        listLocal: vi.fn(),
+        readLocal: vi.fn(),
+        publish: vi.fn(),
+        scan: runtimeScan,
+      },
+      getAgentToken: async () => "token",
+      owner: OWNER,
+      scanSource: scanCache,
+      invalidateScan: vi.fn(),
+      scanPublic: publicScan,
+    });
+
+    const id = templateSourceId(templateId, templateUrl);
+    const result = await svc.listSkills(id, INSTANCE_ID);
+
+    expect(publicScan).toHaveBeenCalledWith(templateUrl);
+    expect(runtimeScan).not.toHaveBeenCalled();
+    expect(result[0].name).toBe("drive");
+  });
 });
 
 describe("skills-service getState (ghost reconciliation)", () => {
@@ -475,6 +613,7 @@ describe("skills-service getState (ghost reconciliation)", () => {
           spec: { skillPaths: ["/home/agent/.claude/skills/"] },
         }),
       } as unknown as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -559,6 +698,7 @@ describe("skills-service deleteSource", () => {
       repo: { ...makeRepo(), delete: del },
       instancesRepo: {} as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
@@ -570,6 +710,28 @@ describe("skills-service deleteSource", () => {
     await expect(svc.deleteSource("skill-src-seed")).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+  });
+
+  it("rejects deletion of synthesised template:* ids with FORBIDDEN", async () => {
+    const del = vi.fn();
+    const svc = createSkillsService({
+      repo: { ...makeRepo(), delete: del },
+      instancesRepo: {} as InstancesRepository,
+      agentsRepo: {} as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
+      runtimeClient: {} as AgentRuntimeSkillsClient,
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    await expect(svc.deleteSource("template:tmpl-x:abcdef012345")).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    // The repo is never called for synthesised ids — there's nothing to delete.
+    expect(del).not.toHaveBeenCalled();
   });
 
   it("scrubs instance.skills entries that reference the deleted source's gitUrl", async () => {
@@ -596,6 +758,7 @@ describe("skills-service deleteSource", () => {
         updateSpec: instancesUpdate,
       } as unknown as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -630,6 +793,7 @@ describe("skills-service deleteSource", () => {
         updateSpec: instancesUpdate,
       } as unknown as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
+      templatesRepo: emptyTemplatesRepo(),
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -640,5 +804,197 @@ describe("skills-service deleteSource", () => {
 
     await svc.deleteSource(SOURCE.id);
     expect(instancesUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("skills-service listSources", () => {
+  const TEMPLATE_ID = "tmpl-gw";
+  const TEMPLATE_NAME = "Google Workspace";
+  const TEMPLATE_URL = "https://github.com/anthropics/google-workspace-skills";
+
+  /** Compose a svc whose repos answer with the given user + template data. */
+  function build(opts: {
+    userSources?: SkillSource[];
+    template?: Template | null;
+    templateId?: string;
+  }) {
+    const userSources = opts.userSources ?? [];
+    const template = opts.template === undefined ? null : opts.template;
+    const templateId = opts.templateId ?? (template?.id ?? null);
+
+    const repo: SkillsRepository = {
+      ...makeRepo(),
+      list: async () => userSources,
+    };
+
+    const instancesRepo = {
+      get: vi.fn().mockResolvedValue(makeInfraInstance()),
+    } as unknown as InstancesRepository;
+
+    const agentsRepo = {
+      get: vi.fn().mockResolvedValue({
+        id: AGENT_ID,
+        name: "a",
+        templateId: templateId ?? undefined,
+        spec: { version: "humr.ai/v1", name: "a", image: "x" },
+      } as Agent),
+    } as unknown as AgentsRepository;
+
+    const templatesGet = vi.fn().mockImplementation(async (id: string) =>
+      template && id === template.id ? template : null,
+    );
+
+    const templatesRepo: TemplatesRepository = {
+      list: async () => [],
+      get: templatesGet,
+      readSpec: async () => null,
+    };
+
+    const svc = createSkillsService({
+      repo,
+      instancesRepo,
+      agentsRepo,
+      templatesRepo,
+      runtimeClient: {} as AgentRuntimeSkillsClient,
+      getAgentToken: async () => "t",
+      owner: OWNER,
+      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
+      invalidateScan: vi.fn(),
+      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    });
+
+    return { svc, templatesGet };
+  }
+
+  const TEMPLATE: Template = {
+    id: TEMPLATE_ID,
+    name: TEMPLATE_NAME,
+    spec: {
+      version: "humr.ai/v1",
+      image: "x",
+      skillSources: [
+        { name: "GW Skills", gitUrl: TEMPLATE_URL },
+      ],
+    },
+  };
+
+  it("returns user + system sources only when no instanceId is provided", async () => {
+    const { svc, templatesGet } = build({
+      userSources: [{ id: "u-1", name: "Mine", gitUrl: "https://github.com/me/skills" }],
+      template: TEMPLATE,
+    });
+
+    const out = await svc.listSources();
+    expect(out.map((s) => s.gitUrl)).toEqual(["https://github.com/me/skills"]);
+    expect(templatesGet).not.toHaveBeenCalled();
+  });
+
+  it("merges user + template sources with synthesised template ids and the Agent badge tag", async () => {
+    const { svc } = build({
+      userSources: [{ id: "u-1", name: "Mine", gitUrl: "https://github.com/me/skills" }],
+      template: TEMPLATE,
+    });
+
+    const out = await svc.listSources(INSTANCE_ID);
+
+    // Order: user → template → platform. Here: one user, one template.
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ id: "u-1", name: "Mine" });
+    expect(out[1]).toMatchObject({
+      id: templateSourceId(TEMPLATE_ID, TEMPLATE_URL),
+      name: "GW Skills",
+      gitUrl: TEMPLATE_URL,
+      fromTemplate: { templateId: TEMPLATE_ID, templateName: TEMPLATE_NAME },
+    });
+    expect(out[1].system).toBeUndefined();
+  });
+
+  it("dedupes by gitUrl, with user winning over template for the same URL", async () => {
+    const { svc } = build({
+      userSources: [
+        {
+          id: "u-shadow",
+          name: "My Workspace Skills",
+          gitUrl: TEMPLATE_URL,
+        },
+      ],
+      template: TEMPLATE,
+    });
+
+    const out = await svc.listSources(INSTANCE_ID);
+
+    // Only one row: the user entry (first in the dedupe priority order).
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe("u-shadow");
+    expect(out[0].fromTemplate).toBeUndefined();
+  });
+
+  it("falls back to user + system when the agent has no templateId", async () => {
+    const { svc, templatesGet } = build({
+      userSources: [{ id: "u-1", name: "Mine", gitUrl: "https://github.com/me/skills" }],
+      template: null,
+      templateId: undefined,
+    });
+
+    const out = await svc.listSources(INSTANCE_ID);
+
+    expect(out.map((s) => s.id)).toEqual(["u-1"]);
+    expect(templatesGet).not.toHaveBeenCalled();
+  });
+
+  it("sorts user → template → platform, alphabetical within each group", async () => {
+    const userSources: SkillSource[] = [
+      { id: "u-b", name: "Bravo", gitUrl: "https://github.com/u/b" },
+      { id: "u-a", name: "alpha", gitUrl: "https://github.com/u/a" },
+      // A system-tagged entry that listSources() returns from the repo.
+      { id: "sys-c", name: "Cluster Ops", gitUrl: "https://github.com/sys/c", system: true },
+    ];
+    const template: Template = {
+      id: TEMPLATE_ID,
+      name: TEMPLATE_NAME,
+      spec: {
+        version: "humr.ai/v1",
+        image: "x",
+        skillSources: [
+          { name: "Zeta", gitUrl: "https://github.com/t/z" },
+          { name: "Alpha Team", gitUrl: "https://github.com/t/a" },
+        ],
+      },
+    };
+    const { svc } = build({ userSources, template });
+
+    const out = await svc.listSources(INSTANCE_ID);
+
+    expect(out.map((s) => s.name)).toEqual([
+      // User group — yours first (alphabetical, case-insensitive)
+      "alpha",
+      "Bravo",
+      // Template (Agent) group
+      "Alpha Team",
+      "Zeta",
+      // Platform group — least personal, last
+      "Cluster Ops",
+    ]);
+  });
+
+  it("resolves a synthesised template:* id via getSource (not a K8s ConfigMap read)", async () => {
+    const { svc } = build({ template: TEMPLATE });
+    const id = templateSourceId(TEMPLATE_ID, TEMPLATE_URL);
+
+    const got = await svc.getSource(id);
+
+    expect(got).toMatchObject({
+      id,
+      name: "GW Skills",
+      gitUrl: TEMPLATE_URL,
+      fromTemplate: { templateId: TEMPLATE_ID, templateName: TEMPLATE_NAME },
+      canPublish: true,
+    });
+  });
+
+  it("returns null from getSource when the template or the seed no longer exists", async () => {
+    const { svc } = build({ template: null });
+    const got = await svc.getSource("template:ghost:abcdef012345");
+    expect(got).toBeNull();
   });
 });

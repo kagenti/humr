@@ -106,6 +106,54 @@ skillPaths:
 	assert.Contains(t, err.Error(), "must be absolute")
 }
 
+func TestParseAgentSpec_SkillSources(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - name: Anthropic Skills
+    gitUrl: https://github.com/anthropics/skills
+  - name: Corp Ops
+    gitUrl: https://github.com/corp/humr-ops-skills
+`)
+	require.NoError(t, err)
+	require.Len(t, spec.SkillSources, 2)
+	assert.Equal(t, "Anthropic Skills", spec.SkillSources[0].Name)
+	assert.Equal(t, "https://github.com/anthropics/skills", spec.SkillSources[0].GitURL)
+	assert.Equal(t, "Corp Ops", spec.SkillSources[1].Name)
+}
+
+func TestParseAgentSpec_SkillSourceInvalidURL(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - name: Bad
+    gitUrl: not-a-url
+`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "skillSource[0]")
+	assert.Contains(t, err.Error(), "not a valid URL")
+}
+
+func TestParseAgentSpec_SkillSourceMissingName(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - gitUrl: https://github.com/anthropics/skills
+`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "name is required")
+}
+
+func TestParseAgentSpec_SkillSourceMissingGitURL(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - name: Anthropic Skills
+`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "gitUrl is required")
+}
+
 // --- Instance ---
 
 func TestParseInstanceSpec(t *testing.T) {

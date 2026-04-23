@@ -39,4 +39,11 @@ data:
       readOnlyRootFilesystem: false
     skillPaths:
       - /home/agent/.claude/skills/
+    {{- with .Values.googleWorkspaceTemplate.skillSources }}
+    skillSources:
+      {{- range . }}
+      - name: {{ .name | quote }}
+        gitUrl: {{ .gitUrl | quote }}
+      {{- end }}
+    {{- end }}
 {{- end }}

@@ -7,6 +7,9 @@ const skillSourceViewSchema = z.object({
   name: z.string(),
   gitUrl: z.string(),
   system: z.boolean().optional(),
+  fromTemplate: z
+    .object({ templateId: z.string(), templateName: z.string() })
+    .optional(),
   canPublish: z.boolean().optional(),
 });
 
@@ -38,7 +41,10 @@ const localSkillSchema = z.object({
 
 export const skillsRouter = t.router({
   sources: t.router({
-    list: t.procedure.output(z.array(skillSourceViewSchema)).query(({ ctx }) => ctx.skills.listSources()),
+    list: t.procedure
+      .input(z.object({ instanceId: z.string().min(1).optional() }).optional())
+      .output(z.array(skillSourceViewSchema))
+      .query(({ ctx, input }) => ctx.skills.listSources(input?.instanceId)),
 
     create: t.procedure
       .input(z.object({

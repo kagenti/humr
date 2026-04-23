@@ -3,6 +3,7 @@ import type {
   PublishSkillInput,
   PublishSkillResult,
   SkillPublishRecord,
+  SkillSource,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import type { InstancesRepository } from "../../agents/infrastructure/instances-repository.js";
@@ -11,14 +12,16 @@ import {
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
 import { detectHost } from "../infrastructure/git-host.js";
-import type { SkillsRepository } from "../infrastructure/skills-repository.js";
 import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
 
 const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
 export interface PublishServiceDeps {
   owner: string;
-  sources: SkillsRepository;
+  /** Look up a source by id. Must handle both real ConfigMap ids (owned /
+   *  system) AND template-synthesised `template:*` ids — publishing is
+   *  supposed to work against template-bound sources too. */
+  resolveSource: (id: string) => Promise<SkillSource | null>;
   instances: InstancesRepository;
   agents: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
@@ -48,7 +51,7 @@ export async function publishSkill(
     });
   }
 
-  const source = await deps.sources.get(input.sourceId, deps.owner);
+  const source = await deps.resolveSource(input.sourceId);
   if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "skill source not found" });
 
   const host = detectHost(source.gitUrl);
