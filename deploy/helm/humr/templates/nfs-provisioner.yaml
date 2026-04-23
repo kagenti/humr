@@ -157,6 +157,10 @@ metadata:
   labels:
     {{- include "humr.labels" . | nindent 4 }}
     app.kubernetes.io/component: nfs-provisioner
+  {{- with .Values.nfsProvisioner.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   serviceName: {{ $name }}
   replicas: 1
@@ -169,6 +173,10 @@ spec:
       labels:
         {{- include "humr.labels" . | nindent 8 }}
         app.kubernetes.io/component: nfs-provisioner
+      {{- with .Values.nfsProvisioner.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- include "humr.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}

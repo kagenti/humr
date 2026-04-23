@@ -286,6 +286,13 @@ controller:
 # (EFS / Filestore / Azure Files).
 nfsProvisioner:
   enabled: false
+  # -- Annotations applied to the NFS provisioner StatefulSet. Use this to
+  # attach admission-controller break-glass annotations (e.g. StackRox's
+  # `admission.stackrox.io/break-glass`) since the upstream provisioner
+  # image is old and needs elevated capabilities.
+  annotations: {}
+  # -- Annotations applied to the NFS provisioner pod template.
+  podAnnotations: {}
   image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
   # -- Name of the RWX StorageClass created by this provisioner. Set
   # `controller.agentStorageClass` to this value to use it for agent PVCs.
