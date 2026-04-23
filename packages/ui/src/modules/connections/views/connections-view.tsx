@@ -2,6 +2,7 @@ import { ExternalLink, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 import { getAuthConfig } from "../../../auth.js";
+import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { isCustomSecret, type SecretView } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js";
@@ -81,9 +82,7 @@ export function ConnectionsView() {
           </p>
 
           {isPendingAppConnections && (
-            <div className="flex flex-col gap-3">
-              <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
-            </div>
+            <ListSkeleton />
           )}
 
           {!isPendingAppConnections && appConnectionsError && (
@@ -105,8 +104,8 @@ export function ConnectionsView() {
 
           {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
             <div className="flex flex-col gap-3">
-              {appConnections.map((c, i) => (
-                <AppConnectionRow key={c.id} connection={c} animationDelayMs={i * 50} />
+              {appConnections.map((connection, i) => (
+                <AppConnectionRow key={connection.id} connection={connection} animationDelayMs={i * 50} />
               ))}
             </div>
           )}
@@ -136,9 +135,7 @@ export function ConnectionsView() {
         </p>
 
         {isPendingMcpConnections && (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
-          </div>
+          <ListSkeleton />
         )}
 
         {!isPendingMcpConnections && mcpConnections.length === 0 && !showAddMcp && (
@@ -149,12 +146,12 @@ export function ConnectionsView() {
 
         {!isPendingMcpConnections && mcpConnections.length > 0 && (
           <div className="flex flex-col gap-3">
-            {mcpConnections.map((c, i) => (
+            {mcpConnections.map((connection, i) => (
               <McpConnectionRow
-                key={c.hostname}
-                connection={c}
+                key={connection.hostname}
+                connection={connection}
                 animationDelayMs={i * 50}
-                onReconnect={(host) => openAddMcp(`https://${host}/mcp`)}
+                onReconnect={(hostname) => openAddMcp(`https://${hostname}/mcp`)}
               />
             ))}
           </div>
@@ -182,9 +179,7 @@ export function ConnectionsView() {
         </p>
 
         {isPendingSecrets && (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-xl border-2 border-border-light bg-surface h-[68px] anim-pulse" />
-          </div>
+          <ListSkeleton />
         )}
 
         {!isPendingSecrets && customSecrets.length === 0 && !showAddSecret && (
@@ -195,10 +190,10 @@ export function ConnectionsView() {
 
         {!isPendingSecrets && (
           <div className="flex flex-col gap-3">
-            {customSecrets.map((s, i) => (
+            {customSecrets.map((secret, i) => (
               <SecretRow
-                key={s.id}
-                secret={s}
+                key={secret.id}
+                secret={secret}
                 animationDelayMs={i * 50}
                 onEdit={setEditingSecret}
               />
