@@ -16,7 +16,6 @@ export interface LoadingSlice {
   loadedOnce: {
     agents: boolean;
     instances: boolean;
-    secrets: boolean;
     appConnections: boolean;
     mcpConnections: boolean;
   };
@@ -29,7 +28,6 @@ export const createLoadingSlice: StateCreator<HumrStore, [], [], LoadingSlice> =
   loadedOnce: {
     agents: false,
     instances: false,
-    secrets: false,
     appConnections: false,
     mcpConnections: false,
   },
