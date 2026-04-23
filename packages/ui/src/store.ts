@@ -11,7 +11,6 @@ import { createSessionsSlice, type SessionsSlice } from "./store/sessions.js";
 import { createSessionConfigSlice, type SessionConfigSlice } from "./store/session-config.js";
 import { createFilesSlice, type FilesSlice } from "./store/files.js";
 import { createPermissionsSlice, type PermissionsSlice } from "./store/permissions.js";
-import { createConnectionsSlice, type ConnectionsSlice } from "./modules/connections/store.js";
 
 export type { DialogState } from "./store/dialog.js";
 export type { Toast, ToastKind } from "./store/toast.js";
@@ -30,8 +29,7 @@ export type HumrStore =
   & SessionsSlice
   & SessionConfigSlice
   & FilesSlice
-  & PermissionsSlice
-  & ConnectionsSlice;
+  & PermissionsSlice;
 
 export const useStore = create<HumrStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -46,7 +44,6 @@ export const useStore = create<HumrStore>()((...a) => ({
   ...createSessionConfigSlice(...a),
   ...createFilesSlice(...a),
   ...createPermissionsSlice(...a),
-  ...createConnectionsSlice(...a),
 }));
 
 // Reuse the path parser for browser back/forward hydration
