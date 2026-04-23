@@ -9,7 +9,7 @@ import { createAgentsSlice, type AgentsSlice } from "./store/agents.js";
 import { createInstancesSlice, type InstancesSlice } from "./store/instances.js";
 import { createSessionsSlice, type SessionsSlice } from "./store/sessions.js";
 import { createSessionConfigSlice, type SessionConfigSlice } from "./store/session-config.js";
-import { createFilesSlice, type FilesSlice } from "./store/files.js";
+import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import { createPermissionsSlice, type PermissionsSlice } from "./store/permissions.js";
 
 export type { DialogState } from "./store/dialog.js";

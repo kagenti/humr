@@ -8,7 +8,7 @@ import { ResizeHandle } from "./../components/resize-handle.js";
 import { ChatInput } from "./../components/chat-input.js";
 import { PermissionPrompt } from "./../components/permission-prompt.js";
 import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
-import { FilesPanel } from "./../panels/files-panel.js";
+import { FilesPanel } from "./../modules/files/components/files-panel.js";
 import { LogPanel } from "./../panels/log-panel.js";
 import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
@@ -17,7 +17,7 @@ import { useAcpSession } from "./../hooks/use-acp-session.js";
 import type { SessionError } from "../store.js";
 import type { InstanceView } from "../types.js";
 import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
-import { useFileTree } from "./../hooks/use-file-tree.js";
+import { useFileTree } from "./../modules/files/hooks/use-file-tree.js";
 import { isMobile } from "./../lib/breakpoints.js";
 
 export function ChatView() {
