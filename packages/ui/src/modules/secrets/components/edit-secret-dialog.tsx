@@ -6,12 +6,12 @@ import {
   sanitizeEnvMappings,
 } from "../../../components/env-mappings-editor.js";
 import { Modal } from "../../../components/modal.js";
-import { useStore } from "../../../store.js";
 import {
   DEFAULT_INJECTION_CONFIG,
   type EnvMapping,
   type SecretView,
 } from "../../../types.js";
+import { useUpdateSecret } from "../api/mutations.js";
 
 export function EditSecretDialog({
   secret,
@@ -20,7 +20,7 @@ export function EditSecretDialog({
   secret: SecretView;
   onClose: () => void;
 }) {
-  const updateSecret = useStore((s) => s.updateSecret);
+  const updateSecret = useUpdateSecret();
   const [name, setName] = useState(secret.name);
   const [hostPattern, setHostPattern] = useState(secret.hostPattern);
   const [pathPattern, setPathPattern] = useState(secret.pathPattern ?? "");
@@ -33,7 +33,7 @@ export function EditSecretDialog({
   const [envMappings, setEnvMappings] = useState<EnvMapping[]>(
     secret.envMappings ?? [],
   );
-  const [saving, setSaving] = useState(false);
+  const saving = updateSecret.isPending;
 
   const isGeneric = secret.type !== "anthropic";
   const trimmed = name.trim();
@@ -61,11 +61,11 @@ export function EditSecretDialog({
     allEnvMappingsValid(envMappings) &&
     (nameChanged || hostChanged || pathChanged || injectionChanged || mappingsChanged);
 
-  const save = async () => {
+  const save = () => {
     if (!canSave) return;
-    setSaving(true);
-    try {
-      await updateSecret(secret.id, {
+    updateSecret.mutate(
+      {
+        id: secret.id,
         ...(nameChanged && { name: trimmed }),
         ...(hostChanged && { hostPattern: trimmedHost }),
         ...(pathChanged && { pathPattern: trimmedPath === "" ? null : trimmedPath }),
@@ -76,11 +76,9 @@ export function EditSecretDialog({
           },
         }),
         ...(mappingsChanged && { envMappings: sanitized }),
-      });
-      onClose();
-    } finally {
-      setSaving(false);
-    }
+      },
+      { onSuccess: onClose },
+    );
   };
 
   return (

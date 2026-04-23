@@ -16,6 +16,8 @@ import {
   sanitizeEnvMappings,
 } from "../components/env-mappings-editor.js";
 import { EditSecretDialog } from "../modules/secrets/components/edit-secret-dialog.js";
+import { useSecrets } from "../modules/secrets/api/queries.js";
+import { useCreateSecret, useDeleteSecret } from "../modules/secrets/api/mutations.js";
 import { AppStatusPill } from "../components/app-status-pill.js";
 import {
   RefreshCw,
@@ -39,10 +41,10 @@ const emptySecretForm = {
 };
 
 export function ConnectionsView() {
-  const secrets = useStore((s) => s.secrets);
-  const fetchSecrets = useStore((s) => s.fetchSecrets);
-  const createSecret = useStore((s) => s.createSecret);
-  const deleteSecret = useStore((s) => s.deleteSecret);
+  const secretsQuery = useSecrets();
+  const secrets = secretsQuery.data ?? [];
+  const createSecret = useCreateSecret();
+  const deleteSecret = useDeleteSecret();
   const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
   const connections = useStore((s) => s.mcpConnections);
@@ -71,10 +73,14 @@ export function ConnectionsView() {
 
   const load = useCallback(async () => {
     if (!loaded.current) setLoading(true);
-    await Promise.all([fetchMcpConnections(), fetchAppConnections(), fetchSecrets()]);
+    await Promise.all([
+      fetchMcpConnections(),
+      fetchAppConnections(),
+      secretsQuery.refetch(),
+    ]);
     loaded.current = true;
     setLoading(false);
-  }, [fetchMcpConnections, fetchAppConnections, fetchSecrets]);
+  }, [fetchMcpConnections, fetchAppConnections, secretsQuery]);
 
   useEffect(() => {
     load();
@@ -139,7 +145,7 @@ export function ConnectionsView() {
       const pathPattern = secretForm.pathPattern.trim();
       const headerName = secretForm.headerName.trim();
       const valueFormat = secretForm.valueFormat.trim();
-      await createSecret({
+      await createSecret.mutateAsync({
         type: "generic",
         name: secretForm.name.trim(),
         value: secretForm.value.trim(),
@@ -163,7 +169,7 @@ export function ConnectionsView() {
 
   const removeSecret = async (id: string, name: string) => {
     if (!(await showConfirm(`Delete "${name}"?`, "Delete Secret"))) return;
-    await deleteSecret(id);
+    deleteSecret.mutate({ id });
   };
 
   const inp =

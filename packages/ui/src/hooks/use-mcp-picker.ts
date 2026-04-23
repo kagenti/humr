@@ -3,6 +3,7 @@ import { useStore } from "../store.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { McpOption } from "./../panels/mcps-panel.js";
+import { useSecrets } from "../modules/secrets/api/queries.js";
 
 /**
  * Manages MCP server selection for session creation.
@@ -10,10 +11,10 @@ import type { McpOption } from "./../panels/mcps-panel.js";
  */
 export function useMcpPicker(selectedInstance: string | null) {
   const instances = useStore((s) => s.instances);
-  const secrets = useStore((s) => s.secrets);
-  const fetchSecrets = useStore((s) => s.fetchSecrets);
   const agentAccess = useStore((s) => s.agentAccess);
   const fetchAgentAccess = useStore((s) => s.fetchAgentAccess);
+
+  const secrets = useSecrets().data ?? [];
 
   const currentAgentId = useMemo(
     () => instances.find((i) => i.id === selectedInstance)?.agentId,
@@ -21,7 +22,6 @@ export function useMcpPicker(selectedInstance: string | null) {
   );
   const access = currentAgentId ? agentAccess[currentAgentId] : undefined;
 
-  useEffect(() => { fetchSecrets(); }, [fetchSecrets]);
   useEffect(() => {
     if (currentAgentId && !agentAccess[currentAgentId]) fetchAgentAccess(currentAgentId);
   }, [currentAgentId, agentAccess, fetchAgentAccess]);
