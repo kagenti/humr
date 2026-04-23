@@ -1,4 +1,4 @@
-import type { AgentDisplayState } from "./agent-resolver.js";
+import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
 const stateLabel: Record<AgentDisplayState, string> = {
   running: "Running",

@@ -1,6 +1,7 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
-import { getAccessToken } from "./auth.js";
+
+import { getAccessToken } from "../../auth.js";
 
 export function createInstanceTrpc(instanceId: string) {
   return createTRPCClient<AppRouter>({

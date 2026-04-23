@@ -1,9 +1,10 @@
 import type { StateCreator } from "zustand";
-import { platform } from "../platform.js";
-import type { InstanceView } from "../types.js";
-import type { HumrStore } from "../store.js";
-import { viewToPath } from "./navigation.js";
-import { runAction, runQuery, resetQueryTracker, ACTION_FAILED } from "./query-helpers.js";
+
+import { platform } from "../../platform.js";
+import type { HumrStore } from "../../store.js";
+import { viewToPath } from "../../store/navigation.js";
+import { ACTION_FAILED,resetQueryTracker, runAction, runQuery } from "../../store/query-helpers.js";
+import type { InstanceView } from "../../types.js";
 
 export interface InstancesSlice {
   availableChannels: Record<string, boolean>;

@@ -1,4 +1,4 @@
-import type { AgentView, InstanceView, InstanceState } from "../types.js";
+import type { AgentView, InstanceState,InstanceView } from "../../../types.js";
 
 export type AgentDisplayState = InstanceState | "restarting" | "no-instance";
 

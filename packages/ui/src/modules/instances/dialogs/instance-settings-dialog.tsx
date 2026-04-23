@@ -1,5 +1,5 @@
+import { Plus,X } from "lucide-react";
 import { useState } from "react";
-import { X, Plus } from "lucide-react";
 
 export function InstanceSettingsDialog({ instanceName, allowedUserEmails, onSubmit, onCancel }: {
   instanceName: string;

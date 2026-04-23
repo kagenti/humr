@@ -1,25 +1,26 @@
-import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  isProtectedAgentEnvName,
   type AppConnectionView,
+  isProtectedAgentEnvName,
   type SecretView,
 } from "api-server-api";
-import { useStore } from "../store.js";
-import type { AgentView, EnvVar } from "../types.js";
-import { platform } from "../platform.js";
-import { Modal } from "../components/modal.js";
+import { KeyRound, Lock } from "lucide-react";
+import { useEffect, useMemo, useRef,useState } from "react";
+
+import { ConnectionsPicker } from "../../../components/connections-picker.js";
 import {
-  EnvVarsEditor,
   allEnvVarsValid,
+  EnvVarsEditor,
   sanitizeEnvVars,
-} from "../components/env-vars-editor.js";
+} from "../../../components/env-vars-editor.js";
+import { HoverTooltip } from "../../../components/hover-tooltip.js";
+import { Modal } from "../../../components/modal.js";
+import { platform } from "../../../platform.js";
+import { useStore } from "../../../store.js";
+import type { AgentView, EnvVar } from "../../../types.js";
 import {
   envsAfterUngrant,
   envsToAddOnGrant,
-} from "./connection-env-helpers.js";
-import { ConnectionsPicker } from "../components/connections-picker.js";
-import { HoverTooltip } from "../components/hover-tooltip.js";
-import { KeyRound, Lock } from "lucide-react";
+} from "../utils/connection-env-helpers.js";
 
 type Tab = "connections" | "env";
 
@@ -73,8 +74,8 @@ export function EditAgentSecretsDialog({
         setApps(appList);
         setAssignedAppIds(new Set(agentApps.connectionIds));
         initialAppIds.current = [...agentApps.connectionIds].sort();
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message ?? "Failed to load");
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -87,7 +88,7 @@ export function EditAgentSecretsDialog({
   const toggleSecret = (id: string) =>
     setAssigned((p) => {
       const n = new Set(p);
-      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
 
@@ -180,8 +181,8 @@ export function EditAgentSecretsDialog({
       if (envChanged) {
         await updateAgent(agentId, { env: sanitizedEnv });
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to save");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
       setSaving(false);
       return;
     }
@@ -193,8 +194,9 @@ export function EditAgentSecretsDialog({
           connectionIds: nextAppIds,
         });
         initialAppIds.current = nextAppIds;
-      } catch (err: any) {
-        setError(`Connections saved; apps failed: ${err?.message ?? String(err)}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`Connections saved; apps failed: ${msg}`);
         setSaving(false);
         return;
       }

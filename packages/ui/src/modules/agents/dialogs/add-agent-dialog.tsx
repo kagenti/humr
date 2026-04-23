@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
-import type { TemplateView, SecretView, EnvVar } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
 import { Sparkles } from "lucide-react";
-import { platform } from "../platform.js";
-import { HoverTooltip } from "../components/hover-tooltip.js";
-import { ConnectionsPicker } from "../components/connections-picker.js";
-import { envsToAddOnGrant } from "./connection-env-helpers.js";
-import { useStore } from "../store.js";
+import { useEffect,useState } from "react";
+
+import { ConnectionsPicker } from "../../../components/connections-picker.js";
+import { HoverTooltip } from "../../../components/hover-tooltip.js";
+import { platform } from "../../../platform.js";
+import { useStore } from "../../../store.js";
+import type { EnvVar,SecretView, TemplateView } from "../../../types.js";
+import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
 
 type Step = "pick" | "configure";
 
@@ -81,14 +82,14 @@ export function AddAgentDialog({
     setSecretsDirty(true);
     setSelSecrets((p) => {
       const n = new Set(p);
-      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
   };
   const toggleApp = (id: string) =>
     setSelApps((p) => {
       const n = new Set(p);
-      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
 

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "./store.js";
-import { ListView } from "./views/list-view.js";
+import { ListView } from "./modules/agents/views/list-view.js";
 import { ChatView } from "./views/chat-view.js";
 import { ProvidersView } from "./views/providers-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";

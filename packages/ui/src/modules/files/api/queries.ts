@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { createInstanceTrpc } from "../../../instance-trpc.js";
 import { queryClient } from "../../../query-client.js";
+import { createInstanceTrpc } from "../../instances/instance-trpc.js";
 
 export const fileKeys = {
   root: (instanceId: string) => ["files", instanceId] as const,

@@ -1,8 +1,9 @@
 import type { StateCreator } from "zustand";
-import { platform } from "../platform.js";
-import type { TemplateView } from "../types.js";
-import type { HumrStore } from "../store.js";
-import { runQuery } from "./query-helpers.js";
+
+import { platform } from "../../platform.js";
+import type { HumrStore } from "../../store.js";
+import { runQuery } from "../../store/query-helpers.js";
+import type { TemplateView } from "../../types.js";
 
 export interface TemplatesSlice {
   templates: TemplateView[];

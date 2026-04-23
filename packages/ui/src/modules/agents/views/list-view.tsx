@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
-import { useStore } from "../store.js";
-import { StatusBadge } from "../components/status-indicator.js";
-import { resolveAgentDisplay } from "../components/agent-resolver.js";
+import { KeyRound, Play,Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
+import { useMemo,useState } from "react";
+
+import { StatusBadge } from "../../../components/status-indicator.js";
+import { useStore } from "../../../store.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
-import { RefreshCw, Plus, Trash2, KeyRound, RotateCw, Play } from "lucide-react";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
+import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
   const templates = useStore(s => s.templates);
