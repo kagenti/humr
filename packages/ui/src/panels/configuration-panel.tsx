@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { SchedulesPanel } from "./schedules-panel.js";
+import { SchedulesPanel } from "../modules/schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
 import { McpsPanel, type McpOption } from "./mcps-panel.js";
 

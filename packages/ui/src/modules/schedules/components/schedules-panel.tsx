@@ -1,0 +1,53 @@
+import { Plus } from "lucide-react";
+import { useState } from "react";
+
+import { useStore } from "../../../store.js";
+import { useSchedules, useScheduleSessions } from "../api/queries.js";
+import { CreateScheduleForm } from "../forms/create-schedule-form.js";
+import { ScheduleCard } from "./schedule-card.js";
+
+export function SchedulesPanel({ onResumeSession }: { onResumeSession?: (sessionId: string) => void }) {
+  const selectedInstance = useStore(s => s.selectedInstance);
+
+  const schedulesQuery = useSchedules(selectedInstance);
+  const schedules = schedulesQuery.data ?? [];
+
+  const [isCreating, setIsCreating] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const sessionsQuery = useScheduleSessions(expandedId);
+  const sessionsForExpanded = sessionsQuery.data ?? [];
+
+  return (
+    <div className="flex flex-col">
+      <div className="px-3 py-2.5 shrink-0">
+        <button
+          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
+          onClick={() => setIsCreating(true)}
+        >
+          <Plus size={12} /> Add Schedule
+        </button>
+      </div>
+
+      {isCreating && selectedInstance && (
+        <CreateScheduleForm
+          instanceId={selectedInstance}
+          onCancel={() => setIsCreating(false)}
+          onCreated={() => setIsCreating(false)}
+        />
+      )}
+
+      {schedules.length === 0 && !isCreating && <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>}
+      {schedules.map(schedule => (
+        <ScheduleCard
+          key={schedule.id}
+          schedule={schedule}
+          isExpanded={expandedId === schedule.id}
+          sessions={expandedId === schedule.id ? sessionsForExpanded : []}
+          onToggleExpanded={() => setExpandedId(prev => prev === schedule.id ? null : schedule.id)}
+          onResumeSession={onResumeSession}
+        />
+      ))}
+    </div>
+  );
+}

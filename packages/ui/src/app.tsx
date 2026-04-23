@@ -6,6 +6,7 @@ import { ProvidersView } from "./views/providers-view.js";
 import { ConnectionsView } from "./views/connections-view.js";
 import { SettingsView } from "./views/settings-view.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { OfflineBanner } from "./components/offline-banner.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
 import { Sidebar } from "./components/sidebar.js";
 import { MobileNav } from "./components/mobile-nav.js";
@@ -78,7 +79,7 @@ export default function App() {
   }, [fetchTemplates, fetchAgents, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)
-  if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /></>;
+  if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /><OfflineBanner /></>;
 
   // All non-chat views share the sidebar shell
   return (
@@ -98,6 +99,7 @@ export default function App() {
       <MobileNav />
       <DialogOverlay />
       <ToastOverlay />
+      <OfflineBanner />
     </div>
   );
 }
