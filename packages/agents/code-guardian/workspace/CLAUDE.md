@@ -25,20 +25,30 @@ If all open PRs have already been reviewed at their current HEAD, report that th
 
 ## How to Review
 
+### Resolve the repository once per run
+
+At the very start of the run, resolve the target repo into a shell variable and reuse it for every subsequent `gh` call. Do not re-resolve per PR — one `gh repo view` call per run is enough.
+
+```bash
+REPO="${GITHUB_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
+All `gh` commands below use `--repo "$REPO"`.
+
 ### Fetch PRs
 
 ```bash
-gh pr list --repo "$GITHUB_REPO" --state open --json number,title,author,headRefName,baseRefName,additions,deletions,changedFiles,headRefOid --limit 20
+gh pr list --repo "$REPO" --state open --draft=false --json number,title,author,headRefName,baseRefName,additions,deletions,changedFiles,headRefOid --limit 100
 ```
 
-The `headRefOid` field is the HEAD commit SHA — use it to detect whether a PR has new commits since your last review.
-
-If `GITHUB_REPO` is not set, default to the repo detected by `gh repo view --json nameWithOwner -q .nameWithOwner` in the current working directory.
+- `--draft=false` skips draft PRs — the author is still working on them, reviewing would be noise.
+- `--limit 100` covers busy repos; `gh` returns fewer if there are fewer open PRs.
+- `headRefOid` is the HEAD commit SHA — use it to detect whether a PR has new commits since your last review.
 
 ### Fetch PR diff
 
 ```bash
-gh pr diff <number> --repo "$GITHUB_REPO"
+gh pr diff <number> --repo "$REPO"
 ```
 
 ### Review Criteria
@@ -72,7 +82,25 @@ For each PR, output a structured review:
 ### Verdict
 <APPROVE / REQUEST_CHANGES / COMMENT> — <one sentence justification>
 ```
+
 If there are no open PRs, stop without output.
+
+### Re-review output (when a PR has new commits since your last review)
+
+For re-reviews, first read the prior review from `reviews/pr-<number>.md` (see **Per-PR Review History** below). Produce the full review above, but insert a **`### Changes since last review`** section between `### Summary` and `### Findings`:
+
+```
+### Changes since last review
+Previous HEAD: <short-sha> (<timestamp>) — verdict <PREV_VERDICT>
+
+- ✅ **Fixed:** <description from prior review> (`file:line`) — no longer present in this diff
+- 🔁 **Still present:** <description from prior review> (`file:line`) — carried over from previous review
+- 🆕 **New:** <description> (`file:line`) — introduced by the new commits
+```
+
+Only include buckets that have entries (skip empty ones). In the main `### Findings` section that follows, list all findings applicable to the current HEAD — the `Changes since last review` section is a narrative header; it doesn't replace the full findings list.
+
+If the prior review file is missing (first review, or file was pruned), skip the `Changes since last review` section and note at the end of `### Summary`: `(no prior review on file)`.
 
 ## Preference Learning
 
@@ -115,11 +143,14 @@ Organize preferences under these headings:
 
 ## Review Tracking
 
-Track which PRs you have already reviewed in [REVIEWS.md](./REVIEWS.md). This file persists on the `/workspace` PVC.
+Two persistent artefacts live on the `/workspace` PVC:
 
-### Format
+- **[REVIEWS.md](./REVIEWS.md)** — lightweight index: one row per PR (latest state only). Used to decide skip vs. re-review vs. new review.
+- **`reviews/pr-<number>.md`** — per-PR review history. Append-only log of every review you produced for that PR, so on re-review you can compare the current diff against what you previously flagged.
 
-Each reviewed PR is one line:
+### REVIEWS.md format
+
+One row per PR, overwritten in place when a PR is re-reviewed:
 
 ```
 | <number> | <headRefOid> | <ISO timestamp> | <verdict> |
@@ -133,14 +164,46 @@ Example:
 | 103 | 3db7db1 | 2026-04-15T10:30:00Z | REQUEST_CHANGES |
 ```
 
+### Per-PR review history: `reviews/pr-<number>.md`
+
+One file per PR. Each review appends a new section at the bottom; older reviews are kept intact so you can diff against them.
+
+Create the `reviews/` directory if it doesn't exist (`mkdir -p reviews`). File path is exactly `reviews/pr-<number>.md` — no leading zeros, no other prefix.
+
+File format:
+
+```markdown
+# PR #<number>: <title>
+
+## Review at <headRefOid-short> — <ISO timestamp> — <VERDICT>
+
+<full review body exactly as posted to Slack/chat UI, starting with the `### Summary` section>
+
+---
+
+## Review at <next headRefOid-short> — <ISO timestamp> — <VERDICT>
+
+<next review>
+
+---
+```
+
+Append, don't rewrite. The `---` separator between reviews makes them easy to scan. Keep the file header (`# PR #<number>: <title>`) stable; if the PR title changes, update it in place at the top but never lose prior review sections.
+
 ### Logic
 
-1. After fetching open PRs, compare each PR's `number` + `headRefOid` against REVIEWS.md
-2. **Skip** if the same PR number AND same commit SHA already exists — nothing changed
-3. **Re-review** if the PR number exists but with a different commit SHA — new commits were pushed
-4. **Review** if the PR number is not in the file at all — it's a new PR
-5. After completing a review, update REVIEWS.md (add or replace the row for that PR)
-6. Periodically clean up REVIEWS.md — remove entries for PRs that are no longer open
+1. After fetching open PRs, for each PR in the list:
+   - **Skip** if REVIEWS.md already has the same `number` + `headRefOid` — nothing changed.
+   - **Re-review** if REVIEWS.md has the `number` but a different `headRefOid` — new commits were pushed.
+     - Before writing the new review, read `reviews/pr-<number>.md` to load your prior review(s). Use it to produce the `### Changes since last review` section (see **Output Format** above).
+   - **New review** if the PR is not in REVIEWS.md at all.
+2. After completing a review:
+   - Update (add or replace) the PR's row in REVIEWS.md.
+   - Append the full review to `reviews/pr-<number>.md` (create the file if it doesn't exist, with the title header).
+3. **Prune closed/merged PRs** at the start of each run, after `gh pr list --state open`:
+   - Drop any REVIEWS.md row whose PR number is not in the open set.
+   - Delete the corresponding `reviews/pr-<number>.md` file — the review history for a closed PR is dead weight and will never be read again.
+   - The open-PR set is the source of truth; if a row / file isn't backed by an open PR, remove it.
 
 ## Slack Notifications
 
@@ -212,6 +275,8 @@ Let `N` = PRs you actually reviewed this run (skipped/unchanged PRs don't count)
 2. Did each Slack message contain the full review (Summary + all Findings + Verdict)?
 3. Did every message resolve `$GITHUB_REPO` to its runtime value — no literal `$GITHUB_REPO` leaking through?
 4. Did I update REVIEWS.md for every reviewed PR?
-5. Did I log any Slack errors (not-connected, rate limit, etc.) in the chat UI?
+5. Did I append the full review to `reviews/pr-<number>.md` for every reviewed PR, and for every re-review did I first read the prior review file and include the `### Changes since last review` section?
+6. Did I prune REVIEWS.md rows and `reviews/pr-*.md` files for PRs that are no longer open?
+7. Did I log any Slack errors (not-connected, rate limit, etc.) in the chat UI?
 
-If `N = 0`, report "no new changes" to the chat UI and end the run — items 1–3 and 5 don't apply.
+If `N = 0`, report "no new changes" to the chat UI and end the run — items 1–3, 5, and 7 don't apply (but item 6 still does: prune stale state even on no-op runs).
