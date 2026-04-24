@@ -1,4 +1,4 @@
-# Humr, in plain terms
+# Humr is multiplayer, not multitenant yet
 
 > **TL;DR.** Humr is a shared platform for AI agents. Each agent belongs to one person — its owner. To let colleagues use an agent, the owner connects it to a shared surface (a Slack channel, a Telegram chat, …). Colleagues can watch for free. They can only talk to the agent if the owner adds them to an access list. When a colleague talks to it, the agent acts as *them*, not the owner.
 
