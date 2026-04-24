@@ -1,12 +1,11 @@
-import type { AppConnectionView } from "api-server-api";
 import { Sparkles } from "lucide-react";
-import { useEffect,useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ConnectionsPicker } from "../../../components/connections-picker.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
-import { platform } from "../../../platform.js";
-import { useStore } from "../../../store.js";
-import type { EnvVar,SecretView, TemplateView } from "../../../types.js";
+import type { EnvVar, TemplateView } from "../../../types.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useSecrets } from "../../secrets/api/queries.js";
 import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
 
 type Step = "pick" | "configure";
@@ -36,47 +35,32 @@ export function AddAgentDialog({
   );
   const [customImage, setCustomImage] = useState("");
 
-  // Configure step state
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const [secrets, setSecrets] = useState<SecretView[]>([]);
   const [selSecrets, setSelSecrets] = useState<Set<string>>(new Set());
   // Tracks whether the user touched the selection at all. Needed because the
   // controller auto-assigns the single Anthropic provider when no explicit
   // list is sent, which would otherwise silently ignore an explicit uncheck.
   const [secretsDirty, setSecretsDirty] = useState(false);
-  const [loadSecrets, setLoadSecrets] = useState(true);
-  const [apps, setApps] = useState<AppConnectionView[]>([]);
   const [selApps, setSelApps] = useState<Set<string>>(new Set());
-  const showToast = useStore((s) => s.showToast);
 
+  const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
+  const { data: apps = [] } = useAppConnections();
+
+  // Auto-check the lone Anthropic provider once the list arrives so the
+  // configure step shows what the controller's default would assign anyway.
+  // Left undirty — submit() still sends `secretIds: undefined` so the
+  // controller picks, not the user.
+  const autoSelectedRef = useRef(false);
   useEffect(() => {
-    platform.secrets.list
-      .query()
-      .then((loaded) => {
-        setSecrets(loaded);
-        const providers = loaded.filter((s) => s.type === "anthropic");
-        if (providers.length === 1) {
-          setSelSecrets(new Set([providers[0].id]));
-        }
-      })
-      .catch((err) =>
-        showToast({
-          kind: "error",
-          message: `Couldn't load secrets: ${err instanceof Error ? err.message : "unknown error"}`,
-        }),
-      )
-      .finally(() => setLoadSecrets(false));
-    platform.connections.list
-      .query()
-      .then(setApps)
-      .catch((err) =>
-        showToast({
-          kind: "error",
-          message: `Couldn't load connections: ${err instanceof Error ? err.message : "unknown error"}`,
-        }),
-      );
-  }, [showToast]);
+    if (autoSelectedRef.current) return;
+    if (secrets.length === 0) return;
+    autoSelectedRef.current = true;
+    const providers = secrets.filter((s) => s.type === "anthropic");
+    if (providers.length === 1) {
+      setSelSecrets(new Set([providers[0].id]));
+    }
+  }, [secrets]);
 
   const toggleSecret = (id: string) => {
     setSecretsDirty(true);
