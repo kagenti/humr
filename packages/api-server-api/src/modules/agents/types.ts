@@ -42,6 +42,7 @@ export interface CreateAgentInput {
 
 export interface UpdateAgentInput {
   id: string;
+  name?: string;
   description?: string;
   env?: EnvVar[];
 }
