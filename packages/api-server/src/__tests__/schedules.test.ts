@@ -7,6 +7,7 @@ import {
   configMapExists,
   patchConfigMapData,
   waitForConfigMapKey,
+  waitForScheduleStatus,
   waitForPodReady,
   dumpPodLogs,
   describePod,
@@ -247,11 +248,13 @@ describe("e2e: controller reconciliation", () => {
     e2eScheduleId = sched.id;
 
     try {
-      const cm = await waitForConfigMapKey(e2eScheduleId, "status.yaml");
-      const status = yaml.load(cm.data!["status.yaml"]) as Record<
-        string,
-        unknown
-      >;
+      // status.yaml now lands at registration with just `nextRun` (so the UI
+      // has an upcoming-fire time before one happens). Wait specifically for
+      // `lastResult` to appear — that's the signal the cron actually fired.
+      const status = await waitForScheduleStatus(
+        e2eScheduleId,
+        (s) => typeof s.lastResult === "string",
+      );
 
       expect(status.lastResult).toBe("success");
       expect(status.lastRun).toBeTruthy();

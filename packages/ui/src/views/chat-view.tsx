@@ -147,6 +147,7 @@ export function ChatView() {
             mcpOptions={mcpOptions} enabledMcps={enabledMcps}
             onToggleMcp={toggleMcp} onSelectAllMcps={selectAllMcps} onClearAllMcps={clearAllMcps}
             hasActiveSession={!!sessionId} accessMode={access?.mode ?? null}
+            onResumeSession={mobileResumeSession}
           />
         )}
       </div>

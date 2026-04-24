@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createAcpClient } from "../../core/acp-client.js";
@@ -36,7 +37,17 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
-      const { sessions } = composeAgentsModule(api, config.namespace, "_system", db, userDirectory, channelSecretStore);
+
+      // Look up the instance's real owner from its ConfigMap. Composing
+      // with "_system" would short-circuit sessions.create's isOwnedInstance
+      // check and silently drop the DB row — so the scheduled session would
+      // fire, complete, and leave no trace in the sessions table.
+      const instanceCm = await k8sClient.getConfigMap(body.instanceId);
+      const owner = instanceCm?.metadata?.labels?.[LABEL_OWNER];
+      if (!owner) {
+        throw new Error(`instance ${body.instanceId}: missing owner label`);
+      }
+      const { sessions } = composeAgentsModule(api, config.namespace, owner, db, userDirectory, channelSecretStore);
 
       let resumeSessionId: string | undefined;
       if (mode === "continuous") {

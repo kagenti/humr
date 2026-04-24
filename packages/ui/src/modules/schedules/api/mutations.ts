@@ -10,7 +10,9 @@ const invalidatesScheduleList = {
 export interface CreateScheduleInput {
   instanceId: string;
   name: string;
-  cron: string;
+  rrule: string;
+  timezone: string;
+  quietHours: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
 }
@@ -18,14 +20,39 @@ export interface CreateScheduleInput {
 export function useCreateSchedule() {
   return useMutation({
     mutationFn: (input: CreateScheduleInput) =>
-      platform.schedules.createCron.mutate({
+      platform.schedules.createRRule.mutate({
         ...input,
+        quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
         // "fresh" is the absence of a persisted session on the wire.
         sessionMode: input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),
     meta: {
       ...invalidatesScheduleList,
       errorToast: "Failed to create schedule",
+    },
+  });
+}
+
+export interface UpdateScheduleInput {
+  id: string;
+  name: string;
+  rrule: string;
+  timezone: string;
+  quietHours: { startTime: string; endTime: string; enabled: boolean }[];
+  task: string;
+  sessionMode: "fresh" | "continuous";
+}
+
+export function useUpdateSchedule() {
+  return useMutation({
+    mutationFn: (input: UpdateScheduleInput) =>
+      platform.schedules.updateRRule.mutate({
+        ...input,
+        sessionMode: input.sessionMode === "fresh" ? undefined : input.sessionMode,
+      }),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Failed to update schedule",
     },
   });
 }

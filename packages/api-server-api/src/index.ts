@@ -40,8 +40,13 @@ export type {
 export type {
   Schedule,
   ScheduleSpec,
+  ScheduleSpecCron,
+  ScheduleSpecRRule,
   ScheduleStatus,
+  QuietWindow,
   CreateCronScheduleInput,
+  CreateRRuleScheduleInput,
+  UpdateRRuleScheduleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";
 

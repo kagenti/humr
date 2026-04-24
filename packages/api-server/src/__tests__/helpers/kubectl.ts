@@ -1,4 +1,5 @@
 import * as k8s from "@kubernetes/client-node";
+import yaml from "js-yaml";
 
 const KUBECONFIG = process.env.IS_SANDBOX
   ? "/etc/rancher/k3s/k3s.yaml"
@@ -96,6 +97,36 @@ export async function waitForConfigMapKey(
   }
   throw new Error(
     `ConfigMap ${name} key "${key}" not found after ${timeoutMs}ms`,
+  );
+}
+
+/**
+ * Poll a ConfigMap's `status.yaml` until the predicate returns true.
+ * Scheduler now writes an initial `status.yaml` with just `nextRun` at
+ * registration time (so the UI sees an upcoming fire before one happens),
+ * which means "key exists" is no longer enough to tell whether the schedule
+ * has actually fired — callers waiting for `lastResult` must poll content.
+ */
+export async function waitForScheduleStatus(
+  name: string,
+  predicate: (status: Record<string, unknown>) => boolean,
+  timeoutMs = 90_000,
+  namespace = NAMESPACE,
+): Promise<Record<string, unknown>> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const cm = await api.readNamespacedConfigMap({ name, namespace });
+      const raw = cm.data?.["status.yaml"];
+      if (raw) {
+        const status = yaml.load(raw) as Record<string, unknown>;
+        if (predicate(status)) return status;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  throw new Error(
+    `ConfigMap ${name} status.yaml predicate not satisfied after ${timeoutMs}ms`,
   );
 }
 

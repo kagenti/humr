@@ -36,6 +36,7 @@ This directory contains ADRs for the Humr project.
 | [028](028-generic-secret-injection-config.md) | Configurable injection on generic secrets (host/path + custom header) | @tomas2d |
 | [029](029-per-instance-channels.md)           | Per-instance messenger channels — secrets in k8s Secrets, per-thread authorization | @pilartomas |
 | [030](030-skills-marketplace.md)              | Skills — connectable sources and install | @PetrBulanek |
+| [031](031-schedule-rrule-quiet-hours.md)      | Schedules use RRULE for includes and structured quiet hours for exclusions | @jezekra1 |
 
 ## Drafts
 

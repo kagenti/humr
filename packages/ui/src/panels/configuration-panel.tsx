@@ -32,6 +32,7 @@ export function ConfigurationPanel({
   onClearAllMcps,
   hasActiveSession,
   accessMode,
+  onResumeSession,
 }: {
   mcpOptions: McpOption[];
   enabledMcps: Set<string>;
@@ -40,11 +41,13 @@ export function ConfigurationPanel({
   onClearAllMcps: () => void;
   hasActiveSession: boolean;
   accessMode: "all" | "selective" | null;
+  /** Called when the user clicks a past run under a schedule card. */
+  onResumeSession?: (sessionId: string) => void;
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <Section title="Schedules">
-        <SchedulesPanel />
+        <SchedulesPanel onResumeSession={onResumeSession} />
       </Section>
 
       <Section title="Channels">

@@ -13,6 +13,7 @@ export interface SchedulesRepository {
   list(instanceId: string, owner: string): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
   create(instanceId: string, agentRef: string, spec: Record<string, unknown>, owner: string): Promise<Schedule>;
+  update(id: string, patch: Record<string, unknown>, owner: string): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   readAgentRef(instanceId: string, owner: string): Promise<string | null>;
@@ -43,6 +44,19 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
       const body = buildScheduleConfigMap(instanceId, agentRef, spec, owner);
       const created = await k8s.createConfigMap(body);
       return parseSchedule(created);
+    },
+
+    async update(id, patch, owner) {
+      const cm = await getOwned(id, owner);
+      if (!cm) return null;
+      // Start from the current spec so unspecified fields stick; `patch` wins
+      // on any field the caller supplies. Caller also passes undefined to
+      // clear optional fields (e.g. quietHours: [] to drop all windows).
+      const current = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<string, unknown>;
+      const nextSpec = { ...current, ...patch };
+      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(nextSpec) };
+      const updated = await k8s.replaceConfigMap(id, cm);
+      return parseSchedule(updated);
     },
 
     async delete(id, owner) {

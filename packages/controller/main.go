@@ -8,6 +8,12 @@ import (
 	"syscall"
 	"time"
 
+	// Embed the IANA tzdata database in the binary so time.LoadLocation works
+	// for arbitrary zones (e.g. "Europe/Prague") inside the minimal container
+	// image, which doesn't ship /usr/share/zoneinfo. Schedules set their own
+	// timezone, so UTC-only wouldn't be enough.
+	_ "time/tzdata"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
