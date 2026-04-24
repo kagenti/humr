@@ -63,4 +63,5 @@ Open [humr.localhost:4444](http://humr.localhost:4444) (login: `dev` / `dev`), c
 
 - **[Guide](docs/guide.md)** — credential setup, Slack integration, development workflow, architecture overview
 - **[Security model](docs/security-model.md)** — the three big risks when running AI agents, how Humr handles each, and what's still unsolved
+- **[Multiplayer](docs/multi-player.md)** — Humr's multi-user model: what's private to each player, what's shared when you collaborate, and what's install-wide plumbing
 - **[Why Humr exists](PITCH.md)** — the three problems every agent hits in production, how Humr solves each, and a 5-minute walkthrough
