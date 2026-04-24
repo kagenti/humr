@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { queryClient } from "../../../query-client.js";
 import { createInstanceTrpc } from "../../instances/instance-trpc.js";
@@ -28,6 +28,7 @@ interface FileContent {
   content: string;
   binary?: boolean;
   mimeType?: string;
+  mtimeMs?: number;
 }
 
 export function useFileTreeQuery(instanceId: string | null) {
@@ -56,6 +57,7 @@ export function useFileContentQuery(instanceId: string | null, path: string | nu
         content: result.content ?? "",
         binary: result.binary,
         mimeType: result.mimeType,
+        mtimeMs: result.mtimeMs,
       } satisfies FileContent;
     },
     enabled: !!instanceId && !!path,
@@ -81,7 +83,99 @@ export async function fetchFileContent(instanceId: string, path: string): Promis
         content: result.content ?? "",
         binary: result.binary,
         mimeType: result.mimeType,
+        mtimeMs: result.mtimeMs,
       };
+    },
+  });
+}
+
+function invalidateFiles(qc: ReturnType<typeof useQueryClient>, instanceId: string, path?: string) {
+  qc.invalidateQueries({ queryKey: fileKeys.tree(instanceId) });
+  if (path) qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, path) });
+}
+
+export function useFileWriteMutation(instanceId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { path: string; content: string; expectedMtimeMs?: number }) => {
+      const trpc = getInstanceTrpc(instanceId!);
+      return trpc.files.write.mutate(input);
+    },
+    onSuccess: (_data, vars) => {
+      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+    },
+  });
+}
+
+export function useFileCreateMutation(instanceId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { path: string; content?: string }) => {
+      const trpc = getInstanceTrpc(instanceId!);
+      return trpc.files.create.mutate({ path: input.path, content: input.content ?? "" });
+    },
+    onSuccess: (_data, vars) => {
+      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+    },
+  });
+}
+
+export function useFolderCreateMutation(instanceId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { path: string }) => {
+      const trpc = getInstanceTrpc(instanceId!);
+      return trpc.files.mkdir.mutate(input);
+    },
+    onSuccess: () => {
+      if (instanceId) invalidateFiles(qc, instanceId);
+    },
+  });
+}
+
+export function useFileRenameMutation(instanceId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { from: string; to: string; overwrite?: boolean }) => {
+      const trpc = getInstanceTrpc(instanceId!);
+      return trpc.files.rename.mutate(input);
+    },
+    onSuccess: (_data, vars) => {
+      if (instanceId) {
+        invalidateFiles(qc, instanceId, vars.from);
+        qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, vars.to) });
+      }
+    },
+  });
+}
+
+export function useFileDeleteMutation(instanceId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { path: string }) => {
+      const trpc = getInstanceTrpc(instanceId!);
+      return trpc.files.remove.mutate(input);
+    },
+    onSuccess: (_data, vars) => {
+      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+    },
+  });
+}
+
+export function useFileUploadMutation(instanceId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      path: string;
+      contentBase64: string;
+      contentType?: string;
+      overwrite?: boolean;
+    }) => {
+      const trpc = getInstanceTrpc(instanceId!);
+      return trpc.files.upload.mutate(input);
+    },
+    onSuccess: (_data, vars) => {
+      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
     },
   });
 }

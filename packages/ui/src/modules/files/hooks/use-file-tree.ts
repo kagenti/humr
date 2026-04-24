@@ -10,16 +10,26 @@ import { fetchFileContent } from "../api/queries.js";
  */
 export function useFileTree(selectedInstance: string | null) {
   const openFilePath = useStore((s) => s.openFilePath);
+  const openFileDirty = useStore((s) => s.openFileDirty);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const setRightTab = useStore((s) => s.setRightTab);
   const showToast = useStore((s) => s.showToast);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const openFileHandler = useCallback(
     async (path: string) => {
       if (!selectedInstance) return;
       if (openFilePath === path) {
+        if (openFileDirty) {
+          const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+          if (!ok) return;
+        }
         setOpenFilePath(null);
         return;
+      }
+      if (openFileDirty) {
+        const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+        if (!ok) return;
       }
       try {
         // Pre-warm the content cache before switching the viewer so the UI
@@ -34,7 +44,7 @@ export function useFileTree(selectedInstance: string | null) {
         });
       }
     },
-    [selectedInstance, openFilePath, setOpenFilePath, setRightTab, showToast],
+    [selectedInstance, openFilePath, openFileDirty, setOpenFilePath, setRightTab, showToast, showConfirm],
   );
 
   return { openFileHandler };
