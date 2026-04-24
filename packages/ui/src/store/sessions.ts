@@ -34,10 +34,17 @@ export interface SessionsSlice {
   deleteSession: (sessionId: string) => Promise<void>;
 
   /**
-   * Wipe all per-chat-session state (active session, messages, file tree,
-   * session config, log, queued prompt). Callers like `selectInstance`,
-   * `goBack`, and the popstate handler invoke this so every entry point
-   * leaves chat state in the same clean shape.
+   * Clear only the active chat — messages, session config, log, permission
+   * prompts, open file, queued prompt. Leaves the sidebar `sessions` list
+   * alone, which is per-instance, not per-chat. Used by `deleteSession` when
+   * the deleted session happened to be the active one.
+   */
+  resetActiveSession: () => void;
+
+  /**
+   * Wipe all per-chat-session state *and* the sessions list. Callers like
+   * `selectInstance`, `goBack`, and the popstate handler invoke this at
+   * instance boundaries so the sidebar isn't stale for the next instance.
    */
   resetChatContext: () => void;
 }
@@ -61,10 +68,9 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
   setQueuedMessage: (msg) => set({ queuedMessage: msg }),
   setBusy: (busy) => set({ busy }),
 
-  resetChatContext: () => set({
+  resetActiveSession: () => set({
     sessionId: null,
     messages: [],
-    sessions: [],
     sessionError: null,
     openFilePath: null,
     log: [],
@@ -74,6 +80,11 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
     pendingPermissions: [],
     queuedMessage: null,
   }),
+
+  resetChatContext: () => {
+    get().resetActiveSession();
+    set({ sessions: [] });
+  },
 
   addLog: (type, payload) => {
     const ts = new Date().toISOString().slice(11, 23);
@@ -90,7 +101,7 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
     if (ok === ACTION_FAILED) return;
     const wasActive = get().sessionId === sessionId;
     set((s) => ({ sessions: s.sessions.filter((x) => x.sessionId !== sessionId) }));
-    if (wasActive) get().resetChatContext();
+    if (wasActive) get().resetActiveSession();
     get().showToast({ kind: "success", message: "Session deleted" });
   },
 });

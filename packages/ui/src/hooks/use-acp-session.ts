@@ -206,8 +206,7 @@ export function useAcpSession(
 
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
-    const inst = instances.find(x => x.id === selectedInstance);
-    if (inst?.state !== "running") return false;
+    if (instanceRunState !== "running") return false;
     const list = await runQuery(
       `sessions:${selectedInstance}`,
       () => platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions }),
@@ -216,10 +215,17 @@ export function useAcpSession(
     if (!list) return false;
     setSessions(list);
     return true;
-  }, [selectedInstance, includeChannelSessions, setSessions]);
+  }, [selectedInstance, instanceRunState, includeChannelSessions, setSessions]);
 
   useEffect(() => {
     if (!selectedInstance) return;
+    // Wait for useInstances to resolve — otherwise fetchSessions sees an
+    // empty list, can't find the instance, and retries forever on refresh.
+    if (instanceRunState === undefined) return;
+    if (instanceRunState !== "running") {
+      setLoadingSessions(false);
+      return;
+    }
     setLoadingSessions(true);
     let stopped = false;
     const attempt = () => {
@@ -232,7 +238,7 @@ export function useAcpSession(
     };
     attempt();
     return () => { stopped = true; };
-  }, [selectedInstance, fetchSessions, setLoadingSessions]);
+  }, [selectedInstance, instanceRunState, fetchSessions, setLoadingSessions]);
 
   // ── Streaming update handler ──
 
@@ -500,15 +506,20 @@ export function useAcpSession(
       // Persist to the platform DB lazily, only once the session has real
       // content. Prevents empty rows from appearing in the sidebar when the
       // user opens the app and closes it without sending anything.
+      //
+      // Await the create before the finally-block `fetchSessions` runs —
+      // otherwise the fetch races the server's DB write, sees no row for
+      // this session, and the user has to hit Refresh for it to appear.
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
-        platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance })
-          .catch((err) => {
-            showToast({
-              kind: "warning",
-              message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
-            });
+        try {
+          await platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance });
+        } catch (err) {
+          showToast({
+            kind: "warning",
+            message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
           });
+        }
       }
       // Belt-and-braces: if humr_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
