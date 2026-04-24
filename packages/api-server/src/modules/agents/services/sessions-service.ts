@@ -1,5 +1,5 @@
 import { SessionType, type SessionsApiService, type SessionView } from "api-server-api";
-import { createAcpClient, type AcpSessionInfo } from "../../../acp-client.js";
+import { createAcpClient, type AcpSessionInfo } from "../../../core/acp-client.js";
 
 export function createSessionsService(deps: {
   listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;

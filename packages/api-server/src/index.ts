@@ -27,7 +27,7 @@ import {
 } from "./modules/forks/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { loadConfig } from "./config.js";
-import { createOnecliClient } from "./onecli.js";
+import { createOnecliClient } from "./apps/api-server/onecli.js";
 import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";

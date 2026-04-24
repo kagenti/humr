@@ -1,5 +1,5 @@
 import { DEFAULT_INJECTION_CONFIG, type EnvMapping, type InjectionConfig } from "api-server-api";
-import type { OnecliClient } from "../../../onecli.js";
+import type { OnecliClient } from "../../../apps/api-server/onecli.js";
 
 export interface OnecliSecret {
   id: string;

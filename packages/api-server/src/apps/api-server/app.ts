@@ -17,11 +17,11 @@ import type { TelegramOAuthPending } from "../../modules/channels/infrastructure
 import {
   isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
-import { createAcpRelay } from "../../acp-relay.js";
+import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import type { Config } from "../../config.js";
-import { createAuth, ForbiddenError } from "../../auth.js";
-import type { OnecliClient } from "../../onecli.js";
+import { createAuth, ForbiddenError } from "./auth.js";
+import type { OnecliClient } from "./onecli.js";
 import { createOnecliSecretsPort } from "./../../modules/secrets/infrastructure/onecli-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
 import { createOnecliConnectionsPort } from "./../../modules/connections/infrastructure/onecli-connections-port.js";

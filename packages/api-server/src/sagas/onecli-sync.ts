@@ -9,7 +9,7 @@ import type { Subscription } from "rxjs";
 import { defer, timer } from "rxjs";
 import { catchError, filter, mergeMap, retry, tap } from "rxjs/operators";
 import { events$, ofType, EventType, type UserAuthenticated } from "../events.js";
-import type { OnecliClient } from "../onecli.js";
+import type { OnecliClient } from "../apps/api-server/onecli.js";
 
 const MAX_RETRIES = 10;
 const BASE_DELAY_MS = 1_000;
