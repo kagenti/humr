@@ -15,9 +15,6 @@ import { SetupProgressBar } from "./components/setup-progress-bar.js";
 export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
-  const fetchTemplates = useStore((s) => s.fetchTemplates);
-  const fetchAgents = useStore((s) => s.fetchAgents);
-  const fetchInstances = useStore((s) => s.fetchInstances);
 
   // Apply theme on mount + listen for system preference changes
   useEffect(() => {
@@ -69,14 +66,6 @@ export default function App() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
-
-  useEffect(() => {
-    fetchTemplates();
-    fetchAgents();
-    fetchInstances();
-    const i = setInterval(fetchInstances, 5000);
-    return () => clearInterval(i);
-  }, [fetchTemplates, fetchAgents, fetchInstances]);
 
   // Chat view is full-screen (has its own layout)
   if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /><OfflineBanner /></>;

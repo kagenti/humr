@@ -15,8 +15,8 @@ import {
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import { Modal } from "../../../components/modal.js";
 import { platform } from "../../../platform.js";
-import { useStore } from "../../../store.js";
 import type { AgentView, EnvVar } from "../../../types.js";
+import { useUpdateAgent } from "../api/mutations.js";
 import {
   envsAfterUngrant,
   envsToAddOnGrant,
@@ -38,7 +38,7 @@ export function EditAgentSecretsDialog({
   onClose: () => void;
 }) {
   const agentId = agent.id;
-  const updateAgent = useStore((s) => s.updateAgent);
+  const updateAgentMutation = useUpdateAgent();
   const initialEnv = agent.env ?? [];
   const userInitialEnv = initialEnv.filter((e) => !isProtectedAgentEnvName(e.name));
 
@@ -179,7 +179,7 @@ export function EditAgentSecretsDialog({
         });
       }
       if (envChanged) {
-        await updateAgent(agentId, { env: sanitizedEnv });
+        await updateAgentMutation.mutateAsync({ id: agentId, env: sanitizedEnv });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");

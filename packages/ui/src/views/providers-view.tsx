@@ -8,6 +8,7 @@ import {
   type SecretView,
 } from "../types.js";
 import { Sparkles, RefreshCw, X, Copy, Check, Pencil } from "lucide-react";
+import { useAgents } from "../modules/agents/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 import {
   useCreateSecret,
@@ -62,7 +63,7 @@ function mismatchError(value: string, mode: Mode): string | null {
 }
 
 export function ProvidersView() {
-  const agents = useStore((s) => s.agents);
+  const { data: agents = [] } = useAgents();
   const showConfirm = useStore((s) => s.showConfirm);
   const setView = useStore((s) => s.setView);
 

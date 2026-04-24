@@ -17,6 +17,9 @@ export interface InstancesSlice {
    *  a click timestamp that bounds how long the "Restarting" pill can linger
    *  if the pod fails to recycle cleanly. */
   restartingInstances: Map<string, { seenNonRunning: boolean; clickedAt: number }>;
+  setRestartingInstance: (id: string, entry: { seenNonRunning: boolean; clickedAt: number }) => void;
+  clearRestartingInstance: (id: string) => void;
+  setRestartingInstances: (map: Map<string, { seenNonRunning: boolean; clickedAt: number }>) => void;
   fetchInstances: () => Promise<void>;
   createInstance: (agentId: string, name: string) => Promise<void>;
   restartInstance: (id: string) => Promise<void>;
@@ -35,6 +38,20 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
   instances: [],
   selectedInstance: null,
   restartingInstances: new Map(),
+
+  setRestartingInstance: (id, entry) =>
+    set((s) => {
+      const next = new Map(s.restartingInstances);
+      next.set(id, entry);
+      return { restartingInstances: next };
+    }),
+  clearRestartingInstance: (id) =>
+    set((s) => {
+      const next = new Map(s.restartingInstances);
+      next.delete(id);
+      return { restartingInstances: next };
+    }),
+  setRestartingInstances: (map) => set({ restartingInstances: map }),
 
   fetchInstances: async () => {
     set((s) => ({ loading: { ...s.loading, instances: true } }));

@@ -9,6 +9,7 @@ import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant, isTextMime } 
 import type { Message, Attachment } from "../types.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 import { runQuery } from "../store/query-helpers.js";
+import { useInstances } from "../modules/instances/api/queries.js";
 
 /**
  * Read a human-readable message off any error shape we may see here. The
@@ -62,7 +63,8 @@ export function useAcpSession(
   selectedMcpServers: McpServer[],
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
-  const instances = useStore((s) => s.instances);
+  const { data: instancesData } = useInstances();
+  const instances = instancesData?.list ?? [];
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
   const setSessionId = useStore((s) => s.setSessionId);
@@ -204,7 +206,7 @@ export function useAcpSession(
 
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
-    const inst = useStore.getState().instances.find(x => x.id === selectedInstance);
+    const inst = instances.find(x => x.id === selectedInstance);
     if (inst?.state !== "running") return false;
     const list = await runQuery(
       `sessions:${selectedInstance}`,

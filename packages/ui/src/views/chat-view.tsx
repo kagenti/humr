@@ -13,6 +13,7 @@ import { LogPanel } from "./../panels/log-panel.js";
 import { ConfigurationPanel } from "./../panels/configuration-panel.js";
 import { SessionConfigBar } from "./../components/session-config-popover.js";
 import { prefetchSchedules } from "./../modules/schedules/api/queries.js";
+import { useInstances } from "./../modules/instances/api/queries.js";
 import { useAcpSession } from "./../hooks/use-acp-session.js";
 import type { SessionError } from "../store.js";
 import type { InstanceView } from "../types.js";
@@ -22,7 +23,8 @@ import { isMobile } from "./../lib/breakpoints.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
-  const instances = useStore((s) => s.instances);
+  const { data: instancesData } = useInstances();
+  const instances = instancesData?.list ?? [];
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
   const sessionError = useStore((s) => s.sessionError);

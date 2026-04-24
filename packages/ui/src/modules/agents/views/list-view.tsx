@@ -1,35 +1,48 @@
-import { KeyRound, Play,Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
-import { useMemo,useState } from "react";
+import { KeyRound, Play, Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
+import { useWakeInstance } from "../../instances/api/mutations.js";
+import { useInstances } from "../../instances/api/queries.js";
+import { useRestartInstance, useSyncRestartingInstances } from "../../instances/hooks/use-restart-instance.js";
+import { useTemplates } from "../../templates/api/queries.js";
+import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
+import { useAgents } from "../api/queries.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
-  const templates = useStore(s => s.templates);
-  const agents = useStore(s => s.agents);
-  const instances = useStore(s => s.instances);
+  const { data: templates = [], refetch: refetchTemplates } = useTemplates();
+  const {
+    data: agents = [],
+    refetch: refetchAgents,
+    isSuccess: agentsLoaded,
+  } = useAgents();
+  const {
+    data: instancesData,
+    refetch: refetchInstances,
+    isSuccess: instancesLoaded,
+  } = useInstances();
+  const instances = instancesData?.list ?? [];
   const restartingInstances = useStore(s => s.restartingInstances);
-  const fetchTemplates = useStore(s => s.fetchTemplates);
-  const fetchAgents = useStore(s => s.fetchAgents);
-  const fetchInstances = useStore(s => s.fetchInstances);
-  const createAgent = useStore(s => s.createAgent);
-  const deleteAgent = useStore(s => s.deleteAgent);
-  const restartInstance = useStore(s => s.restartInstance);
-  const wakeInstance = useStore(s => s.wakeInstance);
+  useSyncRestartingInstances();
+
+  const createAgent = useCreateAgent();
+  const deleteAgent = useDeleteAgent();
+  const { restart: restartInstance } = useRestartInstance();
+  const wakeInstance = useWakeInstance();
+
   const selectInstance = useStore(s => s.selectInstance);
   const setView = useStore(s => s.setView);
   const showConfirm = useStore(s => s.showConfirm);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [busyAgent, setBusyAgent] = useState(false);
-  const [delAgent, setDelAgent] = useState<string | null>(null);
   const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
 
-  const loadedOnce = useStore(s => s.loadedOnce);
-  const initialLoaded = loadedOnce.agents && loadedOnce.instances;
+  const initialLoaded = agentsLoaded && instancesLoaded;
+  const busyAgent = createAgent.isPending;
 
   const restartingIds = useMemo(
     () => new Set(restartingInstances.keys()),
@@ -44,7 +57,7 @@ export function ListView() {
           <h1 className="text-[20px] md:text-[24px] font-bold text-text">Agents</h1>
           <div className="ml-auto flex items-center gap-2 md:gap-3">
             <button
-              onClick={() => { fetchTemplates(); fetchAgents(); fetchInstances(); }}
+              onClick={() => { refetchTemplates(); refetchAgents(); refetchInstances(); }}
               className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
               style={{ boxShadow: "var(--shadow-brutal-sm)" }}
             >
@@ -104,7 +117,7 @@ export function ListView() {
                       <button
                         onClick={() => {
                           if (!inst) return;
-                          if (display.powerAction === "start") wakeInstance(inst.id);
+                          if (display.powerAction === "start") wakeInstance.mutate({ id: inst.id });
                           else if (display.powerAction === "restart") restartInstance(inst.id);
                         }}
                         disabled={display.powerAction === null}
@@ -136,11 +149,9 @@ export function ListView() {
                             </div>
                           );
                           if (!await showConfirm(msg, "Delete Agent")) return;
-                          setDelAgent(agent.id);
-                          await deleteAgent(agent.id);
-                          setDelAgent(null);
+                          deleteAgent.mutate({ id: agent.id });
                         }}
-                        disabled={delAgent === agent.id}
+                        disabled={deleteAgent.isPending && deleteAgent.variables?.id === agent.id}
                         className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
                         style={{ boxShadow: "var(--shadow-brutal-sm)" }}
                         title="Delete agent"
@@ -159,7 +170,7 @@ export function ListView() {
       {showAddAgent && (
         <AddAgentDialog
           templates={templates}
-          onSubmit={async (input) => { setShowAddAgent(false); setBusyAgent(true); await createAgent(input); setBusyAgent(false); }}
+          onSubmit={async (input) => { setShowAddAgent(false); await createAgent.mutateAsync(input); }}
           onCancel={() => setShowAddAgent(false)}
           onGoToProviders={() => { setShowAddAgent(false); setView("providers"); }}
         />

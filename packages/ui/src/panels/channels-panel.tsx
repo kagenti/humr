@@ -1,17 +1,28 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../store.js";
 import { X, Plus } from "lucide-react";
+import { useInstances } from "../modules/instances/api/queries.js";
+import {
+  useConnectSlack,
+  useConnectTelegram,
+  useDisconnectSlack,
+  useDisconnectTelegram,
+  useUpdateInstance,
+} from "../modules/instances/api/mutations.js";
 
 export function ChannelsPanel() {
-  const instances = useStore(s => s.instances);
+  const { data: instancesData } = useInstances();
+  const instances = instancesData?.list ?? [];
+  const availableChannels = instancesData?.availableChannels ?? {};
+  const slackAvailable = !!availableChannels.slack;
+  const telegramAvailable = !!availableChannels.telegram;
+
   const selectedInstance = useStore(s => s.selectedInstance);
-  const connectSlack = useStore(s => s.connectSlack);
-  const disconnectSlack = useStore(s => s.disconnectSlack);
-  const connectTelegram = useStore(s => s.connectTelegram);
-  const disconnectTelegram = useStore(s => s.disconnectTelegram);
-  const updateInstance = useStore(s => s.updateInstance);
-  const slackAvailable = useStore(s => !!s.availableChannels.slack);
-  const telegramAvailable = useStore(s => !!s.availableChannels.telegram);
+  const connectSlack = useConnectSlack();
+  const disconnectSlack = useDisconnectSlack();
+  const connectTelegram = useConnectTelegram();
+  const disconnectTelegram = useDisconnectTelegram();
+  const updateInstance = useUpdateInstance();
 
   const inst = instances.find(i => i.id === selectedInstance);
   const slackChannel = inst?.channels.find(c => c.type === "slack");
@@ -57,22 +68,22 @@ export function ChannelsPanel() {
     setSaving(true);
     try {
       if (slackEnabled && !slackChannel && channelId.trim()) {
-        await connectSlack(inst.id, channelId.trim());
+        await connectSlack.mutateAsync({ id: inst.id, slackChannelId: channelId.trim() });
       } else if (!slackEnabled && slackChannel) {
-        await disconnectSlack(inst.id);
+        await disconnectSlack.mutateAsync({ id: inst.id });
       } else if (slackEnabled && slackChannel && slackChannel.type === "slack" && channelId.trim() !== slackChannel.slackChannelId) {
-        await disconnectSlack(inst.id);
-        await connectSlack(inst.id, channelId.trim());
+        await disconnectSlack.mutateAsync({ id: inst.id });
+        await connectSlack.mutateAsync({ id: inst.id, slackChannelId: channelId.trim() });
       }
       if (telegramEnabled && !telegramChannel && botToken.trim()) {
-        await connectTelegram(inst.id, botToken.trim());
+        await connectTelegram.mutateAsync({ id: inst.id, botToken: botToken.trim() });
       } else if (!telegramEnabled && telegramChannel) {
-        await disconnectTelegram(inst.id);
+        await disconnectTelegram.mutateAsync({ id: inst.id });
       } else if (telegramEnabled && telegramChannel && botToken.trim()) {
-        await disconnectTelegram(inst.id);
-        await connectTelegram(inst.id, botToken.trim());
+        await disconnectTelegram.mutateAsync({ id: inst.id });
+        await connectTelegram.mutateAsync({ id: inst.id, botToken: botToken.trim() });
       }
-      await updateInstance(inst.id, { allowedUserEmails: users });
+      await updateInstance.mutateAsync({ id: inst.id, allowedUserEmails: users });
       setDirty(false);
     } finally {
       setSaving(false);

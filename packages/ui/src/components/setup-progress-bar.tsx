@@ -9,24 +9,24 @@ import {
   type StepStatus,
 } from "../lib/onboarding.js";
 import { Check, ChevronRight } from "lucide-react";
+import { useAgents } from "../modules/agents/api/queries.js";
 import { useAppConnections, useMcpConnections } from "../modules/connections/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
-  const agents = useStore((s) => s.agents);
-  const loadedOnce = useStore((s) => s.loadedOnce);
   const setView = useStore((s) => s.setView);
 
   // Gate on every signal the bar reads being loaded — otherwise the bar briefly
   // flashes the wrong state (e.g. step 2 pending for a user who already has
   // connections) while the initial fetches are in flight.
   const onOnboardingView = view === "list" || view === "providers" || view === "connections";
+  const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({ enabled: onOnboardingView });
   const { data: appConnections = [], isSuccess: appConnectionsLoaded } = useAppConnections({ enabled: onOnboardingView });
   const { data: mcpConnections = [], isSuccess: mcpConnectionsLoaded } = useMcpConnections({ enabled: onOnboardingView });
   const fullyLoaded =
-    loadedOnce.agents &&
+    agentsLoaded &&
     secretsLoaded &&
     appConnectionsLoaded &&
     mcpConnectionsLoaded;

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useStore } from "../store.js";
 import { isMcpSecret, mcpHostnameFromSecretName } from "../types.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { McpOption } from "./../panels/mcps-panel.js";
+import { useAgentAccess } from "../modules/agents/api/queries.js";
+import { useInstances } from "../modules/instances/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 
 /**
@@ -10,9 +11,8 @@ import { useSecrets } from "../modules/secrets/api/queries.js";
  * Computes available options from agent access + secrets, tracks enable/disable state.
  */
 export function useMcpPicker(selectedInstance: string | null) {
-  const instances = useStore((s) => s.instances);
-  const agentAccess = useStore((s) => s.agentAccess);
-  const fetchAgentAccess = useStore((s) => s.fetchAgentAccess);
+  const { data: instancesData } = useInstances();
+  const instances = instancesData?.list ?? [];
 
   const { data: secrets = [] } = useSecrets();
 
@@ -20,11 +20,7 @@ export function useMcpPicker(selectedInstance: string | null) {
     () => instances.find((i) => i.id === selectedInstance)?.agentId,
     [instances, selectedInstance],
   );
-  const access = currentAgentId ? agentAccess[currentAgentId] : undefined;
-
-  useEffect(() => {
-    if (currentAgentId && !agentAccess[currentAgentId]) fetchAgentAccess(currentAgentId);
-  }, [currentAgentId, agentAccess, fetchAgentAccess]);
+  const { data: access } = useAgentAccess(currentAgentId ?? null);
 
   const mcpOptions = useMemo<McpOption[]>(() => {
     const mcpSecrets = secrets.filter(isMcpSecret);
