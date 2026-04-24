@@ -1,101 +1,80 @@
-# Humr is Multiplayer, not yet Multitenant
+# Humr, in plain terms
 
-> **TL;DR.** Humr is multiplayer: one install hosts a team, each with their own agents, schedules, and credentials. Private by default. Shared on purpose through **channels** — the abstraction (Slack today, Telegram, later GitHub projects and others) that plugs an instance into a surface teammates can drive. Install-wide plumbing underneath — one Keycloak, one credential gateway, one templates catalog. Team-scale collaboration, not SaaS-grade tenant isolation: one install per trust boundary.
+> **TL;DR.** Humr is a shared platform for AI agents. Each agent belongs to one person — its owner. To let colleagues use an agent, the owner connects it to a shared surface (a Slack channel, a Telegram chat, …). Colleagues can watch for free. They can only talk to the agent if the owner adds them to an access list. When a colleague talks to it, the agent acts as *them*, not the owner.
 
-Every running agent in Humr — an **instance** — belongs to exactly one user, its **owner**. The owner is the only person who can manage the instance (start, stop, delete, change settings), and the instance runs under the owner's credentials by default. Multiplayer happens through **channels** ([vocabulary](../tseng/vocabulary.md#channels-bounded-context)): external pathways (Slack, Telegram, future GitHub/Discord/WhatsApp/…) that let the owner invite other users to drive the instance from a shared surface. So "two people on the same instance" is really "the owner, plus guests the owner brought in through a channel."
+## The big idea
 
-Channels are **read-only by default**. Putting an instance on a shared surface lets teammates *see* it and *follow* its conversations — but not talk to the agent. Write access is granted **explicitly, per user**, by the instance owner. Once a guest has write access and actually drives the agent, the turn runs under *that guest's* identity — the agent's outbound calls use their credentials, not the owner's (the "impersonation" mechanism from [ADR-027](adrs/027-slack-user-impersonation.md), detailed in [§1 below](#1-outbound-attribution-follows-whoevers-talking)).
+One installation of Humr hosts one team. Everyone on the team signs in. Everyone can build their own agents. By default, **your agents are yours** — nobody else on the installation sees them or can interact with them.
 
-(For the hostile-tenant answer, skip to [Why "not yet" multi-tenant](#why-not-yet-multi-tenant). Short version: not today — the install leans on shared plumbing by design, and real tenant isolation is a future upgrade, not a hidden feature.)
+Sharing an agent is an explicit choice. You share by connecting it to a **shared surface** — a Slack channel, a Telegram chat, or other integrations over time. In Humr, that connection is called a **channel**.
 
-## Who you are
+## Who are you, to Humr?
 
-Humr's unit of identity is a **user** in Keycloak ([ADR-015](adrs/015-multi-user-auth.md)), which every install ships. Corporate SSO sits behind it. A Keycloak JWT rides every API call and drives every access decision.
+Humr uses a single sign-on system, the same way most enterprise applications do. Your corporate SSO sits behind it, so "who you are in Humr" is the same identity you use everywhere else at work. Every request you make carries proof of that identity.
 
-Each channel type maps external identities back to a Keycloak `sub`:
+When you reach Humr from Slack or Telegram, the first step is linking your account on that platform to your Humr identity. After that, Humr knows exactly which person is on the other end of every message.
 
-- **Slack** — `/humr login` binds `slack_user_id ↔ keycloak_sub` ([ADR-018](adrs/018-slack-integration.md)).
-- **Telegram** — no workspace, so `/login` authorizes per conversation ([ADR-029](adrs/029-per-instance-channels.md)).
-- **Future types** — will follow one of the two patterns; identity still resolves to a Keycloak user.
+## What's yours is yours
 
-Identity is people, not service accounts[^service-accounts]. No team object, no org-level ownership. If a teammate leaves, someone re-owns their agents by hand.
+When you create an agent, you're its **owner**. You own:
 
-[^service-accounts]: Planned, not yet built. Autonomous things — schedules, webhooks, cron-driven runs — should really be attributed to a *service account* on a user's (or a team's) behalf, rather than to the human who happened to set them up. That distinction matters for audit trails ("who actually took this action?"), for handoff (a teammate leaving shouldn't silently break their schedules), and for credential scoping (a service account should carry a narrower set of keys than a person). Today all of this is collapsed onto the owning user; introducing service-account identity is tracked as future work.
+- The agent itself.
+- Its schedules (when it runs on its own).
+- Its conversations.
+- Any credentials you configured on it (for example, a bot token).
 
-## Your stuff
+Other people on the installation cannot see any of that. Not in the dashboard, not through any menu. Your agents are invisible to them unless you choose otherwise.
 
-As the owner of an instance, you own everything attached to it: its schedules, the channels it's connected to, any per-instance bot tokens, and its conversations. Humr hides all of this from everyone else's UI by default — teammates can't see it, open it, or interact with it unless you've explicitly opened a door (through a channel, see below). Bot tokens you paste in (e.g. a Telegram bot's token) are write-only: once set, they never round-trip back into the UI. ([ADR-015](adrs/015-multi-user-auth.md), [ADR-006](adrs/006-configmaps-over-crds.md) for the implementation details.)
+> **Example.** Alice creates an agent called `my-researcher`. Her colleague Bob doesn't see it anywhere. He has no idea it exists.
 
-> **Example.** Alice creates `my-researcher`. She's its owner. Bob doesn't see it in his UI and can't message it. Once Alice binds it to a Slack channel Bob is in, Bob can now watch Alice's conversations with the agent — but he still can't intervene. Only when Alice adds him to the instance's allowed-users list does he get write access and can actually drive the agent. Even then, it's still *Alice's* instance; Bob is a guest.
+## Your credentials stay yours
 
-## Your keys stay yours
+Agents need credentials to do real work — call GitHub, read email, hit internal APIs. Humr tracks credentials per person. When your agent runs, it uses *your* credentials, and only yours. It cannot reach anyone else's.
 
-Humr runs a fork of OneCLI as the credential gateway ([ADR-005](adrs/005-credential-gateway.md), [ADR-015](adrs/015-multi-user-auth.md)). Credentials are scoped per Keycloak `sub`. The API server exchanges the user's JWT for a OneCLI-scoped token via RFC 8693; OneCLI validates the exchanged token itself, so a compromised API server can't impersonate users.
+A component called the **credential gateway** hands credentials to agents. It checks your identity first. No identity, no credentials.
 
-Each agent pod gets one `ONECLI_ACCESS_TOKEN` tied to exactly one user, baked into `HTTPS_PROXY` at startup. Every outbound call — agent, `git`, `curl`, MCP tools — flows through OneCLI under that one user.
+> **Example.** Bob has a GitHub token. Alice's agent wants to post to GitHub. It uses Alice's GitHub token, not Bob's. Bob's token never comes near Alice's agent.
 
-> **Example.** Bob has a GitHub PAT; Alice's agent asks GitHub for something. Alice's pod's proxy token is scoped to Alice. Bob's token never enters the picture.
+## Letting colleagues in — channels
 
-**At any given turn, reachable credentials are limited to whoever drives that turn.**
+A **channel** is a connection point. It places your agent onto a surface where colleagues work — a Slack channel, a Telegram chat. Pick the surface, connect your agent, and your teammates can now see the agent exists.
 
-## The workspace — persistent, shared across pods
+By default, seeing is all they can do. Watching is free. **Sending messages to the agent is not.**
 
-Every instance has a **workspace** — a persistent volume mounted at `/home/agent` that outlives any single agent process. Anything the agent writes there — the git working tree, dependency caches, `~/.claude` transcripts, `MEMORY.md`, output files — survives restarts, hibernation, and even foreign-replier forks.
+To let a specific person send messages, you add them to the agent's access list. Only then can they interact with it. You decide who is on the list, and you can remove them.
 
-The runtime around the workspace is *not* persistent. The container OS, `/tmp`, ephemeral env vars, anything installed mid-turn outside `/home/agent` — all reset every time a pod starts. When an instance wakes from hibernation, or when a foreign replier's Fork spins up ([§1 below](#1-outbound-attribution-follows-whoevers-talking)), that new pod gets **fresh OS state but mounts the same workspace**.
+> **Example.** Alice connects `my-researcher` to a Slack channel Bob is in. Bob can now read every exchange Alice has with the agent. He still can't message the agent — Alice hasn't added him. Once she does, he can. Even then, the agent is still Alice's. Bob is a guest.
 
-This split is what makes multiplayer collaboration work mechanically. Two different pods — Alice's main pod and Bob's Fork — driving the same instance are literally reading and writing the same disk. They see the same git history, the same cached node_modules, the same `MEMORY.md`, the same session transcripts, because "the workspace" is one place, not a copy per player.
+## What happens when a colleague uses it?
 
-The workspace is per-instance, not install-wide. Alice's instance has its workspace; Bob's has its own; they're separate volumes. "Shared" here means *shared across every pod that touches one instance*, not shared between instances.
+This is the important part. When Bob (a guest Alice added) messages Alice's agent, the agent acts as **Bob**, not as Alice, for that turn:
 
-## Channels — the multiplayer mechanism
+- Any pull request the agent opens is authored by Bob.
+- Any usage cost is billed to Bob.
+- Any rate limits hit are Bob's limits.
+- Any audit log shows Bob took the action.
 
-A **channel** is how an instance's owner lets other users drive it. It's an external pathway — Slack, Telegram, a future GitHub project or Discord server — that plugs the instance into a shared surface teammates can reach. Binding an instance to one does three things:
+Humr achieves this by starting a short-lived process for Bob's turn. That process carries Bob's identity and Bob's credentials. When the turn ends, the process shuts down. Alice's main process — the one that normally runs the agent — is not touched.
 
-1. **Puts it on a shared surface** — teammates see it; authorized ones can drive it.
-2. **Gates access per instance** — you decide who drives; watching is cheap.
-3. **Makes sessions resumable** — a channel hosts one ACP session per conversation, so continuity survives multiple messages from multiple people ([ADR-025](adrs/025-thread-session.md)).
+## The shared workspace
 
-Existing channel types:
+Every agent has a **workspace**: persistent storage that holds its files, notes, memory, and conversation history. The workspace survives restarts. Whichever process is running the agent at any given moment reads and writes the same workspace.
 
-- **Slack** ([ADR-018](adrs/018-slack-integration.md)) — platform channel. One install-wide Slack app. Instances bind to specific Slack channels.
-- **Telegram** ([ADR-029](adrs/029-per-instance-channels.md)) — per-instance channel. Each instance brings its own bot.
-- **Future** (GitHub projects, Discord, WhatsApp, …) — pick one of the two patterns. Multiplayer dynamics below don't care which.
+This matters when colleagues are involved. When Bob's short-lived process starts up to handle his turn, it reads **the same workspace** Alice's process uses. So Bob's turn has access to every file the agent has saved, every memory, every past conversation.
 
-The interesting case: more than one player driving the same channel-bound instance. Three things happen.
+> **Example.** Alice shows the agent a confidential document. The agent reads it and remembers. Later, Bob asks a question. The agent may reference facts from Alice's document — because it's the same agent with the same memory, even though Bob never saw the document directly.
 
-### 1. Outbound attribution follows whoever's talking
+That's intentional. Sharing an agent means sharing its full context. If something shouldn't be shared, don't share *that agent* — create a separate one.
 
-If Alice owns an instance but Bob (a **Foreign Replier** — an authorized non-owner) replies in its channel, Bob's turn runs in a short-lived Kubernetes Job — a **Fork** — whose pod carries *Bob's* OneCLI token ([ADR-027](adrs/027-slack-user-impersonation.md)). So:
+## Why one installation = one team
 
-- PRs the agent opens during Bob's turn are authored by **Bob**.
-- Model usage bills **Bob**.
-- Rate limits and audit logs show **Bob**.
+Everyone on one installation of Humr is aware the others exist. They can't see each other's agents (that's what this document is about), but they share the same identity system, the same credential gateway, and the same underlying infrastructure.
 
-Alice's own turns run on the instance's main pod under her token — unchanged. Implemented for Slack today; extending to other channel types is mechanical.
+That's fine for one team that trusts its members. It is **not** appropriate for two teams that should be walled off from each other.
 
-### 2. Access is gated per instance
+The rule is simple: **one installation of Humr per trust boundary.** One team, one installation. Two groups that need separation, two installations. Humr does not try to isolate mutually untrusted users inside a single installation today.
 
-- **Slack** — two tiers: channel membership + linked `/humr login`, *and* a per-instance allowed-users list ([ADR-018](adrs/018-slack-integration.md) §3). Observers see, drivers drive.
-- **Telegram** — per-conversation: until someone runs `/login`, the bot ignores the chat ([ADR-029](adrs/029-per-instance-channels.md)).
-
-### 3. The workspace is shared on purpose
-
-Because [the workspace](#the-workspace--persistent-shared-across-pods) is one persistent volume mounted by every pod that touches the instance, participants in a channel conversation share all of it: the git working tree, `~/.claude`, `MEMORY.md`, the ACP session transcript ([ADR-025](adrs/025-thread-session.md), [ADR-027](adrs/027-slack-user-impersonation.md) §2).
-
-> **Example.** Alice reads a confidential doc through the agent. Bob replies later. The agent — same session — may reference facts from the doc when answering Bob, even though Bob never had direct access.
-
-This is the right default for collaboration ("same workspace"), and it's the intuition behind allowed-users: **decide who's in the pair-programming room, not per-fact access.** Sensitive topics → different instance.
-
-Concurrency (Alice in the UI + Bob in the channel at once) can race on git state; out of scope today ([ADR-027](adrs/027-slack-user-impersonation.md) §7).
-
-## Why "not yet" multi-tenant
-
-"Multi-tenant," in the SaaS sense, means hard walls between mutually distrusting customers. Humr isn't there today, and the multiplayer design leans on shared infrastructure on purpose — one namespace (label filtering, not namespace RBAC), one Keycloak realm, shared OneCLI, install-wide templates, one app per platform channel type. None of those are hostile-tenant boundaries.
-
-The rule today is simple: **one Humr install per trust boundary.** A team = one install. Two teams that shouldn't see each other = two installs.
-
-"Not yet" rather than "no" is deliberate. The upgrade path exists — namespace-per-user was considered and rejected on operational grounds ([ADR-015](adrs/015-multi-user-auth.md)), and is the natural step if a real hostile-tenant use case shows up. Per-user scoping already lives throughout the API server and credential gateway; hardening the infrastructure layer is the remaining gap, not a ground-up redesign.
+That may change in the future — the design leaves room for it. For now, the model is "shared installation within a trust boundary."
 
 ## References
 
