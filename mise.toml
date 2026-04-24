@@ -11,6 +11,9 @@ helm = "latest"
 kubeconform = "latest"
 "lima" = "2"
 
+# Python (docs site)
+uv = "latest"
+
 # misc
 fd = "latest"
 yq = "latest"
@@ -32,4 +35,5 @@ includes = [
     "packages/agent-runtime/tasks.toml",
     "deploy/helm/tasks.toml",
     "deploy/tasks.toml",
+    "docs/tasks.toml",
 ]
