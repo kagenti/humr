@@ -33,7 +33,7 @@ googleWorkspaceTemplate:
       gitUrl: "https://github.com/anthropics/google-workspace-skills"
 ```
 
-Users can also author skills in the Files panel and publish them upstream as PRs — see the [publish flow](plans/skills/issues/09-publish.md).
+Users can also author skills in the Files panel and publish them upstream as pull requests via the Publish button on standalone skill rows. Publishing requires a GitHub connection in OneCLI.
 
 ## Slack Integration
 
