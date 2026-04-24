@@ -68,8 +68,13 @@ portForwards:
   - guestPort: 16443
     hostPort: 16443
   # Deny-by-default: lima otherwise auto-forwards every 0.0.0.0 listener in the
-  # guest (e.g. Traefik's :80/:443) and clobbers host ports used by other projects.
-  - guestPortRange: [1, 65535]
+  # guest (e.g. Traefik's :80/:443, kubelet :10250, rpcbind :111) and clobbers
+  # host ports used by other projects. guestIP: 0.0.0.0 + proto: any is lima's
+  # canonical catch-all; must come after the explicit allows above.
+  # See https://github.com/lima-vm/lima/issues/2901 — ignore rules with the
+  # default guestIP (127.0.0.1) are deliberately skipped for 0.0.0.0 listeners.
+  - guestIP: 0.0.0.0
+    proto: any
     ignore: true
 
 message: |
