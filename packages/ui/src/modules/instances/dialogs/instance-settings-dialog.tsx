@@ -1,5 +1,7 @@
-import { Plus,X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
+
+import { Modal } from "../../../components/modal.js";
 
 export function InstanceSettingsDialog({ instanceName, allowedUserEmails, onSubmit, onCancel }: {
   instanceName: string;
@@ -20,12 +22,8 @@ export function InstanceSettingsDialog({ instanceName, allowedUserEmails, onSubm
   const removeUser = (email: string) => setUsers(users.filter(u => u !== email));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in" onClick={onCancel}>
-      <div
-        className="w-[460px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
-        style={{ boxShadow: "var(--shadow-brutal)" }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onCancel} widthClass="w-[460px]">
+      <div className="flex-1 overflow-y-auto p-5 md:p-7 flex flex-col gap-5">
         <div>
           <h2 className="text-[20px] font-bold text-text">Instance Settings</h2>
           <p className="text-[12px] text-text-muted mt-1">Instance: <span className="font-semibold text-text-secondary">{instanceName}</span></p>
@@ -92,6 +90,6 @@ export function InstanceSettingsDialog({ instanceName, allowedUserEmails, onSubm
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

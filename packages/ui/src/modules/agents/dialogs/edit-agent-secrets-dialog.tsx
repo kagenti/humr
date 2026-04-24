@@ -1,34 +1,30 @@
-import {
-  type AppConnectionView,
-  isProtectedAgentEnvName,
-  type SecretView,
-} from "api-server-api";
-import { KeyRound, Lock } from "lucide-react";
-import { useEffect, useMemo, useRef,useState } from "react";
+import { isProtectedAgentEnvName } from "api-server-api";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConnectionsPicker } from "../../../components/connections-picker.js";
 import {
   allEnvVarsValid,
-  EnvVarsEditor,
   sanitizeEnvVars,
 } from "../../../components/env-vars-editor.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import { Modal } from "../../../components/modal.js";
-import { platform } from "../../../platform.js";
 import type { AgentView, EnvVar } from "../../../types.js";
-import { useUpdateAgent } from "../api/mutations.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useSecrets } from "../../secrets/api/queries.js";
+import {
+  useSetAgentAccess,
+  useSetAgentConnections,
+  useUpdateAgent,
+} from "../api/mutations.js";
+import { useAgentAccess, useAgentConnections } from "../api/queries.js";
+import { EnvTab, type InheritedEnv } from "../components/edit-agent-secrets/env-tab.js";
+import { TabButton } from "../components/edit-agent-secrets/tab-button.js";
 import {
   envsAfterUngrant,
   envsToAddOnGrant,
 } from "../utils/connection-env-helpers.js";
 
 type Tab = "connections" | "env";
-
-interface InheritedEnv {
-  name: string;
-  value: string;
-  source: "system" | { secretName: string } | { appLabel: string };
-}
 
 export function EditAgentSecretsDialog({
   agent,
@@ -38,52 +34,40 @@ export function EditAgentSecretsDialog({
   onClose: () => void;
 }) {
   const agentId = agent.id;
-  const updateAgentMutation = useUpdateAgent();
-  const initialEnv = agent.env ?? [];
-  const userInitialEnv = initialEnv.filter((e) => !isProtectedAgentEnvName(e.name));
+  const userInitialEnv = useMemo(
+    () => (agent.env ?? []).filter((e) => !isProtectedAgentEnvName(e.name)),
+    [agent.env],
+  );
+
+  const { data: secrets = [] } = useSecrets();
+  const { data: apps = [] } = useAppConnections();
+  const accessQuery = useAgentAccess(agentId);
+  const connectionsQuery = useAgentConnections(agentId);
+
+  const updateAgent = useUpdateAgent();
+  const setAccess = useSetAgentAccess();
+  const setConnections = useSetAgentConnections();
+  const saving = updateAgent.isPending || setAccess.isPending || setConnections.isPending;
 
   const [tab, setTab] = useState<Tab>("connections");
-  const [secrets, setSecrets] = useState<SecretView[]>([]);
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
-  const [apps, setApps] = useState<AppConnectionView[]>([]);
   const [assignedAppIds, setAssignedAppIds] = useState<Set<string>>(new Set());
-  const [initialAssigned, setInitialAssigned] = useState<string[]>([]);
-  const initialAppIds = useRef<string[]>([]);
   const [envVars, setEnvVars] = useState<EnvVar[]>(userInitialEnv);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
+  // Initial values are snapshotted once on first data arrival so dirty-tracking
+  // stays stable across this dialog session. Refetches (e.g. from a setAccess
+  // mutation invalidating the query) must not reset the baseline underneath us.
+  const initialsRef = useRef<{ assigned: string[]; appIds: string[] } | null>(null);
+  const initialized = initialsRef.current !== null;
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [secs, access, appList, agentApps] = await Promise.all([
-          platform.secrets.list.query(),
-          platform.secrets.getAgentAccess.query({ agentName: agentId }),
-          platform.connections.list.query().catch(() => [] as AppConnectionView[]),
-          platform.connections.getAgentConnections
-            .query({ agentName: agentId })
-            .catch(() => ({ connectionIds: [] as string[] })),
-        ]);
-        if (cancelled) return;
-        setSecrets(secs);
-        const secretIds = [...access.secretIds].sort();
-        setAssigned(new Set(secretIds));
-        setInitialAssigned(secretIds);
-        setApps(appList);
-        setAssignedAppIds(new Set(agentApps.connectionIds));
-        initialAppIds.current = [...agentApps.connectionIds].sort();
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId]);
+    if (initialsRef.current) return;
+    if (!accessQuery.data || !connectionsQuery.data) return;
+    const secretIds = [...accessQuery.data.secretIds].sort();
+    const appIds = [...connectionsQuery.data.connectionIds].sort();
+    initialsRef.current = { assigned: secretIds, appIds };
+    setAssigned(new Set(secretIds));
+    setAssignedAppIds(new Set(appIds));
+  }, [accessQuery.data, connectionsQuery.data]);
 
   const toggleSecret = (id: string) =>
     setAssigned((p) => {
@@ -119,24 +103,25 @@ export function EditAgentSecretsDialog({
   const envValid = allEnvVarsValid(envVars);
 
   const credsChanged = useMemo(() => {
+    const initial = initialsRef.current?.assigned ?? [];
     const current = [...assigned].sort();
-    if (current.length !== initialAssigned.length) return true;
-    return current.some((id, i) => id !== initialAssigned[i]);
-  }, [assigned, initialAssigned]);
+    if (current.length !== initial.length) return true;
+    return current.some((id, i) => id !== initial[i]);
+  }, [assigned]);
 
   const appsChanged = useMemo(() => {
+    const initial = initialsRef.current?.appIds ?? [];
     const current = [...assignedAppIds].sort();
-    if (current.length !== initialAppIds.current.length) return true;
-    return current.some((id, i) => id !== initialAppIds.current[i]);
+    if (current.length !== initial.length) return true;
+    return current.some((id, i) => id !== initial[i]);
   }, [assignedAppIds]);
 
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
-    const items: InheritedEnv[] = initialEnv
+    const items: InheritedEnv[] = (agent.env ?? [])
       .filter((e) => isProtectedAgentEnvName(e.name))
       .map((e) => ({ name: e.name, value: e.value, source: "system" as const }));
 
-    const grantedSecrets = secrets.filter((s) => assigned.has(s.id));
-    for (const s of grantedSecrets) {
+    for (const s of secrets.filter((s) => assigned.has(s.id))) {
       for (const m of s.envMappings ?? []) {
         items.push({
           name: m.envName,
@@ -147,8 +132,7 @@ export function EditAgentSecretsDialog({
     }
 
     const userEnvNames = new Set(envVars.map((e) => e.name));
-    const grantedApps = apps.filter((a) => assignedAppIds.has(a.id));
-    for (const a of grantedApps) {
+    for (const a of apps.filter((a) => assignedAppIds.has(a.id))) {
       for (const m of a.envMappings ?? []) {
         if (userEnvNames.has(m.envName)) continue;
         items.push({
@@ -159,260 +143,126 @@ export function EditAgentSecretsDialog({
       }
     }
     return items;
-  }, [initialEnv, secrets, assigned, apps, assignedAppIds, envVars]);
+  }, [agent.env, secrets, assigned, apps, assignedAppIds, envVars]);
 
   const save = async () => {
     if (!envValid) return;
-    const nextAppIds = [...assignedAppIds].sort();
     if (!credsChanged && !envChanged && !appsChanged) {
       onClose();
       return;
     }
-    setSaving(true);
-    setError(null);
     try {
       if (credsChanged) {
-        await platform.secrets.setAgentAccess.mutate({
+        await setAccess.mutateAsync({
           agentName: agentId,
           mode: "selective",
           secretIds: [...assigned],
         });
       }
       if (envChanged) {
-        await updateAgentMutation.mutateAsync({ id: agentId, env: sanitizedEnv });
+        await updateAgent.mutateAsync({ id: agentId, env: sanitizedEnv });
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
-      setSaving(false);
-      return;
-    }
-
-    if (appsChanged) {
-      try {
-        await platform.connections.setAgentConnections.mutate({
+      if (appsChanged) {
+        await setConnections.mutateAsync({
           agentName: agentId,
-          connectionIds: nextAppIds,
+          connectionIds: [...assignedAppIds].sort(),
         });
-        initialAppIds.current = nextAppIds;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(`Connections saved; apps failed: ${msg}`);
-        setSaving(false);
-        return;
       }
+      onClose();
+    } catch {
+      // Mutation meta.errorToast surfaces the failure; dialog stays open.
     }
-    setSaving(false);
-    onClose();
   };
 
   const connectionsCount = assigned.size + assignedAppIds.size;
   const envCount = sanitizedEnv.length + inheritedEnvs.length;
-
   const canSave =
-    !saving && !loading && envValid && (credsChanged || envChanged || appsChanged);
+    !saving && initialized && envValid && (credsChanged || envChanged || appsChanged);
 
   return (
     <Modal onClose={onClose} widthClass="w-[640px]">
       <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
-          <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
-          <p className="text-[12px] text-text-muted mt-1">
-            {agent.templateId ? (
-              <>
-                Template:{" "}
-                <HoverTooltip
-                  placement="right"
-                  trigger={
-                    <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
-                      {agent.templateId}
-                    </span>
-                  }
-                >
-                  <span className="font-mono">{agent.image}</span>
-                </HoverTooltip>
-              </>
-            ) : (
-              <>
-                Image:{" "}
-                <span className="font-mono text-text-secondary break-all">
-                  {agent.image}
-                </span>
-              </>
-            )}
-          </p>
-        </div>
-
-        <div className="px-7 pt-4 flex items-center gap-1 border-b-2 border-border-light">
-          <TabButton
-            active={tab === "connections"}
-            label="Connections"
-            count={connectionsCount}
-            onClick={() => setTab("connections")}
-          />
-          <TabButton
-            active={tab === "env"}
-            label="Environment"
-            count={envCount}
-            onClick={() => setTab("env")}
-          />
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-4">
-          {error && (
-            <div className="rounded-lg border-2 border-danger bg-danger-light px-4 py-2 text-[12px] text-danger">
-              {error}
-            </div>
-          )}
-
-          {tab === "connections" ? (
-            <ConnectionsPicker
-              loading={loading}
-              secrets={secrets}
-              apps={apps}
-              selSecrets={assigned}
-              selApps={assignedAppIds}
-              onToggleSecret={toggleSecret}
-              onToggleApp={toggleApp}
-            />
+        <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
+        <p className="text-[12px] text-text-muted mt-1">
+          {agent.templateId ? (
+            <>
+              Template:{" "}
+              <HoverTooltip
+                placement="right"
+                trigger={
+                  <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                    {agent.templateId}
+                  </span>
+                }
+              >
+                <span className="font-mono">{agent.image}</span>
+              </HoverTooltip>
+            </>
           ) : (
-            <EnvTab
-              inherited={inheritedEnvs}
-              envVars={envVars}
-              setEnvVars={setEnvVars}
-              saving={saving}
-            />
+            <>
+              Image:{" "}
+              <span className="font-mono text-text-secondary break-all">
+                {agent.image}
+              </span>
+            </>
           )}
-        </div>
-
-        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
-          <button
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-            style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-            onClick={save}
-            disabled={!canSave}
-            title={!credsChanged && !envChanged && !appsChanged ? "Nothing to save" : undefined}
-          >
-            {saving ? "..." : "Save"}
-          </button>
-        </div>
-    </Modal>
-  );
-}
-
-function TabButton({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`h-10 px-4 text-[13px] font-semibold inline-flex items-center gap-2 border-b-2 -mb-[2px] transition-colors ${
-        active
-          ? "text-accent border-accent"
-          : "text-text-muted border-transparent hover:text-text"
-      }`}
-    >
-      {label}
-      {count > 0 && (
-        <span
-          className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center ${
-            active ? "bg-accent text-white" : "bg-surface-raised text-text-muted"
-          }`}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function EnvTab({
-  inherited,
-  envVars,
-  setEnvVars,
-  saving,
-}: {
-  inherited: InheritedEnv[];
-  envVars: EnvVar[];
-  setEnvVars: (v: EnvVar[]) => void;
-  saving: boolean;
-}) {
-  return (
-    <>
-      <p className="text-[12px] text-text-muted">
-        Applied to every instance of this agent. Restart the instance pod to
-        pick up changes.
-      </p>
-
-      {inherited.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
-              Inherited
-            </span>
-            <span className="text-[10px] text-text-muted">
-              · managed elsewhere
-            </span>
-          </div>
-          <div className="flex flex-col gap-1">
-            {inherited.map((e, i) => (
-              <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
-          Custom
-        </span>
-        <EnvVarsEditor value={envVars} onChange={setEnvVars} disabled={saving} />
+        </p>
       </div>
-    </>
-  );
-}
 
-function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
-  const isSystem = entry.source === "system";
-  const sourceName =
-    entry.source === "system"
-      ? null
-      : "secretName" in entry.source
-        ? entry.source.secretName
-        : entry.source.appLabel;
-  return (
-    <div className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]">
-      <span
-        className={`shrink-0 ${isSystem ? "text-text-muted" : "text-accent"}`}
-        title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
-      >
-        {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
-      </span>
-      <span className="font-mono font-semibold text-text truncate">
-        {entry.name}
-      </span>
-      <span className="text-text-muted">=</span>
-      <span className="font-mono text-text-muted truncate flex-1" title={entry.value}>
-        {entry.value}
-      </span>
-      {!isSystem && (
-        <span className="text-[10px] text-text-muted italic truncate max-w-[160px]">
-          {sourceName}
-        </span>
-      )}
-    </div>
+      <div className="px-7 pt-4 flex items-center gap-1 border-b-2 border-border-light">
+        <TabButton
+          active={tab === "connections"}
+          label="Connections"
+          count={connectionsCount}
+          onClick={() => setTab("connections")}
+        />
+        <TabButton
+          active={tab === "env"}
+          label="Environment"
+          count={envCount}
+          onClick={() => setTab("env")}
+        />
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-4">
+        {tab === "connections" ? (
+          <ConnectionsPicker
+            loading={!initialized}
+            secrets={secrets}
+            apps={apps}
+            selSecrets={assigned}
+            selApps={assignedAppIds}
+            onToggleSecret={toggleSecret}
+            onToggleApp={toggleApp}
+          />
+        ) : (
+          <EnvTab
+            inherited={inheritedEnvs}
+            envVars={envVars}
+            setEnvVars={setEnvVars}
+            saving={saving}
+          />
+        )}
+      </div>
+
+      <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
+        <button
+          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
+          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button
+          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
+          style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+          onClick={save}
+          disabled={!canSave}
+          title={!credsChanged && !envChanged && !appsChanged ? "Nothing to save" : undefined}
+        >
+          {saving ? "..." : "Save"}
+        </button>
+      </div>
+    </Modal>
   );
 }
