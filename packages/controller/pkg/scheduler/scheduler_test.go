@@ -60,20 +60,38 @@ func TestSyncSchedule_Disabled(t *testing.T) {
 	assert.NotContains(t, s.schedules, "my-schedule")
 }
 
-func TestSyncSchedule_UpdateReplacesEntry(t *testing.T) {
+func TestSyncSchedule_IdempotentWhenSpecUnchanged(t *testing.T) {
 	cm := scheduleCM("my-schedule", "my-instance", true)
 	client := fake.NewSimpleClientset(cm)
 	s := New(client, testCfg)
 	s.Start()
 	defer s.Stop()
 
-	s.SyncSchedule(cm)
+	require.NoError(t, s.SyncSchedule(cm))
 	firstEntry := s.schedules["my-schedule"]
 
-	s.SyncSchedule(cm)
+	// Re-syncing the same spec (e.g. on an informer resync or a status-only
+	// write) must be a no-op: the registered cron entry stays the same.
+	require.NoError(t, s.SyncSchedule(cm))
 	secondEntry := s.schedules["my-schedule"]
+	assert.Equal(t, firstEntry, secondEntry, "identical spec must not replace the cron entry")
+}
 
-	assert.NotEqual(t, firstEntry, secondEntry)
+func TestSyncSchedule_ReplacesEntryWhenSpecChanges(t *testing.T) {
+	cm := scheduleCM("my-schedule", "my-instance", true)
+	client := fake.NewSimpleClientset(cm)
+	s := New(client, testCfg)
+	s.Start()
+	defer s.Stop()
+
+	require.NoError(t, s.SyncSchedule(cm))
+	firstEntry := s.schedules["my-schedule"]
+
+	// Mutate the cron expression and re-sync: the entry should be replaced.
+	cm.Data["spec.yaml"] = "version: humr.ai/v1\ntype: cron\ncron: \"*/10 * * * *\"\ntask: check repo\nenabled: true\n"
+	require.NoError(t, s.SyncSchedule(cm))
+	secondEntry := s.schedules["my-schedule"]
+	assert.NotEqual(t, firstEntry, secondEntry, "changed spec must replace the cron entry")
 }
 
 func TestRemoveSchedule(t *testing.T) {

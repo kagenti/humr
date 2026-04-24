@@ -114,12 +114,21 @@ export interface InstanceView {
   allowedUserEmails: string[];
 }
 
+export interface QuietWindowView {
+  startTime: string;
+  endTime: string;
+  enabled: boolean;
+}
+
 export interface Schedule {
   id: string;
   name: string;
   instanceId: string;
-  type: "cron";
-  cron: string;
+  type: "cron" | "rrule";
+  cron: string | null;
+  rrule: string | null;
+  timezone: string | null;
+  quietHours: QuietWindowView[];
   task: string | null;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";

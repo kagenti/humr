@@ -2,11 +2,16 @@ package types
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/robfig/cron/v3"
+	"github.com/teambition/rrule-go"
 	"gopkg.in/yaml.v3"
 )
+
+var quietHoursTimeRE = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
 const SpecVersion = "humr.ai/v1"
 
@@ -73,15 +78,40 @@ type InstanceStatus struct {
 
 // --- Schedule ---
 
+// ScheduleSpec is a discriminated union on Type:
+//
+//   - "cron"  (legacy): fires on Cron, UTC.
+//   - "rrule" (new):    fires on RRule, interpreted in Timezone;
+//                       candidates inside any enabled QuietHours window are skipped.
+//
+// Backwards-compat: schedules created before ADR-031 still carry only Type="cron"
+// and Cron; the scheduler keeps a robfig/cron path for them.
 type ScheduleSpec struct {
-	Version      string                     `yaml:"version"`
-	Type         string                     `yaml:"type"`
-	Cron         string                     `yaml:"cron"`
-	Task         string                     `yaml:"task,omitempty"`
-	Enabled      bool                       `yaml:"enabled"`
-	MCPServers   map[string]MCPServerConfig `yaml:"mcpServers,omitempty"`
-	SessionMode  string                     `yaml:"sessionMode,omitempty"`
+	Version     string                     `yaml:"version"`
+	Type        string                     `yaml:"type"`
+	Cron        string                     `yaml:"cron,omitempty"`
+	RRule       string                     `yaml:"rrule,omitempty"`
+	Timezone    string                     `yaml:"timezone,omitempty"`
+	QuietHours  []QuietWindow              `yaml:"quietHours,omitempty"`
+	Task        string                     `yaml:"task,omitempty"`
+	Enabled     bool                       `yaml:"enabled"`
+	MCPServers  map[string]MCPServerConfig `yaml:"mcpServers,omitempty"`
+	SessionMode string                     `yaml:"sessionMode,omitempty"`
 }
+
+// QuietWindow is a daily time-of-day range in the schedule's Timezone.
+// If EndTime <= StartTime the window crosses midnight (e.g. 22:00 → 06:00).
+// StartTime/EndTime are "HH:MM" (24-hour).
+type QuietWindow struct {
+	StartTime string `yaml:"startTime"`
+	EndTime   string `yaml:"endTime"`
+	Enabled   bool   `yaml:"enabled"`
+}
+
+const (
+	ScheduleTypeCron  = "cron"
+	ScheduleTypeRRule = "rrule"
+)
 
 type ScheduleStatus struct {
 	Version    string `yaml:"version"`
@@ -199,15 +229,90 @@ func ParseScheduleSpec(data string) (*ScheduleSpec, error) {
 	if err := validateVersion(spec.Version); err != nil {
 		return nil, fmt.Errorf("schedule spec: %w", err)
 	}
-	if spec.Cron != "" {
-		if _, err := cron.ParseStandard(spec.Cron); err != nil {
-			return nil, fmt.Errorf("schedule spec: invalid cron %q: %w", spec.Cron, err)
+
+	// Legacy schedules don't carry `type`; infer it so old records still validate.
+	specType := spec.Type
+	if specType == "" {
+		if spec.RRule != "" {
+			specType = ScheduleTypeRRule
+		} else {
+			specType = ScheduleTypeCron
 		}
+	}
+
+	switch specType {
+	case ScheduleTypeCron:
+		if spec.Cron != "" {
+			if _, err := cron.ParseStandard(spec.Cron); err != nil {
+				return nil, fmt.Errorf("schedule spec: invalid cron %q: %w", spec.Cron, err)
+			}
+		}
+	case ScheduleTypeRRule:
+		if spec.RRule == "" {
+			return nil, fmt.Errorf("schedule spec: rrule is required for type=rrule")
+		}
+		if _, err := ParseRRuleInLocation(spec.RRule, spec.Timezone); err != nil {
+			return nil, fmt.Errorf("schedule spec: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("schedule spec: unknown type %q", spec.Type)
+	}
+
+	if err := validateQuietHours(spec.QuietHours); err != nil {
+		return nil, fmt.Errorf("schedule spec: %w", err)
 	}
 	if err := validateMCPServers(spec.MCPServers); err != nil {
 		return nil, fmt.Errorf("schedule spec: %w", err)
 	}
 	return &spec, nil
+}
+
+// ParseRRuleInLocation parses an RRULE string in the given IANA timezone
+// (empty string → UTC). rrule-go's StrToROptionInLocation requires a location
+// so Dtstart/UNTIL resolve correctly; we supply one here for consistency
+// with how the scheduler will evaluate the rule at fire time.
+func ParseRRuleInLocation(rruleStr, tz string) (*rrule.RRule, error) {
+	loc, err := LoadTimezone(tz)
+	if err != nil {
+		return nil, err
+	}
+	opt, err := rrule.StrToROptionInLocation(rruleStr, loc)
+	if err != nil {
+		return nil, fmt.Errorf("invalid rrule %q: %w", rruleStr, err)
+	}
+	r, err := rrule.NewRRule(*opt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid rrule %q: %w", rruleStr, err)
+	}
+	return r, nil
+}
+
+// LoadTimezone loads an IANA timezone, defaulting to UTC when tz is empty.
+// Exposed so the scheduler can share the same default.
+func LoadTimezone(tz string) (*time.Location, error) {
+	if tz == "" {
+		return time.UTC, nil
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timezone %q: %w", tz, err)
+	}
+	return loc, nil
+}
+
+func validateQuietHours(windows []QuietWindow) error {
+	for i, w := range windows {
+		if !quietHoursTimeRE.MatchString(w.StartTime) {
+			return fmt.Errorf("quietHours[%d].startTime %q must be HH:MM", i, w.StartTime)
+		}
+		if !quietHoursTimeRE.MatchString(w.EndTime) {
+			return fmt.Errorf("quietHours[%d].endTime %q must be HH:MM", i, w.EndTime)
+		}
+		if w.StartTime == w.EndTime {
+			return fmt.Errorf("quietHours[%d]: startTime and endTime must differ", i)
+		}
+	}
+	return nil
 }
 
 func validateMCPServers(servers map[string]MCPServerConfig) error {

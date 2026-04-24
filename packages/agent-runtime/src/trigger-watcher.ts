@@ -14,7 +14,10 @@ const TriggerFile = z.object({
   schedule: z.string(),
   timestamp: z.string(),
   task: z.string(),
-  type: z.literal("cron").optional(),
+  // Schedule type — the controller passes through whichever type the
+  // schedule spec carries. "rrule" is the new format introduced with
+  // ADR-031; "cron" is the legacy path.
+  type: z.enum(["cron", "rrule"]).optional(),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   params: z.record(z.string(), z.unknown()).optional(),
   mcpServers: z.array(z.unknown()).default([]),
