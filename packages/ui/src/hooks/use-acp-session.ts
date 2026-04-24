@@ -506,15 +506,20 @@ export function useAcpSession(
       // Persist to the platform DB lazily, only once the session has real
       // content. Prevents empty rows from appearing in the sidebar when the
       // user opens the app and closes it without sending anything.
+      //
+      // Await the create before the finally-block `fetchSessions` runs —
+      // otherwise the fetch races the server's DB write, sees no row for
+      // this session, and the user has to hit Refresh for it to appear.
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
-        platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance })
-          .catch((err) => {
-            showToast({
-              kind: "warning",
-              message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
-            });
+        try {
+          await platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance });
+        } catch (err) {
+          showToast({
+            kind: "warning",
+            message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
           });
+        }
       }
       // Belt-and-braces: if humr_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
