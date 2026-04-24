@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,120 +122,22 @@ func TestFire_RunningInstance(t *testing.T) {
 			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
 		},
 	}
-	client := fake.NewSimpleClientset(instanceCm)
+	readyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-0", Namespace: "test-agents"},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+	client := fake.NewSimpleClientset(instanceCm, readyPod)
 	s := New(client, testCfg)
 
 	spec := &types.ScheduleSpec{Type: "cron", Cron: "*/5 * * * *", Task: "check repo", Enabled: true}
 	err := s.fire(context.Background(), "my-instance", "my-schedule", spec)
 	require.NoError(t, err)
 
-	// Verify instance is still running (not touched by fire)
 	instance, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
 	assert.Contains(t, instance.Data["spec.yaml"], "desiredState: running")
-}
-
-func TestWakeIfHibernated_WakesInstance(t *testing.T) {
-	instanceCm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-instance", Namespace: "test-agents",
-			Labels: map[string]string{"humr.ai/type": "agent-instance"},
-		},
-		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: hibernated\n",
-		},
-	}
-	client := fake.NewSimpleClientset(instanceCm)
-	s := New(client, testCfg)
-
-	woke, err := s.wakeIfHibernated(context.Background(), "my-instance")
-	require.NoError(t, err)
-	assert.True(t, woke)
-
-	// Verify instance is now running
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["spec.yaml"], "desiredState: running")
-	assert.Contains(t, updated.Annotations, "humr.ai/last-activity")
-}
-
-func TestWakeIfHibernated_SkipsRunning(t *testing.T) {
-	instanceCm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-instance", Namespace: "test-agents",
-			Labels: map[string]string{"humr.ai/type": "agent-instance"},
-		},
-		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
-		},
-	}
-	client := fake.NewSimpleClientset(instanceCm)
-	s := New(client, testCfg)
-
-	woke, err := s.wakeIfHibernated(context.Background(), "my-instance")
-	require.NoError(t, err)
-	assert.False(t, woke)
-}
-
-func TestPollUntilReady_ReadyImmediately(t *testing.T) {
-	called := 0
-	ok := pollUntilReady(context.Background(), func(ctx context.Context) bool {
-		called++
-		return true
-	}, 10*time.Millisecond, 100*time.Millisecond, time.Second)
-	assert.True(t, ok)
-	assert.Equal(t, 1, called, "should exit on first iteration without polling again")
-}
-
-func TestPollUntilReady_EventuallyReady(t *testing.T) {
-	called := 0
-	ok := pollUntilReady(context.Background(), func(ctx context.Context) bool {
-		called++
-		return called >= 3
-	}, 10*time.Millisecond, 100*time.Millisecond, time.Second)
-	assert.True(t, ok)
-	assert.Equal(t, 3, called)
-}
-
-func TestPollUntilReady_Timeout(t *testing.T) {
-	called := 0
-	start := time.Now()
-	ok := pollUntilReady(context.Background(), func(ctx context.Context) bool {
-		called++
-		return false
-	}, 10*time.Millisecond, 30*time.Millisecond, 100*time.Millisecond)
-	elapsed := time.Since(start)
-	assert.False(t, ok)
-	assert.GreaterOrEqual(t, called, 2, "should poll at least a few times before giving up")
-	assert.GreaterOrEqual(t, elapsed, 100*time.Millisecond, "should honor the deadline")
-	assert.Less(t, elapsed, 500*time.Millisecond, "should not run much past the deadline")
-}
-
-func TestPollUntilReady_ContextCancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
-	start := time.Now()
-	ok := pollUntilReady(ctx, func(ctx context.Context) bool {
-		return false
-	}, 100*time.Millisecond, time.Second, 10*time.Second)
-	elapsed := time.Since(start)
-	assert.False(t, ok)
-	assert.Less(t, elapsed, 500*time.Millisecond, "should return quickly on ctx cancel, well before the 10s timeout")
-}
-
-func TestWaitForPodReady_PodReady(t *testing.T) {
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-0", Namespace: "test-agents"},
-		Status: corev1.PodStatus{
-			Conditions: []corev1.PodCondition{
-				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
-			},
-		},
-	}
-	client := fake.NewSimpleClientset(pod)
-	s := New(client, testCfg)
-
-	ok := s.waitForPodReady(context.Background(), "my-instance")
-	assert.True(t, ok)
+	// EnsureReady always bumps last-activity, even on the hot path — this is
+	// what keeps continuous-mode schedules from re-hibernating mid-chain.
+	assert.Contains(t, instance.Annotations, "humr.ai/last-activity")
 }
