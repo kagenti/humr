@@ -1,12 +1,11 @@
-import type { AppConnectionView } from "api-server-api";
 import { Sparkles } from "lucide-react";
-import { useEffect,useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ConnectionsPicker } from "../../../components/connections-picker.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
-import { platform } from "../../../platform.js";
-import { useStore } from "../../../store.js";
-import type { EnvVar,SecretView, TemplateView } from "../../../types.js";
+import type { EnvVar, TemplateView } from "../../../types.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useSecrets } from "../../secrets/api/queries.js";
 import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
 
 type Step = "pick" | "configure";
@@ -36,47 +35,32 @@ export function AddAgentDialog({
   );
   const [customImage, setCustomImage] = useState("");
 
-  // Configure step state
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const [secrets, setSecrets] = useState<SecretView[]>([]);
   const [selSecrets, setSelSecrets] = useState<Set<string>>(new Set());
   // Tracks whether the user touched the selection at all. Needed because the
   // controller auto-assigns the single Anthropic provider when no explicit
   // list is sent, which would otherwise silently ignore an explicit uncheck.
   const [secretsDirty, setSecretsDirty] = useState(false);
-  const [loadSecrets, setLoadSecrets] = useState(true);
-  const [apps, setApps] = useState<AppConnectionView[]>([]);
   const [selApps, setSelApps] = useState<Set<string>>(new Set());
-  const showToast = useStore((s) => s.showToast);
 
+  const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
+  const { data: apps = [] } = useAppConnections();
+
+  // Auto-check the lone Anthropic provider once the list arrives so the
+  // configure step shows what the controller's default would assign anyway.
+  // Left undirty — submit() still sends `secretIds: undefined` so the
+  // controller picks, not the user.
+  const autoSelectedRef = useRef(false);
   useEffect(() => {
-    platform.secrets.list
-      .query()
-      .then((loaded) => {
-        setSecrets(loaded);
-        const providers = loaded.filter((s) => s.type === "anthropic");
-        if (providers.length === 1) {
-          setSelSecrets(new Set([providers[0].id]));
-        }
-      })
-      .catch((err) =>
-        showToast({
-          kind: "error",
-          message: `Couldn't load secrets: ${err instanceof Error ? err.message : "unknown error"}`,
-        }),
-      )
-      .finally(() => setLoadSecrets(false));
-    platform.connections.list
-      .query()
-      .then(setApps)
-      .catch((err) =>
-        showToast({
-          kind: "error",
-          message: `Couldn't load connections: ${err instanceof Error ? err.message : "unknown error"}`,
-        }),
-      );
-  }, [showToast]);
+    if (autoSelectedRef.current) return;
+    if (secrets.length === 0) return;
+    autoSelectedRef.current = true;
+    const providers = secrets.filter((s) => s.type === "anthropic");
+    if (providers.length === 1) {
+      setSelSecrets(new Set([providers[0].id]));
+    }
+  }, [secrets]);
 
   const toggleSecret = (id: string) => {
     setSecretsDirty(true);
@@ -141,8 +125,7 @@ export function AddAgentDialog({
       onClick={onCancel}
     >
       <div
-        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
-        style={{ boxShadow: "var(--shadow-brutal)" }}
+        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal"
         onClick={(e) => e.stopPropagation()}
       >
         {step === "pick" ? (
@@ -182,8 +165,7 @@ export function AddAgentDialog({
                   placeholder="ghcr.io/org/agent:latest"
                 />
                 <button
-                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
                   onClick={pickCustom}
                   disabled={!customImage.trim()}
                 >
@@ -194,8 +176,7 @@ export function AddAgentDialog({
 
             <div className="flex justify-end pt-1">
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
                 onClick={onCancel}
               >
                 Cancel
@@ -287,15 +268,13 @@ export function AddAgentDialog({
 
             <div className="flex items-center justify-end gap-3 pt-1">
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
                 onClick={() => setStep("pick")}
               >
                 Back
               </button>
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
                 onClick={submit}
                 disabled={!name.trim()}
               >

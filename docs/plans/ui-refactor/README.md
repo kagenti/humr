@@ -54,7 +54,7 @@ Shared (stays at top level):
 |---|---|---|---|---|---|---|---|
 | [connections](domains/connections.md) | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | [chat](domains/chat.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| [agents](domains/agents.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| [agents](domains/agents.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [secrets](domains/secrets.md) | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
 | [schedules](domains/schedules.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [files](domains/files.md) | ✅ | ✅ | ✅ | ✅ | — | — | — |
