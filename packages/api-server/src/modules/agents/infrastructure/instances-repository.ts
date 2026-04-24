@@ -1,12 +1,15 @@
 import type { K8sClient } from "./k8s.js";
 import {
-  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF,
+  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LAST_ACTIVITY_KEY,
 } from "./labels.js";
 import {
   parseInfraInstance, isOwnedBy, hasType,
   buildInstanceConfigMap, patchSpecField, setDesiredState,
   isPodReady,
 } from "./configmap-mappers.js";
+import {
+  pollUntilReady, WAKE_POLL_INITIAL_MS, WAKE_POLL_MAX_MS, WAKE_TIMEOUT_MS,
+} from "./poll-until-ready.js";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
 export interface InstancesRepository {
@@ -22,9 +25,33 @@ export interface InstancesRepository {
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
   isPodReady(id: string): Promise<boolean>;
+  /**
+   * Make the instance's pod reachable. Idempotent; single-flight per id;
+   * bumps `humr.ai/last-activity` on every successful completion so any
+   * caller implicitly keeps the pod warm.
+   *
+   * The observed pod Ready condition is the authoritative signal — not
+   * `desiredState`. See ADR-032.
+   */
+  ensureReady(id: string): Promise<void>;
 }
 
 export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
+  // Single-flight per instance id. Concurrent callers for the same id share
+  // one in-flight wake+wait+bump; callers for different ids don't block each
+  // other. Correctness does not depend on this (K8s optimistic concurrency
+  // already serializes concurrent ConfigMap updates) — it keeps API load
+  // sane under bursty call patterns.
+  const inflight = new Map<string, Promise<void>>();
+
+  async function bumpLastActivity(id: string): Promise<void> {
+    const cm = await k8s.getConfigMap(id);
+    if (!cm) return;
+    if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+    cm.metadata!.annotations[LAST_ACTIVITY_KEY] = new Date().toISOString();
+    await k8s.replaceConfigMap(id, cm);
+  }
+
   return {
     async list(owner?) {
       const ownerSelector = owner ? `,${LABEL_OWNER}=${owner}` : "";
@@ -137,6 +164,37 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
     async isPodReady(id) {
       const pod = await k8s.getPod(`${id}-0`);
       return pod !== null && isPodReady(pod);
+    },
+
+    async ensureReady(id) {
+      const existing = inflight.get(id);
+      if (existing) return existing;
+
+      const work = (async () => {
+        const pod = await k8s.getPod(`${id}-0`);
+        if (pod !== null && isPodReady(pod)) {
+          await bumpLastActivity(id);
+          return;
+        }
+        // wakeIfHibernated is a no-op when desiredState is already "running",
+        // so calling it here is cheap and covers the "running-but-pod-absent"
+        // window (fresh instance, pod crash, mid-termination).
+        await this.wakeIfHibernated(id);
+        const ready = await pollUntilReady(
+          () => this.isPodReady(id),
+          WAKE_POLL_INITIAL_MS,
+          WAKE_POLL_MAX_MS,
+          WAKE_TIMEOUT_MS,
+        );
+        if (!ready) {
+          throw new Error(`instance ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`);
+        }
+        await bumpLastActivity(id);
+      })().finally(() => {
+        inflight.delete(id);
+      });
+      inflight.set(id, work);
+      return work;
     },
   };
 }

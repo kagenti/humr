@@ -37,6 +37,7 @@ This directory contains ADRs for the Humr project.
 | [029](029-per-instance-channels.md)           | Per-instance messenger channels — secrets in k8s Secrets, per-thread authorization | @pilartomas |
 | [030](030-skills-marketplace.md)              | Skills — connectable sources and install | @PetrBulanek |
 | [031](031-schedule-rrule-quiet-hours.md)      | Schedules use RRULE for includes and structured quiet hours for exclusions | @jezekra1 |
+| [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth | @janjeliga |
 
 ## Drafts
 
