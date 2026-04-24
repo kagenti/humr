@@ -204,7 +204,6 @@
 .prose ul { list-style: disc; }
 .prose ol { list-style: decimal; }
 .prose li { margin: 0 0 .15em; }
-.prose li::marker { color: var(--c-text-muted); }
 .prose blockquote {
   border-left: 3px solid var(--c-accent); padding: .5em 1em;
   margin: .65em 0; background: var(--c-accent-light);

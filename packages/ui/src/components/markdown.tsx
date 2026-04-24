@@ -37,7 +37,7 @@ function FrontmatterBlock({ source }: { source: string }) {
         <span className="font-mono uppercase tracking-[0.05em] text-[11px]">Frontmatter</span>
       </button>
       {open && (
-        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre-wrap break-words">{source}</pre>
+        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre-wrap overflow-x-auto">{source}</pre>
       )}
     </div>
   );
