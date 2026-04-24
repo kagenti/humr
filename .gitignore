@@ -42,3 +42,9 @@ context/
 # Playwright
 .playwright-mcp
 
+# MkDocs
+site/
+
+# Python
+.venv/
+

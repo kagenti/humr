@@ -1,0 +1,7 @@
+["docs:serve"]
+dir = "{{config_root}}"
+run = "uvx --with mkdocs-material mkdocs serve"
+
+["docs:build"]
+dir = "{{config_root}}"
+run = "uvx --with mkdocs-material mkdocs build"

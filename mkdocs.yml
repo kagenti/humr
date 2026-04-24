@@ -1,0 +1,67 @@
+site_name: Humr
+site_description: Run your own background agents on Kubernetes
+
+docs_dir: docs
+
+exclude_docs: |
+  plans/
+  adrs/
+  issue-guidelines.md
+  tasks.toml
+
+validation:
+  links:
+    not_found: info
+    absolute_links: relative_to_docs
+    unrecognized_links: info
+
+nav:
+  - Welcome: index.md
+  - Quickstart: quickstart.md
+  - User Guide:
+      - Add Credentials: user-guide/credentials.md
+      - Chatting with Your Agent: user-guide/chatting.md
+      - Connect to Slack: user-guide/slack.md
+      - Schedule Tasks: user-guide/scheduling.md
+      - Files & Workspace: user-guide/files.md
+      - Settings & Lifecycle: user-guide/settings.md
+  - Self-Hosting:
+      - Local Development: self-hosting/get-started.md
+      - Deploy to Kubernetes: self-hosting/deploy.md
+      - Build a Custom Agent: self-hosting/build-a-custom-agent.md
+      - Security Model: self-hosting/security-model.md
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  palette:
+    - scheme: default
+      primary: black
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+  - tables
+  - attr_list
