@@ -278,7 +278,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
     },
 
-    async listSkills(sourceId: string, instanceId: string) {
+    async listSkills(sourceId: string, instanceId?: string) {
       const src = await resolveSource(deps, sourceId);
       if (!src) return [];
 
@@ -298,7 +298,14 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       // Private/authenticated path: delegate to agent-runtime inside a
-      // running instance pod, which uses OneCLI's token swap.
+      // running instance pod, which uses OneCLI's token swap. Without an
+      // instanceId we can't target a pod — refuse with a clear message.
+      if (!instanceId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "source is private; select an instance to scan it",
+        });
+      }
       const infra = await deps.instancesRepo.get(instanceId, deps.owner);
       if (!infra) throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
       if (infra.currentState !== "running") {

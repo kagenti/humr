@@ -73,21 +73,37 @@ type MCPServerConfig struct {
 // --- Instance ---
 
 type InstanceSpec struct {
-	Version      string     `yaml:"version"`
-	DesiredState string     `yaml:"desiredState"`
-	AgentName    string     `yaml:"agentId,omitempty"`
-	Env          []EnvVar   `yaml:"env,omitempty"`
-	SecretRef    string     `yaml:"secretRef,omitempty"`
-	Description  string     `yaml:"description,omitempty"`
-	Skills       []SkillRef `yaml:"skills,omitempty"`
+	Version      string               `yaml:"version"`
+	DesiredState string               `yaml:"desiredState"`
+	AgentName    string               `yaml:"agentId,omitempty"`
+	Env          []EnvVar             `yaml:"env,omitempty"`
+	SecretRef    string               `yaml:"secretRef,omitempty"`
+	Description  string               `yaml:"description,omitempty"`
+	Skills       []SkillRef           `yaml:"skills,omitempty"`
+	Publishes    []SkillPublishRecord `yaml:"publishes,omitempty"`
 }
 
 // SkillRef identifies an installed skill on an instance.
 // Source is the source git URL; Name is the skill directory name; Version is a commit SHA.
+// ContentHash is mirrored from the TS api-server for drift detection; the Go
+// controller does not use it but must preserve it across spec round-trips.
 type SkillRef struct {
-	Source  string `yaml:"source"`
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
+	Source      string `yaml:"source"`
+	Name        string `yaml:"name"`
+	Version     string `yaml:"version"`
+	ContentHash string `yaml:"contentHash,omitempty"`
+}
+
+// SkillPublishRecord mirrors the TS api-server's record of a successful
+// `publishSkill` call. The Go controller does not use these fields; they
+// exist only so spec round-trips (hibernate / wake / reconcile) preserve them.
+type SkillPublishRecord struct {
+	SkillName    string `yaml:"skillName"`
+	SourceID     string `yaml:"sourceId"`
+	SourceName   string `yaml:"sourceName"`
+	SourceGitURL string `yaml:"sourceGitUrl"`
+	PRURL        string `yaml:"prUrl"`
+	PublishedAt  string `yaml:"publishedAt"`
 }
 
 type InstanceStatus struct {

@@ -65,10 +65,13 @@ export const skillsRouter = t.router({
       .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
   }),
 
+  /** `instanceId` is optional — public-archive scans don't need an instance.
+   *  Private-source scans (that fall through to the authenticated
+   *  agent-runtime path) will throw with a clear hint if it's missing. */
   listSkills: t.procedure
     .input(z.object({
       sourceId: z.string().min(1),
-      instanceId: z.string().min(1),
+      instanceId: z.string().min(1).optional(),
     }))
     .output(z.array(skillViewSchema))
     .query(async ({ ctx, input }) => {
