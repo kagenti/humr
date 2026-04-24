@@ -49,8 +49,7 @@ export function InstanceSettingsDialog({ instanceName, allowedUserEmails, onSubm
             <button
               onClick={addUser}
               disabled={!input.trim()}
-              className="btn-brutal h-10 w-10 shrink-0 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40"
-              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+              className="btn-brutal h-10 w-10 shrink-0 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shadow-brutal-sm"
             >
               <Plus size={14} />
             </button>
@@ -75,15 +74,13 @@ export function InstanceSettingsDialog({ instanceName, allowedUserEmails, onSubm
 
         <div className="flex justify-end gap-3 pt-1">
           <button
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-            style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             onClick={() => onSubmit(users)}
           >
             Save

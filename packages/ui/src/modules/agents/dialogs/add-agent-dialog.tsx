@@ -125,8 +125,7 @@ export function AddAgentDialog({
       onClick={onCancel}
     >
       <div
-        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
-        style={{ boxShadow: "var(--shadow-brutal)" }}
+        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal"
         onClick={(e) => e.stopPropagation()}
       >
         {step === "pick" ? (
@@ -166,8 +165,7 @@ export function AddAgentDialog({
                   placeholder="ghcr.io/org/agent:latest"
                 />
                 <button
-                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
                   onClick={pickCustom}
                   disabled={!customImage.trim()}
                 >
@@ -178,8 +176,7 @@ export function AddAgentDialog({
 
             <div className="flex justify-end pt-1">
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
                 onClick={onCancel}
               >
                 Cancel
@@ -271,15 +268,13 @@ export function AddAgentDialog({
 
             <div className="flex items-center justify-end gap-3 pt-1">
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
                 onClick={() => setStep("pick")}
               >
                 Back
               </button>
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
                 onClick={submit}
                 disabled={!name.trim()}
               >

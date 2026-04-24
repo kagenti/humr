@@ -58,16 +58,14 @@ export function ListView() {
           <div className="ml-auto flex items-center gap-2 md:gap-3">
             <button
               onClick={() => { refetchTemplates(); refetchAgents(); refetchInstances(); }}
-              className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent"
-              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+              className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
             >
               <RefreshCw size={14} />
             </button>
             <button
               onClick={() => setShowAddAgent(true)}
               disabled={busyAgent}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5 shadow-brutal-accent"
             >
               <Plus size={14} /> <span className="hidden sm:inline">Add</span> Agent
             </button>
@@ -99,7 +97,7 @@ export function ListView() {
               <div
                 key={agent.id}
                 onClick={onOpen}
-                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in shadow-[var(--shadow-brutal)] transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-[4px_4px_0_#292524]" : ""}`}
+                className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in shadow-brutal transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-[4px_4px_0_#292524]" : ""}`}
               >
                 <div className="px-4 md:px-6 py-4 md:py-5">
                   <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
@@ -121,8 +119,7 @@ export function ListView() {
                           else if (display.powerAction === "restart") restartInstance(inst.id);
                         }}
                         disabled={display.powerAction === null}
-                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:hover:text-text-secondary disabled:hover:border-border flex items-center gap-1"
-                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:hover:text-text-secondary disabled:hover:border-border flex items-center gap-1 shadow-brutal-sm"
                         title={display.powerAction === "start" ? "Wake the hibernated agent" : "Restart the agent pod"}
                       >
                         {display.powerAction === "start"
@@ -131,8 +128,7 @@ export function ListView() {
                       </button>
                       <button
                         onClick={() => setShowSecretsDlg(agent.id)}
-                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1"
-                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                        className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1 shadow-brutal-sm"
                         title="Configure agent credentials and env vars"
                       >
                         <KeyRound size={12} /> Configure
@@ -152,8 +148,7 @@ export function ListView() {
                           deleteAgent.mutate({ id: agent.id });
                         }}
                         disabled={deleteAgent.isPending && deleteAgent.variables?.id === agent.id}
-                        className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40"
-                        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                        className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
                         title="Delete agent"
                       >
                         <Trash2 size={14} />

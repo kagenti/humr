@@ -254,16 +254,14 @@ export function EditAgentSecretsDialog({
         <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
           <button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-            style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             disabled={!canSave}
             title={!isDirty ? "Nothing to save" : undefined}
           >
