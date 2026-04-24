@@ -14,9 +14,9 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 - **Isolated by design** — Each agent runs in its own sandbox: separate pod, process, and filesystem. API keys live in a proxy; the agent never sees them. Network access is locked to destinations you've approved. That contains two of the three big agent-security risks structurally. [Security model →](docs/security-model.md)
 
-- **Always-on scheduling** — Cron lives on the platform, not your laptop. Scheduled tasks look identical to human messages from the agent's perspective. Workspace and conversation history persist across restarts.
+- **Built for team collaboration** — Until now, coding agents have been 1:1: you and your copilot. Humr unlocks N people collaborating with 1 or many agents, multi-player from the ground up. [Multiplayer →](docs/multi-player.md)
 
-- **Built for team collaboration** — Until now, coding agents have been 1:1: you and your copilot. Humr unlocks N people collaborating with 1 or many agents, multi-tenant from the ground up.
+- **Always-on scheduling** — Cron lives on the platform, not your laptop. Scheduled tasks look identical to human messages from the agent's perspective. Workspace and conversation history persist across restarts.
 
 - **Slack-native channels** — One Slack app, unlimited agents, per-thread routing. Your agents live where your team already works.
 
