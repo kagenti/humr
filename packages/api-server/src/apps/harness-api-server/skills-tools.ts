@@ -36,7 +36,7 @@ export function createSkillsToolHandlers(instanceId: string, skills: SkillsServi
   return {
     async listSources(): Promise<ToolContent> {
       try {
-        const sources = await skills.listSources();
+        const sources = await skills.listSources(instanceId);
         return textResult(JSON.stringify(sources));
       } catch (err) {
         return formatToolError(err, "Failed to list skill sources");

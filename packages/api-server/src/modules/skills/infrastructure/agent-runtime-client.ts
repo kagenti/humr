@@ -13,12 +13,6 @@ export interface UninstallSkillCall {
   skillPaths: string[];
 }
 
-export interface LocalSkillFile {
-  relPath: string;
-  content: string;
-  base64?: true;
-}
-
 export interface PublishSkillCall {
   name: string;
   skillPaths: string[];
@@ -55,12 +49,6 @@ export interface AgentRuntimeSkillsClient {
   install(instanceId: string, token: string, body: InstallSkillCall): Promise<InstallSkillResult>;
   uninstall(instanceId: string, token: string, body: UninstallSkillCall): Promise<void>;
   listLocal(instanceId: string, token: string, skillPaths: string[]): Promise<LocalSkill[]>;
-  readLocal(
-    instanceId: string,
-    token: string,
-    name: string,
-    skillPaths: string[],
-  ): Promise<LocalSkillFile[]>;
   publish(instanceId: string, token: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(instanceId: string, token: string, source: string): Promise<Skill[]>;
 }
@@ -137,12 +125,6 @@ export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeS
       const url = `${base(instanceId)}/api/skills/local?${qs}`;
       const { skills } = await getJson<{ skills: LocalSkill[] }>(url, token);
       return skills;
-    },
-    async readLocal(instanceId, token, name, skillPaths) {
-      const qs = skillPaths.map((p) => `skillPaths=${encodeURIComponent(p)}`).join("&");
-      const url = `${base(instanceId)}/api/skills/local/${encodeURIComponent(name)}?${qs}`;
-      const { files } = await getJson<{ files: LocalSkillFile[] }>(url, token);
-      return files;
     },
     publish: (instanceId, token, body) =>
       postJson<PublishSkillResult>(`${base(instanceId)}/api/skills/publish`, token, body),

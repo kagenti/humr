@@ -47,7 +47,6 @@ function makeDeps() {
     install: vi.fn(),
     uninstall: vi.fn(),
     listLocal: vi.fn(),
-    readLocal: vi.fn(),
     publish: vi.fn().mockResolvedValue({
       prUrl: "https://github.com/foo/bar/pull/1",
       branch: "humr/publish-demo-20260101000000",

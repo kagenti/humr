@@ -38,6 +38,14 @@ describe("skills MCP tool handlers", () => {
     expect(JSON.parse(res.content[0].text)).toEqual([SOURCE]);
   });
 
+  it("list_skill_sources forwards the session instanceId so template-seeded sources are included", async () => {
+    const listSources = vi.fn<SkillsService["listSources"]>().mockResolvedValue([SOURCE]);
+    const t = createSkillsToolHandlers(SESSION_INSTANCE_ID, makeSkills({ listSources }));
+    await t.listSources();
+    expect(listSources).toHaveBeenCalledTimes(1);
+    expect(listSources).toHaveBeenCalledWith(SESSION_INSTANCE_ID);
+  });
+
   it("list_skills_in_source rejects an unknown sourceId without calling listSkills", async () => {
     const listSkills = vi.fn<SkillsService["listSkills"]>().mockResolvedValue([]);
     const t = createSkillsToolHandlers(SESSION_INSTANCE_ID, makeSkills({

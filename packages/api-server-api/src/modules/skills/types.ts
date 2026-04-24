@@ -120,7 +120,7 @@ export interface SkillsService {
   createSource: (input: CreateSkillSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
-  listSkills: (sourceId: string, instanceId: string) => Promise<Skill[]>;
+  listSkills: (sourceId: string, instanceId?: string) => Promise<Skill[]>;
   installSkill: (input: InstallSkillInput) => Promise<SkillRef[]>;
   uninstallSkill: (input: UninstallSkillInput) => Promise<SkillRef[]>;
   listLocal: (instanceId: string) => Promise<LocalSkill[]>;
