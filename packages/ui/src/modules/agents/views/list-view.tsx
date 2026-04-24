@@ -10,7 +10,7 @@ import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
-import { EditAgentSecretsDialog } from "../dialogs/edit-agent-secrets-dialog.js";
+import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
@@ -39,7 +39,7 @@ export function ListView() {
   const showConfirm = useStore(s => s.showConfirm);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
-  const [showSecretsDlg, setShowSecretsDlg] = useState<string | null>(null);
+  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
 
   const initialLoaded = agentsLoaded && instancesLoaded;
   const busyAgent = createAgent.isPending;
@@ -127,7 +127,7 @@ export function ListView() {
                           : (<><RotateCw size={12} /> Restart</>)}
                       </button>
                       <button
-                        onClick={() => setShowSecretsDlg(agent.id)}
+                        onClick={() => setConfigAgentId(agent.id)}
                         className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1 shadow-brutal-sm"
                         title="Configure agent credentials and env vars"
                       >
@@ -170,14 +170,14 @@ export function ListView() {
           onGoToProviders={() => { setShowAddAgent(false); setView("providers"); }}
         />
       )}
-      {showSecretsDlg &&
+      {configAgentId &&
         (() => {
-          const agent = agents.find((a) => a.id === showSecretsDlg);
+          const agent = agents.find((a) => a.id === configAgentId);
           if (!agent) return null;
           return (
-            <EditAgentSecretsDialog
+            <ConfigureAgentDialog
               agent={agent}
-              onClose={() => setShowSecretsDlg(null)}
+              onClose={() => setConfigAgentId(null)}
             />
           );
         })()}

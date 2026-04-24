@@ -11,6 +11,7 @@ export function TabButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`h-10 px-4 text-[13px] font-semibold inline-flex items-center gap-2 border-b-2 -mb-[2px] transition-colors ${
         active

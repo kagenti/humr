@@ -16,12 +16,12 @@ import {
   useUpdateAgent,
 } from "../api/mutations.js";
 import { useAgentAccess, useAgentConnections } from "../api/queries.js";
-import { EnvTab, type InheritedEnv } from "../components/edit-agent-secrets/env-tab.js";
-import { TabButton } from "../components/edit-agent-secrets/tab-button.js";
+import { EnvTab, type InheritedEnv } from "../components/configure-agent/env-tab.js";
+import { TabButton } from "../components/configure-agent/tab-button.js";
 import {
-  editAgentSecretsSchema,
-  type EditAgentSecretsValues,
-} from "../forms/edit-agent-secrets-schema.js";
+  configureAgentSchema,
+  type ConfigureAgentValues,
+} from "../forms/configure-agent-schema.js";
 import {
   envsAfterUngrant,
   envsToAddOnGrant,
@@ -29,7 +29,7 @@ import {
 
 type Tab = "connections" | "env";
 
-export function EditAgentSecretsDialog({
+export function ConfigureAgentDialog({
   agent,
   onClose,
 }: {
@@ -54,8 +54,8 @@ export function EditAgentSecretsDialog({
   const [tab, setTab] = useState<Tab>("connections");
 
   const { control, handleSubmit, watch, getValues, setValue, reset, formState } =
-    useForm<EditAgentSecretsValues>({
-      resolver: zodResolver(editAgentSecretsSchema),
+    useForm<ConfigureAgentValues>({
+      resolver: zodResolver(configureAgentSchema),
       mode: "onChange",
       defaultValues: { assigned: [], assignedAppIds: [], envVars: userInitialEnv },
     });
