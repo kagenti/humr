@@ -4,7 +4,7 @@ import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
-import { createAcpClient } from "../../acp-client.js";
+import { createAcpClient } from "../../core/acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";

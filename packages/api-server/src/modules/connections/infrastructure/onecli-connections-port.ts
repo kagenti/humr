@@ -1,5 +1,5 @@
 import type { EnvMapping } from "api-server-api";
-import type { OnecliClient } from "../../../onecli.js";
+import type { OnecliClient } from "../../../apps/api-server/onecli.js";
 
 /**
  * Row shape of OneCLI's `GET /api/connections`. Optional fields are not

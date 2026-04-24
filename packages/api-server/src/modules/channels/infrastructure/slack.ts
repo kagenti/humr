@@ -7,7 +7,7 @@ import {
   createAcpClient,
   createForkAcpClient,
   ensureRunning,
-} from "../../../acp-client.js";
+} from "../../../core/acp-client.js";
 import {
   EventType,
   emit as defaultEmit,

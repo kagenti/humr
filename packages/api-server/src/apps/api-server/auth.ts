@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { MiddlewareHandler } from "hono";
 import type { UserIdentity } from "api-server-api";
-import { emit, EventType } from "./events.js";
+import { emit, EventType } from "../../events.js";
 
 export class ForbiddenError extends Error {
   constructor(public readonly requiredRole: string) {
