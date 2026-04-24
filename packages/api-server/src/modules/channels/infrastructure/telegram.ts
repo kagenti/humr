@@ -2,7 +2,7 @@ import { Chat, type Thread, type StateAdapter } from "chat";
 import { createTelegramAdapter, type TelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type InstancesService } from "api-server-api";
 import type { StoredChannelConfig, StoredTelegramChannel } from "../stored-channel.js";
-import { createAcpClient, ensureRunning } from "../../../core/acp-client.js";
+import { createAcpClient } from "../../../core/acp-client.js";
 import { buildAuthorizeUrl, generatePkce, type KeycloakOAuthConfig } from "./identity-oauth.js";
 
 export interface TelegramOAuthPending {
@@ -111,7 +111,7 @@ export function createTelegramWorker(
     ].join("\n");
 
     try {
-      await ensureRunning(instances(), instanceName);
+      await instances().ensureReady(instanceName);
       const acp = createAcpClient({
         namespace,
         instanceName,

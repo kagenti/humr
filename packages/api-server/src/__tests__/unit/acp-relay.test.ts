@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { pollUntilReady } from "../../apps/api-server/acp-relay.js";
+import { pollUntilReady } from "../../modules/agents/infrastructure/poll-until-ready.js";
 
 describe("pollUntilReady", () => {
   afterEach(() => {
