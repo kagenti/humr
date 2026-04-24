@@ -53,6 +53,7 @@ export const agentsRouter = t.router({
   update: t.procedure
     .input(z.object({
       id: z.string().min(1),
+      name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
       env: z.array(envVarSchema).max(64).optional(),
     }))

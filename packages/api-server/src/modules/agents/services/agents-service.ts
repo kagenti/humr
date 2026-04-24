@@ -62,6 +62,7 @@ export function createAgentsService(deps: {
         env = preserveProtectedEnvs(current?.spec.env ?? [], env);
       }
       return deps.repo.updateSpec(input.id, deps.owner, {
+        name: input.name,
         description: input.description,
         env,
       });

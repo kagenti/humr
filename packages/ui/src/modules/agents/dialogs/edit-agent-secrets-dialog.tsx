@@ -43,6 +43,7 @@ export function EditAgentSecretsDialog({
   const userInitialEnv = initialEnv.filter((e) => !isProtectedAgentEnvName(e.name));
 
   const [tab, setTab] = useState<Tab>("connections");
+  const [name, setName] = useState(agent.name);
   const [secrets, setSecrets] = useState<SecretView[]>([]);
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [apps, setApps] = useState<AppConnectionView[]>([]);
@@ -118,6 +119,10 @@ export function EditAgentSecretsDialog({
     JSON.stringify(sanitizedEnv) !== JSON.stringify(userInitialEnv);
   const envValid = allEnvVarsValid(envVars);
 
+  const trimmedName = name.trim();
+  const nameValid = trimmedName.length > 0;
+  const nameChanged = nameValid && trimmedName !== agent.name;
+
   const credsChanged = useMemo(() => {
     const current = [...assigned].sort();
     if (current.length !== initialAssigned.length) return true;
@@ -162,9 +167,9 @@ export function EditAgentSecretsDialog({
   }, [initialEnv, secrets, assigned, apps, assignedAppIds, envVars]);
 
   const save = async () => {
-    if (!envValid) return;
+    if (!envValid || !nameValid) return;
     const nextAppIds = [...assignedAppIds].sort();
-    if (!credsChanged && !envChanged && !appsChanged) {
+    if (!credsChanged && !envChanged && !appsChanged && !nameChanged) {
       onClose();
       return;
     }
@@ -178,8 +183,12 @@ export function EditAgentSecretsDialog({
           secretIds: [...assigned],
         });
       }
-      if (envChanged) {
-        await updateAgentMutation.mutateAsync({ id: agentId, env: sanitizedEnv });
+      if (envChanged || nameChanged) {
+        await updateAgentMutation.mutateAsync({
+          id: agentId,
+          ...(envChanged ? { env: sanitizedEnv } : {}),
+          ...(nameChanged ? { name: trimmedName } : {}),
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -209,36 +218,53 @@ export function EditAgentSecretsDialog({
   const envCount = sanitizedEnv.length + inheritedEnvs.length;
 
   const canSave =
-    !saving && !loading && envValid && (credsChanged || envChanged || appsChanged);
+    !saving &&
+    !loading &&
+    envValid &&
+    nameValid &&
+    (credsChanged || envChanged || appsChanged || nameChanged);
 
   return (
     <Modal onClose={onClose} widthClass="w-[640px]">
-      <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
-          <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
-          <p className="text-[12px] text-text-muted mt-1">
-            {agent.templateId ? (
-              <>
-                Template:{" "}
-                <HoverTooltip
-                  placement="right"
-                  trigger={
-                    <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
-                      {agent.templateId}
-                    </span>
-                  }
-                >
-                  <span className="font-mono">{agent.image}</span>
-                </HoverTooltip>
-              </>
-            ) : (
-              <>
-                Image:{" "}
-                <span className="font-mono text-text-secondary break-all">
-                  {agent.image}
-                </span>
-              </>
-            )}
-          </p>
+      <div className="px-7 pt-7 pb-4 border-b-2 border-border-light flex flex-col gap-3">
+          <div>
+            <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
+            <p className="text-[12px] text-text-muted mt-1">
+              {agent.templateId ? (
+                <>
+                  Template:{" "}
+                  <HoverTooltip
+                    placement="right"
+                    trigger={
+                      <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                        {agent.templateId}
+                      </span>
+                    }
+                  >
+                    <span className="font-mono">{agent.image}</span>
+                  </HoverTooltip>
+                </>
+              ) : (
+                <>
+                  Image:{" "}
+                  <span className="font-mono text-text-secondary break-all">
+                    {agent.image}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              Name
+            </span>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={saving}
+            />
+          </label>
         </div>
 
         <div className="px-7 pt-4 flex items-center gap-1 border-b-2 border-border-light">
