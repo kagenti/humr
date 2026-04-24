@@ -206,8 +206,7 @@ export function useAcpSession(
 
   const fetchSessions = useCallback(async () => {
     if (!selectedInstance) return false;
-    const inst = instances.find(x => x.id === selectedInstance);
-    if (inst?.state !== "running") return false;
+    if (instanceRunState !== "running") return false;
     const list = await runQuery(
       `sessions:${selectedInstance}`,
       () => platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions }),
@@ -216,10 +215,17 @@ export function useAcpSession(
     if (!list) return false;
     setSessions(list);
     return true;
-  }, [selectedInstance, includeChannelSessions, setSessions]);
+  }, [selectedInstance, instanceRunState, includeChannelSessions, setSessions]);
 
   useEffect(() => {
     if (!selectedInstance) return;
+    // Wait for useInstances to resolve — otherwise fetchSessions sees an
+    // empty list, can't find the instance, and retries forever on refresh.
+    if (instanceRunState === undefined) return;
+    if (instanceRunState !== "running") {
+      setLoadingSessions(false);
+      return;
+    }
     setLoadingSessions(true);
     let stopped = false;
     const attempt = () => {
@@ -232,7 +238,7 @@ export function useAcpSession(
     };
     attempt();
     return () => { stopped = true; };
-  }, [selectedInstance, fetchSessions, setLoadingSessions]);
+  }, [selectedInstance, instanceRunState, fetchSessions, setLoadingSessions]);
 
   // ── Streaming update handler ──
 
