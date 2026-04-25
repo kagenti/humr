@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import {
+  MAX_UPLOAD_BYTES,
   useFileContentQuery,
   useFileCreateMutation,
   useFileDeleteMutation,
@@ -13,8 +14,6 @@ import {
 } from "../api/queries.js";
 import { FileTreeEntry, InlineNameInput } from "./file-tree-entry.js";
 import { FileViewer } from "./file-viewer.js";
-
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 function isDotName(path: string): boolean {
   return path.split("/").pop()!.startsWith(".");

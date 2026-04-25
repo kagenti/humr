@@ -127,7 +127,11 @@ export const filesRouter = t.router({
         if ("exists" in result) {
           throw new TRPCError({ code: "CONFLICT", message: "path already exists" });
         }
-        return { mtimeMs: result.mtimeMs, contentType: input.contentType };
+        return {
+          mtimeMs: result.mtimeMs,
+          absolutePath: result.absolutePath,
+          contentType: input.contentType,
+        };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         const msg = (err as Error).message;

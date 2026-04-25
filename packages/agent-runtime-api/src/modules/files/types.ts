@@ -8,6 +8,9 @@ export interface FileReadResult {
 
 export interface FileWriteOk {
   mtimeMs: number;
+  /** Absolute on-pod path. Exposed for callers (e.g., chat-message uploads)
+   *  that need to hand the path to the agent as a `file://` URI. */
+  absolutePath?: string;
 }
 
 export interface FileConflict {

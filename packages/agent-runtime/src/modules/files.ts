@@ -189,7 +189,7 @@ export function createFilesService(workingDir: string): FilesService {
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, buf);
       const s = await statAsync(abs);
-      return { mtimeMs: s.mtimeMs };
+      return { mtimeMs: s.mtimeMs, absolutePath: abs };
     },
   };
 }

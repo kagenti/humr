@@ -5,7 +5,8 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
-import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant, isTextMime } from "../session-projection.js";
+import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../session-projection.js";
+import { uploadMessageAttachment } from "../modules/files/api/queries.js";
 import type { Message, Attachment } from "../types.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 import { runQuery } from "../store/query-helpers.js";
@@ -22,6 +23,48 @@ import { useInstances } from "../modules/instances/api/queries.js";
  * The fallback `String(e)` on an Event yields `[object Event]`, which is what
  * users were seeing on disconnect.
  */
+type PromptBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+  | { type: "resource_link"; uri: string; name: string; mimeType: string };
+
+/** Turn composer state into an ACP prompt-blocks array. Images ride inline
+ *  so Claude's vision can see the bytes; every other attachment is persisted
+ *  on the agent pod first and referenced by absolute `file://` URI — the old
+ *  behaviour (inline text resources and bogus `file:///name` URIs) left the
+ *  agent with references to files it couldn't actually read. */
+async function buildPromptBlocks(
+  instanceId: string,
+  sessionId: string,
+  text: string,
+  attachments: Attachment[] | undefined,
+): Promise<PromptBlock[]> {
+  const blocks: PromptBlock[] = [];
+  if (attachments?.length) {
+    for (const a of attachments) {
+      if (a.kind === "image") {
+        blocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
+        continue;
+      }
+      try {
+        const { absolutePath } = await uploadMessageAttachment(instanceId, sessionId, {
+          name: a.name, data: a.data, mimeType: a.mimeType,
+        });
+        blocks.push({
+          type: "resource_link",
+          uri: `file://${absolutePath}`,
+          name: a.name,
+          mimeType: a.mimeType,
+        });
+      } catch (err) {
+        throw new Error(`Upload failed for "${a.name}": ${err instanceof Error ? err.message : "unknown"}`);
+      }
+    }
+  }
+  if (text) blocks.push({ type: "text", text });
+  return blocks;
+}
+
 function extractErrorMessage(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) {
     const m = (e as { message: unknown }).message;
@@ -480,27 +523,8 @@ export function useAcpSession(
       const conn = await ensureConnection();
       if (!conn) throw new Error("Failed to establish connection");
 
-      const promptBlocks: any[] = [];
-      if (attachments?.length) {
-        for (const a of attachments) {
-          if (a.kind === "image") {
-            promptBlocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
-          } else if (isTextMime(a.mimeType, a.name)) {
-            // Claude only honors EmbeddedResource with a `text` field — decode base64 back to UTF-8.
-            const textBody = new TextDecoder().decode(Uint8Array.from(atob(a.data), c => c.charCodeAt(0)));
-            promptBlocks.push({
-              type: "resource",
-              resource: { uri: `file:///${a.name}`, text: textBody, mimeType: a.mimeType },
-            });
-          } else {
-            addLog("warning", { message: `Binary attachment "${a.name}" (${a.mimeType}) — Claude cannot read this file type.` });
-            promptBlocks.push({ type: "resource_link", uri: `file:///${a.name}`, name: a.name, mimeType: a.mimeType });
-          }
-        }
-      }
-      if (text) promptBlocks.push({ type: "text", text });
-
       const sid = activeSessionIdRef.current!;
+      const promptBlocks = await buildPromptBlocks(selectedInstance, sid, text, attachments);
       const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
       addLog("done", { stopReason: r.stopReason });
       // Persist to the platform DB lazily, only once the session has real

@@ -162,6 +162,47 @@ export function useFileDeleteMutation(instanceId: string | null) {
   });
 }
 
+/** Mirrors the MAX_FILE_SIZE cap in agent-runtime/src/modules/files.ts.
+ *  Exported so callers (tree-panel upload button, chat composer) can reject
+ *  oversized files before sending and surface a consistent message. */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const MESSAGE_UPLOAD_ROOT = ".uploads";
+
+function sanitizeSegment(s: string): string {
+  // Strip path separators, leading dots, and anything that'd make the server
+  // reject the segment. Keep a conservative allowlist.
+  return s.replace(/[^A-Za-z0-9._\-]+/g, "_").replace(/^\.+/, "") || "file";
+}
+
+/**
+ * Persists a chat-message attachment into the agent pod so the agent can
+ * read it by path (`file:///home/agent/.uploads/<sessionId>/<unique>-<name>`).
+ * Returns the on-pod absolute path the caller should put into the ACP
+ * `resource_link` URI.
+ */
+export async function uploadMessageAttachment(
+  instanceId: string,
+  sessionId: string,
+  attachment: { name: string; data: string; mimeType: string },
+): Promise<{ absolutePath: string; relPath: string }> {
+  const trpc = getInstanceTrpc(instanceId);
+  const sid = sanitizeSegment(sessionId);
+  const safeName = sanitizeSegment(attachment.name || "file");
+  const unique = crypto.randomUUID().slice(0, 8);
+  const relPath = `${MESSAGE_UPLOAD_ROOT}/${sid}/${unique}-${safeName}`;
+  const res = await trpc.files.upload.mutate({
+    path: relPath,
+    contentBase64: attachment.data,
+    contentType: attachment.mimeType,
+    overwrite: true,
+  });
+  // Fallback in case a future server forgets to surface absolutePath — keep
+  // the UI functional, but the canonical path comes from the server.
+  const absolutePath = res.absolutePath ?? `/home/agent/${relPath}`;
+  return { absolutePath, relPath };
+}
+
 export function useFileUploadMutation(instanceId: string | null) {
   const qc = useQueryClient();
   return useMutation({
