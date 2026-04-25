@@ -10,13 +10,19 @@ export interface FilesSlice {
    *  field is the UI-state side of the pair. */
   openFilePath: string | null;
   rightTab: RightTab;
+  /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
+   *  the tree-click handler can prompt before discarding. */
+  openFileDirty: boolean;
   setOpenFilePath: (path: string | null) => void;
   setRightTab: (tab: RightTab) => void;
+  setOpenFileDirty: (dirty: boolean) => void;
 }
 
 export const createFilesSlice: StateCreator<HumrStore, [], [], FilesSlice> = (set) => ({
   openFilePath: null,
   rightTab: "files",
-  setOpenFilePath: (path) => set({ openFilePath: path }),
+  openFileDirty: false,
+  setOpenFilePath: (path) => set({ openFilePath: path, openFileDirty: false }),
   setRightTab: (tab) => set({ rightTab: tab }),
+  setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
 });

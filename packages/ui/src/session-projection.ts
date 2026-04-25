@@ -15,21 +15,6 @@ import type { Message, MessagePart, ToolChip } from "./types.js";
  * picks the earliest remaining queued bubble (or opens one on demand).
  */
 
-const TEXT_EXTENSIONS = new Set([
-  ".md", ".mdx", ".txt", ".json", ".jsonl", ".csv", ".tsv", ".yaml", ".yml",
-  ".xml", ".html", ".htm", ".css", ".scss", ".js", ".jsx", ".ts", ".tsx",
-  ".py", ".rb", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".sh",
-  ".toml", ".ini", ".env", ".log", ".sql", ".graphql", ".svg",
-]);
-
-export function isTextMime(mime: string, name: string): boolean {
-  if (mime.startsWith("text/")) return true;
-  if (mime === "application/json" || mime === "application/xml") return true;
-  const dot = name.lastIndexOf(".");
-  if (dot !== -1 && TEXT_EXTENSIONS.has(name.substring(dot).toLowerCase())) return true;
-  return false;
-}
-
 /**
  * Strip system tags like `<context>...</context>` that wrap replayed
  * attachments in user messages. Also trims leading/trailing whitespace —
