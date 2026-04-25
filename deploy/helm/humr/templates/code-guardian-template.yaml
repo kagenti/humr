@@ -41,4 +41,13 @@ data:
         memory: {{ .Values.codeGuardianTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
+    skillPaths:
+      - /home/agent/.claude/skills/
+    {{- with .Values.codeGuardianTemplate.skillSources }}
+    skillSources:
+      {{- range . }}
+      - name: {{ .name | quote }}
+        gitUrl: {{ .gitUrl | quote }}
+      {{- end }}
+    {{- end }}
 {{- end }}

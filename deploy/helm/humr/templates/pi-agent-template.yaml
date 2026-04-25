@@ -37,4 +37,13 @@ data:
         memory: {{ .Values.piAgentTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
+    skillPaths:
+      - /home/agent/.pi/agent/skills/
+    {{- with .Values.piAgentTemplate.skillSources }}
+    skillSources:
+      {{- range . }}
+      - name: {{ .name | quote }}
+        gitUrl: {{ .gitUrl | quote }}
+      {{- end }}
+    {{- end }}
 {{- end }}

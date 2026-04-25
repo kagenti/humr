@@ -1,0 +1,31 @@
+{{- /*
+     Platform-wide skill sources. Each entry in .Values.skills.skillSources
+     produces one humr.ai/type=skill-source, humr.ai/system=true ConfigMap.
+     The rendered name is `skill-src-seed-{slug}` where {slug} is derived from
+     the entry's .name via kebabcase — deterministic and stable across upgrades
+     as long as the name doesn't change. Collisions (two entries that slug
+     to the same id) fail at template-render time.
+*/ -}}
+{{- $seen := dict -}}
+{{- range $entry := .Values.skills.skillSources }}
+{{- $slug := $entry.name | lower | kebabcase -}}
+{{- if hasKey $seen $slug -}}
+{{- fail (printf "skills.skillSources: name %q collides with existing entry (both slug to %q)" $entry.name $slug) -}}
+{{- end -}}
+{{- $_ := set $seen $slug true -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skill-src-seed-{{ $slug }}
+  namespace: {{ $.Values.agentNamespace }}
+  labels:
+    {{- include "humr.labels" $ | nindent 4 }}
+    humr.ai/type: skill-source
+    humr.ai/system: "true"
+data:
+  spec.yaml: |
+    version: humr.ai/v1
+    name: {{ $entry.name | quote }}
+    gitUrl: {{ $entry.gitUrl | quote }}
+{{- end }}

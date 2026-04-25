@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // --- Agent ---
@@ -85,6 +86,75 @@ mounts:
 	assert.Contains(t, err.Error(), "must be absolute")
 }
 
+func TestParseAgentSpec_SkillPaths(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillPaths:
+  - /home/agent/.claude/skills/
+  - /home/agent/.agents/skills/
+`)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/home/agent/.claude/skills/", "/home/agent/.agents/skills/"}, spec.SkillPaths)
+}
+
+func TestParseAgentSpec_RelativeSkillPath(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillPaths:
+  - home/agent/skills/`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "skillPath")
+	assert.Contains(t, err.Error(), "must be absolute")
+}
+
+func TestParseAgentSpec_SkillSources(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - name: Anthropic Skills
+    gitUrl: https://github.com/anthropics/skills
+  - name: Corp Ops
+    gitUrl: https://github.com/corp/humr-ops-skills
+`)
+	require.NoError(t, err)
+	require.Len(t, spec.SkillSources, 2)
+	assert.Equal(t, "Anthropic Skills", spec.SkillSources[0].Name)
+	assert.Equal(t, "https://github.com/anthropics/skills", spec.SkillSources[0].GitURL)
+	assert.Equal(t, "Corp Ops", spec.SkillSources[1].Name)
+}
+
+func TestParseAgentSpec_SkillSourceInvalidURL(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - name: Bad
+    gitUrl: not-a-url
+`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "skillSource[0]")
+	assert.Contains(t, err.Error(), "not a valid URL")
+}
+
+func TestParseAgentSpec_SkillSourceMissingName(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - gitUrl: https://github.com/anthropics/skills
+`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "name is required")
+}
+
+func TestParseAgentSpec_SkillSourceMissingGitURL(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+skillSources:
+  - name: Anthropic Skills
+`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "gitUrl is required")
+}
+
 // --- Instance ---
 
 func TestParseInstanceSpec(t *testing.T) {
@@ -122,6 +192,111 @@ func TestParseInstanceSpec_MissingVersion(t *testing.T) {
 	_, err := ParseInstanceSpec(`desiredState: running`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestParseInstanceSpec_Skills(t *testing.T) {
+	spec, err := ParseInstanceSpec(`version: humr.ai/v1
+desiredState: running
+skills:
+  - source: https://github.com/anthropics/skills
+    name: pdf
+    version: abc123
+`)
+	require.NoError(t, err)
+	require.Len(t, spec.Skills, 1)
+	assert.Equal(t, "https://github.com/anthropics/skills", spec.Skills[0].Source)
+	assert.Equal(t, "pdf", spec.Skills[0].Name)
+	assert.Equal(t, "abc123", spec.Skills[0].Version)
+}
+
+// Regression: hibernate / wake in the Go controller round-trips InstanceSpec
+// through ParseInstanceSpec → yaml.Marshal. These TS-authored fields (see
+// packages/api-server-api/src/modules/skills/types.ts) must survive the trip
+// or the UI silently loses drift badges and publish history on the next
+// hibernation cycle.
+func TestParseInstanceSpec_PreservesContentHashAndPublishes(t *testing.T) {
+	input := `version: humr.ai/v1
+desiredState: running
+skills:
+  - source: https://github.com/PetrBulanek/humr-skills-test
+    name: add-changelog-entry
+    version: 319bcb2f130f0c75ff0fa57ed0ed73fd454f84d1
+    contentHash: 4346f9437260a5cec328212afaf454917c18d94ae29e6e4946b60800271012b4
+publishes:
+  - skillName: foo
+    sourceId: skill-src-abc
+    sourceName: Private Skills
+    sourceGitUrl: https://github.com/example/skills
+    prUrl: https://github.com/example/skills/pull/1
+    publishedAt: "2026-04-23T12:00:00Z"
+`
+	spec, err := ParseInstanceSpec(input)
+	require.NoError(t, err)
+	require.Len(t, spec.Skills, 1)
+	assert.Equal(t, "4346f9437260a5cec328212afaf454917c18d94ae29e6e4946b60800271012b4", spec.Skills[0].ContentHash)
+	require.Len(t, spec.Publishes, 1)
+	assert.Equal(t, "foo", spec.Publishes[0].SkillName)
+	assert.Equal(t, "https://github.com/example/skills/pull/1", spec.Publishes[0].PRURL)
+
+	out, err := yaml.Marshal(spec)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "contentHash: 4346f943")
+	assert.Contains(t, string(out), "publishes:")
+	assert.Contains(t, string(out), "prUrl: https://github.com/example/skills/pull/1")
+
+	// Round-trip twice to catch any asymmetric marshaling.
+	spec2, err := ParseInstanceSpec(string(out))
+	require.NoError(t, err)
+	assert.Equal(t, spec.Skills, spec2.Skills)
+	assert.Equal(t, spec.Publishes, spec2.Publishes)
+}
+
+func TestParseInstanceSpec_SkillMissingVersion(t *testing.T) {
+	_, err := ParseInstanceSpec(`version: humr.ai/v1
+desiredState: running
+skills:
+  - source: https://github.com/anthropics/skills
+    name: pdf
+    version: ""`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "skill[0]: version is required")
+}
+
+// --- Skill Source ---
+
+func TestParseSkillSourceSpec(t *testing.T) {
+	spec, err := ParseSkillSourceSpec(`version: humr.ai/v1
+gitUrl: https://github.com/anthropics/skills
+`)
+	require.NoError(t, err)
+	assert.Equal(t, SpecVersion, spec.Version)
+	assert.Equal(t, "https://github.com/anthropics/skills", spec.GitURL)
+}
+
+func TestParseSkillSourceSpec_MissingGitURL(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`version: humr.ai/v1`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "gitUrl is required")
+}
+
+func TestParseSkillSourceSpec_MissingVersion(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`gitUrl: https://github.com/anthropics/skills`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestParseSkillSourceSpec_WrongVersion(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`version: humr.ai/v99
+gitUrl: https://github.com/anthropics/skills`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported version")
+}
+
+func TestParseSkillSourceSpec_InvalidGitURL(t *testing.T) {
+	_, err := ParseSkillSourceSpec(`version: humr.ai/v1
+gitUrl: not-a-url`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a valid URL")
 }
 
 // --- Schedule ---

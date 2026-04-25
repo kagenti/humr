@@ -11,6 +11,7 @@ import {
 import { createInstancesRepository } from "./../../modules/agents/infrastructure/instances-repository.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
+import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
@@ -150,6 +151,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const userJwt = c.req.header("authorization")!.slice(7);
 
     const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore);
+    const skills = composeSkillsModule(api, config.namespace, user.sub);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
     });
@@ -170,6 +172,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         secrets,
         channels: { available: channelManager.availableChannels() },
         connections,
+        skills,
         user,
       }),
     });

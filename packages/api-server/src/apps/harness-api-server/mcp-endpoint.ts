@@ -4,10 +4,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import yaml from "js-yaml";
-import { ChannelType } from "api-server-api";
+import { ChannelType, type SkillsService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { createSkillsToolHandlers, errorResult, textResult } from "./skills-tools.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -31,7 +32,12 @@ const sweepInterval = setInterval(() => {
 }, 5 * 60_000);
 sweepInterval.unref();
 
-function createMcpSession(instanceId: string, channelManager: ChannelManager): McpSession {
+export interface McpSessionDeps {
+  channelManager: ChannelManager;
+  skills: SkillsService;
+}
+
+export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpSession {
   const server = new McpServer({
     name: `humr-${instanceId}`,
     version: "1.0.0",
@@ -42,8 +48,8 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
     "Describe a channel on this agent instance. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
-      const chats = await channelManager.listConversations(instanceId, channel);
-      return { content: [{ type: "text" as const, text: JSON.stringify({ chats }) }] };
+      const chats = await deps.channelManager.listConversations(instanceId, channel);
+      return textResult(JSON.stringify({ chats }));
     },
   );
 
@@ -56,13 +62,64 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
       chatId: z.string().optional(),
     },
     async ({ channel, text, chatId }) => {
-      const result = await channelManager.postMessage(instanceId, channel, text, chatId);
-      if ("error" in result) {
-        return { content: [{ type: "text" as const, text: result.error }], isError: true };
-      }
-      return { content: [{ type: "text" as const, text: "Message sent" }] };
+      const result = await deps.channelManager.postMessage(instanceId, channel, text, chatId);
+      if ("error" in result) return errorResult(result.error);
+      return textResult("Message sent");
     },
   );
+
+  // ---- Skills tools ---------------------------------------------------------
+
+  const skillsTools = createSkillsToolHandlers(instanceId, deps.skills);
+
+  server.tool(
+    "list_skill_sources",
+    "List the skill sources (public git repos) this instance can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
+    {},
+    () => skillsTools.listSources(),
+  );
+
+  server.tool(
+    "list_skills_in_source",
+    "List the skills available inside a connected skill source. Returns each skill's name, description, and the last-touching commit SHA (pass this as `version` to install_skill).",
+    { sourceId: z.string() },
+    (args) => skillsTools.listSkillsInSource(args),
+  );
+
+  server.tool(
+    "install_skill",
+    "Install a skill onto THIS running agent instance. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
+    {
+      source: z.string().url(),
+      name: z.string().min(1),
+      version: z.string().min(1),
+    },
+    (args) => skillsTools.installSkill(args),
+  );
+
+  server.tool(
+    "uninstall_skill",
+    "Uninstall a skill from THIS agent instance. Removes the directory from the pod and drops the entry from the instance spec.",
+    {
+      source: z.string().url(),
+      name: z.string().min(1),
+    },
+    (args) => skillsTools.uninstallSkill(args),
+  );
+
+  server.tool(
+    "publish_skill",
+    "Publish a locally-authored skill from THIS instance as a pull request on a connected source. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+    {
+      sourceId: z.string().min(1),
+      name: z.string().min(1),
+      title: z.string().optional(),
+      body: z.string().optional(),
+    },
+    (args) => skillsTools.publishSkill(args),
+  );
+
+  // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => crypto.randomUUID(),
@@ -78,34 +135,47 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
   return session;
 }
 
-async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
+interface VerifiedSession {
+  owner: string;
+}
+
+async function verifyAgentToken(
+  k8s: K8sClient,
+  instanceId: string,
+  token: string,
+): Promise<VerifiedSession | null> {
   const instanceCm = await k8s.getConfigMap(instanceId);
-  if (!instanceCm) return false;
+  if (!instanceCm) return null;
 
   const agentName = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
   const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
-  if (!agentName || !owner) return false;
+  if (!agentName || !owner) return null;
 
   const agentCm = await k8s.getConfigMap(agentName);
-  if (!agentCm) return false;
+  if (!agentCm) return null;
 
   const agentOwner = agentCm.metadata?.labels?.[LABEL_OWNER];
-  if (agentOwner !== owner) return false;
+  if (agentOwner !== owner) return null;
 
   const statusYaml = agentCm.data?.[STATUS_KEY];
-  if (!statusYaml) return false;
+  if (!statusYaml) return null;
 
   const status = yaml.load(statusYaml) as { accessTokenHash?: string };
-  if (!status?.accessTokenHash) return false;
+  if (!status?.accessTokenHash) return null;
 
   const hash = createHash("sha256").update(token).digest("hex");
-  return hash === status.accessTokenHash;
+  if (hash !== status.accessTokenHash) return null;
+
+  return { owner };
 }
 
-export function mountMcpRoutes(app: Hono, deps: {
+export interface MountMcpDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
-}) {
+  composeSkills: (owner: string) => SkillsService;
+}
+
+export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/instances/:id/mcp", async (c) => {
     const authHeader = c.req.header("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -114,7 +184,8 @@ export function mountMcpRoutes(app: Hono, deps: {
     const token = authHeader.slice(7);
 
     const instanceId = c.req.param("id")!;
-    if (!await verifyAgentToken(deps.k8s, instanceId, token)) {
+    const verified = await verifyAgentToken(deps.k8s, instanceId, token);
+    if (!verified) {
       return c.json({ error: "not found" }, 404);
     }
 
@@ -133,7 +204,11 @@ export function mountMcpRoutes(app: Hono, deps: {
       return c.json({ error: "session not found" }, 404);
     }
 
-    const session = createMcpSession(instanceId, deps.channelManager);
+    const skills = deps.composeSkills(verified.owner);
+    const session = createMcpSession(instanceId, {
+      channelManager: deps.channelManager,
+      skills,
+    });
     await session.server.connect(session.transport);
 
     return session.transport.handleRequest(c.req.raw);

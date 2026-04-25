@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
 	"github.com/kagenti/humr/packages/controller/pkg/onecli"
@@ -102,9 +103,14 @@ func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap,
 	}
 
 	secretName := AgentTokenSecretName(name)
-	_, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
+	existingSecret, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err == nil {
-		// Already registered.
+		// Already registered. Self-heal: ensure agent status has an accessTokenHash
+		// so inbound auth (agent-runtime /api/skills/*, harness MCP endpoint)
+		// works even for agents created before this code path wrote status.
+		if healErr := r.healAgentStatus(ctx, cm, name, existingSecret); healErr != nil {
+			slog.Error("healing agent status", "agent", name, "error", healErr)
+		}
 		return nil, nil
 	}
 	if !errors.IsNotFound(err) {
@@ -152,6 +158,29 @@ func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap,
 	}
 
 	return agent, nil
+}
+
+// healAgentStatus writes the agent's access-token hash into status.yaml if
+// it's missing. Used to back-fill status for agents registered before the
+// reconciler started emitting it.
+func (r *AgentReconciler) healAgentStatus(ctx context.Context, cm *corev1.ConfigMap, name string, secret *corev1.Secret) error {
+	if cm.Data != nil {
+		if raw, ok := cm.Data["status.yaml"]; ok && raw != "" {
+			var existing AgentStatus
+			if err := yaml.Unmarshal([]byte(raw), &existing); err == nil && existing.AccessTokenHash != "" {
+				return nil
+			}
+		}
+	}
+	token, ok := secret.Data["access-token"]
+	if !ok || len(token) == 0 {
+		return fmt.Errorf("token secret %q has no access-token", secret.Name)
+	}
+	hash := sha256.Sum256(token)
+	slog.Info("healing agent status", "agent", name)
+	return WriteAgentStatus(ctx, r.client, r.config.Namespace, name, &AgentStatus{
+		AccessTokenHash: hex.EncodeToString(hash[:]),
+	})
 }
 
 // Delete removes the OneCLI agent for the given owner.

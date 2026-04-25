@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { SchedulesPanel } from "../modules/schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
 import { McpsPanel, type McpOption } from "./mcps-panel.js";
+import { SkillsPanel } from "./skills-panel.js";
 
 function Section({ title, defaultOpen = true, children }: {
   title: string;
@@ -33,6 +34,9 @@ export function ConfigurationPanel({
   hasActiveSession,
   accessMode,
   onResumeSession,
+  instanceId,
+  instanceRunning,
+  onOpenFile,
 }: {
   mcpOptions: McpOption[];
   enabledMcps: Set<string>;
@@ -43,6 +47,9 @@ export function ConfigurationPanel({
   accessMode: "all" | "selective" | null;
   /** Called when the user clicks a past run under a schedule card. */
   onResumeSession?: (sessionId: string) => void;
+  instanceId: string | null;
+  instanceRunning: boolean;
+  onOpenFile?: (path: string) => void;
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
@@ -64,6 +71,10 @@ export function ConfigurationPanel({
           hasActiveSession={hasActiveSession}
           accessMode={accessMode}
         />
+      </Section>
+
+      <Section title="Skills">
+        <SkillsPanel instanceId={instanceId} isRunning={instanceRunning} onOpenFile={onOpenFile} />
       </Section>
     </div>
   );
