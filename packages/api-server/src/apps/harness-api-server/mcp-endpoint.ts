@@ -1,13 +1,11 @@
-import { createHash } from "node:crypto";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import yaml from "js-yaml";
 import { ChannelType } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { verifyInstanceToken } from "./instance-auth.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -78,30 +76,6 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
   return session;
 }
 
-async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
-  const instanceCm = await k8s.getConfigMap(instanceId);
-  if (!instanceCm) return false;
-
-  const agentName = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
-  const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
-  if (!agentName || !owner) return false;
-
-  const agentCm = await k8s.getConfigMap(agentName);
-  if (!agentCm) return false;
-
-  const agentOwner = agentCm.metadata?.labels?.[LABEL_OWNER];
-  if (agentOwner !== owner) return false;
-
-  const statusYaml = agentCm.data?.[STATUS_KEY];
-  if (!statusYaml) return false;
-
-  const status = yaml.load(statusYaml) as { accessTokenHash?: string };
-  if (!status?.accessTokenHash) return false;
-
-  const hash = createHash("sha256").update(token).digest("hex");
-  return hash === status.accessTokenHash;
-}
-
 export function mountMcpRoutes(app: Hono, deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
@@ -114,7 +88,7 @@ export function mountMcpRoutes(app: Hono, deps: {
     const token = authHeader.slice(7);
 
     const instanceId = c.req.param("id")!;
-    if (!await verifyAgentToken(deps.k8s, instanceId, token)) {
+    if (!await verifyInstanceToken(deps.k8s, instanceId, token)) {
       return c.json({ error: "not found" }, 404);
     }
 

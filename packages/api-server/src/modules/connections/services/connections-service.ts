@@ -5,6 +5,8 @@ import type {
   ConnectionsService,
 } from "api-server-api";
 import type { OnecliConnectionsPort } from "../infrastructure/onecli-connections-port.js";
+import type { GhEnterpriseBus } from "./gh-enterprise-bus.js";
+import { toGhEnterpriseHosts } from "./gh-enterprise-snapshot.js";
 
 export function normalizeStatus(
   raw: string | null | undefined,
@@ -39,6 +41,11 @@ export function extractIdentity(
 
 export function createConnectionsService(deps: {
   port: OnecliConnectionsPort;
+  /**
+   * Optional bus for publishing github-enterprise hosts.yml updates to
+   * agent pod sidecars. Omit in tests or when SSE delivery isn't wired.
+   */
+  ghEnterpriseBus?: GhEnterpriseBus;
 }): ConnectionsService {
   return {
     async list() {
@@ -78,6 +85,24 @@ export function createConnectionsService(deps: {
       if (!agent) throw new Error(`Agent "${agentName}" not found in OneCLI`);
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
+
+      // Push the github-enterprise subset to subscribed pod sidecars so
+      // `gh auth status` reflects the change without rolling the pod.
+      // Spec: never delete; the sidecar's "fill-if-missing" merge handles
+      // both fresh grants and re-grants idempotently. Revokes intentionally
+      // emit nothing — old hosts linger in hosts.yml until manually edited.
+      const bus = deps.ghEnterpriseBus;
+      if (bus) {
+        const granted = new Set(deduped);
+        const all = await deps.port.listAppConnections();
+        const ghe = toGhEnterpriseHosts(
+          all.filter((c) => granted.has(c.id) && typeof c.metadata !== "undefined")
+            .map((c) => ({ provider: c.provider, metadata: c.metadata })),
+        );
+        if (ghe.length > 0) {
+          bus.publish(agentName, { kind: "upsert", connections: ghe });
+        }
+      }
     },
   };
 }

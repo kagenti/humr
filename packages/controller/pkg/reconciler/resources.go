@@ -124,6 +124,22 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
 	})
 
+	// gh CLI config volume — shared with the config-sync sidecar so the agent
+	// container reads ~/.config/gh/hosts.yml without depending on the user's
+	// agent image bringing any humr-specific code. Always present (when a
+	// controller image is configured) so adding or removing github-enterprise
+	// grants never alters the StatefulSet pod spec → no pod rolls on grant.
+	agentVolumeMounts := volumeMounts
+	if cfg.ControllerImage != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name:         "gh-config",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+		agentVolumeMounts = append(agentVolumeMounts, corev1.VolumeMount{
+			Name: "gh-config", MountPath: "/home/agent/.config/gh",
+		})
+	}
+
 	// Resources
 	resourceReqs := corev1.ResourceRequirements{}
 	if agentSpec.Resources.Requests != nil {
@@ -175,6 +191,44 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		}
 	}
 
+	containers := []corev1.Container{{
+		Name:            "agent",
+		Image:           agentSpec.Image,
+		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+		Ports: []corev1.ContainerPort{{
+			Name: "acp", ContainerPort: 8080,
+		}},
+		Env:     env,
+		EnvFrom: envFrom,
+		// Fast (1s) during startup so wake-up is detected quickly, slow
+		// (10s) afterwards so we're not probing every agent pod every
+		// second forever. FailureThreshold=120 → ~2 min of startup
+		// runway, enough for a cold pull of a large agent image.
+		StartupProbe: &corev1.Probe{
+			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds:    1,
+			FailureThreshold: 120,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 10,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 10,
+		},
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		},
+		Resources:    resourceReqs,
+		VolumeMounts: agentVolumeMounts,
+	}}
+	if sidecar := configSyncSidecar(name, cfg, tokenSecretName); sidecar != nil {
+		containers = append(containers, *sidecar)
+	}
+
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -196,42 +250,54 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,
 					InitContainers:                initContainers,
-					Containers: []corev1.Container{{
-						Name:            "agent",
-						Image:           agentSpec.Image,
-						ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
-						Ports:           []corev1.ContainerPort{{
-							Name: "acp", ContainerPort: 8080,
-						}},
-						Env:     env,
-						EnvFrom: envFrom,
-						// Fast (1s) during startup so wake-up is detected quickly, slow
-						// (10s) afterwards so we're not probing every agent pod every
-						// second forever. FailureThreshold=120 → ~2 min of startup
-						// runway, enough for a cold pull of a large agent image.
-						StartupProbe: &corev1.Probe{
-							ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds:    1,
-							FailureThreshold: 120,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 10,
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 10,
-						},
-						SecurityContext: &corev1.SecurityContext{
-							Capabilities: &corev1.Capabilities{
-								Drop: []corev1.Capability{"ALL"},
-							},
-						},
-						Resources:    resourceReqs,
-						VolumeMounts: volumeMounts,
-					}},
-					Volumes: volumes,
+					Containers:                    containers,
+					Volumes:                       volumes,
 				},
+			},
+		},
+	}
+}
+
+// configSyncSidecar returns the agent-pod sidecar that mirrors hosts.yml from
+// api-server SSE events. Returns nil when no controller image is configured —
+// graceful degradation rather than failing the StatefulSet build.
+func configSyncSidecar(instanceName string, cfg *config.Config, tokenSecretName string) *corev1.Container {
+	if cfg.ControllerImage == "" {
+		return nil
+	}
+	eventsURL := fmt.Sprintf("%s/api/instances/%s/gh-enterprise/events", cfg.HarnessServerURL, instanceName)
+	return &corev1.Container{
+		Name:            "humr-config-sync",
+		Image:           cfg.ControllerImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args: []string{
+			"config-sync",
+			"--events-url=" + eventsURL,
+			"--out=/home/agent/.config/gh/hosts.yml",
+		},
+		Env: []corev1.EnvVar{{
+			Name: "ONECLI_ACCESS_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
+					Key:                  "access-token",
+				},
+			},
+		}},
+		VolumeMounts: []corev1.VolumeMount{{
+			Name: "gh-config", MountPath: "/home/agent/.config/gh",
+		}},
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("16Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("50m"),
+				corev1.ResourceMemory: resource.MustParse("64Mi"),
 			},
 		},
 	}

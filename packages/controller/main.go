@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -25,12 +26,17 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/configsync"
 	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
 	"github.com/kagenti/humr/packages/controller/pkg/scheduler"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "config-sync" {
+		runConfigSync()
+		return
+	}
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
 		slog.Error("loading config", "error", err)
@@ -205,6 +211,29 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 			}
 			queue.Forget(key)
 		}()
+	}
+}
+
+// runConfigSync is the sidecar entrypoint. It reads its options from env and
+// flags, holds an SSE connection to the api-server, and writes hosts.yml from
+// snapshot/upsert events. See pkg/configsync.
+func runConfigSync() {
+	fs := flag.NewFlagSet("config-sync", flag.ExitOnError)
+	eventsURL := fs.String("events-url", os.Getenv("HUMR_EVENTS_URL"), "API server SSE events URL")
+	out := fs.String("out", "/home/agent/.config/gh/hosts.yml", "hosts.yml path")
+	token := fs.String("token", os.Getenv("ONECLI_ACCESS_TOKEN"), "Bearer token (default $ONECLI_ACCESS_TOKEN)")
+	_ = fs.Parse(os.Args[2:])
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
+	if err := configsync.Run(ctx, configsync.Options{
+		EventsURL: *eventsURL,
+		OutPath:   *out,
+		Token:     *token,
+	}); err != nil {
+		slog.Error("config-sync exited", "error", err)
+		os.Exit(1)
 	}
 }
 

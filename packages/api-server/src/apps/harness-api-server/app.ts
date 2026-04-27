@@ -10,6 +10,10 @@ import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
+import type {
+  GhEnterpriseBus,
+  GhEnterpriseHost,
+} from "../../modules/connections/services/gh-enterprise-bus.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
@@ -17,10 +21,20 @@ export interface HarnessApiServerAppDeps {
   db: Db;
   channelManager: ChannelManager;
   channelSecretStore: ChannelSecretStore;
+  ghEnterpriseBus: GhEnterpriseBus;
+  ghEnterpriseSnapshot: (owner: string) => Promise<GhEnterpriseHost[]>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
-  const { config, api, db, channelManager, channelSecretStore } = deps;
+  const {
+    config,
+    api,
+    db,
+    channelManager,
+    channelSecretStore,
+    ghEnterpriseBus,
+    ghEnterpriseSnapshot,
+  } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
 
@@ -34,6 +48,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
+    ghEnterprise: { bus: ghEnterpriseBus, fetchSnapshot: ghEnterpriseSnapshot },
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";

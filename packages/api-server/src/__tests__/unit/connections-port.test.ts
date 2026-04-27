@@ -14,6 +14,7 @@ function makeFakeOc(
     exchangeToken: async () => "tok",
     getApiKey: async () => "key",
     syncUser: async () => {},
+    onecliFetchAsOwner: async () => new Response(JSON.stringify({}), { status: 500 }),
     async onecliFetch(_jwt: string, _sub: string, path: string, init?: RequestInit) {
       calls.push({ path, init });
       const key = `${init?.method ?? "GET"} ${path}`;
