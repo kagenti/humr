@@ -26,19 +26,26 @@ An instance has two nested timescales. The **instance** is long-lived: a `agent-
 ```mermaid
 sequenceDiagram
   autonumber
-  participant U as User (UI)
+  participant U as User
   participant API as api-server
   participant C as controller
   participant K as K8s API
   participant P as agent pod<br/>(agent-runtime + harness)
 
+  Note over U,K: Create — UI only
   U->>API: create instance
   API->>K: write spec.yaml<br/>(desiredState=hibernated)
   C->>K: reconcile<br/>Secret + StatefulSet(replicas=0) + Service + NetworkPolicy
 
-  Note over C,P: schedule fire (RRULE matches, not in quiet hours)
-  C->>K: scale StatefulSet → 1
+  Note over U,P: Connect-driven wake — UI tab attach OR channel inbound message
+  U->>API: ACP frame for session
+  API->>K: scale StatefulSet → 1
   K-->>P: pod boots, agent-runtime ready
+  API->>P: relay ACP frame
+
+  Note over C,P: Schedule-driven wake — RRULE match, not in quiet hours
+  C->>K: scale StatefulSet → 1 (if hibernated)
+  K-->>P: pod ready
   C->>P: kubectl exec → write /workspace/.triggers/{ts}.json
   P->>API: ACP session/new or session/resume
   P->>API: session/prompt (task payload)
@@ -48,6 +55,7 @@ sequenceDiagram
   C->>K: scale StatefulSet → 0
   Note over P: pod terminates,<br/>PVC + Secret + Service preserved
 
+  Note over U,K: Delete — UI only
   U->>API: delete instance
   API->>K: delete agent-instance ConfigMap
   C->>K: tear down owned resources
