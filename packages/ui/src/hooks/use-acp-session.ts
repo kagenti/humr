@@ -89,6 +89,13 @@ export function useAcpSession(
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
   const reconnectFnRef = useRef<(() => void) | null>(null);
+  // Set when a live WS dies unexpectedly so the next ensureConnection knows to
+  // reload via session/load (catching up any notifications appended during
+  // the disconnect window) before reattaching via session/resume. Without
+  // this, reconnect would only engage for *future* events and the gap stays
+  // stranded in the runtime log until the user refreshes the page.
+  const pendingReloadRef = useRef(false);
+  const loadHistoryIntoRef = useRef<((sid: string) => Promise<Message[]>) | null>(null);
   // Session IDs already persisted to the platform DB. We only upsert after a
   // prompt actually succeeds, so opening the app without sending anything
   // (or StrictMode double-mount) doesn't leave empty rows in the sidebar.
@@ -311,6 +318,28 @@ export function useAcpSession(
   const ensureConnectionInner = useCallback(async (): Promise<ClientSideConnection | null> => {
     if (!selectedInstance) return null;
 
+    // After an unexpected WS death, reload the conversation from the runtime
+    // log before reattaching. This is a session/load — runtime memory cache
+    // hit when the session is still live there, cold-bootstrap from the
+    // agent's on-disk store if it was reaped while we were offline. We swap
+    // messages in one render rather than pre-clearing, so the user keeps
+    // seeing their existing conversation until the fresh array is ready.
+    if (pendingReloadRef.current) {
+      const sid = useStore.getState().sessionId;
+      pendingReloadRef.current = false;
+      if (sid && loadHistoryIntoRef.current) {
+        try {
+          const fresh = await loadHistoryIntoRef.current(sid);
+          setMessages(fresh);
+        } catch (e) {
+          // Network still unreachable, etc. — restore the flag so the next
+          // reconnect attempt tries again.
+          pendingReloadRef.current = true;
+          throw e;
+        }
+      }
+    }
+
     if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
       const { connection, ws } = await openConnection(selectedInstance, makeUpdateHandler());
       await connection.initialize({
@@ -322,6 +351,12 @@ export function useAcpSession(
       ws.addEventListener("close", () => {
         connectionRef.current = null;
         activeSessionIdRef.current = null;
+        // Mark the next ensureConnection so it reloads from the runtime log
+        // before reattaching — session/resume on its own only engages for
+        // future events, so anything the agent appended during the gap would
+        // be stranded otherwise. Skip when there's no session, since there's
+        // nothing to reload.
+        if (useStore.getState().sessionId) pendingReloadRef.current = true;
         // Any in-flight stream is now dead. Finalize every streaming bubble
         // so busy clears, prompts show whatever they had so far, and the
         // next turn opens a fresh bubble instead of merging into a stale one.
@@ -369,6 +404,7 @@ export function useAcpSession(
     connectionRef.current?.ws.close();
     connectionRef.current = null;
     activeSessionIdRef.current = null;
+    pendingReloadRef.current = false;
     setSessionId(null);
     setMessages([]);
     setSessionModes(null);
@@ -429,8 +465,16 @@ export function useAcpSession(
   }, [selectedInstance, selectedMcpServers, captureSessionConfig, handleConfigUpdate,
       setSessionModels, setSessionModes]);
 
+  // Expose loadHistoryInto to ensureConnectionInner via a ref so the reload-
+  // on-reconnect path can invoke it without a circular useCallback dep.
+  useEffect(() => { loadHistoryIntoRef.current = loadHistoryInto; }, [loadHistoryInto]);
+
   const resumeSession = useCallback(async (sid: string) => {
     if (!selectedInstance) return;
+    // Sidebar-click load handles its own history fetch — clear the
+    // reload-on-reconnect flag so ensureConnection doesn't re-fetch right
+    // after, when it opens the live channel for this session.
+    pendingReloadRef.current = false;
     setLoadingSession(true);
     setMessages([]);
     setSessionError(null);
