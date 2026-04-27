@@ -44,4 +44,4 @@ This directory contains ADRs for the Humr project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
-| [DRAFT](DRAFT-unified-hitl-ux.md) | Unified HITL UX — live-consumer model, no durable approval state | @jezekra1 |
+| [DRAFT](DRAFT-unified-hitl-ux.md) | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
