@@ -80,7 +80,7 @@ Multi-tenancy is **soft** — a single Kubernetes namespace, with a `humr.ai/own
 |---|---|
 | `agent-instance` ConfigMap, owned StatefulSet/Service/NetworkPolicy/Secret | Per-user (`humr.ai/owner`) |
 | `agent-schedule` ConfigMap | Per-user |
-| `agent-fork` ConfigMap | Per-user (forker, not the parent's owner) |
+| `agent-fork` ConfigMap | Per-user (foreign replier, not the parent instance owner) |
 | `agent` ConfigMap (template) | Shared, no owner label |
 | Channel bindings, identity links, allow-list rows in Postgres | Per-user, by `sub` |
 | Credentials, app connections, policy rules in OneCLI | Per-user, scoped by `sub` claim on the exchanged token |
@@ -153,12 +153,13 @@ The gateway is what makes "blocked except for grants" enforceable on the egress 
 
 ## Forks
 
-A fork (see [agent-lifecycle § Forks](agent-lifecycle.md#forks)) reconciles to a Kubernetes Job and runs under the **forker's identity**, not the parent instance owner's. The mechanism is the per-agent token flow described above, with one substitution: when the controller mints the fork's OneCLI token, it impersonates the forker's `sub` — even though the parent `agent-instance` carries a different owner label and the parent PVC is mounted in.
+A **Fork** is an ephemeral, per-turn execution environment that runs under a **Foreign Replier's** identity (see [agent-lifecycle § Forks](agent-lifecycle.md#forks)). It is automatic and Slack-driven only — when a member of the instance's `allowedUsers` who is *not* the owner replies in a bound thread, the api-server emits `ForeignReplyReceived` and a saga opens a Fork for that turn. There is no UI action that creates a fork. The minted credential — a **Foreign Registration**, keyed by `(instance, foreignSub)` — is what makes the fork run with the replier's grants instead of the owner's.
+
+Unlike the per-instance access token, the Foreign Registration is provisioned by the **api-server's Connections module**, not the controller, and is not stored in a K8s Secret. The token is minted lazily on the first fork request for a `(instance, foreignSub)` pair, cached in-memory in the api-server process, and inlined directly into the `agent-fork` ConfigMap's `spec.yaml`. The controller reads it from the spec and plugs it into the Job's pod env.
 
 ```mermaid
 flowchart LR
-  forker[forker]
-  parent[parent owner]
+  replier[foreign replier<br/>Slack user]
 
   api-server
   controller
@@ -171,25 +172,28 @@ flowchart LR
   end
 
   parent-pvc[(parent PVC<br/>RWX)]
+  parent[parent owner]
   external[external services]
 
-  forker -->|user JWT| api-server
-  api-server -->|create agent-fork| controller
-  controller -->|RFC 8693 impersonation<br/>requested_subject = forker| keycloak
-  keycloak -->|onecli-audience token<br/>forker sub| controller
-  controller -->|provision fork token| onecli-api
-  controller -->|mount token + parent PVC| forkpod
+  replier -->|reply in bound thread| api-server
+
+  api-server -->|RFC 8693 impersonation<br/>requested_subject = foreignSub| keycloak
+  keycloak -->|onecli-audience token<br/>foreignSub| api-server
+  api-server -->|provision fork agent<br/>cached by instance,foreignSub| onecli-api
+  api-server -->|write agent-fork ConfigMap<br/>spec.accessToken| controller
+
+  controller -->|reconcile to Job<br/>token inlined as env| forkpod
 
   parent-pvc <-->|read/write| fork-runtime
   parent -.owns workspace.- parent-pvc
 
   fork-runtime -->|fork token| onecli-gw
-  onecli-gw -->|forker's grants only| external
+  onecli-gw -->|foreign replier's grants only| external
 ```
 
-Two boundaries are deliberately mismatched: the **data** boundary is permissive (forker can read whatever the parent wrote to disk, because RWX cross-user mounts are how Humr supports running a derivative against someone else's workspace) but the **credential** boundary is strict (forker can only call upstreams via the forker's own OneCLI grants). A fork can therefore read parent state but cannot exfiltrate it through any upstream the forker hasn't been granted.
+Two boundaries are deliberately mismatched: the **data** boundary is permissive (the fork can read whatever the parent wrote to disk, because RWX cross-user mounts are how Humr supports running a derivative against someone else's workspace) but the **credential** boundary is strict (the fork can only call upstreams via the foreign replier's own OneCLI grants). A fork can therefore read parent state but cannot exfiltrate it through any upstream the replier hasn't been granted.
 
-The agent-fork's `humr.ai/owner` label is the forker, not the parent. Resource ownership and allow-list checks treat the fork as the forker's resource; the parent owner does not see the fork in their resource list. Cross-user PVC sharing is documented on [persistence](persistence.md).
+The Foreign Registration cache is **process memory in the api-server, with no TTL** — eviction is manual and the cache is lost on api-server restart. The first fork request after a restart re-mints (idempotent — OneCLI returns the existing fork agent on `409`), so the worst case is a one-impersonation-exchange round-trip on cold path, not a correctness failure. Foreign-Registration tokens are opaque, identical in shape to the per-instance access token, and survive only as long as the agent-fork ConfigMap and its Job — both deleted at turn completion.
 
 ## Threat model
 
