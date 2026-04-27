@@ -34,10 +34,7 @@ export function AnthropicConnected({
   }
 
   return (
-    <div
-      className="rounded-xl border-2 border-accent bg-accent-light p-5 anim-in"
-      style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-    >
+    <div className="rounded-xl border-2 border-accent bg-accent-light p-5 anim-in shadow-brutal-accent">
       <div className="flex items-center gap-4">
         <CardIcon variant="accent" />
         <div className="flex-1 min-w-0">

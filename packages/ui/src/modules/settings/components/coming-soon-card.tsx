@@ -8,10 +8,7 @@ export function ComingSoonCard({
   description: string;
 }) {
   return (
-    <div
-      className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 opacity-60"
-      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-    >
+    <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 opacity-60 shadow-brutal-sm">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-muted">
           <Sparkles size={16} />

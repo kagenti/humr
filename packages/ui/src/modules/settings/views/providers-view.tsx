@@ -36,8 +36,7 @@ export function ProvidersView() {
         <h1 className="text-[20px] md:text-[24px] font-bold text-text">Providers</h1>
         <button
           onClick={() => refetchSecrets()}
-          className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal shadow-brutal-sm"
         >
           <span className={isFetchingSecrets ? "anim-spin" : ""}>
             <RefreshCw size={13} />

@@ -78,11 +78,10 @@ export function AnthropicForm({
     <form
       onSubmit={onSubmit}
       className={`rounded-xl border-2 p-5 anim-in flex flex-col gap-4 ${
-        isEdit ? "border-accent bg-accent-light" : "border-warning bg-warning-light"
+        isEdit
+          ? "border-accent bg-accent-light shadow-brutal-accent"
+          : "border-warning bg-warning-light shadow-brutal"
       }`}
-      style={{
-        boxShadow: isEdit ? "var(--shadow-brutal-accent)" : "var(--shadow-brutal)",
-      }}
     >
       <div className="flex items-center gap-3">
         <CardIcon variant={isEdit ? "accent" : "warning"} />
@@ -122,8 +121,7 @@ export function AnthropicForm({
         />
         <button
           type="button"
-          className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0 shadow-brutal-sm"
           onClick={test}
           disabled={submitDisabled}
           title="Verify the credential with Anthropic"
@@ -132,8 +130,7 @@ export function AnthropicForm({
         </button>
         <button
           type="submit"
-          className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
-          style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+          className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
           disabled={submitDisabled}
         >
           {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
