@@ -10,6 +10,7 @@ Last verified: 2026-04-27
 - [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `AGENT_COMMAND` is the only platform knob the harness sees
 - [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition at pod start, restart-to-apply
 - [ADR-026 — Persistent ACP sessions via per-session log](../adrs/026-session-log-replay.md) — the runtime owns the live replay log; the agent's on-disk store is the cold-start source
+- [ADR-027 — Slack user impersonation](../adrs/027-slack-user-impersonation.md) — channel-driven sessions carry per-user identity; channels never reach management endpoints
 - [ADR-031 — Schedules use RRULE for includes and quiet hours for exclusions](../adrs/031-schedule-rrule-quiet-hours.md) — recurrence semantics and suppression model
 
 ## Overview
