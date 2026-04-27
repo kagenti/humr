@@ -93,30 +93,49 @@ So today's contract is: live UI → user answers prompts; everything else → pe
 
 UI surface is unified: both kinds appear as `session/request_permission` to UI / Slack / future channels, rendered by the same component. Mechanics underneath differ; the user does not see the difference.
 
-### ext_authz mechanics — out-of-pod authority
+### ext_authz mechanics — out-of-pod authority, synchronous hold
+
+The egress request that triggers an ext_authz call is initiated by **whatever the agent decided to run** — `gh`, `curl`, `npx some-cli`, a Python SDK, etc. None of those tools understand HITL retry semantics; a `202 + Retry-After` would be treated as an upstream API failure and the CLI would exit with an error, not retry. The wrapper cannot retry on behalf of an opaque CLI either. So ext_authz holds the request **synchronously** for a short window, just long enough for a live consumer to respond:
 
 ```
-Envoy ext_authz call from agent egress
+Envoy ext_authz call from agent egress (originator: arbitrary CLI —
+gh / curl / npx / language SDK — no HITL retry semantics)
   │
   ▼
 API Server (any replica) — stateless handler
   │
   ├─ SELECT from approvals WHERE fingerprint = F
   │
-  ├─ resolved → return ALLOW / DENY to Envoy. Done.
-  ├─ pending  → return 202 + Retry-After. Done.
-  └─ no entry →
-        ├─ INSERT pending (approvalId, instance, sessionId, fingerprint, payload)
-        ├─ Inject synth session/request_permission into the user's ACP relay
-        │  stream toward UI (any replica holding the user's WS),
-        │  AND/OR push via Slack adapter, AND/OR future channels.
-        │  Synth ID is allocated in a namespace the wrapper does not own.
-        └─ Return 202 + Retry-After. Done.
+  ├─ resolved (ALLOW / DENY) → return immediately to Envoy. Done.
+  └─ pending or no entry →
+        ├─ if no entry:
+        │     ├─ INSERT pending (approvalId, instance, sessionId,
+        │     │                  fingerprint, payload)
+        │     └─ Inject synth session/request_permission into the user's
+        │        ACP relay stream toward UI (any replica holding the
+        │        user's WS) AND/OR push via Slack adapter AND/OR future
+        │        channels. Synth ID is in a namespace the wrapper does
+        │        not own.
+        ├─ HOLD the ext_authz call synchronously, up to a configured
+        │  window (default on the order of a few minutes — long enough
+        │  for a Slack/UI roundtrip including the user switching apps).
+        │  Subscribe via LISTEN/NOTIFY (or poll the DB) for the verdict
+        │  landing — see Multi-replica below. Upper bound is whichever
+        │  client-side timeout fires first: Envoy's ext_authz timeout
+        │  (configurable), the originating CLI's HTTP read timeout
+        │  (varies, often unbounded for response read), or any TCP idle
+        │  timeout on the path.
+        ├─ verdict arrives in time → return ALLOW / DENY to Envoy.
+        └─ window elapses → return DENY to Envoy. The DB entry stays in
+                            place; if the user resolves it later, the next
+                            time the *agent* (model-layer, not CLI) attempts
+                            the same operation, ext_authz finds the cached
+                            verdict and allows the request immediately.
 ```
 
-The synth `session/request_permission` is **injected by the API Server's ACP relay into the downstream traffic**, not by the wrapper. The wrapper never sees it. When the user's response comes back upstream, the API Server's relay matches the synth ID, **intercepts the response, writes verdict to the store, and does NOT forward to the wrapper**. The wrapper is bypassed end-to-end for ext_authz.
+The synth `session/request_permission` is **injected by the API Server's ACP relay into the downstream traffic**, not by the wrapper. The wrapper never sees it. When the user's response comes back upstream, the relay matches the synth ID, **intercepts the response, writes verdict to the DB, and does NOT forward to the wrapper**. The wrapper is bypassed end-to-end for ext_authz.
 
-When the agent retries the egress, Envoy ext_authz hits any API Server replica → store has resolved → ALLOW/DENY → Envoy forwards or denies. The verdict path never touches the wrapper.
+The hold introduces bounded replica activity — a few minutes per held call, not the unbounded human-decision durations a fully-async inbox would imply. A replica restart mid-hold fails that one in-flight ext_authz call (the CLI sees a normal upstream error); the durable DB entry is unaffected and any subsequent agent-level attempt resolves from it. The hold is tuned for the realistic "Slack DM → user switches apps → reads → clicks" UX latency budget; it is not a substitute for an offline approval inbox. If the user takes longer than the window allows, we fall through to "DB stays pending, model retries the operation later, late verdict applies on retry." That's the only stable shape given the originator's lack of HITL awareness.
 
 ### ACP-native mechanics — wrapper-local (today's behavior, unchanged)
 
@@ -135,73 +154,71 @@ Whichever consumer responds first wins; late responses from other consumers are 
 
 ### Multi-replica coordination
 
-API Server replicas are stateless. The DB is the only shared substrate.
+API Server replicas are stateless. The DB is the only shared substrate. Two coordination needs arise:
 
-- ext_authz calls: any replica reads/writes `approvals` table; no replica affinity.
-- Verdict writes: any replica handling a user response (UI, Slack, etc.) writes to the DB.
-- Synth prompt delivery: replica B creates a pending entry; replica A is holding the user's ACP relay WS. Coordination via `LISTEN/NOTIFY` (postgres) or equivalent pub/sub — replica A subscribes for new pending entries scoped to its connected users and injects synth frames. **Implementation detail; this ADR does not mandate the mechanism.** A simpler "eventual delivery on next session activity" (replica A polls DB on each user message) is acceptable as a fallback.
+- **Verdict notification to the held call.** Replica A is holding an ext_authz call, blocked on the verdict. Replica B receives the user's response (e.g., user is connected to a different replica's WS, or clicked a Slack button). B writes the verdict to the DB. A needs to wake up. Mechanism: postgres `LISTEN/NOTIFY` keyed by `approvalId` is the obvious fit — A `LISTEN approval:<id>`, B writes verdict and `NOTIFY approval:<id>`. Fallback for environments without LISTEN/NOTIFY: A polls the DB every ~250ms during the hold window. Implementation detail; this ADR doesn't mandate.
+- **Synth prompt delivery to the right user WS.** Replica A creates a pending entry while holding ext_authz; replica B is holding the user's ACP relay. The synth frame needs to land on B's WS. Same pattern: B subscribes for new pending entries scoped to its connected users (LISTEN/NOTIFY or poll-on-engage) and injects synth frames into the relay stream when notified. If no replica is currently holding the user's WS, the prompt isn't delivered live — it sits in the DB and is delivered on next engage (or via Slack adapter, which is itself a server-side process that doesn't need the user's WS).
+
+Replica restart mid-hold: the in-flight ext_authz call fails (Envoy gets a connection error → upstream-error to CLI). The DB entry is unaffected. Subsequent agent-level retries hit the same DB and resolve normally.
 
 ### Flow
 
-```
-ACP-native gate                          Egress gate (ext_authz)
-═══════════════                          ═══════════════════════
+The two gates are best read as separate sequences because the participants and trust boundaries differ.
 
-Harness                                  Agent egress
-  │                                        │
-  │ requestPermission                      │ HTTP via HTTP_PROXY=Envoy
-  ▼                                        ▼
-                                         Envoy ext_authz
-                                           │ gRPC check
-                                           ▼
-                                         ┌─────────────────────────────┐
-                                         │ API Server (any replica)    │
-                                         │ — stateless handler         │
-                                         └────────────┬────────────────┘
-                                                      │
-                                                      │ SELECT/INSERT
-                                                      ▼
-                                                ┌──────────┐
-                                                │ approvals│  ← OUT OF
-                                                │   (DB)   │     POD
-                                                └──────────┘
-                                                      │
-                                                      │ inject synth frame
-                                                      │ into UI relay
-                                                      │ (replica holding WS)
-                                                      ▼
-                                              UI / Slack / etc.
-                                              (rendered as
-                                              session/request_permission)
-  │                                                   │
-  ▼                                                   │
-Wrapper:                                              │
-pendingFromAgent                                      │
-(in-memory, today)                                    │
-  │ fan-out                                           │
-  ▼                                                   │
-UI / Slack / etc.                                     │
-  │ user responds                                     │ user responds
-  ▼                                                   ▼
-Wrapper:                                       API Server relay:
-handleClientMessage                            intercept by synth ID
-matches harness ID                             (NOT forwarded
-forwards to harness                            to wrapper)
-  │                                                   │
-  ▼                                                   ▼
-Harness unblocks,                               UPDATE approvals
-runs (or skips) tool                            SET verdict
-                                                      │
-                                                      ▼
-                                            (next ext_authz retry
-                                             reads ALLOW/DENY
-                                             from DB)
+**ACP-native** — wrapper-local, today's behavior. The wrapper runs inside the agent pod; the relay is in the API Server.
+
+```mermaid
+sequenceDiagram
+    participant Harness
+    participant Wrapper
+    participant Relay as ACP relay
+    participant UI
+
+    Harness->>Wrapper: session/request_permission
+    Wrapper->>Wrapper: pendingFromAgent.set
+    Wrapper->>Relay: WS frame, fan out
+    Relay->>UI: forward
+    UI->>Relay: user response
+    Relay->>Wrapper: forward
+    Wrapper->>Wrapper: handleClientMessage, delete entry
+    Wrapper->>Harness: ACP response
+    Note over Harness: tool runs or is denied
+```
+
+**ext_authz** — API Server is the verdict authority; wrapper bypassed end-to-end. CLI is whatever the agent invoked: `gh`, `curl`, `npx`, language SDK, etc.
+
+```mermaid
+sequenceDiagram
+    participant CLI
+    participant Envoy
+    participant API as API Server
+    participant DB as approvals DB
+    participant UI
+
+    CLI->>+Envoy: HTTPS via HTTP_PROXY
+    Envoy->>+API: ext_authz check
+    API->>DB: SELECT verdict by fingerprint
+
+    alt cached verdict
+        DB-->>API: ALLOW or DENY
+    else fresh, synthesize and hold
+        API->>DB: INSERT pending
+        API->>UI: inject synth permission prompt
+        Note over API,UI: API holds ext_authz synchronously up to a few minutes, LISTEN/NOTIFY or poll
+        UI->>API: user response, any replica
+        API->>DB: UPDATE verdict
+    end
+
+    API-->>-Envoy: verdict, timeout becomes DENY
+    Envoy-->>-CLI: forward or fail
+
+    Note over CLI,DB: Late approval. If the user resolves after timeout, the DB still holds the verdict. The next agent-level attempt (model retries the operation) finds it cached and proceeds.
 ```
 
 The "correct producer" question has clean answers per gate:
 
 - **ACP-native:** producer is co-located with the wrapper; in-pod resolution is fine because the gate is not a security boundary against the agent.
-- **ext_authz:** producer is whichever Envoy retry happens next, served by any replica reading the same DB. Wrapper is bypassed.
+- **ext_authz:** producer is whichever ext_authz call happens next (the held one if the user is fast, a future model-driven attempt if not), served by any replica reading the same DB. Wrapper is bypassed.
 
 ### Scope — what this ADR explicitly does *not* do
 
@@ -217,13 +234,15 @@ The "correct producer" question has clean answers per gate:
 
 **Two parallel approval UIs.** Default trajectory if the credential-gateway ADR ships without UX unification. Rejected — same user faces same shape of decision through two different surfaces; doubles up notification, rendering, replay, history work.
 
-**API Server holds blocking promises across user think-time.** ext_authz call awaits `await postExternalPermission(...)` until user decides. Rejected — pins a replica per pending decision, fails on replica restart, conflicts with the platform's stateless API Server requirement. Stored-decision retry from the parent ADR is the correct shape.
+**Return `202 + Retry-After` to Envoy and rely on CLI / agent retry.** The most natural-looking shape if you assume retry-aware clients. Rejected — the originator of the egress is *whatever the agent decided to run* (`gh`, `curl`, `npx some-cli`, language SDKs), and arbitrary CLIs do not honor HITL retry semantics. A `gh` that gets back a 202 exits with an error code, not retry. The wrapper can't retry on the CLI's behalf either — it doesn't even know what kind of HTTP call the CLI was making. Synchronous hold for a short window is the only shape that works without per-tool retry coordination.
+
+**API Server holds the ext_authz call indefinitely across human think-time (hours / overnight).** Long-poll across arbitrary user availability. Rejected — pins a replica per pending decision indefinitely, fails on replica restart in a way that loses the user's eventual response, conflicts with the stateless API Server posture, and exceeds every reasonable client-side and middlebox timeout. The chosen *bounded* synchronous hold (a few minutes — long enough for a realistic Slack/UI roundtrip but not for "approve overnight") is materially different: replica activity is bounded, a failed mid-hold call surfaces as a normal upstream error, the DB is unaffected, and overnight-scale approvals fall through to the model-retries-later path rather than pretending the platform supports indefinite holds.
 
 **Forking Claude Code SDK to add canUseTool checkpoint/resume.** Would technically enable ACP-native async inbox. Rejected as architecturally wrong: harness-specific (multiplies per harness — Claude Code, Codex, Gemini), permanent fork maintenance burden, the SDK's turn loop wasn't designed for mid-turn suspension. The harness's existing permission model already covers the actual use case (long-lived approvals via `allow_always`).
 
 **Fingerprint-based pre-approval shared store across both kinds.** Mirror both into one durable store; auto-resolve future requests by fingerprint. Rejected — duplicates the harness's permission model for ACP-native (two competing "have I approved this?" memories with subtle disagreement modes), depends on probabilistic model behavior to re-issue the same fingerprint, and re-introduces complexity the security model does not require for ACP-native (which is not a security boundary).
 
-**Pub/sub-pinned-replica live-hold for ext_authz.** Replica A holds ext_authz call; replica B receives user's verdict, publishes; A resumes. Defers but doesn't eliminate replica affinity (A's restart still drops the verdict). Out of scope; can be a future optimization on top of the stateless DB-backed shape.
+**Wrapper proxies the HTTPS call back to the CLI on the agent's behalf, holding indefinitely until verdict.** Make the wrapper an HTTP-aware retry layer that buffers the outbound request and waits. Rejected — the wrapper has no general way to know how to retry an arbitrary CLI's HTTP call (idempotency, body re-serialization, custom headers, streaming bodies, content negotiation), and even if it could, the originating CLI process still sees its own HTTPS call hanging for whatever duration. We'd be papering over the retry-semantics gap with a layer that has to know each tool's retry behavior. The synchronous-hold-then-fail shape composes with whatever the model decides to do next without the platform pretending to be a retry proxy.
 
 ## Consequences
 
