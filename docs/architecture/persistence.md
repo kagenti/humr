@@ -10,13 +10,18 @@ Last verified: 2026-04-27
 
 ## Overview
 
-Three durable substrates carry Humr's state, each owned by a different actor and serving a different lifetime:
+Humr persists state on three durable substrates, split cleanly between the platform and the agent:
 
-- **Postgres** — cross-pod metadata that has to be queryable when no agent pod is running (sessions, channel bindings, identity links, allow-listed users). Owned by the api-server.
-- **ConfigMaps** — declared resource state. Templates, instances, schedules, and forks are all ConfigMaps with a `spec.yaml` / `status.yaml` ownership split. The api-server is the sole writer of `spec.yaml`; the controller is the sole writer of `status.yaml`.
-- **Per-instance PVCs** — the workspace and `$HOME` for each agent pod. Persists across hibernation; reclaimed when the instance is deleted.
+**Platform-owned** (the agent never touches these):
 
-The controller and api-server never share writes on the same key — write contention is impossible by convention rather than by lock. Pods are stateless: anything an agent needs to remember has to land on one of these three substrates.
+- **Postgres** — cross-pod metadata that has to be queryable when no agent pod is running (sessions, channel bindings, identity links, allow-listed users). Sole writer: api-server.
+- **ConfigMaps** — declared resource state for templates, instances, schedules, and forks, with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
+
+**Agent-owned**:
+
+- **Per-instance PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the instance is deleted.
+
+The controller and api-server never share writes on the same key — write contention is impossible by convention rather than by lock. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or a ConfigMap by the api-server or controller, not by the agent itself.
 
 ## Diagram
 
