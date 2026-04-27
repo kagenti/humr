@@ -23,7 +23,7 @@ export function AnthropicForm({
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const { register, handleSubmit, control, watch, getValues, formState } =
+  const { register, handleSubmit, control, watch, getValues, trigger, formState } =
     useForm<AnthropicCredentialValues>({
       resolver: zodResolver(anthropicCredentialSchema),
       mode: "onChange",
@@ -40,13 +40,16 @@ export function AnthropicForm({
 
   // Watching mode + value clears the test result when either changes — a stale
   // green check after the user types something different is worse than no
-  // result at all.
+  // result at all. Switching mode also has to re-trigger value validation: the
+  // mismatch lives on `value` via cross-field refinement, and RHF only clears
+  // errors on the field that actually changed.
   const mode = watch("mode");
   const value = watch("value");
   useEffect(() => {
     testTokenRef.current++;
     setTestResult(null);
-  }, [mode, value]);
+    trigger("value");
+  }, [mode, value, trigger]);
 
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || testing || !isValid;
