@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { createHash } from "node:crypto";
 import yaml from "js-yaml";
-import {
-  mountGhEnterpriseEventsRoute,
-} from "../../apps/harness-api-server/gh-enterprise-events.js";
-import { createGhEnterpriseBus } from "../../modules/connections/services/gh-enterprise-bus.js";
+import { mountConnectorFilesEventsRoute } from "../../apps/harness-api-server/connector-files-events.js";
+import { createConnectorFilesBus } from "../../modules/connector-files/bus.js";
 import {
   LABEL_AGENT_REF,
   LABEL_OWNER,
@@ -16,13 +14,11 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 /**
  * Regression guard for the disconnect leak: without `stream.onAbort`, the
  * subscriber set kept growing on every reconnect because the parked Promise
- * never woke and the `finally`-side `unsubscribe` never ran. Auth, snapshot,
- * and upsert delivery are exercised transitively via verifyInstanceToken's
- * existing tests and the connections-service publish path.
+ * never woke and the `finally`-side `unsubscribe` never ran.
  */
-describe("gh-enterprise events SSE", () => {
+describe("connector-files events SSE", () => {
   it("unsubscribes from the bus when the client disconnects", async () => {
-    const inner = createGhEnterpriseBus();
+    const inner = createConnectorFilesBus();
     let active = 0;
     const spyBus = {
       subscribe(agentName: string, cb: Parameters<typeof inner.subscribe>[1]) {
@@ -59,20 +55,19 @@ describe("gh-enterprise events SSE", () => {
     } as unknown as K8sClient;
 
     const app = new Hono();
-    mountGhEnterpriseEventsRoute(app, {
+    mountConnectorFilesEventsRoute(app, {
       k8s,
       bus: spyBus,
       fetchSnapshot: async () => [],
     });
 
     const ac = new AbortController();
-    const res = await app.request("/api/instances/i-1/gh-enterprise/events", {
+    const res = await app.request("/api/instances/i-1/connector-files/events", {
       headers: { authorization: `Bearer ${token}` },
       signal: ac.signal,
     });
     expect(res.status).toBe(200);
 
-    // Read the snapshot frame, then abort.
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -86,7 +81,6 @@ describe("gh-enterprise events SSE", () => {
       await reader.cancel();
     } catch {}
 
-    // Allow the abort to propagate through the streaming machinery.
     await new Promise((r) => setTimeout(r, 50));
     expect(active).toBe(0);
   });

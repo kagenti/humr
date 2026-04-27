@@ -265,7 +265,7 @@ func configSyncSidecar(instanceName string, cfg *config.Config, tokenSecretName 
 	if cfg.ControllerImage == "" {
 		return nil
 	}
-	eventsURL := fmt.Sprintf("%s/api/instances/%s/gh-enterprise/events", cfg.HarnessServerURL, instanceName)
+	eventsURL := fmt.Sprintf("%s/api/instances/%s/connector-files/events", cfg.HarnessServerURL, instanceName)
 	return &corev1.Container{
 		Name:            "humr-config-sync",
 		Image:           cfg.ControllerImage,
@@ -273,7 +273,6 @@ func configSyncSidecar(instanceName string, cfg *config.Config, tokenSecretName 
 		Args: []string{
 			"config-sync",
 			"--events-url=" + eventsURL,
-			"--out=/home/agent/.config/gh/hosts.yml",
 		},
 		Env: []corev1.EnvVar{{
 			Name: "ONECLI_ACCESS_TOKEN",

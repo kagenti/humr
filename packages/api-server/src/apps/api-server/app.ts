@@ -30,7 +30,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
-import type { GhEnterpriseBus } from "../../modules/connections/services/gh-enterprise-bus.js";
+import type { ConnectorFilesBus } from "../../modules/connector-files/bus.js";
 
 export interface ApiServerAppDeps {
   config: Config;
@@ -42,11 +42,11 @@ export interface ApiServerAppDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
-  ghEnterpriseBus: GhEnterpriseBus;
+  connectorFilesBus: ConnectorFilesBus;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, ghEnterpriseBus } = deps;
+  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, connectorFilesBus } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -157,7 +157,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
     const connections = createConnectionsService({
       port: createOnecliConnectionsPort(onecli, userJwt, user.sub),
-      ghEnterpriseBus,
+      connectorFilesBus,
     });
 
     return fetchRequestHandler({

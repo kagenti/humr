@@ -220,7 +220,6 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 func runConfigSync() {
 	fs := flag.NewFlagSet("config-sync", flag.ExitOnError)
 	eventsURL := fs.String("events-url", os.Getenv("HUMR_EVENTS_URL"), "API server SSE events URL")
-	out := fs.String("out", "/home/agent/.config/gh/hosts.yml", "hosts.yml path")
 	token := fs.String("token", os.Getenv("ONECLI_ACCESS_TOKEN"), "Bearer token (default $ONECLI_ACCESS_TOKEN)")
 	// flag.ExitOnError makes Parse call os.Exit(2) on any parse error — the
 	// discard is safe because we never see a non-nil return.
@@ -231,7 +230,6 @@ func runConfigSync() {
 
 	if err := configsync.Run(ctx, configsync.Options{
 		EventsURL: *eventsURL,
-		OutPath:   *out,
 		Token:     *token,
 	}); err != nil {
 		slog.Error("config-sync exited", "error", err)

@@ -20,8 +20,9 @@ import {
   deleteThreadsByInstance,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { composeConnectionsModule } from "./modules/connections/index.js";
-import { createGhEnterpriseBus } from "./modules/connections/services/gh-enterprise-bus.js";
-import { toGhEnterpriseHosts } from "./modules/connections/services/gh-enterprise-snapshot.js";
+import { createConnectorFilesBus } from "./modules/connector-files/bus.js";
+import { renderFiles } from "./modules/connector-files/render.js";
+import { connectorFilesRegistry } from "./modules/connector-files/registry.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -168,28 +169,28 @@ const telegramWorker = config.telegramEnabled && chatSdkState
 
 const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
 
-const ghEnterpriseBus = createGhEnterpriseBus();
-const ghEnterpriseSnapshot = async (owner: string) => {
+const connectorFilesBus = createConnectorFilesBus();
+const connectorFilesSnapshot = async (owner: string) => {
   // Owner-scoped fetch via Keycloak impersonation. Safe to call from background
   // contexts (no live user JWT). Empty array on transient OneCLI failures —
   // the SSE handler logs and the next reconnect re-snapshots.
   const res = await onecli.onecliFetchAsOwner(owner, "/api/connections");
   if (!res.ok) {
-    process.stderr.write(`gh-enterprise snapshot ${owner}: OneCLI ${res.status}\n`);
+    process.stderr.write(`connector-files snapshot ${owner}: OneCLI ${res.status}\n`);
     return [];
   }
-  const raw = (await res.json()) as Array<{ provider: string; metadata?: Record<string, unknown> | null }>;
-  return toGhEnterpriseHosts(raw);
+  const raw = (await res.json()) as Array<{ id?: string; provider: string; metadata?: Record<string, unknown> | null }>;
+  return renderFiles(raw, connectorFilesRegistry);
 };
 
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
-  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, ghEnterpriseBus,
+  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, connectorFilesBus,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config, api, db, channelManager, channelSecretStore,
-  ghEnterpriseBus, ghEnterpriseSnapshot,
+  connectorFilesBus, connectorFilesSnapshot,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {

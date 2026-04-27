@@ -19,12 +19,10 @@ import (
 // Options configure the sidecar's main loop.
 type Options struct {
 	// EventsURL is the api-server SSE endpoint, e.g.
-	// https://humr-api.../api/instances/<name>/gh-enterprise/events
+	// https://humr-api.../api/instances/<name>/connector-files/events
 	EventsURL string
 	// Token is the per-instance access token sent as Bearer auth.
 	Token string
-	// OutPath is where hosts.yml lives, typically /home/agent/.config/gh/hosts.yml.
-	OutPath string
 	// MinBackoff / MaxBackoff bound the reconnect delay (default 1s..30s).
 	MinBackoff, MaxBackoff time.Duration
 	// HTTPClient lets tests inject a transport. Defaults to http.DefaultClient
@@ -32,18 +30,29 @@ type Options struct {
 	HTTPClient *http.Client
 }
 
-type eventPayload struct {
-	Connections []HostEntry `json:"connections"`
+// Mode identifies how the sidecar merges fragments into a file.
+type Mode string
+
+const (
+	ModeYAMLFillIfMissing Mode = "yaml-fill-if-missing"
+)
+
+// FileSpec is one managed file as it travels on the wire.
+type FileSpec struct {
+	Path      string     `json:"path"`
+	Mode      Mode       `json:"mode"`
+	Fragments []Fragment `json:"fragments"`
 }
 
-// Run holds an SSE connection to the api-server and merges incoming
-// snapshot/upsert events into OutPath. Returns when ctx is canceled.
+type eventPayload struct {
+	Files []FileSpec `json:"files"`
+}
+
+// Run holds an SSE connection to the api-server and applies incoming
+// snapshot/upsert events. Returns when ctx is canceled.
 func Run(ctx context.Context, o Options) error {
 	if o.EventsURL == "" {
 		return errors.New("config-sync: --events-url is required")
-	}
-	if o.OutPath == "" {
-		return errors.New("config-sync: --out is required")
 	}
 	if o.MinBackoff <= 0 {
 		o.MinBackoff = time.Second
@@ -56,9 +65,9 @@ func Run(ctx context.Context, o Options) error {
 		httpClient = &http.Client{}
 	}
 
-	// healthyUptime is "long enough that the previous connection was clearly
-	// working" — past this threshold we reset backoff so a once-per-day api-server
-	// restart doesn't leave the sidecar reconnecting at MaxBackoff forever.
+	// healthyUptime: long enough that the previous connection was clearly
+	// working — past this we reset backoff so a once-per-day api-server
+	// restart doesn't pin reconnects at MaxBackoff forever.
 	const healthyUptime = 30 * time.Second
 
 	backoff := o.MinBackoff
@@ -74,7 +83,6 @@ func Run(ctx context.Context, o Options) error {
 		if time.Since(start) > healthyUptime {
 			backoff = o.MinBackoff
 		}
-		// Sleep with backoff + jitter (skip jitter for tiny backoffs).
 		var jitter time.Duration
 		if window := int64(backoff / 5); window > 0 {
 			jitter = time.Duration(rand.Int64N(window))
@@ -111,13 +119,11 @@ func stream(ctx context.Context, hc *http.Client, o Options) error {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	slog.Info("config-sync connected", "url", o.EventsURL)
-	return readSSE(resp.Body, o.OutPath)
+	return readSSE(resp.Body)
 }
 
-// readSSE parses event-stream framing and applies each event to the file.
-// Frames are separated by a blank line. We collect `event:` and `data:` lines
-// and dispatch on a complete frame.
-func readSSE(r io.Reader, outPath string) error {
+// readSSE parses event-stream framing and dispatches each event.
+func readSSE(r io.Reader) error {
 	br := bufio.NewReader(r)
 	var event string
 	var data strings.Builder
@@ -135,7 +141,7 @@ func readSSE(r io.Reader, outPath string) error {
 		line = strings.TrimRight(line, "\r\n")
 		if line == "" {
 			if event != "" || data.Len() > 0 {
-				if err := dispatch(event, data.String(), outPath); err != nil {
+				if err := dispatch(event, data.String()); err != nil {
 					slog.Warn("config-sync dispatch failed", "error", err)
 				}
 			}
@@ -155,7 +161,7 @@ func readSSE(r io.Reader, outPath string) error {
 	}
 }
 
-func dispatch(event, data, outPath string) error {
+func dispatch(event, data string) error {
 	if event != "snapshot" && event != "upsert" {
 		return nil
 	}
@@ -163,44 +169,57 @@ func dispatch(event, data, outPath string) error {
 	if err := json.Unmarshal([]byte(data), &p); err != nil {
 		return fmt.Errorf("decode %s: %w", event, err)
 	}
-	if len(p.Connections) == 0 {
-		return nil
+	for _, file := range p.Files {
+		if err := applyFile(file); err != nil {
+			slog.Warn("config-sync apply failed", "path", file.Path, "error", err)
+		}
 	}
-	return apply(outPath, p.Connections)
+	return nil
 }
 
-func apply(outPath string, conns []HostEntry) error {
-	existing, err := os.ReadFile(outPath)
+// applyFile dispatches on file.Mode and writes the result if anything changed.
+func applyFile(file FileSpec) error {
+	if len(file.Fragments) == 0 {
+		return nil
+	}
+	existing, err := os.ReadFile(file.Path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	merged, changed, err := Merge(existing, conns)
+	var merged []byte
+	var changed bool
+	switch file.Mode {
+	case ModeYAMLFillIfMissing:
+		merged, changed, err = MergeYAMLFillIfMissing(existing, file.Fragments)
+	default:
+		return fmt.Errorf("unknown merge mode %q", file.Mode)
+	}
 	if err != nil {
 		return err
 	}
 	if !changed {
 		return nil
 	}
-	dir := filepath.Dir(outPath)
+	dir := filepath.Dir(file.Path)
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return err
 	}
 	// MkdirAll honors umask, which strips group/other write on most distros.
-	// Force 0o777 so a non-root agent container sharing this volume can still
+	// Force 0o777 so a non-root agent container sharing this volume can
 	// create sibling files (gh CLI writes state.yml, hosts.yml.lock, etc.).
 	if err := os.Chmod(dir, 0o777); err != nil {
 		return err
 	}
-	tmp := outPath + ".tmp"
-	// 0o666 so a non-root agent can also edit hosts.yml in place — fill-if-missing
+	tmp := file.Path + ".tmp"
+	// 0o666 so a non-root agent can also edit in place — fill-if-missing
 	// preserves their changes on the next sync.
 	if err := os.WriteFile(tmp, merged, 0o666); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, outPath); err != nil {
+	if err := os.Rename(tmp, file.Path); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
-	slog.Info("config-sync wrote hosts.yml", "path", outPath, "hosts", len(conns))
+	slog.Info("config-sync wrote file", "path", file.Path, "fragments", len(file.Fragments))
 	return nil
 }

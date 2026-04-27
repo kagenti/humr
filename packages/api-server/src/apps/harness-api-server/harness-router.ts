@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import {
-  mountGhEnterpriseEventsRoute,
-  type GhEnterpriseEventsDeps,
-} from "./gh-enterprise-events.js";
+  mountConnectorFilesEventsRoute,
+  type ConnectorFilesEventsDeps,
+} from "./connector-files-events.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -24,7 +24,7 @@ export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
   handleTrigger: (req: TriggerRequest) => Promise<TriggerResult>;
-  ghEnterprise: Pick<GhEnterpriseEventsDeps, "bus" | "fetchSnapshot">;
+  connectorFiles: Pick<ConnectorFilesEventsDeps, "bus" | "fetchSnapshot">;
 }) {
   const app = new Hono();
 
@@ -38,10 +38,10 @@ export function createHarnessRouter(deps: {
   });
 
   mountMcpRoutes(app, { channelManager: deps.channelManager, k8s: deps.k8s });
-  mountGhEnterpriseEventsRoute(app, {
+  mountConnectorFilesEventsRoute(app, {
     k8s: deps.k8s,
-    bus: deps.ghEnterprise.bus,
-    fetchSnapshot: deps.ghEnterprise.fetchSnapshot,
+    bus: deps.connectorFiles.bus,
+    fetchSnapshot: deps.connectorFiles.fetchSnapshot,
   });
 
   return app;

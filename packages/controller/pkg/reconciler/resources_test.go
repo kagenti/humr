@@ -232,7 +232,7 @@ func TestBuildStatefulSet_ConfigSyncSidecar(t *testing.T) {
 	assert.Equal(t, "humr-config-sync", sidecar.Name)
 	assert.Equal(t, cfg.ControllerImage, sidecar.Image)
 	assert.Contains(t, sidecar.Args,
-		"--events-url=http://humr-apiserver.default.svc:4001/api/instances/my-instance/gh-enterprise/events")
+		"--events-url=http://humr-apiserver.default.svc:4001/api/instances/my-instance/connector-files/events")
 	// Per-instance auth comes from the same Secret as the agent.
 	assert.Equal(t, "humr-agent-my-agent-token", sidecar.Env[0].ValueFrom.SecretKeyRef.Name)
 	// Agent + sidecar share the gh-config emptyDir at the same mount path.

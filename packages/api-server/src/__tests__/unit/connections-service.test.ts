@@ -239,9 +239,9 @@ describe("ConnectionsService.setAgentConnections", () => {
     expect(calls).toEqual([{ uuid: "uuid", ids: [] }]);
   });
 
-  it("publishes an upsert with the current github-enterprise grants on grant change", async () => {
+  it("publishes an upsert with rendered connector-files on grant change", async () => {
     const agent: OnecliAgent = { id: "uuid", identifier: "my-agent" };
-    const events: { agentName: string; kind: string; connections: unknown[] }[] = [];
+    const events: { agentName: string; kind: string; files: unknown[] }[] = [];
     const svc = createConnectionsService({
       port: makePort({
         findAgentByIdentifier: async () => agent,
@@ -251,20 +251,34 @@ describe("ConnectionsService.setAgentConnections", () => {
           { id: "c-3", provider: "github-enterprise", metadata: { baseUrl: "https://other.example.com" } },
         ],
       }),
-      ghEnterpriseBus: {
+      connectorFilesBus: {
         subscribe: () => () => {},
-        publish: (agentName, e) => events.push({ agentName, kind: e.kind, connections: e.connections }),
+        publish: (agentName, e) => events.push({ agentName, kind: e.kind, files: e.files }),
       },
     });
 
     await svc.setAgentConnections("my-agent", ["c-1", "c-2"]);
     // Only the granted github-enterprise row makes it onto the wire — c-2
-    // filtered as non-enterprise, c-3 filtered as not-granted.
+    // filtered by the registry (no provider entry), c-3 filtered as not granted.
     expect(events).toEqual([
       {
         agentName: "my-agent",
         kind: "upsert",
-        connections: [{ host: "ghe.example.com", username: "alice" }],
+        files: [
+          {
+            path: "/home/agent/.config/gh/hosts.yml",
+            mode: "yaml-fill-if-missing",
+            fragments: [
+              {
+                "ghe.example.com": {
+                  oauth_token: "humr:sentinel",
+                  git_protocol: "https",
+                  user: "alice",
+                },
+              },
+            ],
+          },
+        ],
       },
     ]);
   });

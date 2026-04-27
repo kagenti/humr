@@ -1,7 +1,6 @@
-// Package configsync renders the agent pod's gh CLI hosts.yml from
-// github-enterprise app connections, on the "fill-if-missing" rule:
-// new hosts get full entries; existing host entries are never destructively
-// rewritten.
+// Package configsync materializes connector-declared files in the agent pod
+// from SSE events pushed by the api-server. Generic over file paths and merge
+// modes; see docs/adrs/DRAFT-connector-files-push.md.
 package configsync
 
 import (
@@ -10,20 +9,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// HostEntry is one connection as seen on the wire (snapshot/upsert event payload).
-type HostEntry struct {
-	Host     string `json:"host"`
-	Username string `json:"username,omitempty"`
-}
+// Fragment is one connection's contribution to a file, deserialized from JSON.
+// Shape depends on the file's merge mode (for yaml-fill-if-missing it's a
+// top-level YAML mapping).
+type Fragment = map[string]any
 
-// Merge applies fill-if-missing upserts of conns into existing hosts.yml content.
-// For each connection: absent host gets a full entry (oauth_token, git_protocol,
-// user); present host gets only the fields that are currently missing.
-// Never deletes, never overwrites a present field.
+// MergeYAMLFillIfMissing applies fragments to existing YAML content using the
+// fill-if-missing rule: new top-level keys are added; existing keys whose
+// value is a mapping have their missing fields filled. Never overwrites a
+// present field; never deletes anything.
 //
-// Returns the new content and whether anything actually changed. When unchanged,
-// the original bytes are returned verbatim so the caller can skip the write.
-func Merge(existing []byte, conns []HostEntry) ([]byte, bool, error) {
+// Returns the new content and whether anything actually changed. When
+// unchanged, the original bytes are returned verbatim so the caller can skip
+// the write entirely.
+func MergeYAMLFillIfMissing(existing []byte, fragments []Fragment) ([]byte, bool, error) {
 	var doc yaml.Node
 	if len(bytes.TrimSpace(existing)) > 0 {
 		if err := yaml.Unmarshal(existing, &doc); err != nil {
@@ -38,44 +37,23 @@ func Merge(existing []byte, conns []HostEntry) ([]byte, bool, error) {
 	}
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		// Existing file was something other than a mapping (e.g. `null` or a
-		// list). Treat as empty and rebuild — gh CLI couldn't have used it anyway.
+		// Existing file was something other than a mapping (`null`, list,
+		// scalar). Treat as empty and rebuild — the merge target needs a
+		// mapping at the top level.
 		root.Kind = yaml.MappingNode
 		root.Content = nil
 		root.Tag = ""
 	}
 
 	changed := false
-	for _, c := range conns {
-		if c.Host == "" {
-			continue
-		}
-		_, hostNode := findKey(root, c.Host)
-		if hostNode == nil {
-			entry := &yaml.Node{Kind: yaml.MappingNode}
-			setIfMissing(entry, "oauth_token", "humr:sentinel")
-			setIfMissing(entry, "git_protocol", "https")
-			if c.Username != "" {
-				setIfMissing(entry, "user", c.Username)
+	for _, f := range fragments {
+		for key, value := range f {
+			if key == "" {
+				continue
 			}
-			root.Content = append(root.Content,
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: c.Host},
-				entry,
-			)
-			changed = true
-			continue
-		}
-		if hostNode.Kind != yaml.MappingNode {
-			continue
-		}
-		if setIfMissing(hostNode, "oauth_token", "humr:sentinel") {
-			changed = true
-		}
-		if setIfMissing(hostNode, "git_protocol", "https") {
-			changed = true
-		}
-		if c.Username != "" && setIfMissing(hostNode, "user", c.Username) {
-			changed = true
+			if mergeKey(root, key, value) {
+				changed = true
+			}
 		}
 	}
 
@@ -93,6 +71,37 @@ func Merge(existing []byte, conns []HostEntry) ([]byte, bool, error) {
 	return buf.Bytes(), true, nil
 }
 
+// mergeKey upserts (key, value) into root with fill-if-missing semantics.
+// Returns true if a write actually happened.
+func mergeKey(root *yaml.Node, key string, value any) bool {
+	_, existing := findKey(root, key)
+	if existing == nil {
+		// Key absent — add the full value.
+		root.Content = append(root.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+			toNode(value),
+		)
+		return true
+	}
+	// Key present and the new value is a mapping → fill missing children.
+	asMap, ok := value.(map[string]any)
+	if !ok || existing.Kind != yaml.MappingNode {
+		return false
+	}
+	changed := false
+	for k, v := range asMap {
+		if _, child := findKey(existing, k); child != nil {
+			continue
+		}
+		existing.Content = append(existing.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k},
+			toNode(v),
+		)
+		changed = true
+	}
+	return changed
+}
+
 func findKey(m *yaml.Node, key string) (*yaml.Node, *yaml.Node) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if m.Content[i].Value == key {
@@ -102,13 +111,18 @@ func findKey(m *yaml.Node, key string) (*yaml.Node, *yaml.Node) {
 	return nil, nil
 }
 
-func setIfMissing(m *yaml.Node, key, value string) bool {
-	if _, v := findKey(m, key); v != nil {
-		return false
+// toNode converts a JSON-decoded value to a yaml.Node. yaml.v3 round-trips
+// most shapes via Marshal/Unmarshal; we use that to avoid hand-walking nested
+// types. Errors here would only come from non-marshalable values, which
+// shouldn't appear in JSON-sourced fragments.
+func toNode(v any) *yaml.Node {
+	b, err := yaml.Marshal(v)
+	if err != nil {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null"}
 	}
-	m.Content = append(m.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value},
-	)
-	return true
+	var n yaml.Node
+	if err := yaml.Unmarshal(b, &n); err != nil || len(n.Content) == 0 {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null"}
+	}
+	return n.Content[0]
 }

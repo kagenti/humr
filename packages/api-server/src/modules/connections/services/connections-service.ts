@@ -5,8 +5,9 @@ import type {
   ConnectionsService,
 } from "api-server-api";
 import type { OnecliConnectionsPort } from "../infrastructure/onecli-connections-port.js";
-import type { GhEnterpriseBus } from "./gh-enterprise-bus.js";
-import { toGhEnterpriseHosts } from "./gh-enterprise-snapshot.js";
+import type { ConnectorFilesBus } from "../../connector-files/bus.js";
+import { renderFiles } from "../../connector-files/render.js";
+import { connectorFilesRegistry } from "../../connector-files/registry.js";
 
 export function normalizeStatus(
   raw: string | null | undefined,
@@ -42,10 +43,11 @@ export function extractIdentity(
 export function createConnectionsService(deps: {
   port: OnecliConnectionsPort;
   /**
-   * Optional bus for publishing github-enterprise hosts.yml updates to
-   * agent pod sidecars. Omit in tests or when SSE delivery isn't wired.
+   * Optional bus for publishing connector-files updates to agent pod
+   * sidecars (see DRAFT-connector-files-push). Omit in tests or when SSE
+   * delivery isn't wired.
    */
-  ghEnterpriseBus?: GhEnterpriseBus;
+  connectorFilesBus?: ConnectorFilesBus;
 }): ConnectionsService {
   return {
     async list() {
@@ -86,23 +88,24 @@ export function createConnectionsService(deps: {
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
 
-      // Push the github-enterprise subset to subscribed pod sidecars so
-      // `gh auth status` reflects the change without rolling the pod.
-      // Spec: never delete; the sidecar's "fill-if-missing" merge handles
-      // re-grants idempotently, so we send the full current granted set
-      // rather than computing a diff. Revokes intentionally emit nothing —
-      // old hosts linger in hosts.yml until manually edited.
-      const bus = deps.ghEnterpriseBus;
+      // Push the rendered connector-files to subscribed pod sidecars so
+      // managed files reflect the change without rolling the pod. The
+      // sidecar's fill-if-missing merge handles re-grants idempotently, so
+      // we send the full current granted set rather than computing a diff.
+      // Revokes intentionally emit nothing — entries linger in the file
+      // until manually edited (per DRAFT-connector-files-push).
+      const bus = deps.connectorFilesBus;
       if (bus) {
         const granted = new Set(deduped);
         const all = await deps.port.listAppConnections();
-        const ghe = toGhEnterpriseHosts(
+        const files = renderFiles(
           all
-            .filter((c) => c.provider === "github-enterprise" && granted.has(c.id))
+            .filter((c) => granted.has(c.id))
             .map((c) => ({ id: c.id, provider: c.provider, metadata: c.metadata })),
+          connectorFilesRegistry,
         );
-        if (ghe.length > 0) {
-          bus.publish(agentName, { kind: "upsert", connections: ghe });
+        if (files.length > 0) {
+          bus.publish(agentName, { kind: "upsert", files });
         }
       }
     },
