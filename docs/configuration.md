@@ -1,8 +1,8 @@
-# Guide
+# Configuration
 
-Reference for [Humr](../README.md), a Kubernetes platform for running background coding agents.
+How to configure [Humr](../README.md) after installation: secrets for the credential gateway, Slack integration, and the development-mode toggle. For *what* Humr is and how it's built, see the [architecture docs](architecture.md).
 
-## Configuration
+## Secrets
 
 Agents and other connections require API tokens to communicate with their providers. These secrets are managed through the OneCLI dashboard at [onecli.localhost:4444](http://onecli.localhost:4444).
 
@@ -33,7 +33,7 @@ Humr runs a single Slack app (Socket Mode) for the entire installation. Multiple
 
 **Access control** — per-instance allowed-users list (empty = open to all channel members). Unauthorized users get an ephemeral rejection.
 
-## Development
+## Development mode
 
 ```sh
 mise run check              # lint + type-check
@@ -42,13 +42,3 @@ mise run ui:run             # start UI dev server
 ```
 
 Humr detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.
-
-## Architecture
-
-- **Controller** (Go) — K8s reconciler + cron scheduler
-- **API Server** (TypeScript) — REST API + ACP WebSocket relay + serves UI
-- **Agent Runtime** (TypeScript) — ACP server inside each agent pod
-- **OneCLI** — credential injection proxy, network policy enforcement
-- **Web UI** (React) — instance management, chat, scheduling
-
-See [Security Model](security-model.md) for how these components defend against agent compromise.

@@ -2,19 +2,18 @@
 
 Humr — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
-### Monorepo Structure
+### Monorepo layout
 
-pnpm workspaces + standalone Go module:
-- `packages/agent-runtime/` — ACP WebSocket server + trigger watcher inside agent pods
-- `packages/agent-runtime-api/` — tRPC router definitions for agent-runtime
-- `packages/humr-base/` — shared base image/utilities
-- `packages/agents/claude-code/` — default Claude Code agent image
-- `packages/agents/google-workspace/` — Google Workspace agent (Drive, Gmail via gws CLI)
+pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architecture/`](docs/architecture/); this is just orientation:
+
 - `packages/controller/` — Go K8s reconciler + scheduler
+- `packages/api-server/` + `packages/api-server-api/` — TypeScript API server (tRPC, ACP relay) and its contract package
+- `packages/agent-runtime/` + `packages/agent-runtime-api/` — in-pod ACP WebSocket server and its contract package
+- `packages/agents/` — per-harness agent images (`claude-code`, `pi-agent`, `google-workspace`, `code-guardian`)
 - `packages/ui/` — React chat interface (Vite)
+- `packages/humr-base/` — shared base image/utilities
+- `packages/db/` — database schema and migrations
 - `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
-
-Together, `agent-runtime` + `agent-runtime-api` form the agent runtime — the ACP WebSocket server that runs inside each agent pod.
 
 ## Workflow
 
@@ -50,21 +49,11 @@ Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run
 
 ## Architecture
 
-Three-tier K8s platform:
-1. **Controller** (Go) — watches ConfigMaps, reconciles StatefulSets/Services/NetworkPolicies, runs cron scheduler
-2. **API Server** (TypeScript) — REST CRUD for instances/templates/schedules, WebSocket ACP relay to agent pods
-3. **Agent Runtime** (TypeScript, `agent-runtime` + `agent-runtime-api`) — ACP WebSocket server inside agent pods
+**Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page and the ADRs it links. Do not infer the architecture from the code alone — the docs are the source of truth for *why* the system is shaped the way it is.
 
-Infrastructure:
-- **OneCLI** — credential injection proxy (MITM), single container with Rust gateway + Node.js web dashboard
-- **cert-manager** — generates self-signed ECDSA CA (PKCS8) for OneCLI MITM TLS
-- **PostgreSQL** — OneCLI's internal dependency
+## Documentation
 
-K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent-instance, agent-schedule). Each ConfigMap uses `spec.yaml` (API Server writes) and `status.yaml` (Controller writes) keys to avoid write contention. Not CRDs — deployable without cluster-admin.
-
-## Key Design Decisions
-
-Architecture Decision Records live in [`docs/adrs/`](docs/adrs/) — see [`docs/adrs/index.md`](docs/adrs/index.md) for the full list. Use the `/adr` skill to create and manage ADRs. Always check existing ADRs before proposing architectural changes.
+Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
 
 ## UI (`packages/ui`)
 

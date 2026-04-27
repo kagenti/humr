@@ -8,7 +8,7 @@ argument-hint: "[what the issue is about]"
 
 # File an Issue
 
-Draft a GitHub issue and file it after the user approves. For the content shape — what belongs in an issue, what doesn't, and the template — follow [docs/issue-guidelines.md](docs/issue-guidelines.md). This skill layers the workflow (understand → research → dedupe → draft → approve → file) on top of those guidelines.
+Draft a GitHub issue and file it after the user approves. For the content shape — what belongs in an issue, what doesn't, and the template — follow [docs/guidelines/issue-guidelines.md](docs/guidelines/issue-guidelines.md). This skill layers the workflow (understand → research → dedupe → draft → approve → file) on top of those guidelines.
 
 ## Workflow
 
@@ -26,7 +26,7 @@ Draft a GitHub issue and file it after the user approves. For the content shape 
 
    Use multiple keyword variations drawn from the user's request. If you find a plausible duplicate or closely-related issue, surface it to the user with a one-line summary and ask how to proceed — options include: add a comment to the existing issue, file a new one anyway with a cross-link, or close the request as already-tracked. Do not silently file a duplicate.
 
-4. **Draft inline.** Produce the draft following [docs/issue-guidelines.md](../../../docs/issue-guidelines.md). Present the full draft (title + body) in the chat. Do not file yet.
+4. **Draft inline.** Produce the draft following [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md). Present the full draft (title + body) in the chat. Do not file yet.
 
 5. **Get explicit approval.** Ask whether to file as-is or revise. NEVER file without explicit approval.
 
