@@ -188,9 +188,9 @@ function SessionRow({
           >
             {s.title || s.sessionId.slice(0, 12)}
           </span>
-          {s.type === SessionType.ChannelSlack && (
+          {(s.type === SessionType.ChannelSlack || s.type === SessionType.ChannelTelegram) && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
-              slack
+              {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}
             </span>
           )}
         </div>
