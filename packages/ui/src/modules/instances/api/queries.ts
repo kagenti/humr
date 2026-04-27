@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { platform } from "../../../platform.js";
-import { trpc } from "../../../trpc.js";
 
 export const instancesKeys = {
   root: ["instances"] as const,
@@ -28,12 +27,3 @@ export function useInstances() {
     meta: { errorToast: "Can't reach the server — instance list may be stale" },
   });
 }
-
-// Mutations that mutate instances invalidate both the list and the
-// channel-available combined query via this key.
-export const instancesListQueryKey = instancesKeys.listWithChannels;
-
-// Re-export the tRPC list key so consumers that cross into the agents flow
-// (createAgent mutates both agents.list and instances.list) can invalidate
-// the right thing without knowing the internal key shape.
-export const instancesTrpcListKey = trpc.instances.list.queryKey;

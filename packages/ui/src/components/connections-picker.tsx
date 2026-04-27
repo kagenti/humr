@@ -215,17 +215,17 @@ function SecretItemRow({
   const envNames = secret.envMappings?.map((m) => m.envName) ?? [];
   return (
     <label
-      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
+      className={`flex items-start gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
         checked ? "border-accent bg-accent-light" : "border-border-light"
       }`}
     >
       <input
         type="checkbox"
-        className="accent-[var(--color-accent)] w-4 h-4"
+        className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
         checked={checked}
         onChange={onToggle}
       />
-      <Lock size={14} className="text-text-secondary shrink-0 self-start mt-0.5" />
+      <Lock size={14} className="text-text-secondary shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-text truncate">
           {secret.name}

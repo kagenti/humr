@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
@@ -17,9 +17,21 @@ export function useAgents() {
 export function useAgentAccess(agentId: string | null) {
   return useQuery({
     ...trpc.secrets.getAgentAccess.queryOptions(
-      agentId ? { agentName: agentId } : undefined!,
+      agentId ? { agentName: agentId } : skipToken,
     ),
-    enabled: !!agentId,
+    retry: false,
+  });
+}
+
+/**
+ * Per-agent app-connection grants. Same OneCLI-sync lag as {@link useAgentAccess},
+ * so errors stay silent and initial data defaults to an empty grant list.
+ */
+export function useAgentConnections(agentId: string | null) {
+  return useQuery({
+    ...trpc.connections.getAgentConnections.queryOptions(
+      agentId ? { agentName: agentId } : skipToken,
+    ),
     retry: false,
   });
 }

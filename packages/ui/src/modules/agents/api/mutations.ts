@@ -83,6 +83,26 @@ export function useUpdateAgent() {
   });
 }
 
+export function useSetAgentAccess() {
+  return useMutation({
+    ...trpc.secrets.setAgentAccess.mutationOptions(),
+    meta: {
+      invalidates: [trpc.secrets.getAgentAccess.queryKey()],
+      errorToast: "Failed to update credential access",
+    },
+  });
+}
+
+export function useSetAgentConnections() {
+  return useMutation({
+    ...trpc.connections.setAgentConnections.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.getAgentConnections.queryKey()],
+      errorToast: "Failed to update app connections",
+    },
+  });
+}
+
 /**
  * Imperative fetch of per-agent access, used by consumers (e.g. MCP picker)
  * that need the data outside a component render.
