@@ -3,6 +3,8 @@ import { Send as SendIcon, Square, Paperclip, X, FileText as FileIcon } from "lu
 import type { Attachment } from "../types.js";
 import { useAutoResize } from "../hooks/use-auto-resize.js";
 import { isMobile } from "../lib/breakpoints.js";
+import { MAX_UPLOAD_BYTES } from "../modules/files/api/queries.js";
+import { useStore } from "../store.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -54,11 +56,18 @@ export function ChatInput({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const showToast = useStore((s) => s.showToast);
 
   useAutoResize(textareaRef, input);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     for (const file of Array.from(files)) {
+      // Mirror the server-side 10 MB cap so oversized files never get
+      // base64-encoded into memory just to fail on upload.
+      if (file.size > MAX_UPLOAD_BYTES) {
+        showToast({ kind: "error", message: `${file.name} exceeds 10 MB — skipped` });
+        continue;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result as string;
@@ -72,7 +81,7 @@ export function ChatInput({
       };
       reader.readAsDataURL(file);
     }
-  }, []);
+  }, [showToast]);
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
