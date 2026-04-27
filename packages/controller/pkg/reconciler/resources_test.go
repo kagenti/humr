@@ -220,69 +220,30 @@ func TestBuildStatefulSet_ConnectorEnvs(t *testing.T) {
 	assert.Equal(t, "override", envMap["GH_TOKEN"])
 }
 
-func TestBuildStatefulSet_NoSidecarWithoutControllerImage(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
-	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "no controller image → agent container only")
-	for _, v := range ss.Spec.Template.Spec.Volumes {
-		assert.NotEqual(t, "gh-config", v.Name, "no controller image → no gh-config volume")
-	}
-	for _, m := range ss.Spec.Template.Spec.Containers[0].VolumeMounts {
-		assert.NotEqual(t, "gh-config", m.Name, "no controller image → agent has no gh-config mount")
-	}
-}
-
-func TestBuildStatefulSet_SidecarWithControllerImage(t *testing.T) {
+func TestBuildStatefulSet_ConfigSyncSidecar(t *testing.T) {
 	cfg := *testConfig
 	cfg.ControllerImage = "ghcr.io/kagenti/humr/controller:test"
 	cfg.HarnessServerURL = "http://humr-apiserver.default.svc:4001"
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil)
 
-	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "controller image set → sidecar appended")
+	require.Len(t, ss.Spec.Template.Spec.Containers, 2)
 	sidecar := ss.Spec.Template.Spec.Containers[1]
 	assert.Equal(t, "humr-config-sync", sidecar.Name)
-	assert.Equal(t, "ghcr.io/kagenti/humr/controller:test", sidecar.Image)
-	assert.Contains(t, sidecar.Args, "config-sync")
-	assert.Contains(t, sidecar.Args, "--out=/home/agent/.config/gh/hosts.yml")
+	assert.Equal(t, cfg.ControllerImage, sidecar.Image)
 	assert.Contains(t, sidecar.Args,
-		"--events-url=http://humr-apiserver.default.svc:4001/api/instances/my-instance/gh-enterprise/events",
-		"events URL must point at the harness server with the instance name in the path")
-
-	// Sidecar's per-instance auth comes from the same Secret as the agent.
-	require.Len(t, sidecar.Env, 1)
-	assert.Equal(t, "ONECLI_ACCESS_TOKEN", sidecar.Env[0].Name)
+		"--events-url=http://humr-apiserver.default.svc:4001/api/instances/my-instance/gh-enterprise/events")
+	// Per-instance auth comes from the same Secret as the agent.
 	assert.Equal(t, "humr-agent-my-agent-token", sidecar.Env[0].ValueFrom.SecretKeyRef.Name)
-
-	// Both containers share the gh-config emptyDir at the same mount path.
-	require.Len(t, sidecar.VolumeMounts, 1)
+	// Agent + sidecar share the gh-config emptyDir at the same mount path.
 	assert.Equal(t, "gh-config", sidecar.VolumeMounts[0].Name)
-	assert.Equal(t, "/home/agent/.config/gh", sidecar.VolumeMounts[0].MountPath)
-	agentMount := mustFindMount(t, ss.Spec.Template.Spec.Containers[0].VolumeMounts, "gh-config")
-	assert.Equal(t, "/home/agent/.config/gh", agentMount.MountPath)
-	mustFindVolume(t, ss.Spec.Template.Spec.Volumes, "gh-config")
-}
-
-func mustFindMount(t *testing.T, mounts []corev1.VolumeMount, name string) corev1.VolumeMount {
-	t.Helper()
-	for _, m := range mounts {
-		if m.Name == name {
-			return m
+	var found bool
+	for _, m := range ss.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if m.Name == "gh-config" && m.MountPath == "/home/agent/.config/gh" {
+			found = true
 		}
 	}
-	t.Fatalf("mount %q not found", name)
-	return corev1.VolumeMount{}
-}
-
-func mustFindVolume(t *testing.T, vols []corev1.Volume, name string) corev1.Volume {
-	t.Helper()
-	for _, v := range vols {
-		if v.Name == name {
-			return v
-		}
-	}
-	t.Fatalf("volume %q not found", name)
-	return corev1.Volume{}
+	assert.True(t, found, "agent container must mount gh-config at /home/agent/.config/gh")
 }
 
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {

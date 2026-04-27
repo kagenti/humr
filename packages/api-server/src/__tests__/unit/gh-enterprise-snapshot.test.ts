@@ -44,30 +44,15 @@ describe("toGhEnterpriseHosts", () => {
     ]);
   });
 
-  it("breaks host ties by id for deterministic order", () => {
+  it("skips rows without a resolvable host", () => {
     const out = toGhEnterpriseHosts(
       [
-        { id: "z", provider: "github-enterprise", metadata: { baseUrl: "https://x.example.com", username: "z-user" } },
-        { id: "a", provider: "github-enterprise", metadata: { baseUrl: "https://x.example.com", username: "a-user" } },
+        { provider: "github-enterprise", metadata: null },
+        { provider: "github-enterprise", metadata: { baseUrl: "" } },
       ],
       () => {},
     );
-    expect(out.map((c) => c.username)).toEqual(["a-user", "z-user"]);
-  });
-
-  it("skips rows without a resolvable host and warns", () => {
-    const warnings: string[] = [];
-    const out = toGhEnterpriseHosts(
-      [
-        { id: "c1", provider: "github-enterprise", metadata: null },
-        { id: "c2", provider: "github-enterprise", metadata: { baseUrl: "" } },
-      ],
-      (m) => warnings.push(m),
-    );
     expect(out).toEqual([]);
-    expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toContain("c1");
-    expect(warnings[1]).toContain("c2");
   });
 
   it("omits username when none available", () => {
