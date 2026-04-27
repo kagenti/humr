@@ -60,8 +60,8 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 
 Higher-level documents that frame *what* Humr is trying to be, separate from how the current system is built:
 
-- [Multiplayer model](multi-player.md) — what's private to each user, what's shared via channels, and what's install-wide plumbing.
-- [Security model](security-model.md) — the three structural risks of running AI agents, and which ones Humr addresses today.
+- [Multiplayer model](strategy/multi-player.md) — what's private to each user, what's shared via channels, and what's install-wide plumbing.
+- [Security model](strategy/security-model.md) — the three structural risks of running AI agents, and which ones Humr addresses today.
 
 ## Decisions
 

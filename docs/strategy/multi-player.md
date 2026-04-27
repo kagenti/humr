@@ -79,5 +79,5 @@ That may change in the future — the design leaves room for it. For now, the mo
 ## References
 
 - [Security model](security-model.md) — what keeps the agent from escaping or exfiltrating; the companion to this doc.
-- [Ubiquitous language](../tseng/vocabulary.md) — canonical definitions for *channel*, *instance*, *fork*, *foreign replier*.
-- ADRs: [005](adrs/005-credential-gateway.md) credential gateway · [006](adrs/006-configmaps-over-crds.md) ConfigMaps over CRDs · [015](adrs/015-multi-user-auth.md) multi-user auth · [017](adrs/017-db-backed-sessions.md) DB-backed sessions · [018](adrs/018-slack-integration.md) Slack channel · [025](adrs/025-thread-session.md) session per conversation · [027](adrs/027-slack-user-impersonation.md) foreign-replier forks · [029](adrs/029-per-instance-channels.md) per-instance channels.
+- [Ubiquitous language](../../tseng/vocabulary.md) — canonical definitions for *channel*, *instance*, *fork*, *foreign replier*.
+- ADRs: [005](../adrs/005-credential-gateway.md) credential gateway · [006](../adrs/006-configmaps-over-crds.md) ConfigMaps over CRDs · [015](../adrs/015-multi-user-auth.md) multi-user auth · [017](../adrs/017-db-backed-sessions.md) DB-backed sessions · [018](../adrs/018-slack-integration.md) Slack channel · [025](../adrs/025-thread-session.md) session per conversation · [027](../adrs/027-slack-user-impersonation.md) foreign-replier forks · [029](../adrs/029-per-instance-channels.md) per-instance channels.

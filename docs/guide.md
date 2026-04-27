@@ -51,4 +51,4 @@ Humr detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioni
 - **OneCLI** — credential injection proxy, network policy enforcement
 - **Web UI** (React) — instance management, chat, scheduling
 
-See [Security Model](security-model.md) for how these components defend against agent compromise.
+See [Security Model](strategy/security-model.md) for how these components defend against agent compromise.

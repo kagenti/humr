@@ -123,7 +123,7 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
 
 ### 3. The only working route is the proxy — and it knows who you are
 
-Put those two together: no credentials, no route out except the proxy. The chat still worked — OneCLI identified the agent, found the right secret, put it on the wire, forwarded. That's the security model. Not "we trust the agent." Structural. [Read the full security model →](docs/security-model.md)
+Put those two together: no credentials, no route out except the proxy. The chat still worked — OneCLI identified the agent, found the right secret, put it on the wire, forwarded. That's the security model. Not "we trust the agent." Structural. [Read the full security model →](docs/strategy/security-model.md)
 
 ### 4. Pod killed, session restored
 
