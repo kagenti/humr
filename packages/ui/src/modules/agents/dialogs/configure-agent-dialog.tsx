@@ -65,7 +65,7 @@ export function ConfigureAgentDialog({
         envVars: userInitialEnv,
       },
     });
-  const { errors, isDirty, dirtyFields, isSubmitting, isValid } = formState;
+  const { errors, isDirty, dirtyFields, isSubmitting } = formState;
   const saving = isSubmitting;
 
   // Baseline once the initial fetches resolve. `reset` adopts the new values
@@ -278,7 +278,7 @@ export function ConfigureAgentDialog({
           </button>
           <button
             type="submit"
-            className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             disabled={isSubmitDisabled}
             title={!isDirty ? "Nothing to save" : undefined}
           >
