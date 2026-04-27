@@ -44,16 +44,21 @@ flowchart LR
   external[external services]
 
   browser -->|user JWT| api-server
-  api-server -->|delegate| keycloak
+
+  api-server -->|RFC 8693 delegation<br/>subject_token = user JWT| keycloak
+  keycloak -->|onecli-audience token<br/>same sub| api-server
   api-server -->|user-scoped calls| onecli-api
-  controller -->|impersonate owner| keycloak
+
+  controller -->|RFC 8693 impersonation<br/>requested_subject = owner| keycloak
+  keycloak -->|onecli-audience token<br/>owner sub| controller
   controller -->|provision per-agent token| onecli-api
+
   controller -->|mount token Secret| agentpod
   agent-runtime -->|opaque token| onecli-gw
   onecli-gw -->|inject credentials| external
 ```
 
-Both edges into Keycloak are RFC 8693 token exchanges, but with different grants: api-server **delegates** (carries the user's JWT to a new audience, same `sub`); the controller **impersonates** (uses its own service-account token plus `requested_subject = owner`). In both cases OneCLI receives a Keycloak-signed token bearing the owning user's `sub` and scopes everything to that user — neither the api-server nor the controller asserts identity directly.
+Both edges into Keycloak are RFC 8693 exchanges with different grants — delegation needs an existing user JWT, impersonation does not — but in both cases OneCLI receives a Keycloak-signed token bearing the owning user's `sub`. Neither the api-server nor the controller asserts identity directly.
 
 ## Identity
 
@@ -170,7 +175,8 @@ flowchart LR
 
   forker -->|user JWT| api-server
   api-server -->|create agent-fork| controller
-  controller -->|impersonate forker<br/>not parent| keycloak
+  controller -->|RFC 8693 impersonation<br/>requested_subject = forker| keycloak
+  keycloak -->|onecli-audience token<br/>forker sub| controller
   controller -->|provision fork token| onecli-api
   controller -->|mount token + parent PVC| forkpod
 
