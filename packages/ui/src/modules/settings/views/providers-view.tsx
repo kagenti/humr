@@ -1,20 +1,21 @@
+import { Check, Copy, Pencil,RefreshCw, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useStore } from "../store.js";
-import { platform } from "../platform.js";
+
+import { platform } from "../../../platform.js";
+import { useStore } from "../../../store.js";
 import {
-  ANTHROPIC_OAUTH_ENV_MAPPING,
   ANTHROPIC_API_KEY_ENV_MAPPING,
+  ANTHROPIC_OAUTH_ENV_MAPPING,
   type EnvMapping,
   type SecretView,
-} from "../types.js";
-import { Sparkles, RefreshCw, X, Copy, Check, Pencil } from "lucide-react";
-import { useAgents } from "../modules/agents/api/queries.js";
-import { useSecrets } from "../modules/secrets/api/queries.js";
+} from "../../../types.js";
+import { useAgents } from "../../agents/api/queries.js";
 import {
   useCreateSecret,
   useDeleteSecret,
   useUpdateSecret,
-} from "../modules/secrets/api/mutations.js";
+} from "../../secrets/api/mutations.js";
+import { useSecrets } from "../../secrets/api/queries.js";
 
 type Mode = "oauth" | "api-key";
 
