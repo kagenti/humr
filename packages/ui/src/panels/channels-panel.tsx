@@ -115,16 +115,52 @@ export function ChannelsPanel() {
           </label>
 
           {slackEnabled && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Channel ID</label>
-              <input
-                type="text"
-                value={channelId}
-                onChange={e => { setChannelId(e.target.value); setDirty(true); }}
-                placeholder="C0..."
-                className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
-              />
-            </div>
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Channel ID</label>
+                <input
+                  type="text"
+                  value={channelId}
+                  onChange={e => { setChannelId(e.target.value); setDirty(true); }}
+                  placeholder="C0..."
+                  className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Allowed users</label>
+                {users.length === 0 && (
+                  <span className="text-[12px] text-text-muted italic">Unrestricted — any linked Slack user can interact</span>
+                )}
+                <div className="flex flex-col gap-1">
+                  {users.map(u => (
+                    <div key={u} className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1">
+                      <span className="flex-1 text-[12px] font-mono text-text truncate">{u}</span>
+                      <button onClick={() => removeUser(u)} className="text-text-muted hover:text-danger shrink-0">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-1 mt-1">
+                  <input
+                    type="email"
+                    value={userInput}
+                    onChange={e => setUserInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
+                    placeholder="user@example.com"
+                    className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={addUser}
+                    disabled={!userInput.trim()}
+                    className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent disabled:opacity-30"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </fieldset>
       )}
@@ -179,40 +215,6 @@ export function ChannelsPanel() {
           )}
         </fieldset>
       )}
-
-      <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
-        <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Allowed users</legend>
-        {users.length === 0 && (
-          <span className="text-[12px] text-text-muted italic">Unrestricted — any linked user can interact</span>
-        )}
-        <div className="flex flex-col gap-1">
-          {users.map(u => (
-            <div key={u} className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1">
-              <span className="flex-1 text-[12px] font-mono text-text truncate">{u}</span>
-              <button onClick={() => removeUser(u)} className="text-text-muted hover:text-danger shrink-0">
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-1 mt-1">
-          <input
-            type="email"
-            value={userInput}
-            onChange={e => setUserInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
-            placeholder="user@example.com"
-            className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
-          />
-          <button
-            onClick={addUser}
-            disabled={!userInput.trim()}
-            className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent disabled:opacity-30"
-          >
-            <Plus size={12} />
-          </button>
-        </div>
-      </fieldset>
 
       <button
         onClick={save}
