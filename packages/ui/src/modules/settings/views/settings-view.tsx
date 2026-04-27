@@ -1,7 +1,8 @@
+import { LogOut,Monitor, Moon, Sun } from "lucide-react";
 import { useState } from "react";
-import { useStore } from "../store.js";
-import { getUser, logout } from "../auth.js";
-import { Sun, Moon, Monitor, LogOut } from "lucide-react";
+
+import { getUser, logout } from "../../../auth.js";
+import { useStore } from "../../../store.js";
 
 type Tab = "appearance" | "account";
 
