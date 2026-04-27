@@ -2,6 +2,19 @@
 
 Humr — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
+### Monorepo layout
+
+pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architecture/`](docs/architecture/); this is just orientation:
+
+- `packages/controller/` — Go K8s reconciler + scheduler
+- `packages/api-server/` + `packages/api-server-api/` — TypeScript API server (tRPC, ACP relay) and its contract package
+- `packages/agent-runtime/` + `packages/agent-runtime-api/` — in-pod ACP WebSocket server and its contract package
+- `packages/agents/` — per-harness agent images (`claude-code`, `pi-agent`, `google-workspace`, `code-guardian`)
+- `packages/ui/` — React chat interface (Vite)
+- `packages/humr-base/` — shared base image/utilities
+- `packages/db/` — database schema and migrations
+- `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
+
 ## Workflow
 
 mise is the task runner. All tasks are defined in `tasks.toml` files. **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break.
