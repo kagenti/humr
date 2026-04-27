@@ -1,7 +1,6 @@
 import { Check, Copy, Pencil,RefreshCw, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { platform } from "../../../platform.js";
 import { useStore } from "../../../store.js";
 import {
   ANTHROPIC_API_KEY_ENV_MAPPING,
@@ -13,6 +12,7 @@ import { useAgents } from "../../agents/api/queries.js";
 import {
   useCreateSecret,
   useDeleteSecret,
+  useTestAnthropic,
   useUpdateSecret,
 } from "../../secrets/api/mutations.js";
 import { useSecrets } from "../../secrets/api/queries.js";
@@ -212,11 +212,12 @@ function AnthropicForm({
   const [mode, setMode] = useState<Mode>(initialMode);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<
     { ok: true } | { ok: false; message: string } | null
   >(null);
   const testTokenRef = useRef(0);
+  const testAnthropic = useTestAnthropic();
+  const testing = testAnthropic.isPending;
 
   const error = mismatchError(value, mode);
   const sanitized = stripWhitespace(value);
@@ -241,10 +242,9 @@ function AnthropicForm({
   const test = async () => {
     if (!canSave) return;
     const token = ++testTokenRef.current;
-    setTesting(true);
     setTestResult(null);
     try {
-      const result = await platform.secrets.testAnthropic.mutate({
+      const result = await testAnthropic.mutateAsync({
         value: sanitized,
         envName: mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
       });
@@ -253,8 +253,6 @@ function AnthropicForm({
     } catch {
       if (token !== testTokenRef.current) return;
       setTestResult({ ok: false, message: "Could not verify credential." });
-    } finally {
-      setTesting(false);
     }
   };
 
