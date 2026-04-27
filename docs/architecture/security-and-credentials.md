@@ -7,7 +7,9 @@ Last verified: 2026-04-27
 - [ADR-005 — Gateway pattern for credentials](../adrs/005-credential-gateway.md) — the agent never sees a real upstream token; a gateway injects them on the wire
 - [ADR-010 — OneCLI deployment](../adrs/010-onecli-deployment.md) — OneCLI is the credential gateway; runs as a single Deployment with two Services, MITMs agent traffic with a cluster-issued CA
 - [ADR-015 — Multi-user authentication via Keycloak + OneCLI fork with token exchange](../adrs/015-multi-user-auth.md) — Keycloak is the IdP; api-server exchanges user JWTs for OneCLI-scoped tokens (RFC 8693); resources are owner-labelled
+- [ADR-018 — Slack integration](../adrs/018-slack-integration.md) — identity linking and the per-instance `allowedUsers` gate that decides who can drive a thread; foreign-replier detection runs against this list
 - [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition at pod start; the credential owner declares the env names, not the platform
+- [ADR-027 — Slack per-turn user impersonation](../adrs/027-slack-user-impersonation.md) — foreign repliers fork the instance into a per-turn Job; foreign-registration tokens are minted by the api-server and inlined into the fork ConfigMap
 - [ADR-028 — Configurable injection on generic secrets](../adrs/028-generic-secret-injection-config.md) — generic secrets carry their own host/path/header injection rules
 
 ## Overview
