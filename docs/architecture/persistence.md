@@ -87,7 +87,7 @@ ConfigMaps were chosen over CRDs so that Humr installs without cluster-admin —
 
 ### Per-instance PVCs
 
-Each `agent-instance` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the agent template's declared mounts ([ADR-001](../adrs/001-ephemeral-containers.md)). A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteMany` so that forks can attach to the same workspace as their parent.
+Each `agent-instance` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the agent template's declared mounts ([ADR-001](../adrs/001-ephemeral-containers.md)). A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteMany` so the workspace can be shared concurrently between the instance's original owner and a foreign user running a fork against it — both pods mount the same volume at the same time.
 
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
