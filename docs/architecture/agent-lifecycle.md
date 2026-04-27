@@ -12,6 +12,7 @@ Last verified: 2026-04-27
 - [ADR-026 — Persistent ACP sessions via per-session log](../adrs/026-session-log-replay.md) — the runtime owns the live replay log; the agent's on-disk store is the cold-start source
 - [ADR-027 — Slack user impersonation](../adrs/027-slack-user-impersonation.md) — channel-driven sessions carry per-user identity; channels never reach management endpoints
 - [ADR-031 — Schedules use RRULE for includes and quiet hours for exclusions](../adrs/031-schedule-rrule-quiet-hours.md) — recurrence semantics and suppression model
+- [ADR-032 — Centralized pod-reachability primitive](../adrs/032-pod-reachability-primitive.md) — observed pod `Ready` is the source of truth; every wake path routes through one primitive
 
 ## Overview
 
@@ -73,12 +74,14 @@ Pod env at start is the composition of connector-declared envs (OneCLI app/secre
 
 ### Wake
 
-`spec.desiredState` flips from `hibernated` to `running` and the controller scales the StatefulSet to one replica. Two paths trigger this:
+Every caller that sends work to a pod — the controller's schedule loop, the api-server's ACP relay, channel adapters — routes through a single reachability primitive ([ADR-032](../adrs/032-pod-reachability-primitive.md)). The primitive's contract: **observed pod `Ready` is the authoritative answer to "can I call this pod?"** `spec.desiredState` is user intent (running vs. hibernated) and continues to drive the reconciler, but it is no longer read as a reachability signal by callers. The primitive flips `desiredState` to `running` if needed, single-flights concurrent waits per instance, bumps the `humr.ai/last-activity` annotation on every successful call (so any caller implicitly keeps the pod warm), and is implemented in parallel in Go (controller) and TypeScript (api-server).
 
-- **Connect-driven** — the api-server is about to forward an ACP frame to a hibernated instance and wakes it before the relay completes. The frame can originate from a UI tab attaching to a session or from a channel worker (Slack / Telegram) routing an inbound message to its bound session.
+Two paths trigger a wake:
+
+- **Connect-driven** — the api-server is about to forward an ACP frame to a hibernated instance and ensures readiness before the relay completes. The frame can originate from a UI tab attaching to a session or from a channel worker (Slack / Telegram) routing an inbound message to its bound session.
 - **Schedule-driven** — the controller's schedule loop is about to deliver a trigger and `kubectl exec` requires the pod to be running ([ADR-008](../adrs/008-trigger-files.md)).
 
-Wake is bounded — the schedule loop polls pod readiness with backoff and gives up after two minutes, recording an error on the schedule's `status.yaml`.
+Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, surfacing a loud error to its caller (schedule status, WS close code, or channel log).
 
 ### Trigger fire
 
