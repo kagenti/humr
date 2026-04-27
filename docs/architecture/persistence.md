@@ -48,7 +48,7 @@ flowchart LR
 
   controller -->|write| cm-status
   controller -->|read| cm-spec
-  controller -->|exec write| pvc
+  controller -.kubectl exec into running pod.-> agent-runtime
 
   agent-runtime -->|read/write| pvc
 ```
@@ -93,7 +93,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
 - **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart.
-- **`.triggers/`** — pending trigger payloads delivered by the controller. Their durability on disk is what makes scheduled trigger delivery at-least-once across pod crashes (see [agent-lifecycle](agent-lifecycle.md)).
+- **`.triggers/`** — pending trigger payloads. The controller delivers each payload via `kubectl exec` into the *running* pod, which writes the file onto its mounted PVC; the controller itself never mounts the volume. The pod must therefore be awake before delivery, and the schedule loop wakes it first if it is hibernated (see [agent-lifecycle](agent-lifecycle.md)). Once a payload is on disk, the file is what survives a pod restart mid-processing — that is the at-least-once guarantee the PVC enables, scoped to in-flight processing rather than to delivery from a hibernated state.
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on instance deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Humr opts back into reclamation because instance deletion is intentional).
 
