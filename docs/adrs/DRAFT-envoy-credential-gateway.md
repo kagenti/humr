@@ -87,6 +87,7 @@ ADR-015's caller-to-OneCLI auth machinery (Keycloak RFC 8693 token exchange for 
 
 - **Detailed HITL ext_authz protocol.** This ADR commits to the retry+session-event shape but leaves the request-fingerprint scheme, denial-body schema, and approval persistence model for a follow-on.
 - **xDS dynamic-config service.** First cut uses bootstrap regeneration + pod restart. A streaming xDS upgrade is deferred until per-instance hot-reload demands it.
+- **Pluggable credential-store backends.** Operators should be able to configure Vault / Bitwarden / cloud secret managers as the authoritative store for platform-managed credentials, with the OAuth flow still in the API Server. Not a BYO model — the platform owns the lifecycle and writes through to the configured backend. Default remains K8s Secrets; this is a strict capability gain for enterprise / regulated deployments. Architecturally a `CredentialStore` abstraction in the API Server, with the sidecar's read path unchanged (file-mounted credential) and only the file's provenance varying (ESO-synced K8s Secret, CSI-mounted Vault path, etc.).
 
 ## Alternatives Considered
 
