@@ -46,16 +46,26 @@ flowchart LR
   browser -->|OIDC| keycloak
   browser -->|user JWT| api-server
 
-  api-server -->|RFC 8693<br/>token exchange| keycloak
-  api-server -->|exchanged token| onecli-api
-  controller -->|service account| onecli-api
+  api-server -->|RFC 8693 exchange<br/>user JWT to onecli audience| keycloak
+  api-server -->|user-scoped OIDC token| onecli-api
 
-  controller -->|provisions per-agent<br/>OneCLI access token| agentpod
-  agent-runtime -->|access token + CA trust| onecli-gw
+  controller -->|client_credentials grant<br/>+ RFC 8693 impersonation<br/>requested_subject = owner| keycloak
+  controller -->|user-scoped OIDC token| onecli-api
+  onecli-api -->|opaque per-agent<br/>access token| controller
+  controller -->|writes to per-instance Secret| agentpod
+
+  agent-runtime -->|ONECLI_ACCESS_TOKEN<br/>as HTTP Basic + CA trust| onecli-gw
   onecli-gw -->|injected credentials| external
 
   agent-runtime -. blocked by NetworkPolicy .-> onecli-api
 ```
+
+Two distinct token paths live on the same Keycloak exchange endpoint:
+
+- **api-server path** — when a user manages credentials in the UI, their JWT is exchanged for a OneCLI-audience token under the **same** `sub` and used directly against OneCLI's API.
+- **controller path** — when the controller provisions a per-agent token, it first obtains its own service-account token via `client_credentials`, then exchanges it for a OneCLI-audience token **impersonating the agent's owner** (RFC 8693 `requested_subject = owner`). It uses that impersonating token to call OneCLI's `CreateAgent`, which returns the opaque access token the pod will use.
+
+In both cases, **OneCLI sees a Keycloak-signed token with the user's `sub`** and scopes accordingly. The api-server and controller do not assert user identity to OneCLI directly — they prove it via a token Keycloak signed.
 
 ## Identity
 
@@ -63,7 +73,7 @@ flowchart LR
 
 1. Browser authenticates against Keycloak and obtains a JWT with audience `humr-api`.
 2. UI sends the JWT to the api-server on every tRPC and ACP call. The api-server validates it against Keycloak's JWKS.
-3. When the api-server needs to call OneCLI on the user's behalf, it performs an **RFC 8693 token exchange** at Keycloak's token endpoint to obtain a token with audience `onecli` for the same `sub`. OneCLI validates the exchanged token itself — it scopes every read and write to the `sub` claim and does not trust the calling api-server to assert who the user is.
+3. When the api-server needs to call OneCLI on the user's behalf, it performs an **RFC 8693 token exchange** at Keycloak's token endpoint, presenting the user's JWT as `subject_token` and asking for audience `onecli`. Keycloak issues a new token with the *same* `sub` — this is delegation (carry an existing identity to a new audience), not impersonation. OneCLI validates the exchanged token itself — it scopes every read and write to the `sub` claim and does not trust the calling api-server to assert who the user is.
 
 The api-server caches exchanged tokens to avoid a Keycloak round-trip on every request; cache lifetime is bounded by the exchanged token's expiry.
 
@@ -123,9 +133,21 @@ OneCLI does not yet support HITL approval mid-request — the gateway either has
 
 ## Per-instance access token and pod identity
 
-For each `agent-instance`, the controller mints a per-agent OneCLI access token and stores it in a per-instance Secret that is mounted into the pod. The token authorizes the gateway to look up secrets and grants attributed to that user and instance — it does not authorize the OneCLI admin API. The Secret is reconciled by the controller, regenerated on instance updates, and removed on instance delete.
+The per-agent token is what scopes a pod's outbound traffic to a specific user's grants. The provisioning sequence:
 
-Effectively, **the OneCLI access token *is* the pod's identity to the credential plane.** The pod has no service-account credentials to talk to the K8s API, no Keycloak credentials of its own, and no upstream credentials. Every real-world capability the agent has is mediated by the gateway.
+1. Reconcile reads the `agent-instance` ConfigMap and its `humr.ai/owner` label.
+2. Controller obtains a service-account token from Keycloak via `client_credentials`.
+3. Controller exchanges that token at Keycloak's RFC 8693 endpoint with `requested_subject = owner` — Keycloak issues an OIDC token whose `sub` is the agent's owner, signed by Keycloak. This is the "impersonation" hop, and it works only because the controller's Keycloak client is authorized to impersonate users.
+4. Controller calls OneCLI's `CreateAgent` with that impersonating token. OneCLI validates the token, sees the user's `sub`, and returns an **opaque, OneCLI-issued access token** bound to that user and that agent name.
+5. Controller writes the opaque token into a per-instance Secret keyed `access-token`.
+6. The StatefulSet pod template references it via `SecretKeyRef`, exposing `ONECLI_ACCESS_TOKEN` to the agent process.
+7. The pod's HTTP client is configured to send all upstream requests through the OneCLI gateway with that token as HTTP Basic auth (`http://x:$ONECLI_ACCESS_TOKEN@<gateway>`); combined with the cert-manager CA mounted at `SSL_CERT_FILE`, the agent transparently talks to the gateway as if it were the upstream.
+
+The opaque token is not a JWT — it carries no claims the agent could decode or replay against Keycloak. OneCLI keeps the user binding internally and applies the user's grants on every request the gateway sees with that token.
+
+Effectively, **the OneCLI access token *is* the pod's identity to the credential plane.** The pod has no service-account credentials to talk to the K8s API, no Keycloak credentials of its own, and no upstream credentials. Every real-world capability the agent has is mediated by the gateway, and every grant the gateway considers is the *owner's* grant — not the controller's, not the api-server's.
+
+Token lifetime tracks the instance: the Secret is created on first reconcile, replaced when the owner label changes (a re-impersonation against the new `sub`), and deleted alongside the instance. There is no rotation cadence — the opaque token does not expire on its own; revocation happens by deleting and recreating the agent in OneCLI.
 
 ## Network boundary
 
@@ -160,7 +182,7 @@ What the agent **can** do, deliberately:
 
 What an attacker outside the cluster needs in order to act as a user:
 
-- A Keycloak-issued JWT for that user, which requires Keycloak credentials or session, plus the api-server's allow-list entry for that `sub`. Compromising the api-server alone does not let an attacker impersonate users to OneCLI — the exchanged-token check at OneCLI is the second wall.
+- A Keycloak-issued JWT for that user, which requires Keycloak credentials or session, plus the api-server's allow-list entry for that `sub`. Compromising the api-server alone does not let an attacker mint tokens for arbitrary users — the api-server only does delegation (it must already hold the user's JWT). The controller is the more sensitive component here, because its Keycloak client is authorized to impersonate any user (`requested_subject` is unrestricted within the realm); a controller compromise is a key-to-the-kingdom on the credential plane.
 
 What is **not** in the threat model:
 
