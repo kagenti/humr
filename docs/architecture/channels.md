@@ -29,51 +29,82 @@ Two cross-cutting concerns are owned elsewhere and only summarized here:
 
 ## Topology
 
+Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the `ChannelManager` that supervises lifecycle, the ACP relay for inbound, and the per-instance MCP endpoint for outbound. The interesting parts are where the two diverge: Slack hangs off Helm-supplied platform credentials and a workspace-wide identity link table; Telegram hangs off a per-instance k8s Secret and a per-conversation authorization table.
+
+### Slack — platform channel
+
 ```mermaid
 flowchart LR
-  subgraph External
-    SU[Slack user]
-    TU[Telegram user]
-    SAPI[Slack API]
-    TAPI[Telegram API]
-  end
+  SU[Slack user]
+  SAPI[Slack API]
 
   subgraph api-server[api-server process]
     CM[ChannelManager]
     SW[SlackWorker]
-    TW[TelegramWorker]
     IL[IdentityLinkService]
     MCP[per-instance MCP endpoint]
     REL[ACP relay]
   end
 
+  subgraph DB[Postgres]
+    SES[(sessions:<br/>thread↔session)]
+    LNK[(slack_user↔kc_sub)]
+  end
+
+  POD[agent pod<br/>main + forks]
+
+  SU <--> SAPI
+  SAPI <-- Socket Mode --> SW
+  CM --> SW
+  SW --> IL
+  IL --> LNK
+  SW <--> SES
+  SW -- ACP frames --> REL
+  REL <--> POD
+  POD -- send_channel_message --> MCP
+  MCP --> CM
+```
+
+Bot and App-Level Tokens come from Helm values and live in api-server env — no per-instance Secret. The workspace-wide identity-link table backs the `/humr login` flow, and the relay path branches between the main pod and a per-turn fork pod by replier identity ([security-and-credentials](security-and-credentials.md)).
+
+### Telegram — per-instance channel
+
+```mermaid
+flowchart LR
+  TU[Telegram user]
+  TAPI[Telegram API]
+
+  subgraph api-server[api-server process]
+    CM[ChannelManager]
+    TW[TelegramWorker]
+    MCP[per-instance MCP endpoint]
+    REL[ACP relay]
+  end
+
   subgraph K8s[Kubernetes]
-    SEC[(channel Secrets<br/>per instance,channel-type)]
-    POD[agent pod<br/>main + forks]
+    SEC[(channel Secret<br/>per instance)]
   end
 
   subgraph DB[Postgres]
     SES[(sessions:<br/>thread↔session)]
-    LNK[(identity links:<br/>slack_user↔kc_sub)]
+    AUT[(authorized_threads)]
   end
 
-  SU <--> SAPI
+  POD[agent pod]
+
   TU <--> TAPI
-  SAPI <-- Socket Mode --> SW
   TAPI <-- long polling --> TW
-  CM --> SW
   CM --> TW
   TW -- read token --> SEC
-  IL --> LNK
-  SW --> IL
-  SW <--> SES
+  TW <--> AUT
   TW <--> SES
-  SW -- ACP frames --> REL
   TW -- ACP frames --> REL
   REL <--> POD
   POD -- send_channel_message --> MCP
   MCP --> CM
 ```
+
+The bot token lives in a per-instance k8s Secret (`humr-channel-telegram-<instanceId>`); there is no workspace identity to link, so authorization is per-conversation in `authorized_threads`. The relay path is single-track — the main pod handles every turn, no foreign-replier fork.
 
 ## Adapters
 
