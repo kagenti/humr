@@ -142,7 +142,7 @@ The opaque token is not a JWT — it carries no claims the agent could decode or
 
 Effectively, **the OneCLI access token *is* the pod's identity to the credential plane.** The pod has no service-account credentials to talk to the K8s API, no Keycloak credentials of its own, and no upstream credentials. Every real-world capability the agent has is mediated by the gateway, and every grant the gateway considers is the *owner's* grant — not the controller's, not the api-server's.
 
-Token lifetime tracks the instance: the Secret is created on first reconcile, replaced when the owner label changes (a re-impersonation against the new `sub`), and deleted alongside the instance. There is no rotation cadence — the opaque token does not expire on its own; revocation happens by deleting and recreating the agent in OneCLI.
+Token lifetime tracks the instance: the Secret is created on first reconcile and deleted alongside the instance. There is **no rotation cadence and no server-side expiry** — the controller mints once and never re-mints unless the Secret has been removed (e.g. manual deletion). The token is opaque and API-key-like; deleting the OneCLI agent is the only revocation path. The implications are called out explicitly in the threat model below.
 
 ## Network boundary
 
@@ -216,6 +216,10 @@ What the agent **can** do, deliberately:
 What an attacker outside the cluster needs in order to act as a user:
 
 - A Keycloak-issued JWT for that user, which requires Keycloak credentials or session, plus the api-server's allow-list entry for that `sub`. Compromising the api-server alone does not let an attacker mint tokens for arbitrary users — the api-server only does delegation (it must already hold the user's JWT). The controller is the more sensitive component here, because its Keycloak client is authorized to impersonate any user (`requested_subject` is unrestricted within the realm); a controller compromise is a key-to-the-kingdom on the credential plane.
+
+Accepted risks (within scope, but not currently mitigated):
+
+- **Indefinite token validity.** OneCLI access tokens — both per-instance and Foreign Registration — are opaque API-key-like strings with no server-side expiry. The controller mints once on first reconcile and never re-mints unless the Secret is removed; there is no proactive rotation. A leaked token is valid until the OneCLI agent is explicitly deleted and recreated (manual operator action). Acceptable today because the token's blast radius is bounded by the user's existing OneCLI grants, the gateway is the only place it works, and the pod that holds it is already inside the trust boundary it grants access to. A future rotation mechanism (e.g. periodic re-mint on Secret rotation, owner-change-triggered re-mint) would close this gap; tracking it as a known limit, not an open issue.
 
 What is **not** in the threat model:
 
