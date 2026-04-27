@@ -31,10 +31,7 @@ flowchart LR
   controller[controller]
   agent-runtime[agent-runtime pod]
 
-  subgraph postgres[Postgres]
-    sessions[(sessions)]
-    channels-tbl[(channels<br/>identity_links<br/>allowed_users)]
-  end
+  postgres[(Postgres)]
 
   subgraph k8s[K8s API]
     cm-spec[ConfigMap<br/>spec.yaml]
@@ -42,40 +39,31 @@ flowchart LR
     cm-anno[ConfigMap<br/>annotations]
   end
 
-  subgraph pvc[Per-instance PVC]
-    workspace[workspace<br/>+ $HOME]
-    triggers[/.triggers/]
-    agent-store[harness session store]
-  end
+  pvc[(Per-instance PVC)]
 
+  api-server -->|write| postgres
   api-server -->|write| cm-spec
-  api-server -->|write| sessions
-  api-server -->|write| channels-tbl
   api-server -->|read| cm-status
   api-server -->|annotate| cm-anno
 
   controller -->|write| cm-status
   controller -->|read| cm-spec
-  controller -->|exec write| triggers
+  controller -->|exec write| pvc
 
-  agent-runtime -->|read/write| workspace
-  agent-runtime -->|read/write| agent-store
-  agent-runtime -->|read+delete| triggers
+  agent-runtime -->|read/write| pvc
 ```
 
 ## Substrates
 
 ### Postgres
 
-Postgres is the source of truth for state the api-server must answer about *when no agent pod is running*. The largest of these is the **sessions table** ([ADR-017](../adrs/017-db-backed-sessions.md)): every ACP session is recorded here at creation time, typed by source (`regular`, `schedule_cron`, `channel_slack`, …) and linked to its owning instance. The sessions tab in the UI lists from this table directly; live ACP data (title, last update) is enriched on demand only when the pod is running.
+Postgres carries state the api-server must answer about *when no agent pod is running.* It holds:
 
-Other tables hold cross-pod state owned by adjacent subsystems and described on their pages:
+- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — existence, type, owning instance, creation time. The UI's sessions list reads this directly; live ACP data (title, last update) is enriched on demand only when the pod is running.
+- **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
+- **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
 
-- **channel bindings** — which channel (Slack channel, Telegram thread) routes to which instance and session. See [channels](channels.md).
-- **identity links** — mapping between channel-side identities and platform users for impersonation. See [security-and-credentials](security-and-credentials.md).
-- **allowed users** — auth allow-list. See [security-and-credentials](security-and-credentials.md).
-
-The api-server is the sole writer to all of these. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. Schemas and migrations live in [`packages/db/`](../../packages/db/).
+The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
 
 ### ConfigMaps
 
@@ -93,7 +81,7 @@ Each ConfigMap carries two `data` keys with strict single-writer ownership:
 - **`spec.yaml`** — user intent. Written exclusively by the api-server.
 - **`status.yaml`** — observed state and scheduler bookkeeping (next fire, last fire, error). Written exclusively by the controller.
 
-Lightweight, high-frequency metadata (`humr.ai/last-activity`, `humr.ai/active-session`) lives on **annotations** rather than `status.yaml` to avoid touching the spec/status payload on every heartbeat.
+High-frequency, lightweight metadata (heartbeats, activity timestamps) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update.
 
 ConfigMaps were chosen over CRDs so that Humr installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
 
