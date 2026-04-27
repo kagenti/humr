@@ -17,7 +17,7 @@ import (
 // Jitter: ±20% so many callers waking at once desync within a few iterations
 // instead of polling in lockstep bursts.
 //
-// NOTE: mirrored in packages/api-server/src/apps/api-server/acp-relay.ts (TS).
+// NOTE: mirrored in packages/api-server/src/modules/agents/infrastructure/poll-until-ready.ts (TS).
 // Keep behaviour, constants, and the shape of the loop in sync across both.
 func pollUntilReady(
 	ctx context.Context,

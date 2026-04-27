@@ -20,8 +20,8 @@ import (
 )
 
 // Timeouts and poll cadence. NOTE: mirrored in
-// packages/api-server/src/apps/api-server/acp-relay.ts (TS). Keep behaviour,
-// constants, and the shape of the loop in sync across both.
+// packages/api-server/src/modules/agents/infrastructure/poll-until-ready.ts (TS).
+// Keep behaviour, constants, and the shape of the loop in sync across both.
 const (
 	wakePollInitial = 500 * time.Millisecond
 	wakePollMax     = 5 * time.Second
