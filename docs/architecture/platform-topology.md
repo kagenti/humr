@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-04-24
+Last verified: 2026-04-27
 
 ## Motivated by
 
@@ -97,7 +97,7 @@ Humr models all of its domain state as ConfigMaps labelled `humr.ai/type` ([ADR-
 | `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
 | `agent-fork` | Forked run: parent instance ref + overrides |
 
-For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-agent Secret carrying the OneCLI access token. ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
+For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, and a NetworkPolicy. The OneCLI access-token Secret lives one level up: it is reconciled per `agent` template by the agent reconciler and shared by every instance of that agent. ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
 
 ## Invariants
 

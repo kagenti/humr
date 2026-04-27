@@ -78,7 +78,7 @@ See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, 
 - `packages/humr-base/Dockerfile` — base image definition.
 - `packages/agent-runtime/src/server.ts` — reads `AGENT_COMMAND`, runs the ACP server.
 - `packages/agent-runtime/src/acp-bridge.ts` — spawns the harness subprocess per session.
-- `packages/agent-runtime/src/trigger-watcher.ts` — watches `/workspace/.triggers/` for scheduled-session files.
+- `packages/agent-runtime/src/trigger-watcher.ts` — watches `/home/agent/.triggers/` for scheduled-session files.
 - `packages/agents/{example-agent,google-workspace,pi-agent}/Dockerfile` — the three-line recipe in practice.
 - `packages/agents/pi-agent/README.md` — agent-specific documentation pattern (memory scopes, system-prompt conventions).
 - `tasks.toml` → `image:agent` — multi-agent build orchestration.

@@ -46,7 +46,7 @@ sequenceDiagram
   Note over C,P: Schedule-driven wake — RRULE match, not in quiet hours
   C->>K: scale StatefulSet → 1 (if hibernated)
   K-->>P: pod ready
-  C->>P: kubectl exec → write /workspace/.triggers/{ts}.json
+  C->>P: kubectl exec → write /home/agent/.triggers/{ts}.json
   P->>API: ACP session/new or session/resume
   P->>API: session/prompt (task payload)
   Note over P: turn runs, log appended,<br/>trigger file deleted on completion
@@ -87,7 +87,7 @@ Each `agent-schedule` runs as a per-schedule goroutine in the controller. It com
 When a fire is due:
 
 1. Controller wakes the instance if it is hibernated and waits for readiness.
-2. Controller writes `/workspace/.triggers/{ts}.json` via `kubectl exec`. The write uses temp-file + rename so the watcher never reads a partial file.
+2. Controller writes `/home/agent/.triggers/{ts}.json` via `kubectl exec`. The write uses temp-file + rename so the watcher never reads a partial file.
 3. The trigger watcher inside agent-runtime picks up the file, tracks it in an in-process inflight set, and opens an ACP session against the harness.
 4. On completion the watcher deletes the trigger file.
 
