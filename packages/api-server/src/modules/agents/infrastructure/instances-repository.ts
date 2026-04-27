@@ -1,4 +1,5 @@
-import type { K8sClient } from "./k8s.js";
+import { is409, type K8sClient } from "./k8s.js";
+import { retry } from "./retry.js";
 import {
   LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LAST_ACTIVITY_KEY,
 } from "./labels.js";
@@ -44,12 +45,14 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
   // sane under bursty call patterns.
   const inflight = new Map<string, Promise<void>>();
 
+  // Strategic-merge-patch — no read-modify-write, no resourceVersion, no
+  // 409 conflict possible. Mirrors the intent of the Go controller's
+  // retry.RetryOnConflict wrapper but is more direct (and cheaper: one round
+  // trip, no GET).
   async function bumpLastActivity(id: string): Promise<void> {
-    const cm = await k8s.getConfigMap(id);
-    if (!cm) return;
-    if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
-    cm.metadata!.annotations[LAST_ACTIVITY_KEY] = new Date().toISOString();
-    await k8s.replaceConfigMap(id, cm);
+    await k8s.patchConfigMap(id, {
+      metadata: { annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() } },
+    });
   }
 
   return {
@@ -152,13 +155,17 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
     },
 
     async wakeIfHibernated(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return false;
-      const infra = parseInfraInstance(cm);
-      if (infra.desiredState !== "hibernated") return true;
-      const woken = setDesiredState(cm, "running");
-      await k8s.replaceConfigMap(cm.metadata!.name!, woken);
-      return true;
+      // Retry on optimistic-concurrency conflict (HTTP 409) — mirrors the Go
+      // controller's retry.RetryOnConflict. Without this, a racing controller
+      // status write turns a routine wake into an ensureReady failure.
+      const wakeOnce = async () => {
+        const cm = await k8s.getConfigMap(id);
+        if (!cm) return false;
+        if (parseInfraInstance(cm).desiredState !== "hibernated") return true;
+        await k8s.replaceConfigMap(id, setDesiredState(cm, "running"));
+        return true;
+      };
+      return retry(wakeOnce, is409);
     },
 
     async isPodReady(id) {

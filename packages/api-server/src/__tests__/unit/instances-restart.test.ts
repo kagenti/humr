@@ -24,6 +24,7 @@ function fakeK8s(overrides: Partial<K8sClient> = {}): K8sClient {
     getConfigMap: vi.fn().mockResolvedValue(null),
     createConfigMap: vi.fn(),
     replaceConfigMap: vi.fn(),
+    patchConfigMap: vi.fn(),
     deleteConfigMap: vi.fn(),
     listSecrets: vi.fn().mockResolvedValue([]),
     getSecret: vi.fn().mockResolvedValue(null),
