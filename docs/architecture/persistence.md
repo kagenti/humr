@@ -57,11 +57,11 @@ flowchart LR
 
 ### Postgres
 
-Postgres carries state the api-server must answer about *when no agent pod is running.* It holds:
+Postgres carries the state Humr must answer about even when no agent pod is running, and the state that crosses instance boundaries (so it can't live on any single PVC).
 
-- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — existence, type, owning instance, creation time. The UI's sessions list reads this directly; live ACP data (title, last update) is enriched on demand only when the pod is running.
-- **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
-- **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
+- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — needed because conversation state lives inside the agent pod (ACP runtime), but the UI's sessions list has to work when those pods are hibernated. Mirroring full ACP state into the DB would duplicate the agent's source of truth, so only existence + lookup metadata are persisted; live data (title, last update) is enriched on demand when the pod is running.
+- **channel routing** — needed because an inbound message from Slack or Telegram has no idea which instance it belongs to until the platform looks it up. The mapping is cross-instance and has to survive any one pod, so it can't live on a PVC. Owned by [channels](channels.md).
+- **identity and auth** — needed at request entry, before any instance is involved, and shared across all instances of a deployment. Same reasoning as channel routing: cross-cutting, pre-pod, multi-user. Owned by [security-and-credentials](security-and-credentials.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
 
