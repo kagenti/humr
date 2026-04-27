@@ -1,7 +1,7 @@
-# DRAFT: Envoy-based credential gateway with ext_authz HITL — drop OneCLI
+# ADR-033: Envoy-based credential gateway with ext_authz HITL — drop OneCLI
 
 **Date:** 2026-04-24
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @pilartomas
 
 ## Context
