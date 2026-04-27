@@ -12,10 +12,13 @@ Issue #307 surfaced the first concrete instance: `gh auth status` for GitHub Ent
 
 But the pattern is broader. Other state in humr that could plausibly need to land as files in agent pods:
 
-- **User secrets** as files (`~/.aws/credentials`, `~/.ssh/id_rsa`, kubeconfigs, certs) — humr already has secrets, currently only as env vars
 - **Per-agent UI-edited config** (system prompts, MCP server lists, channel allowlists) — currently lives in env or ConfigMaps that roll the pod on change
 - **Schedule metadata** that some scheduled actions need to read at runtime
 - **Channel metadata** (Slack workspace info, Telegram bot config) for tools that want it on disk
+- **CLI configs that other tools require alongside their proxied auth** — e.g. `~/.gitconfig` for `user.name`/`user.email`, future gcloud / kubeconfig files that name a host or context (no credentials, just naming) — analogous to gh's hosts.yml, which lists the host but uses a sentinel for the token
+- **Tool defaults / allowlists / non-sensitive policy** that a humr-managed CLI tool wants to read
+
+**Compatibility with ADR-005 (agent never sees raw credentials).** This mechanism never writes a real secret to disk. Files can carry the same `humr:sentinel` token that env vars use, with the gateway swapping it on outbound requests for the relevant host (the gh hosts.yml case proves the pattern). Producers that would need to write a real credential to disk are out of scope — they violate the gateway model and should stay rejected.
 
 The same three constraints apply to all of them:
 
