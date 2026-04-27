@@ -56,8 +56,14 @@ func Run(ctx context.Context, o Options) error {
 		httpClient = &http.Client{}
 	}
 
+	// healthyUptime is "long enough that the previous connection was clearly
+	// working" — past this threshold we reset backoff so a once-per-day api-server
+	// restart doesn't leave the sidecar reconnecting at MaxBackoff forever.
+	const healthyUptime = 30 * time.Second
+
 	backoff := o.MinBackoff
 	for {
+		start := time.Now()
 		err := stream(ctx, httpClient, o)
 		if ctx.Err() != nil {
 			return nil
@@ -65,8 +71,14 @@ func Run(ctx context.Context, o Options) error {
 		if err != nil {
 			slog.Warn("config-sync stream ended", "error", err)
 		}
-		// Sleep with backoff + jitter.
-		jitter := time.Duration(rand.Int64N(int64(backoff / 5)))
+		if time.Since(start) > healthyUptime {
+			backoff = o.MinBackoff
+		}
+		// Sleep with backoff + jitter (skip jitter for tiny backoffs).
+		var jitter time.Duration
+		if window := int64(backoff / 5); window > 0 {
+			jitter = time.Duration(rand.Int64N(window))
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -112,6 +124,9 @@ func readSSE(r io.Reader, outPath string) error {
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
+			// Partial frame at EOF (server crashed mid-flush) is intentionally
+			// dropped — the next reconnect re-snapshots, so partial state never
+			// reaches the file.
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
@@ -166,11 +181,20 @@ func apply(outPath string, conns []HostEntry) error {
 	if !changed {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+	dir := filepath.Dir(outPath)
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		return err
+	}
+	// MkdirAll honors umask, which strips group/other write on most distros.
+	// Force 0o777 so a non-root agent container sharing this volume can still
+	// create sibling files (gh CLI writes state.yml, hosts.yml.lock, etc.).
+	if err := os.Chmod(dir, 0o777); err != nil {
 		return err
 	}
 	tmp := outPath + ".tmp"
-	if err := os.WriteFile(tmp, merged, 0o644); err != nil {
+	// 0o666 so a non-root agent can also edit hosts.yml in place — fill-if-missing
+	// preserves their changes on the next sync.
+	if err := os.WriteFile(tmp, merged, 0o666); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, outPath); err != nil {

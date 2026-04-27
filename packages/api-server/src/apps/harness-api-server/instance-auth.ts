@@ -33,6 +33,9 @@ export async function verifyInstanceToken(
 
   const agentCm = await k8s.getConfigMap(agentName);
   if (!agentCm) return null;
+  // Cross-check owner on both ConfigMaps so a relabeled instance (LABEL_AGENT_REF
+  // pointing at someone else's agent) can't authenticate against that agent's
+  // token hash.
   if (agentCm.metadata?.labels?.[LABEL_OWNER] !== owner) return null;
 
   const statusYaml = agentCm.data?.[STATUS_KEY];

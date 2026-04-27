@@ -39,17 +39,28 @@ export function pickUsername(metadata: Record<string, unknown> | null | undefine
 /**
  * Map raw OneCLI connections to the SSE event payload shape, keeping only
  * github-enterprise rows that resolve a valid host. Deterministic order
- * (sorted by host) so the encoded payload is stable across reconnects.
+ * (sorted by host, then by id as a tiebreaker for two grants to the same
+ * host) so the encoded payload is stable across reconnects.
+ *
+ * Logs a warning for github-enterprise rows whose `metadata.baseUrl` is
+ * malformed — they're skipped silently from the sidecar's perspective, but
+ * the operator gets a breadcrumb to debug a misconfigured connection.
  */
-export function toGhEnterpriseHosts(connections: RawConnection[]): GhEnterpriseHost[] {
-  const out: GhEnterpriseHost[] = [];
+export function toGhEnterpriseHosts(
+  connections: (RawConnection & { id?: string })[],
+  log: (msg: string) => void = (m) => console.warn(m),
+): GhEnterpriseHost[] {
+  const out: (GhEnterpriseHost & { _id?: string })[] = [];
   for (const c of connections) {
     if (c.provider !== "github-enterprise") continue;
     const host = extractHost(c.metadata);
-    if (!host) continue;
+    if (!host) {
+      log(`github-enterprise connection ${c.id ?? "?"}: missing or malformed metadata.baseUrl; skipped`);
+      continue;
+    }
     const username = pickUsername(c.metadata);
-    out.push(username ? { host, username } : { host });
+    out.push({ host, ...(username ? { username } : {}), _id: c.id });
   }
-  out.sort((a, b) => a.host.localeCompare(b.host));
-  return out;
+  out.sort((a, b) => a.host.localeCompare(b.host) || (a._id ?? "").localeCompare(b._id ?? ""));
+  return out.map(({ _id, ...rest }) => rest);
 }

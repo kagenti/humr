@@ -89,15 +89,17 @@ export function createConnectionsService(deps: {
       // Push the github-enterprise subset to subscribed pod sidecars so
       // `gh auth status` reflects the change without rolling the pod.
       // Spec: never delete; the sidecar's "fill-if-missing" merge handles
-      // both fresh grants and re-grants idempotently. Revokes intentionally
-      // emit nothing — old hosts linger in hosts.yml until manually edited.
+      // re-grants idempotently, so we send the full current granted set
+      // rather than computing a diff. Revokes intentionally emit nothing —
+      // old hosts linger in hosts.yml until manually edited.
       const bus = deps.ghEnterpriseBus;
       if (bus) {
         const granted = new Set(deduped);
         const all = await deps.port.listAppConnections();
         const ghe = toGhEnterpriseHosts(
-          all.filter((c) => granted.has(c.id) && typeof c.metadata !== "undefined")
-            .map((c) => ({ provider: c.provider, metadata: c.metadata })),
+          all
+            .filter((c) => c.provider === "github-enterprise" && granted.has(c.id))
+            .map((c) => ({ id: c.id, provider: c.provider, metadata: c.metadata })),
         );
         if (ghe.length > 0) {
           bus.publish(agentName, { kind: "upsert", connections: ghe });

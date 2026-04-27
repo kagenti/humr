@@ -126,9 +126,9 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 
 	// gh CLI config volume — shared with the config-sync sidecar so the agent
 	// container reads ~/.config/gh/hosts.yml without depending on the user's
-	// agent image bringing any humr-specific code. Always present (when a
-	// controller image is configured) so adding or removing github-enterprise
-	// grants never alters the StatefulSet pod spec → no pod rolls on grant.
+	// agent image bringing any humr-specific code. Decision is purely deploy-
+	// time (presence of CONTROLLER_IMAGE), never connection-state-driven, so
+	// adding or removing github-enterprise grants never alters the pod spec.
 	agentVolumeMounts := volumeMounts
 	if cfg.ControllerImage != "" {
 		volumes = append(volumes, corev1.Volume{

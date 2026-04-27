@@ -238,4 +238,88 @@ describe("ConnectionsService.setAgentConnections", () => {
     await svc.setAgentConnections("my-agent", []);
     expect(calls).toEqual([{ uuid: "uuid", ids: [] }]);
   });
+
+  describe("github-enterprise bus publish", () => {
+    const agent: OnecliAgent = { id: "uuid", identifier: "my-agent" };
+
+    type Captured = { agentName: string; kind: string; connections: unknown[] };
+    const captureBus = () => {
+      const events: Captured[] = [];
+      return {
+        events,
+        bus: {
+          subscribe: () => () => {},
+          publish: (agentName: string, e: { kind: string; connections: unknown[] }) =>
+            events.push({ agentName, kind: e.kind, connections: e.connections }),
+        },
+      };
+    };
+
+    it("publishes an upsert with all currently-granted github-enterprise connections", async () => {
+      const { bus, events } = captureBus();
+      const svc = createConnectionsService({
+        port: makePort({
+          findAgentByIdentifier: async () => agent,
+          listAppConnections: async () => [
+            { id: "c-1", provider: "github-enterprise", metadata: { baseUrl: "https://ghe.example.com", username: "alice" } },
+            { id: "c-2", provider: "github", metadata: { baseUrl: "https://github.com" } },
+            { id: "c-3", provider: "github-enterprise", metadata: { baseUrl: "https://other.example.com", username: "bob" } },
+          ],
+        }),
+        ghEnterpriseBus: bus,
+      });
+
+      await svc.setAgentConnections("my-agent", ["c-1", "c-2"]);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].agentName).toBe("my-agent");
+      expect(events[0].kind).toBe("upsert");
+      // c-1 included, c-2 excluded (github, not enterprise), c-3 excluded (not granted).
+      expect(events[0].connections).toEqual([
+        { host: "ghe.example.com", username: "alice" },
+      ]);
+    });
+
+    it("does not publish when only non-enterprise connections are granted", async () => {
+      const { bus, events } = captureBus();
+      const svc = createConnectionsService({
+        port: makePort({
+          findAgentByIdentifier: async () => agent,
+          listAppConnections: async () => [
+            { id: "c-2", provider: "github", metadata: { baseUrl: "https://github.com" } },
+          ],
+        }),
+        ghEnterpriseBus: bus,
+      });
+      await svc.setAgentConnections("my-agent", ["c-2"]);
+      expect(events).toEqual([]);
+    });
+
+    it("does not publish on revoke (unassign-all) — entries persist in hosts.yml", async () => {
+      const { bus, events } = captureBus();
+      const svc = createConnectionsService({
+        port: makePort({
+          findAgentByIdentifier: async () => agent,
+          listAppConnections: async () => [
+            { id: "c-1", provider: "github-enterprise", metadata: { baseUrl: "https://ghe.example.com" } },
+          ],
+        }),
+        ghEnterpriseBus: bus,
+      });
+      await svc.setAgentConnections("my-agent", []);
+      expect(events).toEqual([]);
+    });
+
+    it("works without a bus (publishing is optional)", async () => {
+      const svc = createConnectionsService({
+        port: makePort({
+          findAgentByIdentifier: async () => agent,
+          listAppConnections: async () => [
+            { id: "c-1", provider: "github-enterprise", metadata: { baseUrl: "https://ghe.example.com" } },
+          ],
+        }),
+      });
+      await expect(svc.setAgentConnections("my-agent", ["c-1"])).resolves.toBeUndefined();
+    });
+  });
 });

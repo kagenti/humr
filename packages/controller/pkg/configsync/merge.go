@@ -1,7 +1,7 @@
 // Package configsync renders the agent pod's gh CLI hosts.yml from
 // github-enterprise app connections, on the "fill-if-missing" rule:
 // new hosts get full entries; existing host entries are never destructively
-// rewritten. See docs/superpowers/specs/2026-04-27-gh-enterprise-auth-status-design.md.
+// rewritten.
 package configsync
 
 import (

@@ -16,8 +16,9 @@ export interface GhEnterpriseEventsDeps {
 
 /**
  * Mount the SSE channel that the agent-pod sidecar holds open.
- * Auth: Bearer token (per-instance). Topics: keyed by agent name; multiple
- * instances of the same agent receive identical events.
+ * Auth: Bearer token (per-instance). Topics: keyed by agent name because
+ * OneCLI grants are agent-scoped — every running instance of the same agent
+ * sees the same set of granted connections, so they share one topic.
  */
 export function mountGhEnterpriseEventsRoute(app: Hono, deps: GhEnterpriseEventsDeps) {
   app.get("/api/instances/:id/gh-enterprise/events", async (c) => {
@@ -45,6 +46,10 @@ export function mountGhEnterpriseEventsRoute(app: Hono, deps: GhEnterpriseEvents
         queue.push(e.connections);
         wakeWaiter();
       });
+      // Hono flips stream.aborted on client disconnect but won't wake an
+      // already-parked Promise — without onAbort the loop below would leak
+      // the subscriber and a parked async frame on every reconnect.
+      stream.onAbort(wakeWaiter);
 
       try {
         const snapshot = await deps.fetchSnapshot(owner).catch((err) => {
@@ -57,15 +62,16 @@ export function mountGhEnterpriseEventsRoute(app: Hono, deps: GhEnterpriseEvents
         });
 
         // Drain loop: emit any queued upserts, then wait for new ones or for
-        // the client to disconnect (stream.aborted is set by Hono on close).
+        // the client to disconnect (onAbort wakes us via wakeWaiter).
         while (!stream.aborted) {
-          while (queue.length > 0) {
+          while (queue.length > 0 && !stream.aborted) {
             const conns = queue.shift()!;
             await stream.writeSSE({
               event: "upsert",
               data: JSON.stringify({ connections: conns }),
             });
           }
+          if (stream.aborted) break;
           await new Promise<void>((resolve) => {
             resolveWaiter = resolve;
           });
