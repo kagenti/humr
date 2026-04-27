@@ -27,45 +27,33 @@ flowchart LR
   browser[browser]
 
   subgraph platform[Platform plane]
-    api-server[api-server]
-    controller[controller]
+    api-server
+    controller
     keycloak[Keycloak]
   end
 
   subgraph credplane[Credential plane]
-    onecli-api[OneCLI<br/>API + dashboard]
-    onecli-gw[OneCLI<br/>MITM gateway]
+    onecli-api[OneCLI API]
+    onecli-gw[OneCLI gateway]
   end
 
-  subgraph agentpod[Agent pod - least privileged]
-    agent-runtime[agent-runtime]
+  subgraph agentpod[Agent pod]
+    agent-runtime
   end
 
-  external[external services<br/>GitHub / Anthropic / Slack / ...]
+  external[external services]
 
-  browser -->|OIDC| keycloak
   browser -->|user JWT| api-server
-
-  api-server -->|RFC 8693 exchange<br/>user JWT to onecli audience| keycloak
-  api-server -->|user-scoped OIDC token| onecli-api
-
-  controller -->|client_credentials grant<br/>+ RFC 8693 impersonation<br/>requested_subject = owner| keycloak
-  controller -->|user-scoped OIDC token| onecli-api
-  onecli-api -->|opaque per-agent<br/>access token| controller
-  controller -->|writes to per-instance Secret| agentpod
-
-  agent-runtime -->|ONECLI_ACCESS_TOKEN<br/>as HTTP Basic + CA trust| onecli-gw
-  onecli-gw -->|injected credentials| external
-
-  agent-runtime -. blocked by NetworkPolicy .-> onecli-api
+  api-server -->|delegate| keycloak
+  api-server -->|user-scoped calls| onecli-api
+  controller -->|impersonate owner| keycloak
+  controller -->|provision per-agent token| onecli-api
+  controller -->|mount token Secret| agentpod
+  agent-runtime -->|opaque token| onecli-gw
+  onecli-gw -->|inject credentials| external
 ```
 
-Two distinct token paths live on the same Keycloak exchange endpoint:
-
-- **api-server path** — when a user manages credentials in the UI, their JWT is exchanged for a OneCLI-audience token under the **same** `sub` and used directly against OneCLI's API.
-- **controller path** — when the controller provisions a per-agent token, it first obtains its own service-account token via `client_credentials`, then exchanges it for a OneCLI-audience token **impersonating the agent's owner** (RFC 8693 `requested_subject = owner`). It uses that impersonating token to call OneCLI's `CreateAgent`, which returns the opaque access token the pod will use.
-
-In both cases, **OneCLI sees a Keycloak-signed token with the user's `sub`** and scopes accordingly. The api-server and controller do not assert user identity to OneCLI directly — they prove it via a token Keycloak signed.
+Both edges into Keycloak are RFC 8693 token exchanges, but with different grants: api-server **delegates** (carries the user's JWT to a new audience, same `sub`); the controller **impersonates** (uses its own service-account token plus `requested_subject = owner`). In both cases OneCLI receives a Keycloak-signed token bearing the owning user's `sub` and scopes everything to that user — neither the api-server nor the controller asserts identity directly.
 
 ## Identity
 
@@ -160,9 +148,42 @@ The gateway is what makes "blocked except for grants" enforceable on the egress 
 
 ## Forks
 
-A fork (see [agent-lifecycle § Forks](agent-lifecycle.md#forks)) reconciles to a Kubernetes Job and runs to completion under the **forker's identity**, not the parent instance owner's. The fork's secrets and grants are the forker's; the workspace PVC is shared `ReadWriteMany` with the parent. This is how a foreign user can run a derivative against someone else's workspace without inheriting their credentials — the workspace files are visible, but every outbound call is gated by the forker's OneCLI policy.
+A fork (see [agent-lifecycle § Forks](agent-lifecycle.md#forks)) reconciles to a Kubernetes Job and runs under the **forker's identity**, not the parent instance owner's. The mechanism is the per-agent token flow described above, with one substitution: when the controller mints the fork's OneCLI token, it impersonates the forker's `sub` — even though the parent `agent-instance` carries a different owner label and the parent PVC is mounted in.
 
-Cross-user PVC sharing is intentional and documented on [persistence](persistence.md). The credential boundary stays clean even when the data boundary is permissive: a fork can read parent state but cannot exfiltrate it through any upstream the forker doesn't have a grant for.
+```mermaid
+flowchart LR
+  forker[forker]
+  parent[parent owner]
+
+  api-server
+  controller
+  keycloak[Keycloak]
+  onecli-api[OneCLI API]
+  onecli-gw[OneCLI gateway]
+
+  subgraph forkpod[Fork Job pod]
+    fork-runtime[agent-runtime]
+  end
+
+  parent-pvc[(parent PVC<br/>RWX)]
+  external[external services]
+
+  forker -->|user JWT| api-server
+  api-server -->|create agent-fork| controller
+  controller -->|impersonate forker<br/>not parent| keycloak
+  controller -->|provision fork token| onecli-api
+  controller -->|mount token + parent PVC| forkpod
+
+  parent-pvc <-->|read/write| fork-runtime
+  parent -.owns workspace.- parent-pvc
+
+  fork-runtime -->|fork token| onecli-gw
+  onecli-gw -->|forker's grants only| external
+```
+
+Two boundaries are deliberately mismatched: the **data** boundary is permissive (forker can read whatever the parent wrote to disk, because RWX cross-user mounts are how Humr supports running a derivative against someone else's workspace) but the **credential** boundary is strict (forker can only call upstreams via the forker's own OneCLI grants). A fork can therefore read parent state but cannot exfiltrate it through any upstream the forker hasn't been granted.
+
+The agent-fork's `humr.ai/owner` label is the forker, not the parent. Resource ownership and allow-list checks treat the fork as the forker's resource; the parent owner does not see the fork in their resource list. Cross-user PVC sharing is documented on [persistence](persistence.md).
 
 ## Threat model
 
