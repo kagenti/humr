@@ -83,6 +83,15 @@ None of this makes the system *safe*. A determined attacker who controls text th
 
 ## References
 
+How Humr realizes the model:
+
+- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, OneCLI credential gateway, MITM cert-manager CA, network boundary, full threat model.
+- [platform-topology](../architecture/platform-topology.md) — the four components and why the agent pod is the trust boundary.
+- [persistence](../architecture/persistence.md) § Security boundary — workspace residue is adversarial input on the next turn.
+- [Multiplayer](multi-player.md) — the companion doc covering identity, ownership, and what a colleague's turn looks like.
+
+External framing referenced above:
+
 - Simon Willison, [*The lethal trifecta for AI agents: private data, untrusted content, and external communication*](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — the three-legged framing of when an agent becomes exploitable.
 - Debenedetti et al., [*Defeating Prompt Injections by Design (CaMeL)*](https://arxiv.org/abs/2503.18813) — Google DeepMind's trusted/quarantined split with dirty-data tracking.
 - Meta AI, [*Agents Rule of Two: A Practical Approach to AI Agent Security*](https://ai.meta.com/blog/practical-ai-agent-security/) — session-scoped rule that an agent should hold at most two of: untrusted input, sensitive data access, external state change.
