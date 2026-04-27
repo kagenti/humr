@@ -10,7 +10,7 @@ import {
 } from "../../forms/anthropic-credential-schema.js";
 import { CardIcon } from "./card-icon.js";
 import { IconButton } from "./icon-button.js";
-import { type Mode, MODES, stripWhitespace } from "./modes.js";
+import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
 export function AnthropicForm({
   variant,
@@ -182,7 +182,7 @@ function QuickSetupHint() {
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
     <div className="flex items-center gap-1 border-b-2 border-border-light">
-      {(Object.keys(MODES) as Mode[]).map((m) => {
+      {MODE_KEYS.map((m) => {
         const active = mode === m;
         return (
           <button

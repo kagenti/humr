@@ -4,7 +4,10 @@ import {
   type EnvMapping,
 } from "../../../../types.js";
 
-export type Mode = "oauth" | "api-key";
+/** Ordered Mode keys — single source of truth for the toggle's left→right
+ *  order, the Zod enum, and Object.keys-style iteration without a cast. */
+export const MODE_KEYS = ["oauth", "api-key"] as const;
+export type Mode = (typeof MODE_KEYS)[number];
 
 export const MODES = {
   oauth: {

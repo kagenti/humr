@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type Mode, MODES, stripWhitespace } from "../components/anthropic/modes.js";
+import { MODE_KEYS, MODES, stripWhitespace } from "../components/anthropic/modes.js";
 
 /**
  * The credential field reads as raw user input but validates against the
@@ -10,7 +10,7 @@ import { type Mode, MODES, stripWhitespace } from "../components/anthropic/modes
  */
 export const anthropicCredentialSchema = z
   .object({
-    mode: z.enum(["oauth", "api-key"] as const satisfies readonly Mode[]),
+    mode: z.enum(MODE_KEYS),
     value: z.string(),
   })
   .superRefine((data, ctx) => {
@@ -23,7 +23,7 @@ export const anthropicCredentialSchema = z
       });
       return;
     }
-    for (const m of Object.keys(MODES) as Mode[]) {
+    for (const m of MODE_KEYS) {
       if (m !== data.mode && v.startsWith(MODES[m].prefix)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
