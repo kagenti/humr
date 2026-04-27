@@ -53,7 +53,7 @@ flowchart LR
 
   controller -->|RFC 8693 impersonation<br/>requested_subject = owner| keycloak
   keycloak -->|onecli-audience token<br/>owner sub| controller
-  controller -->|provision per-agent token| onecli-api
+  controller -->|provision per-instance token| onecli-api
 
   controller -->|mount token Secret| agentpod
   agent-runtime -->|opaque token| onecli-gw
@@ -95,9 +95,9 @@ The auth allow-list is a separate gate. Keycloak issues tokens to anyone in the 
 
 A platform user is one Keycloak `sub`. A channel user (Slack `U…`, Telegram chat id) is a separate identity issued by an external system. Bridging the two is what makes a Slack mention from `U05ABC` resolve to a specific Humr user with their own credentials and resources.
 
-Identity links live in Postgres, owned by the api-server. Each link binds a channel-typed external id (`{channel: "slack", workspaceId, userId}`) to a Humr `sub`. The link is established interactively — the channel adapter prompts the user, the user authenticates via Keycloak in a browser, and the resulting `sub` is bound to the channel id under the user's confirmation. After that, every channel-driven prompt for that channel id runs as that Humr user: same allow-list check, same OneCLI scoping, same `humr.ai/owner` filtering on resources.
+Identity links live in Postgres, owned by the api-server. Each link binds a channel-typed external id (`{channel: "slack", workspaceId, userId}`) to a Humr `sub`. The link is established interactively — the Channel Worker prompts the user, the user authenticates via Keycloak in a browser, and the resulting `sub` is bound to the channel id under the user's confirmation. After that, every channel-driven prompt for that channel id runs as that Humr user: same allow-list check, same OneCLI scoping, same `humr.ai/owner` filtering on resources.
 
-A user who has not linked their channel identity gets no platform access from that channel. The channel adapter is not a privileged identity — it carries the channel-side id forward, the api-server resolves it against the link table, and a missing link is a hard reject. Channel-routing details (which thread maps to which session, how outbound replies are addressed) live on [channels](channels.md).
+A user who has not linked their channel identity gets no platform access from that channel. The Channel Worker is not a privileged identity — it carries the channel-side id forward, the api-server resolves it against the link table, and a missing link is a hard reject. Channel-routing details (Channel Bindings, Threads, outbound reply addressing) live on [channels](channels.md).
 
 ## Credential plane
 
@@ -128,7 +128,7 @@ OneCLI does not yet support HITL approval mid-request — the gateway either has
 
 ## Per-instance access token and pod identity
 
-The per-agent token is what scopes a pod's outbound traffic to a specific user's grants. The provisioning sequence:
+The per-instance access token is what scopes a pod's outbound traffic to a specific user's grants. The provisioning sequence:
 
 1. Reconcile reads the `agent-instance` ConfigMap and its `humr.ai/owner` label.
 2. Controller obtains a service-account token from Keycloak via `client_credentials`.
