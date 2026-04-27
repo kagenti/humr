@@ -120,7 +120,7 @@ Two secret shapes coexist:
 
 OAuth-style integrations (GitHub, Google, …) live in OneCLI's app registry — a hardcoded list of providers, each declaring the env names it needs ([ADR-024](../adrs/024-connector-declared-envs.md)). The api-server drives the OAuth callback dance and stores the resulting token via OneCLI's API. The provider, not the platform, is the source of truth for env names; the Configure Agent UI populates the agent's editable env list at grant time using the connection's `envMappings` and removes those entries on ungrant when still untouched.
 
-Pod env at start is the composition of platform defaults, connector-declared envs, template envs, agent-level envs, and instance-level envs — last occurrence wins, with `PORT` server-enforced. Editing any of these takes effect on the next pod restart; the StatefulSet rolls automatically when agent envs change.
+Pod env at start is the composition of platform defaults, connector-declared envs, template envs, agent-level envs, and instance-level envs — last occurrence wins. Only `PORT` is on the server-enforced protected-name list today. The credential-routing envs the platform sets (`HTTPS_PROXY`, `HTTP_PROXY`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `ONECLI_ACCESS_TOKEN`) can be shadowed by user-supplied envs in name, but not in effect: any value an instance owner substitutes either points at a host the network boundary won't let the pod reach, or breaks TLS to the gateway, or makes the gateway reject the request — the call fails closed rather than escaping the trust boundary. Extending the protected list to cover these envs is a small follow-up that would prevent accidental self-foot-shoots and harden against any future NetworkPolicy weakening; tracking it as a known gap. Editing any env takes effect on the next pod restart; the StatefulSet rolls automatically when agent envs change.
 
 ### Human-in-the-loop
 
@@ -146,12 +146,15 @@ Token lifetime tracks the instance: the Secret is created on first reconcile and
 
 ## Network boundary
 
-NetworkPolicy is reconciled per instance by the controller and pins what an agent pod is allowed to reach:
+NetworkPolicy is reconciled per instance by the controller as a **strict allow-list of pod selectors** — not a CIDR-based or grant-aware policy. Three rules total:
 
-- **Allowed:** OneCLI gateway port (egress for upstream calls), api-server harness port (trigger receipt and MCP tool access — see [platform-topology](platform-topology.md)), DNS.
-- **Blocked:** OneCLI admin port, Keycloak, K8s API, Postgres, every other pod in the namespace, every internet host that does not match an OneCLI grant.
+- **OneCLI pods** in the release namespace, on the gateway and web ports.
+- **api-server pods**, on the harness port (trigger receipt and MCP tool access — see [platform-topology](platform-topology.md)).
+- **DNS** on UDP/TCP 53 and 5353 (no peer restriction on this rule).
 
-The gateway is what makes "blocked except for grants" enforceable on the egress side. NetworkPolicy alone would permit traffic to grant-able hosts even without grants; the gateway is the layer that distinguishes "you have a grant for this host" from "this host happens to be reachable."
+There is no rule for direct internet egress. The agent pod cannot open a TCP connection to an arbitrary external host — every outbound HTTPS call is structurally forced through the OneCLI gateway, where the gateway then decides per host (and optionally per path, [ADR-028](../adrs/028-generic-secret-injection-config.md)) whether to inject credentials and forward upstream.
+
+This makes NetworkPolicy and the gateway complementary: NetworkPolicy enforces "the gateway is the only egress hop that can reach the internet"; the gateway enforces "and only for hosts you have a grant for." Together they close the loop. The DNS rule is intentionally permissive on the peer (any DNS server reachable, not just CoreDNS) so name resolution works for OneCLI and ad-hoc lookups; this leaves a narrow data-exfiltration channel via DNS queries to attacker-controlled resolvers, which is accepted as low-bandwidth and out of scope for the current model.
 
 ## Forks
 
