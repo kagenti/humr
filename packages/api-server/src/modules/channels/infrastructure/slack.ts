@@ -6,7 +6,6 @@ import type { StoredChannelConfig } from "../stored-channel.js";
 import {
   createAcpClient,
   createForkAcpClient,
-  ensureRunning,
 } from "../../../core/acp-client.js";
 import {
   EventType,
@@ -110,7 +109,7 @@ export function createSlackWorker(
     });
 
     try {
-      await ensureRunning(instances(), instanceName);
+      await instances().ensureReady(instanceName);
       const acp = createAcpClient({
         namespace,
         instanceName,

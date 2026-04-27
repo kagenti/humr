@@ -2,12 +2,9 @@ import { WebSocket } from "ws";
 import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type { InstancesService } from "api-server-api";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
-const WAKE_POLL_INTERVAL_MS = 2_000;
-const WAKE_TIMEOUT_MS = 60_000;
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
@@ -32,30 +29,6 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
     });
     ws.on("error", reject);
   });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function ensureRunning(
-  instances: InstancesService,
-  name: string,
-): Promise<void> {
-  const inst = await instances.get(name);
-  if (!inst) throw new Error(`Instance "${name}" not found`);
-
-  if (inst.state === "hibernated") {
-    await instances.wake(name);
-  }
-
-  const deadline = Date.now() + WAKE_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const current = await instances.get(name);
-    if (current?.state === "running") return;
-    await sleep(WAKE_POLL_INTERVAL_MS);
-  }
-  throw new Error(`Instance "${name}" pod not ready within ${WAKE_TIMEOUT_MS / 1000}s`);
 }
 
 export interface AcpSessionInfo {

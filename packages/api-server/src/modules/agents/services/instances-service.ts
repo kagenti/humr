@@ -257,5 +257,12 @@ export function createInstancesService(deps: {
       }
       return restarted;
     },
+
+    async ensureReady(id) {
+      if (deps.owner && !await deps.repo.isOwnedBy(id, deps.owner)) {
+        throw new Error(`instance ${id}: not found or not owned`);
+      }
+      await deps.repo.ensureReady(id);
+    },
   };
 }

@@ -13,6 +13,7 @@ export interface K8sClient {
   getConfigMap(name: string): Promise<k8s.V1ConfigMap | null>;
   createConfigMap(body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
   replaceConfigMap(name: string, body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
+  patchConfigMap(name: string, body: object): Promise<void>;
   deleteConfigMap(name: string): Promise<void>;
 
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
@@ -34,13 +35,11 @@ export interface K8sClient {
 // Implementation
 // ---------------------------------------------------------------------------
 
-function is404(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    "code" in err &&
-    (err as { code: number }).code === 404
-  );
+function isStatus(err: unknown, code: number): boolean {
+  return err instanceof Error && "code" in err && (err as { code: number }).code === code;
 }
+const is404 = (err: unknown) => isStatus(err, 404);
+export const is409 = (err: unknown) => isStatus(err, 409);
 
 export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClient {
   return {
@@ -64,6 +63,13 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
 
     async replaceConfigMap(name, body) {
       return api.replaceNamespacedConfigMap({ name, namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+    },
+
+    async patchConfigMap(name, body) {
+      await api.patchNamespacedConfigMap(
+        { name, namespace, body },
+        k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.StrategicMergePatch),
+      );
     },
 
     async deleteConfigMap(name) {

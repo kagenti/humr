@@ -1,12 +1,16 @@
-import type { K8sClient } from "./k8s.js";
+import { is409, type K8sClient } from "./k8s.js";
+import { retry } from "./retry.js";
 import {
-  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF,
+  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LAST_ACTIVITY_KEY,
 } from "./labels.js";
 import {
   parseInfraInstance, isOwnedBy, hasType,
   buildInstanceConfigMap, patchSpecField, setDesiredState,
   isPodReady,
 } from "./configmap-mappers.js";
+import {
+  pollUntilReady, WAKE_POLL_INITIAL_MS, WAKE_POLL_MAX_MS, WAKE_TIMEOUT_MS,
+} from "./poll-until-ready.js";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
 export interface InstancesRepository {
@@ -22,9 +26,35 @@ export interface InstancesRepository {
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
   isPodReady(id: string): Promise<boolean>;
+  /**
+   * Make the instance's pod reachable. Idempotent; single-flight per id;
+   * bumps `humr.ai/last-activity` on every successful completion so any
+   * caller implicitly keeps the pod warm.
+   *
+   * The observed pod Ready condition is the authoritative signal — not
+   * `desiredState`. See ADR-032.
+   */
+  ensureReady(id: string): Promise<void>;
 }
 
 export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
+  // Single-flight per instance id. Concurrent callers for the same id share
+  // one in-flight wake+wait+bump; callers for different ids don't block each
+  // other. Correctness does not depend on this (K8s optimistic concurrency
+  // already serializes concurrent ConfigMap updates) — it keeps API load
+  // sane under bursty call patterns.
+  const inflight = new Map<string, Promise<void>>();
+
+  // Strategic-merge-patch — no read-modify-write, no resourceVersion, no
+  // 409 conflict possible. Mirrors the intent of the Go controller's
+  // retry.RetryOnConflict wrapper but is more direct (and cheaper: one round
+  // trip, no GET).
+  async function bumpLastActivity(id: string): Promise<void> {
+    await k8s.patchConfigMap(id, {
+      metadata: { annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() } },
+    });
+  }
+
   return {
     async list(owner?) {
       const ownerSelector = owner ? `,${LABEL_OWNER}=${owner}` : "";
@@ -125,18 +155,53 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
     },
 
     async wakeIfHibernated(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return false;
-      const infra = parseInfraInstance(cm);
-      if (infra.desiredState !== "hibernated") return true;
-      const woken = setDesiredState(cm, "running");
-      await k8s.replaceConfigMap(cm.metadata!.name!, woken);
-      return true;
+      // Retry on optimistic-concurrency conflict (HTTP 409) — mirrors the Go
+      // controller's retry.RetryOnConflict. Without this, a racing controller
+      // status write turns a routine wake into an ensureReady failure.
+      const wakeOnce = async () => {
+        const cm = await k8s.getConfigMap(id);
+        if (!cm) return false;
+        if (parseInfraInstance(cm).desiredState !== "hibernated") return true;
+        await k8s.replaceConfigMap(id, setDesiredState(cm, "running"));
+        return true;
+      };
+      return retry(wakeOnce, is409);
     },
 
     async isPodReady(id) {
       const pod = await k8s.getPod(`${id}-0`);
       return pod !== null && isPodReady(pod);
+    },
+
+    async ensureReady(id) {
+      const existing = inflight.get(id);
+      if (existing) return existing;
+
+      const work = (async () => {
+        const pod = await k8s.getPod(`${id}-0`);
+        if (pod !== null && isPodReady(pod)) {
+          await bumpLastActivity(id);
+          return;
+        }
+        // wakeIfHibernated is a no-op when desiredState is already "running",
+        // so calling it here is cheap and covers the "running-but-pod-absent"
+        // window (fresh instance, pod crash, mid-termination).
+        await this.wakeIfHibernated(id);
+        const ready = await pollUntilReady(
+          () => this.isPodReady(id),
+          WAKE_POLL_INITIAL_MS,
+          WAKE_POLL_MAX_MS,
+          WAKE_TIMEOUT_MS,
+        );
+        if (!ready) {
+          throw new Error(`instance ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`);
+        }
+        await bumpLastActivity(id);
+      })().finally(() => {
+        inflight.delete(id);
+      });
+      inflight.set(id, work);
+      return work;
     },
   };
 }

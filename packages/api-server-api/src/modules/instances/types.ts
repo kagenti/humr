@@ -62,6 +62,14 @@ export interface InstancesService {
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Instance | null>;
+  /**
+   * Ensure the instance's pod is reachable. Waits for pod Ready, waking
+   * from hibernation if needed. Idempotent; single-flight per id; bumps
+   * `humr.ai/last-activity` on every success. Channel adapters and any
+   * server-side caller that needs to talk to the agent must await this
+   * before connecting. See ADR-032.
+   */
+  ensureReady: (id: string) => Promise<void>;
   connectSlack: (id: string, slackChannelId: string) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
   connectTelegram: (id: string, botToken: string) => Promise<Instance | null>;

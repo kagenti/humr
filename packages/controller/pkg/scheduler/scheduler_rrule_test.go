@@ -31,9 +31,10 @@ func rruleScheduleCM(name, instanceName, specBody string) *corev1.ConfigMap {
 }
 
 // runningInstanceCM is the minimum state fire() needs to succeed without a
-// real pod: the instance ConfigMap with desiredState=running (so
-// wakeIfHibernated is a no-op) and restCfg left nil (so the exec step is
-// skipped — fire returns success after "trigger delivered" logging).
+// real pod: the instance ConfigMap with desiredState=running and restCfg
+// left nil (so the exec step is skipped — fire returns success after
+// "trigger delivered" logging). Tests that actually reach fire() must also
+// seed a readyPod so EnsureReady's pod-Ready check passes.
 func runningInstanceCM(name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -41,6 +42,17 @@ func runningInstanceCM(name string) *corev1.ConfigMap {
 			Labels: map[string]string{"humr.ai/type": "agent-instance"},
 		},
 		Data: map[string]string{"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n"},
+	}
+}
+
+// readyPod returns a Pod with PodReady=True so EnsureReady's poll succeeds
+// without the test having to simulate a reconciler scaling up a StatefulSet.
+func readyPod(instanceName string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: instanceName + "-0", Namespace: "test-agents"},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
 	}
 }
 
@@ -176,7 +188,7 @@ task: ping
 enabled: true
 `
 	cm := rruleScheduleCM("sched-rrule", "my-instance", spec)
-	client := fake.NewSimpleClientset(cm, runningInstanceCM("my-instance"))
+	client := fake.NewSimpleClientset(cm, runningInstanceCM("my-instance"), readyPod("my-instance"))
 	s := New(client, testCfg)
 	s.Start()
 	defer s.Stop()
