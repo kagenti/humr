@@ -54,7 +54,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "GH_TOKEN", Value: "humr:sentinel"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: "/home/agent"},
+		{Name: "HOME", Value: cfg.AgentHome},
 		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 	}
 	// Order matters: K8s resolves duplicate env names by keeping the last
@@ -136,7 +136,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		})
 		agentVolumeMounts = append(agentVolumeMounts, corev1.VolumeMount{
-			Name: "gh-config", MountPath: "/home/agent/.config/gh",
+			Name: "gh-config", MountPath: cfg.AgentHome + "/.config/gh",
 		})
 	}
 
@@ -284,7 +284,7 @@ func configSyncSidecar(instanceName string, cfg *config.Config, tokenSecretName 
 			},
 		}},
 		VolumeMounts: []corev1.VolumeMount{{
-			Name: "gh-config", MountPath: "/home/agent/.config/gh",
+			Name: "gh-config", MountPath: cfg.AgentHome + "/.config/gh",
 		}},
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},

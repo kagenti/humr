@@ -23,6 +23,7 @@ var testConfig = &config.Config{
 	WebPort:          10254,
 	CACertInitImage:  "busybox:stable",
 	HarnessServerPort:    4001,
+	AgentHome:        "/home/agent",
 }
 
 var testAgent = &types.AgentSpec{

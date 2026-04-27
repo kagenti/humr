@@ -53,7 +53,7 @@ func BuildForkJob(
 		{Name: "GH_TOKEN", Value: "humr:sentinel"},
 		{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: "/home/agent"},
+		{Name: "HOME", Value: cfg.AgentHome},
 		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
 		{Name: "HUMR_FORK_ID", Value: forkName},
 		{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},

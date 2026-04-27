@@ -19,6 +19,12 @@ agentNamespace: humr-agents
 # -- Whether to create the agent namespace (disable if it already exists or is managed externally)
 createAgentNamespace: true
 
+# -- Home directory inside agent containers. Used for the HOME env var, the
+# pod-files sidecar mount paths, and pod-files producer paths in api-server.
+# Must match the HOME of the agent image's user (humr-base sets this; user-
+# supplied images that differ should override here).
+agentHome: /home/agent
+
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:

@@ -94,13 +94,15 @@ export function createConnectionsService(deps: {
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
 
-      // Re-run all pod-files producers and publish to the agent's
-      // sidecar. The producer abstraction is opaque — connections-service
-      // doesn't know which producers exist or what state they read. Any
-      // future producer (secrets, schedules, …) re-publishes here for free
-      // when its source happens to overlap with a connection grant.
+      // Re-run pod-files producers tagged with "app-connections" and
+      // publish to the agent's sidecar. Source-tagged so unrelated
+      // producers (secrets, schedules, …) don't run on every grant change.
       if (deps.podFiles && deps.owner) {
-        await deps.podFiles.publishForOwner(deps.owner, agentName);
+        await deps.podFiles.publishForOwner(
+          deps.owner,
+          agentName,
+          "app-connections",
+        );
       }
     },
   };

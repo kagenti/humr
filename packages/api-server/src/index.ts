@@ -175,6 +175,9 @@ const channelManager = createChannelManager({ slackWorker, telegramWorker, chann
 // channel without changes elsewhere.
 const podFilesBus = createPodFilesBus();
 const podFilesRegistry = buildPodFilesRegistry({
+  // Agent HOME from the helm chart. Must agree with the controller's mount
+  // path; both read the same chart value.
+  agentHome: process.env["AGENT_HOME"] || "/home/agent",
   // Owner-scoped fetch via Keycloak impersonation. Safe to call from background
   // contexts (no live user JWT). The producer logs and returns empty on
   // transient OneCLI failures; next reconnect re-snapshots.

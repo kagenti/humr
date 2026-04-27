@@ -15,12 +15,17 @@ interface RawConnection {
  * Where the producer reads its state from. Owner-scoped so the producer
  * can use it from background contexts (no live user JWT). The function
  * returns the raw OneCLI rows; this producer filters/renders them.
+ *
+ * `agentHome` is the HOME inside the agent container (helm `agentHome` /
+ * `AGENT_HOME` env). Must agree with the controller's mount path; both
+ * read the same chart value so they stay in sync.
  */
 export interface GithubEnterpriseHostsDeps {
   fetchConnectionsForOwner(owner: string): Promise<RawConnection[]>;
+  agentHome: string;
 }
 
-export const GH_ENTERPRISE_HOSTS_PATH = "/home/agent/.config/gh/hosts.yml";
+export const GH_ENTERPRISE_HOSTS_RELATIVE_PATH = ".config/gh/hosts.yml";
 
 /**
  * Strip scheme and port from `metadata.baseUrl`, mirroring the gateway's
@@ -70,8 +75,10 @@ function renderHostFragment(connection: RawConnection): FileFragment | null {
 export function makeGithubEnterpriseHostsProducer(
   deps: GithubEnterpriseHostsDeps,
 ): FileProducer {
+  const path = `${deps.agentHome}/${GH_ENTERPRISE_HOSTS_RELATIVE_PATH}`;
   return {
     id: "github-enterprise:hosts",
+    source: "app-connections",
     async produce(owner: string): Promise<FileSpec[]> {
       const all = await deps.fetchConnectionsForOwner(owner);
       const fragments = all
@@ -81,7 +88,7 @@ export function makeGithubEnterpriseHostsProducer(
       if (fragments.length === 0) return [];
       return [
         {
-          path: GH_ENTERPRISE_HOSTS_PATH,
+          path,
           mode: "yaml-fill-if-missing",
           fragments,
         },

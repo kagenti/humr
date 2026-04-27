@@ -25,14 +25,29 @@ export interface PodFilesEvent {
 }
 
 /**
+ * Names the *state source* a producer reads. State-mutating services tag
+ * their publishes with the source they just changed; the publisher only
+ * runs producers tagged with that source. Keep names aligned with what
+ * the source actually is (the system, not the action) so producers and
+ * publishers can match by string.
+ */
+export const PRODUCER_SOURCES = ["app-connections"] as const;
+export type ProducerSource = (typeof PRODUCER_SOURCES)[number];
+
+/**
  * A producer reads humr's state for an owner and emits the files it wants
  * materialized in that owner's agent pods. Opaque source: the platform
- * doesn't know whether the producer's state is connections, secrets, or
- * something else — only that it can produce `FileSpec`s on demand.
+ * doesn't know whether the producer's state is app connections, secrets,
+ * or something else — only the `source` tag is used for routing.
  */
 export interface FileProducer {
-  /** Stable id, used for logging and selective re-publish. */
+  /** Stable id, used for logging. */
   id: string;
+  /**
+   * State source this producer reads. `publishForOwner(.., source)` only
+   * runs producers whose `source` matches.
+   */
+  source: ProducerSource;
   /**
    * Compute this producer's `FileSpec`s for `owner`. Empty array means
    * "this producer has nothing to contribute right now". Errors should be

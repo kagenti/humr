@@ -38,7 +38,7 @@ Introduce a generic **pod-files push** mechanism — the filesystem-state analog
 
 3. **Push channel.** A single SSE endpoint `GET /api/instances/<id>/pod-files/events` per instance. Snapshot on connect, upsert on state change. Per-instance Bearer auth, identical to the existing MCP endpoint. In-process pub/sub on the api-server keys topics by **agent name** (so all instances of the same agent share a topic, since most current sources of state are agent- or owner-scoped).
 
-4. **Publisher seam.** `PodFilesPublisher.publishForOwner(owner, agentName)` is the single entrypoint state-mutating services call after they touch state. It re-runs every producer in the registry and publishes the merged result. Producers that don't care about that owner return empty arrays; the cost is small. Services don't need to know what producers exist or what state they own.
+4. **Publisher seam, source-tagged.** `PodFilesPublisher.publishForOwner(owner, agentName, source)` is the single entrypoint state-mutating services call after they touch state. Each producer declares the `source` it reads (e.g. `"app-connections"`); the publisher only runs producers whose source matches. Producers stay opaque about *what* state they read — only the source tag is used for routing. The SSE-connect snapshot path (`compute(owner)`) still runs all producers, since at that moment we don't know what changed since the sidecar last connected.
 
 5. **Merge modes.** Currently one: `yaml-fill-if-missing`. Adds new top-level keys; for keys that already exist, fills only fields that are absent. Never overwrites a present field; never deletes. Preserves manual edits and unrelated content. Other modes (`json-merge`, `text-append`, `template-overwrite`) can slot in as needed.
 
@@ -60,13 +60,13 @@ The `github-enterprise → hosts.yml` case is the first registry entry; it's a ~
 - **Adding a managed file is one producer factory** plus an entry in `buildPodFilesRegistry`. The platform stays unchanged across new producers.
 - **The pod spec stays static** across state changes. The sidecar and shared volume are present whenever `CONTROLLER_IMAGE` is set; their presence does not depend on which producers have content.
 - **The agent image stays untouched.** Users can bring any image; the sidecar materializes files into a shared `emptyDir` that the agent container reads.
-- **One shared mount path for now** (`/home/agent/.config/gh`). Future producers needing different parent paths require additional `emptyDir` mounts on the pod template — small, mechanical change. Not yet generalized to "arbitrary paths under HOME" because that risks shadowing a user-image's existing files at those paths.
-- **Single api-server replica is the deployment baseline.** Multi-replica fanout (Redis pub/sub or pg notify) can slot in without changing the sidecar protocol.
-- **Wasted work on each publish.** `publishForOwner` runs every producer regardless of which source mutated. Producers must be cheap (most return empty arrays). Acceptable until a producer is expensive enough to justify source-tagged invalidation.
+- **HOME is a single chart value.** `agentHome` (default `/home/agent`) is set once in the helm chart and read by both the controller (mount path, `HOME` env var) and the api-server (passed to producers, who compose paths under it). Producer paths are HOME-relative, never literal.
+- **One shared mount path for now** (`${agentHome}/.config/gh`). Future producers needing different parent paths require additional `emptyDir` mounts on the pod template — small, mechanical change. Not yet generalized to "arbitrary paths under HOME" because that risks shadowing a user-image's existing files at those paths.
+- **Cross-replica fanout is the only deferred scaling concern.** Multi-pod *agents* work today: the bus is keyed by agent name, so all pods of the same agent subscribed to the same api-server replica receive every publish. Multi-pod *api-server* is the open case.
 - **Stale entries linger after revoke / source removal.** Producers can only add to files, not remove. Revoked hosts still appear in `gh auth status` until manually edited; gateway no longer swaps the sentinel, so calls fail loud. Accepted for safety against accidental data loss.
 
-## Status / next steps
+## Future extensions (decisions, not open questions)
 
-- First registry entry shipping in #307: `github-enterprise → /home/agent/.config/gh/hosts.yml`.
-- Promote this DRAFT to a numbered ADR once the second producer (likely a non-connection-based one) lands and validates the abstraction.
-- Open questions for the numbered version: (a) how to handle paths outside the current shared mount; (b) source-tagged publish to avoid unnecessary producer runs; (c) multi-replica fanout when api-server scales beyond one pod.
+- **Paths outside the current shared mount.** When a producer needs a path under a different parent (e.g. `${agentHome}/.gitconfig`), append a new `emptyDir` + mount in the controller's pod-template builder. The mount-path set lives next to the existing `gh-config` block in `resources.go` — explicit list, reviewed change. Not generalized to "arbitrary paths under HOME" because mounting all of HOME shadows user-image files.
+- **More producer sources.** New tags slot into `ProducerSource` in `pod-files/types.ts` (currently `"app-connections"` only). Each new state-mutating service calls `publishForOwner(.., "<its-source>")`; each producer reading that state declares matching `source`. Naming convention: name the *state source* (the system), not the action.
+- **Multi-replica api-server fanout.** Plan: `pg_notify` on channel `pod_files:<agentName>`. Postgres is already in the stack. The `PodFilesBus` interface (`subscribe`/`publish`) is the swap-in seam — a postgres-backed implementation slots in with no caller changes. Trigger: actually scaling api-server beyond one replica.

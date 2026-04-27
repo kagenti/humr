@@ -32,6 +32,7 @@ type Config struct {
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
 	ControllerImage      string // Controller image, reused as the agent-pod sidecar (config-sync). Empty disables the sidecar.
+	AgentHome            string // HOME inside agent containers. Used for the HOME env var and pod-files mount paths.
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -74,6 +75,7 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
 	cfg.ControllerImage = os.Getenv("CONTROLLER_IMAGE")
+	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	return cfg, nil
