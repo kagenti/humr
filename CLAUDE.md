@@ -2,20 +2,6 @@
 
 Humr — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
-### Monorepo Structure
-
-pnpm workspaces + standalone Go module:
-- `packages/agent-runtime/` — ACP WebSocket server + trigger watcher inside agent pods
-- `packages/agent-runtime-api/` — tRPC router definitions for agent-runtime
-- `packages/humr-base/` — shared base image/utilities
-- `packages/agents/claude-code/` — default Claude Code agent image
-- `packages/agents/google-workspace/` — Google Workspace agent (Drive, Gmail via gws CLI)
-- `packages/controller/` — Go K8s reconciler + scheduler
-- `packages/ui/` — React chat interface (Vite)
-- `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
-
-Together, `agent-runtime` + `agent-runtime-api` form the agent runtime — the ACP WebSocket server that runs inside each agent pod.
-
 ## Workflow
 
 mise is the task runner. All tasks are defined in `tasks.toml` files. **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break.
@@ -50,25 +36,11 @@ Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run
 
 ## Architecture
 
-Three-tier K8s platform:
-1. **Controller** (Go) — watches ConfigMaps, reconciles StatefulSets/Services/NetworkPolicies, runs cron scheduler
-2. **API Server** (TypeScript) — REST CRUD for instances/templates/schedules, WebSocket ACP relay to agent pods
-3. **Agent Runtime** (TypeScript, `agent-runtime` + `agent-runtime-api`) — ACP WebSocket server inside agent pods
+**Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page and the ADRs it links. Do not infer the architecture from the code alone — the docs are the source of truth for *why* the system is shaped the way it is.
 
-Infrastructure:
-- **OneCLI** — credential injection proxy (MITM), single container with Rust gateway + Node.js web dashboard
-- **cert-manager** — generates self-signed ECDSA CA (PKCS8) for OneCLI MITM TLS
-- **PostgreSQL** — OneCLI's internal dependency
+## Documentation
 
-K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent-instance, agent-schedule). Each ConfigMap uses `spec.yaml` (API Server writes) and `status.yaml` (Controller writes) keys to avoid write contention. Not CRDs — deployable without cluster-admin.
-
-## Key Design Decisions
-
-Architecture Decision Records live in [`docs/adrs/`](docs/adrs/) — see [`docs/adrs/index.md`](docs/adrs/index.md) for the full list. Use the `/adr` skill to create and manage ADRs. Always check existing ADRs before proposing architectural changes.
-
-## Architecture Docs
-
-When your work changes the behavior or responsibility of a subsystem documented in [`docs/architecture/`](docs/architecture/), update the relevant page and its `Last verified:` date in the same PR. If you re-read a subsystem page and confirm it still matches the code, bump `Last verified:` to today — even without a content change. Adding a new subsystem means adding a new page (with a `Last verified:` line) and linking it from [`docs/architecture.md`](docs/architecture.md). Use ADRs for *why*; use architecture docs for *how the decision is realized*.
+Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
 
 ## UI (`packages/ui`)
 
