@@ -45,14 +45,16 @@ realizes them; docs trail the code. Drift is measured **code vs docs**, never **
 
 Concretely:
 
-- An accepted ADR with no matching code change yet is **not drift**. Do not flag it.
+- An accepted ADR with no matching code change yet is **not drift**. Do not flag it — not as
+  drift, not as possible drift, not as an informational note, not as a "worth re-checking
+  later" aside. Drop it from the report entirely. The next run will catch it once code lands.
 - An accepted ADR whose realization is missing from an architecture page, but whose code
-  has not landed either, is **not drift**. Do not flag it.
+  has not landed either, is **not drift**. Same rule: omit from the report.
 - Drift only exists when **code in the diff** changes subsystem behavior/responsibility and the
   matching architecture page does not reflect that code.
 
 Anchor every check on something concrete in the diff. If the only evidence is "an ADR exists",
-ignore it.
+ignore it — silently. Do not narrate the exclusion.
 
 ## What this skill checks
 
@@ -86,6 +88,10 @@ Take the subagent's output and present a focused report to the user:
 - **Verdict** — one line: `aligned`, `minor drift`, or `significant drift`.
 - **Drift** — every ❌, with file/line evidence and the proposed edit. Group by check number.
 - **Possible drift** — every ⚠️, with the human-judgement question that needs answering.
+
+Items excluded by the rules above (ADR-only, paper-only, out-of-scope) must not appear
+anywhere in the report — not in either section, not as a parenthetical, not as a footnote.
+If there is nothing to flag, the report is just the verdict.
 
 ## Guidelines
 
