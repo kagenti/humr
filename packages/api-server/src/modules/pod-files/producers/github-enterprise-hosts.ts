@@ -1,0 +1,91 @@
+import type { FileFragment, FileProducer, FileSpec } from "../types.js";
+
+/**
+ * One row of OneCLI's `/api/connections` response — only the fields this
+ * producer needs. Kept local to avoid pulling the connections module's
+ * port shape into the pod-files layer.
+ */
+interface RawConnection {
+  id?: string;
+  provider: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Where the producer reads its state from. Owner-scoped so the producer
+ * can use it from background contexts (no live user JWT). The function
+ * returns the raw OneCLI rows; this producer filters/renders them.
+ */
+export interface GithubEnterpriseHostsDeps {
+  fetchConnectionsForOwner(owner: string): Promise<RawConnection[]>;
+}
+
+export const GH_ENTERPRISE_HOSTS_PATH = "/home/agent/.config/gh/hosts.yml";
+
+/**
+ * Strip scheme and port from `metadata.baseUrl`, mirroring the gateway's
+ * parser (context/onecli/apps/gateway/src/apps.rs `extract_host_from_base_url`).
+ */
+function extractHost(metadata: Record<string, unknown> | null | undefined): string | undefined {
+  if (!metadata) return undefined;
+  const raw = metadata["baseUrl"];
+  if (typeof raw !== "string") return undefined;
+  const noScheme = raw.startsWith("https://") ? raw.slice("https://".length) : raw;
+  const host = noScheme.split(":")[0]?.split("/")[0];
+  return host && host.length > 0 ? host : undefined;
+}
+
+/**
+ * `gh auth status` only displays the user — actual auth uses the proxied
+ * sentinel token. Pick the OAuth login (`metadata.username`) by default and
+ * fall back through `login` and `name` so older records keep working.
+ */
+function pickUsername(metadata: Record<string, unknown> | null | undefined): string | undefined {
+  if (!metadata) return undefined;
+  for (const key of ["username", "login", "name"]) {
+    const v = metadata[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+function renderHostFragment(connection: RawConnection): FileFragment | null {
+  const host = extractHost(connection.metadata);
+  if (!host) {
+    console.warn(
+      `github-enterprise connection ${connection.id ?? "?"}: missing or malformed metadata.baseUrl; skipped`,
+    );
+    return null;
+  }
+  const username = pickUsername(connection.metadata);
+  return {
+    [host]: {
+      oauth_token: "humr:sentinel",
+      git_protocol: "https",
+      ...(username ? { user: username } : {}),
+    },
+  };
+}
+
+export function makeGithubEnterpriseHostsProducer(
+  deps: GithubEnterpriseHostsDeps,
+): FileProducer {
+  return {
+    id: "github-enterprise:hosts",
+    async produce(owner: string): Promise<FileSpec[]> {
+      const all = await deps.fetchConnectionsForOwner(owner);
+      const fragments = all
+        .filter((c) => c.provider === "github-enterprise")
+        .map(renderHostFragment)
+        .filter((f): f is FileFragment => f !== null);
+      if (fragments.length === 0) return [];
+      return [
+        {
+          path: GH_ENTERPRISE_HOSTS_PATH,
+          mode: "yaml-fill-if-missing",
+          fragments,
+        },
+      ];
+    },
+  };
+}

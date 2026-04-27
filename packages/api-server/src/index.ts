@@ -20,9 +20,9 @@ import {
   deleteThreadsByInstance,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { composeConnectionsModule } from "./modules/connections/index.js";
-import { createConnectorFilesBus } from "./modules/connector-files/bus.js";
-import { renderFiles } from "./modules/connector-files/render.js";
-import { connectorFilesRegistry } from "./modules/connector-files/registry.js";
+import { createPodFilesBus } from "./modules/pod-files/bus.js";
+import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
+import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -169,28 +169,42 @@ const telegramWorker = config.telegramEnabled && chatSdkState
 
 const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
 
-const connectorFilesBus = createConnectorFilesBus();
-const connectorFilesSnapshot = async (owner: string) => {
+// Pod-files plumbing — see DRAFT-connector-files-push. The github-enterprise
+// hosts.yml producer is the first registry entry; future producers (secrets-
+// as-files, schedule-driven config, …) plug into the same publisher and SSE
+// channel without changes elsewhere.
+const podFilesBus = createPodFilesBus();
+const podFilesRegistry = buildPodFilesRegistry({
   // Owner-scoped fetch via Keycloak impersonation. Safe to call from background
-  // contexts (no live user JWT). Empty array on transient OneCLI failures —
-  // the SSE handler logs and the next reconnect re-snapshots.
-  const res = await onecli.onecliFetchAsOwner(owner, "/api/connections");
-  if (!res.ok) {
-    process.stderr.write(`connector-files snapshot ${owner}: OneCLI ${res.status}\n`);
-    return [];
-  }
-  const raw = (await res.json()) as Array<{ id?: string; provider: string; metadata?: Record<string, unknown> | null }>;
-  return renderFiles(raw, connectorFilesRegistry);
-};
+  // contexts (no live user JWT). The producer logs and returns empty on
+  // transient OneCLI failures; next reconnect re-snapshots.
+  fetchConnectionsForOwner: async (owner) => {
+    const res = await onecli.onecliFetchAsOwner(owner, "/api/connections");
+    if (!res.ok) {
+      process.stderr.write(`pod-files: OneCLI /api/connections for ${owner} → ${res.status}\n`);
+      return [];
+    }
+    return (await res.json()) as Array<{
+      id?: string;
+      provider: string;
+      metadata?: Record<string, unknown> | null;
+    }>;
+  },
+});
+const podFilesPublisher = createPodFilesPublisher({
+  bus: podFilesBus,
+  registry: podFilesRegistry,
+});
 
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
-  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, connectorFilesBus,
+  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config, api, db, channelManager, channelSecretStore,
-  connectorFilesBus, connectorFilesSnapshot,
+  podFilesBus,
+  podFilesSnapshot: podFilesPublisher.compute,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {

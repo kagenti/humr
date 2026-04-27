@@ -5,9 +5,7 @@ import type {
   ConnectionsService,
 } from "api-server-api";
 import type { OnecliConnectionsPort } from "../infrastructure/onecli-connections-port.js";
-import type { ConnectorFilesBus } from "../../connector-files/bus.js";
-import { renderFiles } from "../../connector-files/render.js";
-import { connectorFilesRegistry } from "../../connector-files/registry.js";
+import type { PodFilesPublisher } from "../../pod-files/publisher.js";
 
 export function normalizeStatus(
   raw: string | null | undefined,
@@ -43,11 +41,19 @@ export function extractIdentity(
 export function createConnectionsService(deps: {
   port: OnecliConnectionsPort;
   /**
-   * Optional bus for publishing connector-files updates to agent pod
-   * sidecars (see DRAFT-connector-files-push). Omit in tests or when SSE
-   * delivery isn't wired.
+   * The Keycloak sub of the user calling setAgentConnections (also the
+   * agent's owner — only owners can grant). Required when `podFiles` is
+   * present so the publisher knows which owner's state to read.
    */
-  connectorFilesBus?: ConnectorFilesBus;
+  owner?: string;
+  /**
+   * Optional pod-files publisher. When set, every successful grant change
+   * triggers a re-publish of all producers' output for `owner`. The
+   * sidecar's fill-if-missing merge handles re-grants idempotently, so we
+   * always send the full current state — no diff computation. Revokes
+   * trigger nothing (entries linger; see DRAFT-connector-files-push).
+   */
+  podFiles?: PodFilesPublisher;
 }): ConnectionsService {
   return {
     async list() {
@@ -88,25 +94,13 @@ export function createConnectionsService(deps: {
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
 
-      // Push the rendered connector-files to subscribed pod sidecars so
-      // managed files reflect the change without rolling the pod. The
-      // sidecar's fill-if-missing merge handles re-grants idempotently, so
-      // we send the full current granted set rather than computing a diff.
-      // Revokes intentionally emit nothing — entries linger in the file
-      // until manually edited (per DRAFT-connector-files-push).
-      const bus = deps.connectorFilesBus;
-      if (bus) {
-        const granted = new Set(deduped);
-        const all = await deps.port.listAppConnections();
-        const files = renderFiles(
-          all
-            .filter((c) => granted.has(c.id))
-            .map((c) => ({ id: c.id, provider: c.provider, metadata: c.metadata })),
-          connectorFilesRegistry,
-        );
-        if (files.length > 0) {
-          bus.publish(agentName, { kind: "upsert", files });
-        }
+      // Re-run all pod-files producers and publish to the agent's
+      // sidecar. The producer abstraction is opaque — connections-service
+      // doesn't know which producers exist or what state they read. Any
+      // future producer (secrets, schedules, …) re-publishes here for free
+      // when its source happens to overlap with a connection grant.
+      if (deps.podFiles && deps.owner) {
+        await deps.podFiles.publishForOwner(deps.owner, agentName);
       }
     },
   };

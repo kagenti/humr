@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { createHash } from "node:crypto";
 import yaml from "js-yaml";
-import { mountConnectorFilesEventsRoute } from "../../apps/harness-api-server/connector-files-events.js";
-import { createConnectorFilesBus } from "../../modules/connector-files/bus.js";
+import { mountPodFilesEventsRoute } from "../../apps/harness-api-server/pod-files-events.js";
+import { createPodFilesBus } from "../../modules/pod-files/bus.js";
 import {
   LABEL_AGENT_REF,
   LABEL_OWNER,
@@ -16,9 +16,9 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
  * subscriber set kept growing on every reconnect because the parked Promise
  * never woke and the `finally`-side `unsubscribe` never ran.
  */
-describe("connector-files events SSE", () => {
+describe("pod-files events SSE", () => {
   it("unsubscribes from the bus when the client disconnects", async () => {
-    const inner = createConnectorFilesBus();
+    const inner = createPodFilesBus();
     let active = 0;
     const spyBus = {
       subscribe(agentName: string, cb: Parameters<typeof inner.subscribe>[1]) {
@@ -55,14 +55,14 @@ describe("connector-files events SSE", () => {
     } as unknown as K8sClient;
 
     const app = new Hono();
-    mountConnectorFilesEventsRoute(app, {
+    mountPodFilesEventsRoute(app, {
       k8s,
       bus: spyBus,
       fetchSnapshot: async () => [],
     });
 
     const ac = new AbortController();
-    const res = await app.request("/api/instances/i-1/connector-files/events", {
+    const res = await app.request("/api/instances/i-1/pod-files/events", {
       headers: { authorization: `Bearer ${token}` },
       signal: ac.signal,
     });

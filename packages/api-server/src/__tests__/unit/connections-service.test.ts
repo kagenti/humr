@@ -239,47 +239,20 @@ describe("ConnectionsService.setAgentConnections", () => {
     expect(calls).toEqual([{ uuid: "uuid", ids: [] }]);
   });
 
-  it("publishes an upsert with rendered connector-files on grant change", async () => {
+  it("triggers the pod-files publisher with the calling owner on grant change", async () => {
     const agent: OnecliAgent = { id: "uuid", identifier: "my-agent" };
-    const events: { agentName: string; kind: string; files: unknown[] }[] = [];
+    const calls: { owner: string; agentName: string }[] = [];
     const svc = createConnectionsService({
-      port: makePort({
-        findAgentByIdentifier: async () => agent,
-        listAppConnections: async () => [
-          { id: "c-1", provider: "github-enterprise", metadata: { baseUrl: "https://ghe.example.com", username: "alice" } },
-          { id: "c-2", provider: "github", metadata: { baseUrl: "https://github.com" } },
-          { id: "c-3", provider: "github-enterprise", metadata: { baseUrl: "https://other.example.com" } },
-        ],
-      }),
-      connectorFilesBus: {
-        subscribe: () => () => {},
-        publish: (agentName, e) => events.push({ agentName, kind: e.kind, files: e.files }),
+      port: makePort({ findAgentByIdentifier: async () => agent }),
+      owner: "alice-sub",
+      podFiles: {
+        compute: async () => [],
+        publishForOwner: async (owner, agentName) => {
+          calls.push({ owner, agentName });
+        },
       },
     });
-
-    await svc.setAgentConnections("my-agent", ["c-1", "c-2"]);
-    // Only the granted github-enterprise row makes it onto the wire — c-2
-    // filtered by the registry (no provider entry), c-3 filtered as not granted.
-    expect(events).toEqual([
-      {
-        agentName: "my-agent",
-        kind: "upsert",
-        files: [
-          {
-            path: "/home/agent/.config/gh/hosts.yml",
-            mode: "yaml-fill-if-missing",
-            fragments: [
-              {
-                "ghe.example.com": {
-                  oauth_token: "humr:sentinel",
-                  git_protocol: "https",
-                  user: "alice",
-                },
-              },
-            ],
-          },
-        ],
-      },
-    ]);
+    await svc.setAgentConnections("my-agent", ["c-1"]);
+    expect(calls).toEqual([{ owner: "alice-sub", agentName: "my-agent" }]);
   });
 });

@@ -1,14 +1,14 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { ConnectorFilesBus } from "../../modules/connector-files/bus.js";
-import type { FileSpec } from "../../modules/connector-files/types.js";
+import type { PodFilesBus } from "../../modules/pod-files/bus.js";
+import type { FileSpec } from "../../modules/pod-files/types.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { verifyInstanceToken } from "./instance-auth.js";
 
-export interface ConnectorFilesEventsDeps {
+export interface PodFilesEventsDeps {
   k8s: K8sClient;
-  bus: ConnectorFilesBus;
-  /** Returns the file specs to materialize for the owner's current grants. */
+  bus: PodFilesBus;
+  /** Returns the file specs to materialize for the owner's current state. */
   fetchSnapshot: (owner: string) => Promise<FileSpec[]>;
 }
 
@@ -18,8 +18,8 @@ export interface ConnectorFilesEventsDeps {
  * OneCLI grants are agent-scoped — every running instance of the same agent
  * sees the same set of granted connections, so they share one topic.
  */
-export function mountConnectorFilesEventsRoute(app: Hono, deps: ConnectorFilesEventsDeps) {
-  app.get("/api/instances/:id/connector-files/events", async (c) => {
+export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
+  app.get("/api/instances/:id/pod-files/events", async (c) => {
     const authHeader = c.req.header("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return c.json({ error: "unauthorized" }, 401);
@@ -51,7 +51,7 @@ export function mountConnectorFilesEventsRoute(app: Hono, deps: ConnectorFilesEv
 
       try {
         const snapshot = await deps.fetchSnapshot(owner).catch((err) => {
-          console.warn(`connector-files snapshot for ${owner} failed:`, err);
+          console.warn(`pod-files snapshot for ${owner} failed:`, err);
           return [] as FileSpec[];
         });
         await stream.writeSSE({
