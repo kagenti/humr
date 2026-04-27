@@ -66,6 +66,10 @@ K8s resource model: ConfigMaps with `humr.ai/type` labels (agent-template, agent
 
 Architecture Decision Records live in [`docs/adrs/`](docs/adrs/) — see [`docs/adrs/index.md`](docs/adrs/index.md) for the full list. Use the `/adr` skill to create and manage ADRs. Always check existing ADRs before proposing architectural changes.
 
+## Architecture Docs
+
+When your work changes the behavior or responsibility of a subsystem documented in [`docs/architecture/`](docs/architecture/), update the relevant page and its `Last verified:` date in the same PR. If you re-read a subsystem page and confirm it still matches the code, bump `Last verified:` to today — even without a content change. Adding a new subsystem means adding a new page (with a `Last verified:` line) and linking it from [`docs/architecture.md`](docs/architecture.md). Use ADRs for *why*; use architecture docs for *how the decision is realized*.
+
 ## UI (`packages/ui`)
 
 Follow the [`react-ui-engineering`](.agents/skills/react-ui-engineering/SKILL.md) skill for all React + TypeScript work. Concrete in-flight migration targets for this project are tracked in [`docs/plans/ui-refactor/`](docs/plans/ui-refactor/).
