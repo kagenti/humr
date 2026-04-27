@@ -103,11 +103,18 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
+			// Default 10Gi preserves pre-issue-#244 behavior; templates may
+			// shrink (or grow) by setting `size:` on the mount. Validation
+			// happens in ParseAgentSpec, so MustParse here is safe.
+			size := resource.MustParse("10Gi")
+			if m.Size != "" {
+				size = resource.MustParse(m.Size)
+			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse("10Gi"),
+						corev1.ResourceStorage: size,
 					},
 				},
 			}

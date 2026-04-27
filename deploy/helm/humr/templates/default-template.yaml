@@ -15,6 +15,9 @@ data:
     mounts:
       - path: /home/agent
         persist: true
+        {{- with .Values.defaultTemplate.homeMountSize }}
+        size: {{ . | quote }}
+        {{- end }}
       - path: /tmp
         persist: false
     init: |

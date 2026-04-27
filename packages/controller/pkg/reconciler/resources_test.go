@@ -189,6 +189,30 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	assert.Equal(t, "ca-cert", mountPaths["/etc/humr/ca"])
 }
 
+func TestBuildStatefulSet_PVCSize(t *testing.T) {
+	// Mount with explicit size renders a PVC sized accordingly; mount without
+	// size falls back to the historical 10Gi default. (issue #244)
+	agent := types.AgentSpec{
+		Image: "humr-test:latest",
+		Mounts: []types.Mount{
+			{Path: "/home/agent", Persist: true, Size: "2Gi"},
+			{Path: "/cache", Persist: true},
+		},
+	}
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM, nil, nil)
+
+	require.Len(t, ss.Spec.VolumeClaimTemplates, 2)
+	byName := map[string]corev1.PersistentVolumeClaim{}
+	for _, pvc := range ss.Spec.VolumeClaimTemplates {
+		byName[pvc.Name] = pvc
+	}
+	home := byName["home-agent"].Spec.Resources.Requests[corev1.ResourceStorage]
+	cache := byName["cache"].Spec.Resources.Requests[corev1.ResourceStorage]
+	assert.Equal(t, "2Gi", home.String())
+	assert.Equal(t, "10Gi", cache.String())
+}
+
 func TestBuildStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentStorageClass = "humr-rwx"

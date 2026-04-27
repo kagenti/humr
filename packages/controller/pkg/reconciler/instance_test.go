@@ -243,6 +243,40 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	assert.Empty(t, pvcs.Items)
 }
 
+func TestReconcileOrphanPVCs(t *testing.T) {
+	// orphan: PVC labeled for an instance whose ConfigMap is gone
+	orphan := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "home-agent-deleted-instance-0",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"humr.ai/instance": "deleted-instance"},
+		},
+	}
+	// live: PVC labeled for an instance that still has a ConfigMap
+	live := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "home-agent-my-instance-0",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"humr.ai/instance": "my-instance"},
+		},
+	}
+	liveCM := instanceCM("running") // name = "my-instance"
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		liveCM, orphan, live,
+	)
+
+	r.ReconcileOrphanPVCs(context.Background())
+
+	// orphan removed
+	_, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), orphan.Name, metav1.GetOptions{})
+	assert.Error(t, err, "orphan PVC should be deleted")
+
+	// live retained
+	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), live.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "live instance PVC must be retained")
+}
+
 func TestEnvMappingsToEnvVars(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		assert.Nil(t, envMappingsToEnvVars(nil))

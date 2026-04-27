@@ -137,6 +137,31 @@ else
 fi
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
 
+# 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
+# path for VMs created before this flag was added). New VMs already have
+# /etc/rancher/k3s/config.yaml from the lima provision script.
+K3S_CONFIG_YAML='kubelet-arg:
+  - "container-log-max-size=10Mi"
+  - "container-log-max-files=3"
+'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  if ! sudo grep -q container-log-max-size /etc/rancher/k3s/config.yaml 2>/dev/null; then
+    echo "Configuring k3s container log rotation (issue #244)..."
+    sudo mkdir -p /etc/rancher/k3s
+    printf '%s' "$K3S_CONFIG_YAML" | sudo tee /etc/rancher/k3s/config.yaml >/dev/null
+    sudo systemctl restart k3s
+    kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+  fi
+else
+  if ! limactl shell "$LIMA_INSTANCE" sudo grep -q container-log-max-size /etc/rancher/k3s/config.yaml 2>/dev/null; then
+    echo "Configuring k3s container log rotation (issue #244)..."
+    limactl shell "$LIMA_INSTANCE" sudo mkdir -p /etc/rancher/k3s
+    printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee /etc/rancher/k3s/config.yaml >/dev/null
+    limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
+    kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+  fi
+fi
+
 # 2. Install cert-manager
 if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
   echo "Installing cert-manager..."
@@ -190,6 +215,16 @@ fi
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
 
+# 7. Prune image layers no longer referenced by any pod (issue #244). After
+# repeated reinstalls, old `:latest` layers accumulate in containerd; this
+# drops anything not pinned by a running container.
+echo "Pruning unused images..."
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+else
+  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+fi
+
 echo ""
 echo "=== Cluster ready ==="
 echo "KUBECONFIG=$KUBECONFIG"
@@ -224,6 +259,13 @@ echo "Restarting apiserver pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-apiserver
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
 
+# Drop image layers no longer pinned by a running container (issue #244).
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+else
+  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+fi
+
 echo "Done."
 '''
 
@@ -254,6 +296,12 @@ echo "Restarting UI pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-ui
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s
 
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+else
+  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+fi
+
 echo "Done."
 '''
 
@@ -282,6 +330,15 @@ rm -f "$tar"
 
 echo "Restarting agent pods..."
 kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all 2>/dev/null || true
+
+# Best-effort: prune unreferenced image layers. Running this immediately after
+# `delete pods` may briefly skip layers still pinned to terminating containers;
+# the next install/build sweep will catch them. (issue #244)
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+else
+  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+fi
 
 echo "Done. Agent pods will restart with new image."
 '''
@@ -380,6 +437,54 @@ else
   limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
   echo "k3s cluster ($LIMA_INSTANCE) deleted."
 fi
+'''
+
+["cluster:reclaim"]
+description = "Reclaim disk in the dev cluster: prune unused images, delete completed/failed pods, surface orphan PVCs."
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  RUN_IN_VM="sudo"
+else
+  LIMA_INSTANCE="humr-k3s"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
+fi
+
+echo "[1/4] Pruning unreferenced images from containerd..."
+$RUN_IN_VM k3s crictl rmi --prune || true
+
+echo "[2/4] Deleting Succeeded/Failed pods cluster-wide..."
+kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Succeeded --ignore-not-found
+kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Failed --ignore-not-found
+
+echo "[3/4] Checking for orphan agent PVCs..."
+# Cross-reference humr.ai/instance label on each PVC against existing instance
+# ConfigMaps. The controller GCs orphans every 10m; this just surfaces any that
+# look stuck. Forced deletion is left to the operator.
+ORPHANS=()
+while IFS='|' read -r ns pvc inst; do
+  [ -z "$pvc" ] && continue
+  if ! kubectl --kubeconfig="$KUBECONFIG" -n "$ns" get configmap "$inst" >/dev/null 2>&1; then
+    ORPHANS+=("$ns/$pvc (instance: $inst)")
+  fi
+done < <(
+  kubectl --kubeconfig="$KUBECONFIG" get pvc -A -l humr.ai/instance \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.labels.humr\.ai/instance}{"\n"}{end}'
+)
+if [ "${#ORPHANS[@]}" -eq 0 ]; then
+  echo "  no orphan PVCs found"
+else
+  echo "  ${#ORPHANS[@]} orphan PVC(s):"
+  printf '    %s\n' "${ORPHANS[@]}"
+  echo "  controller will GC them automatically; or delete manually with: kubectl delete pvc -n <ns> <name>"
+fi
+
+echo "[4/4] Disk usage on the cluster VM:"
+$RUN_IN_VM df -h /
 '''
 
 ["cluster:status"]

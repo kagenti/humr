@@ -9,6 +9,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/teambition/rrule-go"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 var quietHoursTimeRE = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -33,6 +34,10 @@ type AgentSpec struct {
 type Mount struct {
 	Path    string `yaml:"path"`
 	Persist bool   `yaml:"persist"`
+	// Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
+	// mount's PVC. When empty the controller defaults to 10Gi to match the
+	// pre-issue-#244 behavior. Ignored when Persist is false.
+	Size string `yaml:"size,omitempty"`
 }
 
 type EnvVar struct {
@@ -173,6 +178,11 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 	for _, m := range spec.Mounts {
 		if !strings.HasPrefix(m.Path, "/") {
 			return nil, fmt.Errorf("agent spec: mount path %q must be absolute", m.Path)
+		}
+		if m.Size != "" {
+			if _, err := resource.ParseQuantity(m.Size); err != nil {
+				return nil, fmt.Errorf("agent spec: mount %q size %q is not a valid K8s quantity: %w", m.Path, m.Size, err)
+			}
 		}
 	}
 	return &spec, nil

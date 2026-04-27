@@ -85,6 +85,32 @@ mounts:
 	assert.Contains(t, err.Error(), "must be absolute")
 }
 
+func TestParseAgentSpec_MountSize(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+mounts:
+  - path: /home/agent
+    persist: true
+    size: 2Gi
+  - path: /tmp
+    persist: false`)
+	require.NoError(t, err)
+	require.Len(t, spec.Mounts, 2)
+	assert.Equal(t, "2Gi", spec.Mounts[0].Size)
+	assert.Empty(t, spec.Mounts[1].Size)
+}
+
+func TestParseAgentSpec_MountSizeInvalid(t *testing.T) {
+	_, err := ParseAgentSpec(`version: humr.ai/v1
+image: foo
+mounts:
+  - path: /home/agent
+    persist: true
+    size: notaquantity`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "valid K8s quantity")
+}
+
 // --- Instance ---
 
 func TestParseInstanceSpec(t *testing.T) {

@@ -12,6 +12,12 @@ provision:
   - mode: system
     script: |
       #!/bin/sh
+      mkdir -p /etc/rancher/k3s
+      cat > /etc/rancher/k3s/config.yaml << 'EOF'
+      kubelet-arg:
+        - "container-log-max-size=10Mi"
+        - "container-log-max-files=3"
+      EOF
       if [ ! -d /var/lib/rancher/k3s ]; then
         curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445" sh -
       fi

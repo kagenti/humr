@@ -121,6 +121,11 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, cfg)
 	go idleChecker.RunLoop(ctx)
 
+	// Periodic GC for PVCs whose instance ConfigMap has been removed
+	// out-of-band (issue #244). The Delete event handler covers the
+	// happy path; this catches crashes mid-delete and direct kubectl removals.
+	go runOrphanPVCSweep(ctx, instanceReconciler, 10*time.Minute)
+
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
 
@@ -211,6 +216,20 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			}
 			queue.Forget(key)
 		}()
+	}
+}
+
+func runOrphanPVCSweep(ctx context.Context, r *reconciler.InstanceReconciler, interval time.Duration) {
+	r.ReconcileOrphanPVCs(ctx)
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.ReconcileOrphanPVCs(ctx)
+		}
 	}
 }
 
