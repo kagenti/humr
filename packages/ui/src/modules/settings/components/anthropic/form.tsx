@@ -170,6 +170,7 @@ function QuickSetupHint() {
       <span className="inline-flex items-center gap-1.5 align-middle">
         <code className="font-mono font-semibold text-accent">claude setup-token</code>
         <button
+          type="button"
           onClick={copy}
           className="h-5 w-5 rounded inline-flex items-center justify-center text-text-muted hover:text-accent"
           title="Copy command"
