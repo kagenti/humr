@@ -1,10 +1,16 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 
 import { useTestAnthropic } from "../../../secrets/api/mutations.js";
+import {
+  anthropicCredentialSchema,
+  type AnthropicCredentialValues,
+} from "../../forms/anthropic-credential-schema.js";
 import { CardIcon } from "./card-icon.js";
 import { IconButton } from "./icon-button.js";
-import { mismatchError, type Mode, MODES, stripWhitespace } from "./modes.js";
+import { type Mode, MODES, stripWhitespace } from "./modes.js";
 
 export function AnthropicForm({
   variant,
@@ -17,9 +23,14 @@ export function AnthropicForm({
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const [mode, setMode] = useState<Mode>(initialMode);
-  const [value, setValue] = useState("");
-  const [saving, setSaving] = useState(false);
+  const { register, handleSubmit, control, watch, getValues, formState } =
+    useForm<AnthropicCredentialValues>({
+      resolver: zodResolver(anthropicCredentialSchema),
+      mode: "onChange",
+      defaultValues: { mode: initialMode, value: "" },
+    });
+  const { errors, isSubmitting, isValid } = formState;
+
   const [testResult, setTestResult] = useState<
     { ok: true } | { ok: false; message: string } | null
   >(null);
@@ -27,28 +38,27 @@ export function AnthropicForm({
   const testAnthropic = useTestAnthropic();
   const testing = testAnthropic.isPending;
 
-  const error = mismatchError(value, mode);
-  const sanitized = stripWhitespace(value);
-  const canSave = sanitized.length > 0 && !error && !saving && !testing;
-
+  // Watching mode + value clears the test result when either changes — a stale
+  // green check after the user types something different is worse than no
+  // result at all.
+  const mode = watch("mode");
+  const value = watch("value");
   useEffect(() => {
     testTokenRef.current++;
     setTestResult(null);
-  }, [value, mode]);
+  }, [mode, value]);
 
-  const save = async () => {
-    if (!canSave) return;
-    setSaving(true);
-    try {
-      await onSave({ mode, value: sanitized });
-      setValue("");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const isEdit = variant === "edit";
+  const submitDisabled = isSubmitting || testing || !isValid;
+
+  const onSubmit = handleSubmit(async (values) => {
+    await onSave({ mode: values.mode, value: stripWhitespace(values.value) });
+  });
 
   const test = async () => {
-    if (!canSave) return;
+    if (submitDisabled) return;
+    const { mode, value } = getValues();
+    const sanitized = stripWhitespace(value);
     const token = ++testTokenRef.current;
     setTestResult(null);
     try {
@@ -64,10 +74,9 @@ export function AnthropicForm({
     }
   };
 
-  const isEdit = variant === "edit";
-
   return (
-    <div
+    <form
+      onSubmit={onSubmit}
       className={`rounded-xl border-2 p-5 anim-in flex flex-col gap-4 ${
         isEdit ? "border-accent bg-accent-light" : "border-warning bg-warning-light"
       }`}
@@ -92,17 +101,15 @@ export function AnthropicForm({
         )}
       </div>
 
-      <ModeToggle mode={mode} onChange={setMode} />
+      <Controller
+        control={control}
+        name="mode"
+        render={({ field }) => <ModeToggle mode={field.value} onChange={field.onChange} />}
+      />
 
       {mode === "oauth" && <QuickSetupHint />}
 
-      <form
-        className="flex gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          save();
-        }}
-      >
+      <div className="flex gap-3">
         <input
           className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
           type="password"
@@ -111,15 +118,14 @@ export function AnthropicForm({
           data-lpignore="true"
           data-form-type="other"
           placeholder={MODES[mode].placeholder}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
+          {...register("value")}
         />
         <button
           type="button"
           className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0"
           style={{ boxShadow: "var(--shadow-brutal-sm)" }}
           onClick={test}
-          disabled={!canSave}
+          disabled={submitDisabled}
           title="Verify the credential with Anthropic"
         >
           {testing ? "..." : "Test"}
@@ -128,22 +134,26 @@ export function AnthropicForm({
           type="submit"
           className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0"
           style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-          disabled={!canSave}
+          disabled={submitDisabled}
         >
-          {saving ? "..." : isEdit ? "Replace" : "Save"}
+          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
         </button>
-      </form>
+      </div>
 
-      {error && <div className="text-[12px] font-medium text-danger">{error}</div>}
-      {!error && testResult?.ok && (
+      {/* Mismatch errors live on the value field; "Required" is suppressed
+          until the user actually types so the form doesn't yell on first paint. */}
+      {errors.value && value.length > 0 && errors.value.message !== "Required" && (
+        <div className="text-[12px] font-medium text-danger">{errors.value.message}</div>
+      )}
+      {!errors.value && testResult?.ok && (
         <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
           <Check size={13} /> Credential is valid.
         </div>
       )}
-      {!error && testResult && !testResult.ok && (
+      {!errors.value && testResult && !testResult.ok && (
         <div className="text-[12px] font-medium text-danger">{testResult.message}</div>
       )}
-    </div>
+    </form>
   );
 }
 

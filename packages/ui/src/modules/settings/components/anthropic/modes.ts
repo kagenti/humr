@@ -39,14 +39,3 @@ export function detectMode(envName?: string): Mode {
 export function stripWhitespace(value: string): string {
   return value.replace(/\s+/g, "");
 }
-
-export function mismatchError(value: string, mode: Mode): string | null {
-  const v = stripWhitespace(value);
-  if (!v) return null;
-  for (const m of Object.keys(MODES) as Mode[]) {
-    if (m !== mode && v.startsWith(MODES[m].prefix)) {
-      return `This looks like ${MODES[m].label.toLowerCase()} — switch tabs.`;
-    }
-  }
-  return null;
-}
