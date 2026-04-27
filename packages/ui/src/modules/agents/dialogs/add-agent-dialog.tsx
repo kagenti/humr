@@ -1,15 +1,21 @@
-import type { AppConnectionView } from "api-server-api";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Sparkles } from "lucide-react";
-import { useEffect,useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 
 import { ConnectionsPicker } from "../../../components/connections-picker.js";
+import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
-import { platform } from "../../../platform.js";
-import { useStore } from "../../../store.js";
-import type { EnvVar,SecretView, TemplateView } from "../../../types.js";
+import type { EnvVar, TemplateView } from "../../../types.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useSecrets } from "../../secrets/api/queries.js";
+import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
 
 type Step = "pick" | "configure";
+
+const INPUT_CLASS =
+  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 export function AddAgentDialog({
   templates,
@@ -36,67 +42,67 @@ export function AddAgentDialog({
   );
   const [customImage, setCustomImage] = useState("");
 
-  // Configure step state
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
-  const [secrets, setSecrets] = useState<SecretView[]>([]);
-  const [selSecrets, setSelSecrets] = useState<Set<string>>(new Set());
-  // Tracks whether the user touched the selection at all. Needed because the
-  // controller auto-assigns the single Anthropic provider when no explicit
-  // list is sent, which would otherwise silently ignore an explicit uncheck.
-  const [secretsDirty, setSecretsDirty] = useState(false);
-  const [loadSecrets, setLoadSecrets] = useState(true);
-  const [apps, setApps] = useState<AppConnectionView[]>([]);
-  const [selApps, setSelApps] = useState<Set<string>>(new Set());
-  const showToast = useStore((s) => s.showToast);
+  const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
+  const { data: apps = [] } = useAppConnections();
 
+  const {
+    register,
+    handleSubmit,
+    watch,
+    getValues,
+    setValue,
+    reset,
+    trigger,
+    formState,
+  } = useForm<AddAgentValues>({
+    resolver: zodResolver(addAgentSchema),
+    mode: "onChange",
+    defaultValues: { name: "", description: "", selSecrets: [], selApps: [] },
+  });
+  const { errors, isSubmitting, isValid, dirtyFields } = formState;
+
+  // Auto-baseline the selSecrets default with the lone Anthropic provider so
+  // the configure step shows what the controller would auto-assign anyway.
+  // dirtyFields.selSecrets stays false until the user actually toggles.
+  const baselinedRef = useRef(false);
   useEffect(() => {
-    platform.secrets.list
-      .query()
-      .then((loaded) => {
-        setSecrets(loaded);
-        const providers = loaded.filter((s) => s.type === "anthropic");
-        if (providers.length === 1) {
-          setSelSecrets(new Set([providers[0].id]));
-        }
-      })
-      .catch((err) =>
-        showToast({
-          kind: "error",
-          message: `Couldn't load secrets: ${err instanceof Error ? err.message : "unknown error"}`,
-        }),
-      )
-      .finally(() => setLoadSecrets(false));
-    platform.connections.list
-      .query()
-      .then(setApps)
-      .catch((err) =>
-        showToast({
-          kind: "error",
-          message: `Couldn't load connections: ${err instanceof Error ? err.message : "unknown error"}`,
-        }),
-      );
-  }, [showToast]);
+    if (baselinedRef.current) return;
+    if (secrets.length === 0) return;
+    baselinedRef.current = true;
+    const providers = secrets.filter((s) => s.type === "anthropic");
+    if (providers.length === 1) {
+      reset({ ...getValues(), selSecrets: [providers[0].id] });
+    }
+  }, [secrets, reset, getValues]);
 
   const toggleSecret = (id: string) => {
-    setSecretsDirty(true);
-    setSelSecrets((p) => {
-      const n = new Set(p);
-      if (n.has(id)) n.delete(id); else n.add(id);
-      return n;
-    });
+    const current = getValues("selSecrets");
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id].sort();
+    setValue("selSecrets", next, { shouldDirty: true, shouldValidate: true });
   };
-  const toggleApp = (id: string) =>
-    setSelApps((p) => {
-      const n = new Set(p);
-      if (n.has(id)) n.delete(id); else n.add(id);
-      return n;
-    });
+  const toggleApp = (id: string) => {
+    const current = getValues("selApps");
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id].sort();
+    setValue("selApps", next, { shouldDirty: true });
+  };
+
+  const selSecrets = watch("selSecrets");
+  const selApps = watch("selApps");
+  const selSecretsSet = useMemo(() => new Set(selSecrets), [selSecrets]);
+  const selAppsSet = useMemo(() => new Set(selApps), [selApps]);
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
-    setName(tmpl.name);
-    setDesc(tmpl.description ?? "");
+    setValue("name", tmpl.name);
+    setValue("description", tmpl.description ?? "");
+    // Force validation so isValid reflects the prefilled template values —
+    // setValue defaults to skipping it and the user might submit without ever
+    // typing in the field.
+    trigger();
     setStep("configure");
   };
 
@@ -104,34 +110,31 @@ export function AddAgentDialog({
     const img = customImage.trim();
     if (!img) return;
     setSelectedTemplate(null);
-    setName("");
-    setDesc("");
+    setValue("name", "");
+    setValue("description", "");
+    trigger();
     setStep("configure");
   };
 
-  const submit = () => {
-    const n = name.trim();
-    if (!n) return;
+  const submitForm = handleSubmit((values) => {
     // Derive env from each granted app's envMappings (dedupe by name across
     // apps — e.g. Gmail + Drive both declare GOOGLE_WORKSPACE_CLI_TOKEN).
-    const grantedApps = apps.filter((a) => selApps.has(a.id));
+    const grantedApps = apps.filter((a) => selAppsSet.has(a.id));
     const env = grantedApps.reduce<EnvVar[]>((acc, app) => {
       const toAdd = envsToAddOnGrant(acc, app);
       return toAdd.length > 0 ? [...acc, ...toAdd] : acc;
     }, []);
     onSubmit({
-      name: n,
+      name: values.name.trim(),
       templateId: selectedTemplate?.id,
       image: selectedTemplate ? undefined : customImage.trim(),
-      description: desc.trim() || undefined,
+      description: values.description.trim() || undefined,
       env: env.length > 0 ? env : undefined,
-      secretIds: secretsDirty ? [...selSecrets] : undefined,
-      appConnectionIds: selApps.size ? [...selApps] : undefined,
+      // Undirty selSecrets ⇒ defer to controller's default auto-assignment.
+      secretIds: dirtyFields.selSecrets ? values.selSecrets : undefined,
+      appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
     });
-  };
-
-  const inp =
-    "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+  });
 
   const anthropicSecrets = secrets.filter((s) => s.type === "anthropic");
 
@@ -141,15 +144,13 @@ export function AddAgentDialog({
       onClick={onCancel}
     >
       <div
-        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in"
-        style={{ boxShadow: "var(--shadow-brutal)" }}
+        className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal"
         onClick={(e) => e.stopPropagation()}
       >
         {step === "pick" ? (
           <>
             <h2 className="text-[20px] font-bold text-text">Add Agent</h2>
 
-            {/* Template catalog */}
             {templates.length > 0 && (
               <div className="flex flex-col gap-2">
                 <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
@@ -168,22 +169,21 @@ export function AddAgentDialog({
               </div>
             )}
 
-            {/* Custom image */}
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
                 Custom Image
               </span>
               <div className="flex gap-2">
                 <input
-                  className={inp}
+                  className={INPUT_CLASS}
                   value={customImage}
                   onChange={(e) => setCustomImage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && pickCustom()}
                   placeholder="ghcr.io/org/agent:latest"
                 />
                 <button
-                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                  type="button"
+                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
                   onClick={pickCustom}
                   disabled={!customImage.trim()}
                 >
@@ -194,8 +194,8 @@ export function AddAgentDialog({
 
             <div className="flex justify-end pt-1">
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                type="button"
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
                 onClick={onCancel}
               >
                 Cancel
@@ -203,11 +203,9 @@ export function AddAgentDialog({
             </div>
           </>
         ) : (
-          <>
+          <form onSubmit={submitForm} className="contents">
             <div>
-              <h2 className="text-[20px] font-bold text-text">
-                Configure Agent
-              </h2>
+              <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
               <p className="text-[12px] text-text-muted mt-1">
                 {selectedTemplate ? (
                   <>
@@ -234,29 +232,21 @@ export function AddAgentDialog({
               </p>
             </div>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Name
-              </span>
+            <FormField label="Name" error={errors.name?.message}>
               <input
-                className={inp}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                className={INPUT_CLASS}
                 placeholder="my-agent"
                 autoFocus
+                {...register("name")}
               />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-                Description
-              </span>
+            </FormField>
+            <FormField label="Description">
               <input
-                className={inp}
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
+                className={INPUT_CLASS}
                 placeholder="Optional"
+                {...register("description")}
               />
-            </label>
+            </FormField>
 
             {!loadSecrets && anthropicSecrets.length === 0 && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
@@ -265,6 +255,7 @@ export function AddAgentDialog({
                   No provider configured, so this agent won't be able to reach an
                   AI model.{" "}
                   <button
+                    type="button"
                     className="text-accent font-semibold hover:underline"
                     onClick={onGoToProviders}
                   >
@@ -278,8 +269,8 @@ export function AddAgentDialog({
               loading={loadSecrets}
               secrets={secrets}
               apps={apps}
-              selSecrets={selSecrets}
-              selApps={selApps}
+              selSecrets={selSecretsSet}
+              selApps={selAppsSet}
               onToggleSecret={toggleSecret}
               onToggleApp={toggleApp}
               onGoToProviders={onGoToProviders}
@@ -287,22 +278,21 @@ export function AddAgentDialog({
 
             <div className="flex items-center justify-end gap-3 pt-1">
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text"
-                style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+                type="button"
+                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
                 onClick={() => setStep("pick")}
               >
                 Back
               </button>
               <button
-                className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40"
-                style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-                onClick={submit}
-                disabled={!name.trim()}
+                type="submit"
+                className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
+                disabled={isSubmitting}
               >
                 Create Agent
               </button>
             </div>
-          </>
+          </form>
         )}
       </div>
     </div>

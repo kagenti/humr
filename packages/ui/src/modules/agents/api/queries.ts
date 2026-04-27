@@ -23,3 +23,17 @@ export function useAgentAccess(agentId: string | null) {
     retry: false,
   });
 }
+
+/**
+ * Per-agent app-connection grants. Same OneCLI-sync lag as {@link useAgentAccess},
+ * so errors stay silent and initial data defaults to an empty grant list.
+ */
+export function useAgentConnections(agentId: string | null) {
+  return useQuery({
+    ...trpc.connections.getAgentConnections.queryOptions(
+      agentId ? { agentName: agentId } : undefined!,
+    ),
+    enabled: !!agentId,
+    retry: false,
+  });
+}

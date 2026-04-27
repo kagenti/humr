@@ -4,8 +4,6 @@ import { createThemeSlice, type ThemeSlice } from "./store/theme.js";
 import { createNavigationSlice, type NavigationSlice, pathToState } from "./store/navigation.js";
 import { createLoadingSlice, type LoadingSlice } from "./store/loading.js";
 import { createToastSlice, type ToastSlice } from "./store/toast.js";
-import { createTemplatesSlice, type TemplatesSlice } from "./modules/templates/store.js";
-import { createAgentsSlice, type AgentsSlice } from "./modules/agents/store.js";
 import { createInstancesSlice, type InstancesSlice } from "./modules/instances/store.js";
 import { createSessionsSlice, type SessionsSlice } from "./store/sessions.js";
 import { createSessionConfigSlice, type SessionConfigSlice } from "./store/session-config.js";
@@ -23,8 +21,6 @@ export type HumrStore =
   & NavigationSlice
   & LoadingSlice
   & ToastSlice
-  & TemplatesSlice
-  & AgentsSlice
   & InstancesSlice
   & SessionsSlice
   & SessionConfigSlice
@@ -37,8 +33,6 @@ export const useStore = create<HumrStore>()((...a) => ({
   ...createNavigationSlice(...a),
   ...createLoadingSlice(...a),
   ...createToastSlice(...a),
-  ...createTemplatesSlice(...a),
-  ...createAgentsSlice(...a),
   ...createInstancesSlice(...a),
   ...createSessionsSlice(...a),
   ...createSessionConfigSlice(...a),
