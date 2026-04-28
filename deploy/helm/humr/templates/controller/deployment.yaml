@@ -78,7 +78,7 @@ spec:
             - name: HUMR_TERMINATION_GRACE_PERIOD
               value: {{ .Values.controller.terminationGracePeriod | default 5 | quote }}
             - name: ENVOY_IMAGE
-              value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy:v1.32.0" | quote }}
+              value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy-distroless:v1.32.0" | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: POD_NAME

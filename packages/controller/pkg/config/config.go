@@ -76,7 +76,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:v1.32.0")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy-distroless:v1.32.0")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	return cfg, nil
 }
