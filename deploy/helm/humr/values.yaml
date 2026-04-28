@@ -21,8 +21,9 @@ createAgentNamespace: true
 
 # -- Home directory inside agent containers. Used for the HOME env var, the
 # pod-files sidecar mount paths, and pod-files producer paths in api-server.
-# Must match the HOME of the agent image's user (humr-base sets this; user-
-# supplied images that differ should override here).
+# Must match the HOME of the agent image's user — a mismatch silently breaks
+# pod-files materialization (sidecar writes to a path the agent never reads).
+# humr-base sets this; user-supplied images that differ should override here.
 agentHome: /home/agent
 
 # -- Shared local PostgreSQL instance

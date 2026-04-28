@@ -72,6 +72,12 @@ function renderHostFragment(connection: RawConnection): FileFragment | null {
   };
 }
 
+/**
+ * Uses `yaml-fill-if-missing` so revokes are safe (entries linger but the
+ * gateway stops swapping the sentinel, so the next call fails loud rather
+ * than silently using a stale grant). Trade-off: a revoked host stays
+ * visible in `gh auth status` until the user manually edits hosts.yml.
+ */
 export function makeGithubEnterpriseHostsProducer(
   deps: GithubEnterpriseHostsDeps,
 ): FileProducer {

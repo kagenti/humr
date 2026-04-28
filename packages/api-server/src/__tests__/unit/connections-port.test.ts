@@ -11,12 +11,6 @@ function makeFakeOc(
 ) {
   const calls: FakeCall[] = [];
   const client = {
-    exchangeToken: async () => "tok",
-    getApiKey: async () => "key",
-    syncUser: async () => {},
-    // Unused by the connections-port tests (which run in user-JWT context);
-    // stubbed to satisfy the shape, returns a 500 if anything calls it.
-    onecliFetchAsOwner: async () => new Response(JSON.stringify({}), { status: 500 }),
     async onecliFetch(_jwt: string, _sub: string, path: string, init?: RequestInit) {
       calls.push({ path, init });
       const key = `${init?.method ?? "GET"} ${path}`;
