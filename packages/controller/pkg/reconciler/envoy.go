@@ -90,7 +90,10 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 	return routes
 }
 
-const envoyBootstrapTmpl = `static_resources:
+const envoyBootstrapTmpl = `node:
+  id: humr-credential-injector
+  cluster: humr-credential-injector
+static_resources:
   listeners:
     - name: agent_egress
       address:
@@ -110,47 +113,56 @@ const envoyBootstrapTmpl = `static_resources:
                       dns_cache_config:
                         name: dns_cache
                         dns_lookup_family: V4_PREFERRED
-                  - name: envoy.filters.http.credential_injector
+                  # credential_injector itself rejects virtual-host/route
+                  # specific config. Wrap it in the composite filter and
+                  # dispatch via an :authority matcher: each Secret gets its
+                  # own credential_injector instance, selected by host. NOTE:
+                  # for HTTPS-via-CONNECT this is a no-op until we add TLS
+                  # interception — the bytes inside the tunnel are encrypted.
+                  - name: envoy.filters.http.composite
                     typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
-                      overwrite: true
-                      credential:
-                        name: envoy.http.injected_credentials.generic
+                      "@type": type.googleapis.com/envoy.extensions.common.matching.v3.ExtensionWithMatcher
+                      extension_config:
+                        name: composite
                         typed_config:
-                          "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic
-                          credential: { name: disabled, sds_config: { path: /dev/null } }
-                          header: x-disabled-default
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.composite.v3.Composite
+                      xds_matcher:
+                        matcher_tree:
+                          input:
+                            name: authority
+                            typed_config:
+                              "@type": type.googleapis.com/envoy.type.matcher.v3.HttpRequestHeaderMatchInput
+                              header_name: :authority
+                          exact_match_map:
+                            map:
+{{- range .Routes }}
+                              "{{ .Host }}:443":
+                                action:
+                                  name: composite-action
+                                  typed_config:
+                                    "@type": type.googleapis.com/envoy.extensions.filters.http.composite.v3.ExecuteFilterAction
+                                    typed_config:
+                                      name: credential_injector
+                                      typed_config:
+                                        "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
+                                        overwrite: true
+                                        credential:
+                                          name: envoy.http.injected_credentials.generic
+                                          typed_config:
+                                            "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic
+                                            credential:
+                                              name: cred
+                                              sds_config:
+                                                path_config_source:
+                                                  path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialKey }}
+                                            header: "{{ .HeaderName }}"
+{{- end }}
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
                 route_config:
                   name: routes
                   virtual_hosts:
-{{- range .Routes }}
-                    - name: {{ .SecretName }}
-                      domains: [ "{{ .Host }}", "{{ .Host }}:443" ]
-                      routes:
-                        - match: { connect_matcher: {} }
-                          route:
-                            cluster: dynamic_forward_proxy
-                            upgrade_configs:
-                              - upgrade_type: CONNECT
-                                connect_config: {}
-                          typed_per_filter_config:
-                            envoy.filters.http.credential_injector:
-                              "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
-                              overwrite: true
-                              credential:
-                                name: envoy.http.injected_credentials.generic
-                                typed_config:
-                                  "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic
-                                  credential:
-                                    name: cred
-                                    sds_config:
-                                      path_config_source:
-                                        path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialKey }}
-                                  header: "{{ .HeaderName }}"
-{{- end }}
                     - name: default
                       domains: [ "*" ]
                       routes:
