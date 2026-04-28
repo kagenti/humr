@@ -19,7 +19,6 @@ export interface TriggerResult {
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
-  namespace: string;
   handleTrigger: (req: TriggerRequest) => Promise<TriggerResult>;
 }) {
   const app = new Hono();
@@ -33,7 +32,7 @@ export function createHarnessRouter(deps: {
     return c.json(result);
   });
 
-  mountMcpRoutes(app, { channelManager: deps.channelManager, k8s: deps.k8s, namespace: deps.namespace });
+  mountMcpRoutes(app, { channelManager: deps.channelManager, k8s: deps.k8s });
 
   return app;
 }

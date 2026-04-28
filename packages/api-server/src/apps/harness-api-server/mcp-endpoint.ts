@@ -37,7 +37,7 @@ sweepInterval.unref();
 
 function createMcpSession(
   instanceId: string,
-  namespace: string,
+  k8s: K8sClient,
   channelManager: ChannelManager,
 ): McpSession {
   const server = new McpServer({
@@ -46,7 +46,7 @@ function createMcpSession(
   });
 
   const runtimeClient = createTRPCClient<AppRouter>({
-    links: [httpBatchLink({ url: `http://${podBaseUrl(instanceId, namespace)}/api/trpc` })],
+    links: [httpBatchLink({ url: `http://${podBaseUrl(instanceId, k8s.namespace)}/api/trpc` })],
   });
 
   server.tool(
@@ -153,7 +153,6 @@ async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: strin
 export function mountMcpRoutes(app: Hono, deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
-  namespace: string;
 }) {
   app.all("/api/instances/:id/mcp", async (c) => {
     const authHeader = c.req.header("authorization");
@@ -182,7 +181,7 @@ export function mountMcpRoutes(app: Hono, deps: {
       return c.json({ error: "session not found" }, 404);
     }
 
-    const session = createMcpSession(instanceId, deps.namespace, deps.channelManager);
+    const session = createMcpSession(instanceId, deps.k8s, deps.channelManager);
     await session.server.connect(session.transport);
 
     return session.transport.handleRequest(c.req.raw);
