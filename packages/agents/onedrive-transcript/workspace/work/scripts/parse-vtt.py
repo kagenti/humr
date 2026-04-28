@@ -2,10 +2,11 @@
 """Parse a WebVTT transcript into structured JSON.
 
 Usage:
-    uv run scripts/parse-vtt.py <input.vtt> [--output <output.json>]
+    uv run scripts/parse-vtt.py <input.vtt> [--output <output.json>] \\
+        [--subject "Meeting subject"] [--meeting-start "2026-04-27T13:40:00"]
 
 Reads a VTT file (Teams meeting transcript format) and produces JSON with:
-- metadata (filename, total duration, speaker count)
+- metadata (filename, total duration, speaker count, optional subject + meeting_start)
 - speakers (list of unique speakers)
 - segments (merged consecutive same-speaker blocks with timestamps)
 """
@@ -46,7 +47,7 @@ def parse_vtt(content: str) -> dict:
     # Skip BOM and WEBVTT header
     start = 0
     for i, line in enumerate(lines):
-        cleaned = line.strip().lstrip("\ufeff")
+        cleaned = line.strip().lstrip("﻿")
         if cleaned.startswith("WEBVTT"):
             start = i + 1
             break
@@ -153,6 +154,8 @@ def main():
     parser = argparse.ArgumentParser(description="Parse VTT transcript to structured JSON")
     parser.add_argument("input", help="Path to .vtt file")
     parser.add_argument("--output", "-o", help="Output JSON path (default: stdout)")
+    parser.add_argument("--subject", help="Meeting subject to embed in metadata")
+    parser.add_argument("--meeting-start", help="Meeting start datetime (ISO8601) to embed in metadata")
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -175,6 +178,10 @@ def main():
 
     result = parse_vtt(content)
     result["metadata"]["source_file"] = input_path.name
+    if args.subject:
+        result["metadata"]["subject"] = args.subject
+    if args.meeting_start:
+        result["metadata"]["meeting_start"] = args.meeting_start
 
     output = json.dumps(result, indent=2, ensure_ascii=False)
 
