@@ -249,9 +249,11 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	}}
 	var automountSAToken *bool
 	var shareProcessNS *bool
-	var podAnnotations map[string]string
+	podAnnotations := map[string]string{}
+	for k, v := range cfg.AgentPodAnnotations {
+		podAnnotations[k] = v
+	}
 	if instance.ExperimentalCredentialInjector {
-		podAnnotations = map[string]string{}
 		// Sidecar only — the agent container never sees credential mounts.
 		volumes = append(volumes, envoySidecarVolumes(name, credentialSecrets)...)
 		containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
