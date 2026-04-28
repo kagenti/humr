@@ -534,26 +534,13 @@ export function createSlackWorker(
       };
 
       try {
-        if (attachment) {
-          // files.completeUploadExternal accepts blocks but is fussier about
-          // newer block types than chat.postMessage — stick to section+mrkdwn,
-          // which is the canonical shape Slack uses in all upload examples.
-          // Falling back to initial_comment when text is empty avoids sending
-          // a section block with empty text (which Slack rejects).
-          const uploadBlocks = text
-            ? [
-                { type: "section" as const, text: { type: "mrkdwn" as const, text } },
-                contextBlock,
-              ]
-            : [contextBlock];
-          await app.client.files.uploadV2({
-            channel_id: slackChannelId,
-            file: attachment.data,
-            filename: attachment.filename,
-            ...(attachment.title ? { title: attachment.title } : {}),
-            blocks: uploadBlocks,
-          });
-        } else {
+        // Two-message pattern when there's both text and a file: post the
+        // text via chat.postMessage (full markdown rendering) then upload the
+        // file as a separate message. files.uploadV2 with blocks gives a
+        // narrower mrkdwn subset and was returning internal_error on Slack's
+        // side for some block shapes — keeping the upload simple side-steps
+        // both issues and gives consistent text formatting in either path.
+        if (text) {
           await app.client.chat.postMessage({
             channel: slackChannelId,
             text,
@@ -561,6 +548,15 @@ export function createSlackWorker(
               { type: "markdown", text },
               contextBlock,
             ],
+          });
+        }
+        if (attachment) {
+          await app.client.files.uploadV2({
+            channel_id: slackChannelId,
+            file: attachment.data,
+            filename: attachment.filename,
+            ...(attachment.title ? { title: attachment.title } : {}),
+            ...(text ? {} : { initial_comment: `_${instanceName}_` }),
           });
         }
         return { ok: true as const };
