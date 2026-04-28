@@ -528,25 +528,35 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
-      const blocks = [
-        { type: "markdown", text },
-        { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
-      ];
+      const contextBlock = {
+        type: "context" as const,
+        elements: [{ type: "mrkdwn" as const, text: `_${instanceName}_` }],
+      };
 
       try {
+        // Two-message pattern when there's both text and a file: post the
+        // text via chat.postMessage (full markdown rendering) then upload the
+        // file as a separate message. files.uploadV2 with blocks gives a
+        // narrower mrkdwn subset and was returning internal_error on Slack's
+        // side for some block shapes — keeping the upload simple side-steps
+        // both issues and gives consistent text formatting in either path.
+        if (text) {
+          await app.client.chat.postMessage({
+            channel: slackChannelId,
+            text,
+            blocks: [
+              { type: "markdown", text },
+              contextBlock,
+            ],
+          });
+        }
         if (attachment) {
           await app.client.files.uploadV2({
             channel_id: slackChannelId,
             file: attachment.data,
             filename: attachment.filename,
             ...(attachment.title ? { title: attachment.title } : {}),
-            blocks,
-          });
-        } else {
-          await app.client.chat.postMessage({
-            channel: slackChannelId,
-            text,
-            blocks,
+            ...(text ? {} : { initial_comment: `_${instanceName}_` }),
           });
         }
         return { ok: true as const };
