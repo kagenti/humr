@@ -112,15 +112,18 @@ export function useAcpSession(
 
     try {
       const fresh = await loadHistory(sid);
+      if (useStore.getState().sessionId !== sid) return;
       setMessages(fresh);
     } catch (e) {
+      if (useStore.getState().sessionId !== sid) return;
       setSessionError({
         sessionId: sid,
         message: extractErrorMessage(e),
         kind: classifyResumeError(e),
       });
+    } finally {
+      if (useStore.getState().sessionId === sid) setLoadingSession(false);
     }
-    setLoadingSession(false);
   }, [selectedInstance, loadHistory, resetConnection, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   const { sendPrompt, stopAgent } = useAcpPrompt(

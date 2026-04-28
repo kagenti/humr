@@ -114,6 +114,8 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
         setState("reloading");
         try {
           const fresh = await loadHistory(sid);
+          
+          if (useStore.getState().sessionId !== sid) return null;
           setMessages(fresh);
         } catch (e) {
           // Network still unreachable — restore the flag so the next
