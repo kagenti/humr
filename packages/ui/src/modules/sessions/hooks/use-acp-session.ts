@@ -16,6 +16,7 @@ import { useInstancesList } from "../../instances/api/queries.js";
 import { useAcpConfigCache } from "./use-acp-config-cache.js";
 import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
+import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
 
 // ── Hook ──
@@ -32,9 +33,8 @@ export function useAcpSession(
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
   const setLoadingSession = useStore((s) => s.setLoadingSession);
-  const addLog = useStore((s) => s.addLog);
-  // Reset-on-leave + optimistic prefs nudges still need to reach the store
-  // directly. Capture/handleConfigUpdate go through the config-cache hook.
+  // Reset-on-leave still needs the config-clearing setters directly; engage
+  // and capture go through the engagement + config-cache hooks.
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
   const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
@@ -42,7 +42,6 @@ export function useAcpSession(
   const setSessionError = useStore((s) => s.setSessionError);
 
   const connectionRef = useRef<{ connection: ClientSideConnection; ws: WebSocket } | null>(null);
-  const activeSessionIdRef = useRef<string | null>(null);
   const ensureConnectionInFlight = useRef<Promise<ClientSideConnection | null> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -62,17 +61,6 @@ export function useAcpSession(
   const busy = hasStreamingAssistant(messages);
   useEffect(() => { setBusy(busy); }, [busy, setBusy]);
 
-  useEffect(() => () => {
-    isMountedRef.current = false;
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    connectionRef.current?.ws.close();
-    connectionRef.current = null;
-    activeSessionIdRef.current = null;
-  }, []);
-
   const instanceRunState = instances.find(i => i.id === selectedInstance)?.state;
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
     useAcpConfigCache(selectedInstance, sessionId, instanceRunState);
@@ -82,6 +70,23 @@ export function useAcpSession(
     captureSessionConfig,
     handleConfigUpdate,
   );
+  const { engagedSessionIdRef, engage, clear: clearEngagement } = useAcpSessionEngagement(
+    selectedInstance,
+    selectedMcpServers,
+    captureSessionConfig,
+    applySavedPreferences,
+  );
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    connectionRef.current?.ws.close();
+    connectionRef.current = null;
+    clearEngagement();
+  }, [clearEngagement]);
 
   // Wake hibernated instance on entry
   useEffect(() => {
@@ -135,7 +140,7 @@ export function useAcpSession(
       // closes the ACP ReadableStream controller inside openConnection.
       ws.addEventListener("close", () => {
         connectionRef.current = null;
-        activeSessionIdRef.current = null;
+        clearEngagement();
         // Mark the next ensureConnection so it reloads from the runtime log
         // before reattaching — session/resume on its own only engages for
         // future events, so anything the agent appended during the gap would
@@ -149,30 +154,15 @@ export function useAcpSession(
         reconnectFnRef.current?.();
       });
       ws.addEventListener("error", () => {
-        addLog("error", { message: "WebSocket connection error" });
+        useStore.getState().addLog("error", { message: "WebSocket connection error" });
       });
       connectionRef.current = { connection, ws };
     }
 
     const conn = connectionRef.current!.connection;
-    if (!activeSessionIdRef.current) {
-      const sid = useStore.getState().sessionId;
-      if (sid) {
-        const resp = await conn.unstable_resumeSession({ sessionId: sid, cwd: ".", mcpServers: selectedMcpServers });
-        captureSessionConfig(resp);
-        activeSessionIdRef.current = sid;
-        await applySavedPreferences(conn, sid, resp);
-      } else {
-        const s = await conn.newSession({ cwd: ".", mcpServers: selectedMcpServers });
-        captureSessionConfig(s);
-        setSessionId(s.sessionId);
-        activeSessionIdRef.current = s.sessionId;
-        addLog("session", { sessionId: s.sessionId });
-        await applySavedPreferences(conn, s.sessionId, s);
-      }
-    }
+    await engage(conn);
     return conn;
-  }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, makeUpdateHandler, loadHistory, addLog, setMessages, setSessionId]);
+  }, [selectedInstance, makeUpdateHandler, loadHistory, engage, clearEngagement, setMessages]);
 
   const ensureConnection = useCallback((): Promise<ClientSideConnection | null> => {
     if (!ensureConnectionInFlight.current) {
@@ -188,14 +178,14 @@ export function useAcpSession(
   const resetSession = useCallback(() => {
     connectionRef.current?.ws.close();
     connectionRef.current = null;
-    activeSessionIdRef.current = null;
+    clearEngagement();
     pendingReloadRef.current = false;
     setSessionId(null);
     setMessages([]);
     setSessionModes(null);
     setSessionModels(null);
     setSessionConfigOptions([]);
-  }, [setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
+  }, [clearEngagement, setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
 
   // ── Resume / rehydrate ──
 
@@ -210,7 +200,7 @@ export function useAcpSession(
     // channel, doubling every render.
     connectionRef.current?.ws.close();
     connectionRef.current = null;
-    activeSessionIdRef.current = null;
+    clearEngagement();
     setLoadingSession(true);
     setMessages([]);
     setSessionError(null);
@@ -227,14 +217,14 @@ export function useAcpSession(
       });
     }
     setLoadingSession(false);
-  }, [selectedInstance, loadHistory, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
+  }, [selectedInstance, loadHistory, clearEngagement, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   // ── Prompt + cancel ──
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedInstance,
     ensureConnection,
-    activeSessionIdRef,
+    engagedSessionIdRef,
     connectionRef,
     textareaRef,
   );
@@ -291,7 +281,9 @@ export function useAcpSession(
 
   return {
     connectionRef,
-    activeSessionIdRef,
+    /** Late-bound session id of the live connection, exposed for
+     *  SessionConfigBar's optimistic mutate paths. */
+    activeSessionIdRef: engagedSessionIdRef,
     ensureConnection,
     resetSession,
     resumeSession,
