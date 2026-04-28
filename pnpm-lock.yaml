@@ -109,9 +109,15 @@ importers:
       '@slack/bolt':
         specifier: ^4.7.0
         version: 4.7.0(@types/express@5.0.6)
+      '@trpc/client':
+        specifier: ^11.16.0
+        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.2))(typescript@6.0.2)
       '@trpc/server':
         specifier: ^11.16.0
         version: 11.16.0(typescript@6.0.2)
+      agent-runtime-api:
+        specifier: workspace:*
+        version: link:../agent-runtime-api
       api-server-api:
         specifier: workspace:*
         version: link:../api-server-api
@@ -149,9 +155,6 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@trpc/client':
-        specifier: ^11.16.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.2))(typescript@6.0.2)
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9

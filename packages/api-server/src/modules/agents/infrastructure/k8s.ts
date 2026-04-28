@@ -9,6 +9,9 @@ import * as k8s from "@kubernetes/client-node";
 // ---------------------------------------------------------------------------
 
 export interface K8sClient {
+  /** The namespace this client is scoped to (i.e. where agent pods live). */
+  readonly namespace: string;
+
   listConfigMaps(labelSelector: string): Promise<k8s.V1ConfigMap[]>;
   getConfigMap(name: string): Promise<k8s.V1ConfigMap | null>;
   createConfigMap(body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
@@ -43,6 +46,8 @@ export const is409 = (err: unknown) => isStatus(err, 409);
 
 export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClient {
   return {
+    namespace,
+
     async listConfigMaps(labelSelector) {
       const res = await api.listNamespacedConfigMap({ namespace, labelSelector });
       return res.items ?? [];

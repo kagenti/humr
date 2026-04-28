@@ -1,16 +1,19 @@
 import { createHash } from "node:crypto";
+import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import type { AppRouter } from "agent-runtime-api";
 import { z } from "zod";
 import yaml from "js-yaml";
 import { ChannelType } from "api-server-api";
-import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
+import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
@@ -32,10 +35,18 @@ const sweepInterval = setInterval(() => {
 }, 5 * 60_000);
 sweepInterval.unref();
 
-function createMcpSession(instanceId: string, channelManager: ChannelManager): McpSession {
+function createMcpSession(
+  instanceId: string,
+  k8s: K8sClient,
+  channelManager: ChannelManager,
+): McpSession {
   const server = new McpServer({
     name: `humr-${instanceId}`,
     version: "1.0.0",
+  });
+
+  const runtimeClient = createTRPCClient<AppRouter>({
+    links: [httpBatchLink({ url: `http://${podBaseUrl(instanceId, k8s.namespace)}/api/trpc` })],
   });
 
   server.tool(
@@ -50,42 +61,49 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
 
   server.tool(
     "send_channel_message",
-    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally include a single file attachment (max 10 MiB) — pass the binary as base64 in attachment.content.",
+    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file from this agent's workspace by setting attachment.path (workspace-relative); the connector reads it server-side (10 MiB cap enforced by the runtime).",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
       chatId: z.string().optional(),
       attachment: z.object({
-        filename: z.string().min(1),
-        content: z.string().min(1).describe("File contents encoded as base64."),
-        mimeType: z.string().optional(),
+        path: z.string().min(1).describe("Workspace-relative path to the file to attach."),
+        filename: z.string().optional().describe("Name shown in the channel; defaults to the basename of path."),
+        mimeType: z.string().optional().describe("Override the runtime-detected MIME type."),
         title: z.string().optional(),
       }).optional(),
     },
     async ({ channel, text, chatId, attachment }) => {
-      let decoded: Buffer | undefined;
+      let resolved: ChannelAttachment | undefined;
       if (attachment) {
-        decoded = Buffer.from(attachment.content, "base64");
-        if (decoded.length === 0) {
-          return { content: [{ type: "text" as const, text: "attachment.content decoded to zero bytes (invalid base64?)" }], isError: true };
+        let file: { content?: string; binary?: boolean; mimeType?: string };
+        try {
+          file = await runtimeClient.files.read.query({ path: attachment.path });
+        } catch (err) {
+          const msg = err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
+            ? `attachment not found: ${attachment.path}`
+            : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
+          return { content: [{ type: "text" as const, text: msg }], isError: true };
         }
-        if (decoded.length > MAX_ATTACHMENT_BYTES) {
+        if (file.content === undefined) {
           return {
-            content: [{ type: "text" as const, text: `attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes` }],
+            content: [{ type: "text" as const, text: `attachment ${attachment.path} is too large or unreadable (runtime returned no content)` }],
             isError: true,
           };
         }
+        const data = file.binary
+          ? Buffer.from(file.content, "base64")
+          : Buffer.from(file.content, "utf8");
+        resolved = {
+          filename: attachment.filename ?? basename(attachment.path),
+          data,
+          ...(attachment.mimeType ?? file.mimeType ? { mimeType: attachment.mimeType ?? file.mimeType } : {}),
+          ...(attachment.title ? { title: attachment.title } : {}),
+        };
       }
       const result = await channelManager.postMessage(instanceId, channel, text, {
         ...(chatId ? { conversationId: chatId } : {}),
-        ...(decoded ? {
-          attachment: {
-            filename: attachment!.filename,
-            data: decoded,
-            ...(attachment!.mimeType ? { mimeType: attachment!.mimeType } : {}),
-            ...(attachment!.title ? { title: attachment!.title } : {}),
-          },
-        } : {}),
+        ...(resolved ? { attachment: resolved } : {}),
       });
       if ("error" in result) {
         return { content: [{ type: "text" as const, text: result.error }], isError: true };
@@ -163,7 +181,7 @@ export function mountMcpRoutes(app: Hono, deps: {
       return c.json({ error: "session not found" }, 404);
     }
 
-    const session = createMcpSession(instanceId, deps.channelManager);
+    const session = createMcpSession(instanceId, deps.k8s, deps.channelManager);
     await session.server.connect(session.transport);
 
     return session.transport.handleRequest(c.req.raw);
