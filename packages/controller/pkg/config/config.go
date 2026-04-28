@@ -33,6 +33,12 @@ type Config struct {
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
 	EnvoyImage           string // Image for the Envoy credential-injector sidecar (experimental)
 	EnvoyPort            int    // Port the Envoy sidecar listens on (proxy on 127.0.0.1)
+	// EnvoyMitmCAIssuer is the cert-manager ClusterIssuer that mints per-instance
+	// leaf certificates for the Envoy sidecar's TLS interception of agent egress.
+	// Provisioned by the chart's cert-manager templates.
+	EnvoyMitmCAIssuer        string
+	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
+	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -78,6 +84,9 @@ func LoadFromEnv() (*Config, error) {
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy-distroless:v1.32.0")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
+	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "humr-mitm-ca-issuer")
+	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
+	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	return cfg, nil
 }
 

@@ -130,11 +130,31 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		}
 	}
 
-	// CA cert volume (emptyDir, populated by init container via gateway TLS handshake)
-	volumes = append(volumes, corev1.Volume{
-		Name:         "ca-cert",
-		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-	})
+	// CA cert volume.
+	// - OneCLI path: emptyDir, populated by an init container that fetches the
+	//   self-signed CA from OneCLI's gateway.
+	// - Experimental Envoy path: projected from the cert-manager-issued leaf
+	//   Secret. We expose only the `ca.crt` key — the `tls.key` stays inside
+	//   the Envoy sidecar's mount, never the agent's.
+	if instance.ExperimentalCredentialInjector && len(credentialSecrets) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: "ca-cert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: EnvoyLeafSecretName(name),
+					Items: []corev1.KeyToPath{{
+						Key:  "ca.crt",
+						Path: "ca.crt",
+					}},
+				},
+			},
+		})
+	} else {
+		volumes = append(volumes, corev1.Volume{
+			Name:         "ca-cert",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
 	})
@@ -148,24 +168,26 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
-	// Init containers: CA cert fetch (platform) + optional user init
+	// Init containers: CA cert fetch (platform) + optional user init.
 	//
-	// The CA init container fetches the MITM CA certificate from the OneCLI web
-	// API (/api/container-config). Uses busybox (wget + awk) to avoid any
-	// dependency on the agent image contents.
-	caCertScript := fmt.Sprintf(
-		`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
-		cfg.WebURL())
-
-	initContainers := []corev1.Container{{
-		Name:            "fetch-ca-cert",
-		Image:           cfg.CACertInitImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"sh", "-c", caCertScript},
-		VolumeMounts: []corev1.VolumeMount{{
-			Name: "ca-cert", MountPath: "/etc/humr/ca",
-		}},
-	}}
+	// The CA init container fetches OneCLI's MITM CA from its web API. On the
+	// experimental Envoy path the CA comes from a projected Secret (see above)
+	// and OneCLI is unreachable anyway (NetworkPolicy), so the init is skipped.
+	var initContainers []corev1.Container
+	if !instance.ExperimentalCredentialInjector {
+		caCertScript := fmt.Sprintf(
+			`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
+			cfg.WebURL())
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "fetch-ca-cert",
+			Image:           cfg.CACertInitImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"sh", "-c", caCertScript},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name: "ca-cert", MountPath: "/etc/humr/ca",
+			}},
+		})
+	}
 	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",

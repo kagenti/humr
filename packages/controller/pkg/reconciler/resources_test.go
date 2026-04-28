@@ -319,6 +319,13 @@ func TestBuildStatefulSet_FlagOn_AddsEnvoySidecar(t *testing.T) {
 	for _, e := range agent.Env {
 		assert.NotEqual(t, "ONECLI_ACCESS_TOKEN", e.Name, "agent must not see the OneCLI token on experimental path")
 	}
+
+	// No fetch-ca-cert init: OneCLI is unreachable on the experimental path
+	// (NetworkPolicy drops it) and the agent's CA now comes from the leaf
+	// Secret instead.
+	for _, ic := range ss.Spec.Template.Spec.InitContainers {
+		assert.NotEqual(t, "fetch-ca-cert", ic.Name)
+	}
 }
 
 func TestBuildStatefulSet_FlagOff_Unchanged(t *testing.T) {
@@ -353,6 +360,23 @@ func TestBuildStatefulSet_FlagOn_SecretMountsSidecarOnly(t *testing.T) {
 	}
 	assert.True(t, envoyMounts["envoy-bootstrap"])
 	assert.True(t, envoyMounts["cred-humr-cred-aaa"])
+	assert.True(t, envoyMounts["envoy-tls"], "sidecar must mount the cert-manager-issued leaf for TLS termination")
+
+	// Agent's ca-cert volume is now projected from the leaf Secret, exposing
+	// only ca.crt. The leaf private key (tls.key) must NOT be visible to the
+	// agent — it's the credential boundary between agent and sidecar.
+	var caCertVol *corev1.Volume
+	for i, v := range ss.Spec.Template.Spec.Volumes {
+		if v.Name == "ca-cert" {
+			caCertVol = &ss.Spec.Template.Spec.Volumes[i]
+			break
+		}
+	}
+	require.NotNil(t, caCertVol, "ca-cert volume must exist")
+	require.NotNil(t, caCertVol.Secret, "ca-cert volume must be sourced from the leaf Secret on the experimental path")
+	assert.Equal(t, "my-instance-envoy-tls", caCertVol.Secret.SecretName)
+	require.Len(t, caCertVol.Secret.Items, 1)
+	assert.Equal(t, "ca.crt", caCertVol.Secret.Items[0].Key, "agent must only see ca.crt — never tls.key")
 }
 
 func TestBuildStatefulSet_FlagOn_PodHardening(t *testing.T) {
@@ -396,7 +420,16 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
-	assert.Contains(t, cm.Data["envoy.yaml"], "127.0.0.1")
-	assert.Contains(t, cm.Data["envoy.yaml"], "api.example.com")
-	assert.Contains(t, cm.Data["envoy.yaml"], "/etc/envoy/credentials/cred-humr-cred-aaa/value")
+	yaml := cm.Data["envoy.yaml"]
+	assert.Contains(t, yaml, "127.0.0.1")
+	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
+	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-humr-cred-aaa/sds.yaml")
+	// TLS interception: internal listener + leaf cert + upstream forward proxy.
+	assert.Contains(t, yaml, "internal_listener", "must declare an internal listener")
+	assert.Contains(t, yaml, "envoy.bootstrap.internal_listener", "must enable the internal_listener bootstrap extension")
+	assert.Contains(t, yaml, "tls_inspector", "internal listener must inspect SNI")
+	assert.Contains(t, yaml, "/etc/envoy/tls/tls.crt", "must reference the cert-manager-issued leaf cert")
+	assert.Contains(t, yaml, "/etc/envoy/tls/tls.key", "must reference the leaf private key")
+	assert.Contains(t, yaml, "dynamic_forward_proxy_https", "must re-originate upstream TLS")
+	assert.Contains(t, yaml, "sni_dynamic_forward_proxy", "must passthrough on SNI miss")
 }

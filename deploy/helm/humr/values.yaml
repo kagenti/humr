@@ -272,6 +272,28 @@ controller:
   envoyImage: envoyproxy/envoy-distroless:v1.32.0
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
+  # -- TLS interception support for the experimental credential injector. When enabled,
+  # the chart provisions a self-signed CA via cert-manager and a CA ClusterIssuer
+  # (`humr-mitm-ca-issuer`) that the controller uses to mint per-instance leaf
+  # certs for Envoy to terminate the agent's TLS and inject credential headers.
+  # Requires cert-manager to be installed in the cluster (humr's cluster:install
+  # task does this).
+  envoyMitm:
+    enabled: true
+    # -- Names of the bootstrap and CA cluster issuers. Cluster-scoped, so consider
+    # collisions with other charts.
+    bootstrapIssuerName: humr-selfsigned-bootstrap
+    caIssuerName: humr-mitm-ca-issuer
+    # -- Where the CA Secret lives. Must equal cert-manager's
+    # --cluster-resource-namespace flag (default `cert-manager`).
+    caSecretNamespace: cert-manager
+    caSecretName: humr-mitm-ca
+    # -- CA validity. cert-manager will renew before expiry automatically.
+    caDuration: 87600h     # 10y
+    caRenewBefore: 720h    # 30d
+    # -- Per-instance leaf cert validity.
+    leafDuration: 2160h    # 90d
+    leafRenewBefore: 360h  # 15d
   resources:
     requests:
       cpu: 100m

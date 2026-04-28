@@ -33,8 +33,11 @@ const (
 	envoyHeaderNameAnn    = "humr.ai/injection-header-name"
 	envoyBootstrapVolume  = "envoy-bootstrap"
 	envoyBootstrapMount   = "/etc/envoy"
-	envoyCredentialsRoot  = "/etc/envoy/credentials"
-	envoyCredentialKeyVal = "value" // K8s Secret data key carrying the file content
+	envoyCredentialsRoot   = "/etc/envoy/credentials"
+	envoyCredentialKeySDS  = "sds.yaml"  // SDS DiscoveryResponse file (expected by path_config_source)
+	envoyCredentialSDSName = "credential" // SDS resource name produced by api-server's K8sSecretsPort
+	envoyLeafTLSVolume     = "envoy-tls"
+	envoyLeafTLSMount      = "/etc/envoy/tls"
 )
 
 // EnvoyBootstrapName returns the per-instance ConfigMap name carrying the
@@ -90,9 +93,36 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 	return routes
 }
 
+// Bootstrap template — TLS-intercepting CONNECT proxy.
+//
+// Topology:
+//   1. The agent points HTTP(S)_PROXY at 127.0.0.1:<port>. All egress arrives
+//      as HTTP CONNECT.
+//   2. The OUTER listener on that port is an HCM that terminates the agent's
+//      CONNECT and routes the inner stream into the INTERNAL listener (Envoy's
+//      "internal listener" feature, addressed via envoy_internal_address).
+//   3. The INTERNAL listener uses tls_inspector to read SNI. One filter chain
+//      per known host terminates TLS with that host's leaf cert; default
+//      filter chain (SNI miss) does TCP passthrough via sni_dynamic_forward_proxy.
+//   4. Inside a TLS-terminating chain, an HCM runs credential_injector + the
+//      HTTP dynamic_forward_proxy, which re-originates upstream TLS to the
+//      real host using the inner request's Host header.
+//
+// Notes:
+//   - credential_injector lives at the HCM level (not per-route) because each
+//      filter chain's HCM is already host-specific. No composite filter needed.
+//   - Upstream TLS validation uses Envoy's default system trust bundle; the
+//      sidecar image must ship one (envoy-distroless does).
+//   - Admin interface intentionally omitted (ADR-033 threat model: the agent
+//      shares the network namespace).
+
 const envoyBootstrapTmpl = `node:
   id: humr-credential-injector
   cluster: humr-credential-injector
+bootstrap_extensions:
+  - name: envoy.bootstrap.internal_listener
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener
 static_resources:
   listeners:
     - name: agent_egress
@@ -107,73 +137,134 @@ static_resources:
                 upgrade_configs:
                   - upgrade_type: CONNECT
                 http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: connect_routes
+                  virtual_hosts:
+                    - name: connect
+                      domains: [ "*" ]
+                      routes:
+                        - match: { connect_matcher: {} }
+                          route:
+                            cluster: tls_inspect_internal
+                            upgrade_configs:
+                              - upgrade_type: CONNECT
+                                connect_config: {}
+
+    - name: tls_inspect_internal
+      internal_listener: {}
+      listener_filters:
+        - name: envoy.filters.listener.tls_inspector
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+      filter_chains:
+{{- range .Routes }}
+        - name: terminate_{{ .SecretName }}
+          filter_chain_match:
+            server_names: [ "{{ .Host }}" ]
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: { filename: {{ $.LeafTLSDir }}/tls.crt }
+                    private_key:      { filename: {{ $.LeafTLSDir }}/tls.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: terminate_{{ .SecretName }}
+                http_filters:
+                  - name: envoy.filters.http.credential_injector
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
+                      overwrite: true
+                      credential:
+                        name: envoy.http.injected_credentials.generic
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic
+                          credential:
+                            name: {{ $.CredentialSDSName }}
+                            sds_config:
+                              path_config_source:
+                                path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialFile }}
+                          header: "{{ .HeaderName }}"
                   - name: envoy.filters.http.dynamic_forward_proxy
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
                       dns_cache_config:
                         name: dns_cache
                         dns_lookup_family: V4_PREFERRED
-                  # credential_injector itself rejects virtual-host/route
-                  # specific config. Wrap it in the composite filter and
-                  # dispatch via an :authority matcher: each Secret gets its
-                  # own credential_injector instance, selected by host. NOTE:
-                  # for HTTPS-via-CONNECT this is a no-op until we add TLS
-                  # interception — the bytes inside the tunnel are encrypted.
-                  - name: envoy.filters.http.composite
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.common.matching.v3.ExtensionWithMatcher
-                      extension_config:
-                        name: composite
-                        typed_config:
-                          "@type": type.googleapis.com/envoy.extensions.filters.http.composite.v3.Composite
-                      xds_matcher:
-                        matcher_tree:
-                          input:
-                            name: authority
-                            typed_config:
-                              "@type": type.googleapis.com/envoy.type.matcher.v3.HttpRequestHeaderMatchInput
-                              header_name: :authority
-                          exact_match_map:
-                            map:
-{{- range .Routes }}
-                              "{{ .Host }}:443":
-                                action:
-                                  name: composite-action
-                                  typed_config:
-                                    "@type": type.googleapis.com/envoy.extensions.filters.http.composite.v3.ExecuteFilterAction
-                                    typed_config:
-                                      name: credential_injector
-                                      typed_config:
-                                        "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
-                                        overwrite: true
-                                        credential:
-                                          name: envoy.http.injected_credentials.generic
-                                          typed_config:
-                                            "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic
-                                            credential:
-                                              name: cred
-                                              sds_config:
-                                                path_config_source:
-                                                  path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialKey }}
-                                            header: "{{ .HeaderName }}"
-{{- end }}
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
                 route_config:
-                  name: routes
+                  name: forward_{{ .SecretName }}
                   virtual_hosts:
                     - name: default
                       domains: [ "*" ]
                       routes:
-                        - match: { connect_matcher: {} }
+                        - match: { prefix: "/" }
                           route:
-                            cluster: dynamic_forward_proxy
-                            upgrade_configs:
-                              - upgrade_type: CONNECT
-                                connect_config: {}
+                            cluster: dynamic_forward_proxy_https
+                            timeout: 0s
+{{- end }}
+        # SNI miss: pass the encrypted bytes through to the real upstream.
+        # No injection (we don't know what's inside) and no termination.
+        - name: passthrough
+          filters:
+            - name: envoy.filters.network.sni_dynamic_forward_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig
+                port_value: 443
+                dns_cache_config:
+                  name: dns_cache
+                  dns_lookup_family: V4_PREFERRED
+            - name: envoy.filters.network.tcp_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: passthrough
+                cluster: dynamic_forward_proxy_tcp
+
   clusters:
-    - name: dynamic_forward_proxy
+    - name: tls_inspect_internal
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: tls_inspect_internal
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    envoy_internal_address:
+                      server_listener_name: tls_inspect_internal
+
+    - name: dynamic_forward_proxy_https
+      connect_timeout: 5s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dns_cache
+            dns_lookup_family: V4_PREFERRED
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              # Trust the host's system root CA bundle. envoy-distroless ships
+              # one at /etc/ssl/certs/ca-certificates.crt; we point at it
+              # explicitly because system_root_certs is gated behind a runtime
+              # flag in 1.32.
+              trusted_ca:
+                filename: /etc/ssl/certs/ca-certificates.crt
+
+    - name: dynamic_forward_proxy_tcp
       connect_timeout: 5s
       lb_policy: CLUSTER_PROVIDED
       cluster_type:
@@ -186,8 +277,6 @@ static_resources:
 `
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance.
-// Admin interface is intentionally omitted (ADR-033 Threat Model: agent shares
-// the network namespace and could read /config_dump otherwise).
 func renderEnvoyBootstrap(cfg *config.Config, routes []envoyRoute) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
@@ -195,15 +284,19 @@ func renderEnvoyBootstrap(cfg *config.Config, routes []envoyRoute) (string, erro
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
-		Port            int
-		Routes          []envoyRoute
-		CredentialsRoot string
-		CredentialKey   string
+		Port              int
+		Routes            []envoyRoute
+		CredentialsRoot   string
+		CredentialFile    string
+		CredentialSDSName string
+		LeafTLSDir        string
 	}{
-		Port:            cfg.EnvoyPort,
-		Routes:          routes,
-		CredentialsRoot: envoyCredentialsRoot,
-		CredentialKey:   envoyCredentialKeyVal,
+		Port:              cfg.EnvoyPort,
+		Routes:            routes,
+		CredentialsRoot:   envoyCredentialsRoot,
+		CredentialFile:    envoyCredentialKeySDS,
+		CredentialSDSName: envoyCredentialSDSName,
+		LeafTLSDir:        envoyLeafTLSMount,
 	}); err != nil {
 		return "", err
 	}
@@ -232,7 +325,8 @@ func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, owner
 }
 
 // envoySidecarVolumes returns the pod-level volumes that back the sidecar's
-// bootstrap ConfigMap and per-Secret credential files. None of these are
+// bootstrap ConfigMap, per-Secret credential files, and the cert-manager-issued
+// TLS leaf used to terminate the agent's intercepted TLS. None of these are
 // referenced from the agent container — the credential boundary lives at the
 // container, not the pod.
 func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume {
@@ -252,8 +346,26 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 			},
 		})
 	}
+	// Optional: only present when there are routes (and therefore a leaf cert).
+	// On a flag-on instance with no credential Secrets, we render the bootstrap
+	// without TLS-terminating chains, so the volume is not needed.
+	if len(secrets) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: envoyLeafTLSVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: EnvoyLeafSecretName(instanceName),
+					// Don't require — cert-manager fills this Secret asynchronously.
+					// Pod will block on volume mount until the Secret exists.
+					Optional: ptrBool(false),
+				},
+			},
+		})
+	}
 	return volumes
 }
+
+func ptrBool(b bool) *bool { return &b }
 
 // envoySidecarContainer returns the Envoy sidecar spec. Drops all caps,
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
@@ -268,6 +380,13 @@ func envoySidecarContainer(cfg *config.Config, secrets []corev1.Secret) corev1.C
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "cred-" + s.Name,
 			MountPath: envoyCredentialsRoot + "/cred-" + s.Name,
+			ReadOnly:  true,
+		})
+	}
+	if len(secrets) > 0 {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      envoyLeafTLSVolume,
+			MountPath: envoyLeafTLSMount,
 			ReadOnly:  true,
 		})
 	}

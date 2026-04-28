@@ -16,6 +16,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -46,6 +47,11 @@ func main() {
 	client, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		slog.Error("creating k8s client", "error", err)
+		os.Exit(1)
+	}
+	dynClient, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		slog.Error("creating dynamic client", "error", err)
 		os.Exit(1)
 	}
 
@@ -83,7 +89,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, restCfg, cfg, onecliFactory)
+				run(ctx, client, dynClient, restCfg, cfg, onecliFactory)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -92,7 +98,7 @@ func main() {
 	})
 }
 
-func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config, cfg *config.Config, onecliFactory onecli.Factory) {
+func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, restCfg *rest.Config, cfg *config.Config, onecliFactory onecli.Factory) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -105,7 +111,7 @@ func run(ctx context.Context, client kubernetes.Interface, restCfg *rest.Config,
 	cmInformer := factory.Core().V1().ConfigMaps()
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver, onecliFactory)
+	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver, onecliFactory).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver, onecliFactory)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
