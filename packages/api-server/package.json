@@ -17,7 +17,9 @@
     "@kubernetes/client-node": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@slack/bolt": "^4.7.0",
+    "@trpc/client": "^11.16.0",
     "@trpc/server": "^11.16.0",
+    "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
     "chat": "^4.26.0",
     "cron-parser": "^5.5.0",
@@ -33,7 +35,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@trpc/client": "^11.16.0",
     "@types/js-yaml": "^4.0.9",
     "@types/ws": "^8.18.1",
     "tsup": "^8.5.1",
