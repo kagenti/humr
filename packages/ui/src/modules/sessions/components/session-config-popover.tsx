@@ -215,11 +215,10 @@ export function SessionConfigBar({
       {open && hasConfig && pos && createPortal(
         <div
           ref={popoverRef}
-          className="fixed w-[300px] max-h-[400px] overflow-y-auto rounded-xl border-2 border-border bg-surface z-[9999] anim-scale-in"
+          className="fixed w-[300px] max-h-[400px] overflow-y-auto rounded-xl border-2 border-border bg-surface z-[9999] anim-scale-in shadow-brutal"
           style={{
             left: pos.left,
             bottom: pos.bottom,
-            boxShadow: "var(--shadow-brutal)",
           }}
         >
           {/* Model selector */}

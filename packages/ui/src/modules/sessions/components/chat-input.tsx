@@ -177,14 +177,18 @@ export function ChatInput({
             />
           )}
           {showStop && (
-            <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center"
-              style={{ boxShadow: "3px 3px 0 var(--c-danger)" }} onClick={onStop} title="Stop">
+            <button
+              className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center shadow-[3px_3px_0_var(--c-danger)]"
+              onClick={onStop} title="Stop"
+            >
               <Square size={16} />
             </button>
           )}
           {showSend && (
-            <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }} onClick={send} disabled={sendDisabled || loadingSession} title={isComputing ? "Queue" : "Send"}>
+            <button
+              className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center shadow-brutal-accent"
+              onClick={send} disabled={sendDisabled || loadingSession} title={isComputing ? "Queue" : "Send"}
+            >
               <SendIcon size={16} />
             </button>
           )}

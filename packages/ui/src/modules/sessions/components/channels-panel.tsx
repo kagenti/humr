@@ -220,8 +220,7 @@ export function ChannelsPanel() {
       <button
         onClick={save}
         disabled={saving || !dirty}
-        className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[12px] font-bold text-white disabled:opacity-40 self-start"
-        style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+        className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[12px] font-bold text-white disabled:opacity-40 self-start shadow-brutal-accent"
       >
         {saving ? "Saving..." : "Save"}
       </button>

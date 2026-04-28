@@ -369,10 +369,7 @@ function SessionErrorCard({
     : error.kind === "connection" ? "Can't reach the agent"
     : "Failed to load session";
   return (
-    <div
-      className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in"
-      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-    >
+    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in shadow-brutal-sm">
       <div className="flex items-start gap-3">
         <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -383,16 +380,14 @@ function SessionErrorCard({
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={onBack}
-          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shadow-brutal-sm"
         >
           <ArrowLeft size={12} /> Back to sessions
         </button>
         {error.kind === "not-found" && (
           <button
             onClick={onDelete}
-            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
           >
             <Trash2 size={12} /> Delete orphaned session
           </button>
@@ -405,8 +400,7 @@ function SessionErrorCard({
 function SendErrorCard({ error, onRetry }: { error: string; onRetry?: () => void }) {
   return (
     <div
-      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
-      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px] shadow-brutal-sm"
       role="alert"
     >
       <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
@@ -417,8 +411,7 @@ function SendErrorCard({ error, onRetry }: { error: string; onRetry?: () => void
         {onRetry && (
           <button
             onClick={onRetry}
-            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
           >
             <RefreshCw size={11} /> Retry
           </button>

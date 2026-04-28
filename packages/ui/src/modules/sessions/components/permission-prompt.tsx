@@ -67,9 +67,7 @@ export function PermissionPrompt() {
 
   return (
     <div className="border-t bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3">
-      <div className="mx-auto max-w-[760px] rounded-lg border-2 border-accent bg-bg p-3.5 flex flex-col gap-2"
-        style={{ boxShadow: "var(--shadow-brutal-accent)" }}
-      >
+      <div className="mx-auto max-w-[760px] rounded-lg border-2 border-accent bg-bg p-3.5 flex flex-col gap-2 shadow-brutal-accent">
         <div className="text-[14px] font-bold text-text break-all">
           Allow <span className="text-accent">{toolTitle(current.toolCall)}</span>?
         </div>
