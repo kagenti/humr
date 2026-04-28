@@ -51,7 +51,7 @@ export function createConnectionsService(deps: {
    * triggers a re-publish of all producers' output for `owner`. The
    * sidecar's fill-if-missing merge handles re-grants idempotently, so we
    * always send the full current state — no diff computation. Revokes
-   * trigger nothing (entries linger; see DRAFT-connector-files-push).
+   * trigger nothing (entries linger; see DRAFT-pod-files-push).
    */
   podFiles?: PodFilesPublisher;
 }): ConnectionsService {

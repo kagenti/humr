@@ -4,7 +4,7 @@
  * UI-edited config) can drive file updates in pods. Connector grants are
  * the first instance, not the only kind.
  *
- * See docs/adrs/DRAFT-connector-files-push.md.
+ * See docs/adrs/DRAFT-pod-files-push.md.
  */
 
 /** A producer's contribution to a file. Shape depends on `mode`. */

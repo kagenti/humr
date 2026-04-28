@@ -1,6 +1,6 @@
-// Package configsync materializes connector-declared files in the agent pod
-// from SSE events pushed by the api-server. Generic over file paths and merge
-// modes; see docs/adrs/DRAFT-connector-files-push.md.
+// Package configsync materializes pod-files declared by api-server producers
+// in the agent pod from SSE events. Generic over file paths and merge modes;
+// see docs/adrs/DRAFT-pod-files-push.md.
 package configsync
 
 import (

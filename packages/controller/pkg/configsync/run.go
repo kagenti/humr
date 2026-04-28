@@ -19,7 +19,7 @@ import (
 // Options configure the sidecar's main loop.
 type Options struct {
 	// EventsURL is the api-server SSE endpoint, e.g.
-	// https://humr-api.../api/instances/<name>/connector-files/events
+	// https://humr-api.../api/instances/<name>/pod-files/events
 	EventsURL string
 	// Token is the per-instance access token sent as Bearer auth.
 	Token string
