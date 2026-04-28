@@ -1,8 +1,3 @@
-// ACP update + config payloads stay typed as `any` here until step 07
-// introduces Zod-inferred types at the boundary; this hook will also be split
-// in step 04, so tightening types in two places before that would be wasted.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -13,7 +8,7 @@ import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
-import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../../acp/session-projection.js";
+import { finalizeAllStreaming, hasStreamingAssistant } from "../../acp/session-projection.js";
 import {
   buildPromptBlocks,
   classifyResumeError,
@@ -22,8 +17,8 @@ import {
 } from "../../acp/utils.js";
 import { useInstancesList } from "../../instances/api/queries.js";
 import { acpSessionsKeys } from "../api/queries.js";
-import { getSavedPreferences } from "../components/session-config-popover.js";
 import { useAcpConfigCache } from "./use-acp-config-cache.js";
+import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
 
 // ── Hook ──
@@ -63,7 +58,6 @@ export function useAcpSession(
   // this, reconnect would only engage for *future* events and the gap stays
   // stranded in the runtime log until the user refreshes the page.
   const pendingReloadRef = useRef(false);
-  const loadHistoryIntoRef = useRef<((sid: string) => Promise<Message[]>) | null>(null);
   // Session IDs already persisted to the platform DB. We only upsert after a
   // prompt actually succeeds, so opening the app without sending anything
   // (or StrictMode double-mount) doesn't leave empty rows in the sidebar.
@@ -90,6 +84,12 @@ export function useAcpSession(
   const instanceRunState = instances.find(i => i.id === selectedInstance)?.state;
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
     useAcpConfigCache(selectedInstance, sessionId, instanceRunState);
+  const { loadHistory } = useAcpHistory(
+    selectedInstance,
+    selectedMcpServers,
+    captureSessionConfig,
+    handleConfigUpdate,
+  );
 
   // Wake hibernated instance on entry
   useEffect(() => {
@@ -120,9 +120,9 @@ export function useAcpSession(
     if (pendingReloadRef.current) {
       const sid = useStore.getState().sessionId;
       pendingReloadRef.current = false;
-      if (sid && loadHistoryIntoRef.current) {
+      if (sid) {
         try {
-          const fresh = await loadHistoryIntoRef.current(sid);
+          const fresh = await loadHistory(sid);
           setMessages(fresh);
         } catch (e) {
           // Network still unreachable, etc. — restore the flag so the next
@@ -180,7 +180,7 @@ export function useAcpSession(
       }
     }
     return conn;
-  }, [selectedInstance, selectedMcpServers, captureSessionConfig, makeUpdateHandler, addLog, setMessages, setSessionId]);
+  }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, makeUpdateHandler, loadHistory, addLog, setMessages, setSessionId]);
 
   const ensureConnection = useCallback((): Promise<ClientSideConnection | null> => {
     if (!ensureConnectionInFlight.current) {
@@ -205,62 +205,7 @@ export function useAcpSession(
     setSessionConfigOptions([]);
   }, [setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
 
-  // ── Resume / rehydrate (load history) ──
-
-  /**
-   * Pull the authoritative message list from the agent via `loadSession`
-   * through a throwaway connection, closing the current live WS first so
-   * the runtime doesn't broadcast the history replay to both channels.
-   * The caller is responsible for UX state (spinner vs. silent) and for
-   * letting `ensureConnection` reopen a live channel after.
-   */
-  const loadHistoryInto = useCallback(async (sid: string): Promise<Message[]> => {
-    if (!selectedInstance) return [];
-    connectionRef.current?.ws.close();
-    connectionRef.current = null;
-    activeSessionIdRef.current = null;
-
-    let replayed: Message[] = [];
-    let ws: WebSocket | null = null;
-    try {
-      const conn = await openConnection(selectedInstance, (u) => {
-        handleConfigUpdate(u);
-        replayed = applyUpdate(replayed, u);
-      });
-      ws = conn.ws;
-      await conn.connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-      });
-      const resp = await conn.connection.loadSession({ sessionId: sid, cwd: ".", mcpServers: selectedMcpServers });
-      captureSessionConfig(resp);
-
-      // Optimistic store updates for saved prefs — real ACP calls happen
-      // when ensureConnection opens a live channel.
-      if (selectedInstance) {
-        const prefs = getSavedPreferences(selectedInstance);
-        if (prefs.model && resp.models?.availableModels?.some((m: any) => m.modelId === prefs.model)) {
-          setSessionModels({ ...resp.models, currentModelId: prefs.model });
-        }
-        if (prefs.mode && resp.modes?.availableModes?.some((m: any) => m.id === prefs.mode)) {
-          setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
-        }
-      }
-    } finally {
-      // Leave the SDK session alive — the live reconnect that follows will
-      // resume it and the SDK dedupes by sessionId, so an open session is
-      // cheap whereas closing it would force a `claude` CLI respawn. Only
-      // the WS is throwaway.
-      ws?.close();
-    }
-
-    return finalizeAllStreaming(replayed);
-  }, [selectedInstance, selectedMcpServers, captureSessionConfig, handleConfigUpdate,
-      setSessionModels, setSessionModes]);
-
-  // Expose loadHistoryInto to ensureConnectionInner via a ref so the reload-
-  // on-reconnect path can invoke it without a circular useCallback dep.
-  useEffect(() => { loadHistoryIntoRef.current = loadHistoryInto; }, [loadHistoryInto]);
+  // ── Resume / rehydrate ──
 
   const resumeSession = useCallback(async (sid: string) => {
     if (!selectedInstance) return;
@@ -268,13 +213,19 @@ export function useAcpSession(
     // reload-on-reconnect flag so ensureConnection doesn't re-fetch right
     // after, when it opens the live channel for this session.
     pendingReloadRef.current = false;
+    // Close current live WS — loadHistory replays through its own socket
+    // and the runtime would broadcast every event to an overlapping live
+    // channel, doubling every render.
+    connectionRef.current?.ws.close();
+    connectionRef.current = null;
+    activeSessionIdRef.current = null;
     setLoadingSession(true);
     setMessages([]);
     setSessionError(null);
     setSessionId(sid);
     setMobileScreen("chat");
     try {
-      const fresh = await loadHistoryInto(sid);
+      const fresh = await loadHistory(sid);
       setMessages(fresh);
     } catch (e) {
       setSessionError({
@@ -284,7 +235,7 @@ export function useAcpSession(
       });
     }
     setLoadingSession(false);
-  }, [selectedInstance, loadHistoryInto, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
+  }, [selectedInstance, loadHistory, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   // ── Send prompt ──
 
