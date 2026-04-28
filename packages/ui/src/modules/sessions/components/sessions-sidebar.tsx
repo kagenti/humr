@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
+import { useInstancesList } from "../../instances/api/queries.js";
 import { useAcpSessions } from "../api/queries.js";
 
 export function SessionsSidebar({
@@ -21,9 +22,12 @@ export function SessionsSidebar({
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
 
+  const instances = useInstancesList();
+  const instanceRunState = instances.find((i) => i.id === selectedInstance)?.state;
   const { data: sessions = [], isFetching, refetch } = useAcpSessions(
     selectedInstance,
     includeChannel,
+    { enabled: instanceRunState === "running" },
   );
   const loading = isFetching;
 

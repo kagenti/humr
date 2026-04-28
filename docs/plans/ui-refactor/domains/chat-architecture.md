@@ -190,6 +190,12 @@ modules/acp/
 
 ### The state machine — the centerpiece
 
+> **Note:** the 7-state shape below is the *target* design, not what's
+> implemented today. The current `useAcpConnection` exports four states
+> (`idle | live | reloading | reconnecting`) — `connecting` and `engaging`
+> still live as in-flight refs, and `closed` is implicit (unmount). The
+> remaining collapse-into-FSM work is tracked under the post-step-04 plan.
+
 ```ts
 type ConnectionState =
   | "idle"          // no instance/session selected

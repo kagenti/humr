@@ -21,7 +21,7 @@ export function useAcpSessions(
   includeChannel: boolean,
   options?: { enabled?: boolean },
 ) {
-  const live = instanceId && (options?.enabled ?? true);
+  const live = !!instanceId && (options?.enabled ?? true);
   return useQuery({
     queryKey: acpSessionsKeys.list(instanceId, includeChannel),
     queryFn: live
