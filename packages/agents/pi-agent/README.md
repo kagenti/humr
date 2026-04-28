@@ -24,9 +24,102 @@ workspace/
     index.ts             ← auto-discovered by pi on startup; registers the RITS provider from env vars
 ```
 
-## RITS (custom OpenAI-compatible provider)
+## Providers and models
 
-The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider tuned for vLLM (what RITS runs) and mirrors the config into `~/.pi/agent/models.json`.
+Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, DeepSeek, Cerebras, xAI, OpenRouter, Gemini, Fireworks, Hugging Face, ZAI, MiniMax, …) plus any OpenAI-Completions / OpenAI-Responses / Anthropic-Messages / Google-Generative-AI compatible endpoint via [`models.json`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) or [extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md). Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
+
+In Humr the actual credential never lives in pod env. The pod carries a placeholder; OneCLI MITMs outbound traffic and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md#what-gets-injected) ([ADR-028](../../../docs/adrs/028-generic-secret-injection-config.md)) scoped to the provider's host. The flow is the same for every provider — only the host pattern and (occasionally) the injection header change.
+
+### Built-in API-key providers
+
+Three steps to enable any pi built-in provider:
+
+1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to `Dockerfile`, the agent template, or per-instance via the Configure Agent UI:
+
+   ```dockerfile
+   ENV OPENAI_API_KEY=injected-by-onecli
+   ```
+
+   The literal value pi sends on the wire is rewritten by OneCLI before forwarding upstream.
+
+2. **Create a generic secret in OneCLI** scoped to the provider's host. The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below. Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
+
+3. **Select the model** in [`settings.json`](workspace/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
+
+#### Provider env vars and host patterns
+
+Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) and [`models.generated.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/models.generated.ts) — pi's resolution order is documented in [providers.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order).
+
+| Provider | pi `provider` id | Env var(s) (placeholder in pod, real value in OneCLI secret) | Host pattern |
+|---|---|---|---|
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` (or `ANTHROPIC_OAUTH_TOKEN`) | `api.anthropic.com` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `api.openai.com` |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `api.deepseek.com` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` | `api.mistral.ai` |
+| Groq | `groq` | `GROQ_API_KEY` | `api.groq.com` |
+| Cerebras | `cerebras` | `CEREBRAS_API_KEY` | `api.cerebras.ai` |
+| xAI | `xai` | `XAI_API_KEY` | `api.x.ai` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `openrouter.ai` |
+| Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` | `ai-gateway.vercel.sh` |
+| ZAI | `zai` | `ZAI_API_KEY` | `api.z.ai` |
+| Google Gemini (AI Studio) | `google` | `GEMINI_API_KEY` | `generativelanguage.googleapis.com` |
+| Hugging Face | `huggingface` | `HF_TOKEN` | `router.huggingface.co` |
+| Fireworks | `fireworks` | `FIREWORKS_API_KEY` | `api.fireworks.ai` |
+| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` | `opencode.ai` (path `/zen/`) |
+| OpenCode Go | `opencode-go` | `OPENCODE_API_KEY` | `opencode.ai` (path `/zen/go/`) |
+| Kimi For Coding | `kimi-coding` | `KIMI_API_KEY` | `api.kimi.com` (path `/coding/`) |
+| MiniMax | `minimax` | `MINIMAX_API_KEY` | `api.minimax.io` |
+| MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` | `api.minimaxi.com` |
+
+> **Anthropic — prefer the dedicated provider.** Humr ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type. The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
+
+> When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` ([ADR-028](../../../docs/adrs/028-generic-secret-injection-config.md)) so each credential matches only its own sub-path.
+
+#### Other providers (env vars from pi-mono; Humr integration not validated end-to-end)
+
+These providers have additional configuration shapes (per-resource URLs, AWS credential chain, OAuth, SA-key files). The env vars below are what pi-mono reads; whether they compose cleanly with OneCLI's MITM rewrite hasn't been verified for each — confirm before relying on them in production.
+
+| Provider | pi `provider` id | Auth env vars | Notes |
+|---|---|---|---|
+| Azure OpenAI Responses | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated. |
+| Amazon Bedrock | `amazon-bedrock` | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. AWS SigV4 is computed in-pod against the secret access key, so a generic-secret header rewrite would break the signature — likely needs the real credential mounted, not OneCLI-injected. Untested. |
+| Google Vertex AI | `google-vertex` | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested. |
+| GitHub Copilot | `github-copilot` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret. |
+| OpenAI Codex (ChatGPT) | (Codex Responses) | OAuth via `/login` — no env var | Host: `chatgpt.com/backend-api`. ChatGPT subscription only; not appropriate for production. |
+| Google Gemini CLI / Antigravity | `google-gemini-cli` | OAuth via `/login`, optional `GOOGLE_CLOUD_PROJECT` for paid Cloud Code Assist | Hosts: `cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`. Untested. |
+
+### Custom OpenAI-compatible servers (models.json)
+
+For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's built-in list, register the provider in `~/.pi/agent/models.json` (seed via `workspace/.pi/agent/models.json`):
+
+```json
+{
+  "providers": {
+    "internal-vllm": {
+      "baseUrl": "https://vllm.internal.example.com/v1",
+      "api": "openai-completions",
+      "apiKey": "injected-by-onecli",
+      "authHeader": true,
+      "models": [{ "id": "qwen2.5-coder-32b" }]
+    }
+  }
+}
+```
+
+Then create a generic OneCLI secret with `hostPattern: vllm.internal.example.com` and the default Bearer injection. The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate-workarounds-15); OneCLI rewrites the header on the wire. The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
+
+For non-Bearer auth, override `injectionConfig` on the secret instead of changing `models.json`:
+
+| Provider style | `injectionConfig.headerName` | `injectionConfig.valueFormat` |
+|---|---|---|
+| OpenAI-compatible (default) | `Authorization` (default) | `Bearer {value}` (default) |
+| Anthropic-compatible proxy | `x-api-key` | `{value}` |
+| Portkey | `x-portkey-api-key` | `{value}` |
+| RITS | `RITS_API_KEY` | `{value}` |
+
+### RITS (custom provider via extension)
+
+The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider tuned for vLLM (what RITS runs) and mirrors the config into `~/.pi/agent/models.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|
@@ -37,7 +130,7 @@ The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is au
 | `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
 | `RITS_THINKING_FORMAT` | no | — | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
 
-The API key is **not** a pod env var. Configure it as a OneCLI generic secret with `RITS_API_KEY` as the custom injection header and a host pattern matching your RITS deployment. OneCLI injects the header on outbound traffic at the proxy layer.
+The API key is **not** a pod env var. Configure it as a OneCLI generic secret with `injectionConfig.headerName: RITS_API_KEY`, `injectionConfig.valueFormat: {value}`, and a host pattern matching your RITS deployment. OneCLI injects the header on outbound traffic at the proxy layer.
 
 To make RITS the default model, edit `settings.json`:
 
@@ -49,7 +142,7 @@ To make RITS the default model, edit `settings.json`:
 ### pi-acp auth-gate workarounds ([#15](https://github.com/svkozak/pi-acp/issues/15))
 
 1. *Startup gate* — `pi-acp` refuses to spawn `pi` unless a recognized credential exists. Satisfied by the dummy `ENV OPENCODE_API_KEY=pi-acp-auth-gate-bypass` in the Dockerfile (allow-listed name, unused by any pi provider).
-2. *Per-session gate* — `pi-acp` re-checks `models.json.providers[*].apiKey` on every `session/prompt`. Satisfied by the extension mirroring its `registerProvider` config to `models.json` on load; the `apiKey` value there is a placeholder.
+2. *Per-session gate* — `pi-acp` re-checks `models.json.providers[*].apiKey` on every `session/prompt`. Satisfied by either (a) the placeholder env var for built-in providers, (b) the placeholder `apiKey` in `models.json` for custom OpenAI-compatible servers, or (c) the extension mirroring its `registerProvider` config to `models.json` on load. In every case the `apiKey` is a placeholder; the real credential is OneCLI-injected on the wire.
 
 Pi system prompt conventions:
 
