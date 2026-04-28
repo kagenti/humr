@@ -267,6 +267,11 @@ controller:
   idleTimeout: "1h"
   # -- Termination grace period in seconds for agent pods
   terminationGracePeriod: 5
+  # -- Image for the experimental Envoy credential-injector sidecar (ADR-033). Renders
+  # only on instances with `experimentalCredentialInjector: true`.
+  envoyImage: envoyproxy/envoy:v1.32.0
+  # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
+  envoyPort: 10000
   resources:
     requests:
       cpu: 100m

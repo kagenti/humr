@@ -14,49 +14,64 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap, connectorEnvs []corev1.EnvVar) *appsv1.StatefulSet {
+func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap, connectorEnvs []corev1.EnvVar, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
 	}
 
 	labels := map[string]string{"humr.ai/instance": name}
-	// Proxy URL uses $(ONECLI_ACCESS_TOKEN) interpolation — K8s resolves it from the Secret at pod start.
-	// OneCLI expects the access token as the password (with "x" as dummy username).
-	proxyAddr := fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	caCertPath := "/etc/humr/ca/ca.crt"
-	tokenSecretName := AgentTokenSecretName(agentName)
 
-	// Merge env: platform + template + instance (last wins in K8s)
-	// ONECLI_ACCESS_TOKEN must come before HTTPS_PROXY so $(ONECLI_ACCESS_TOKEN) resolves.
-	env := []corev1.EnvVar{
-		{Name: "ONECLI_ACCESS_TOKEN", ValueFrom: &corev1.EnvVarSource{
+	// Egress proxy address: OneCLI gateway by default, Envoy sidecar on
+	// localhost when the experimental credential injector is enabled.
+	var proxyAddr string
+	if instance.ExperimentalCredentialInjector {
+		proxyAddr = fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
+	} else {
+		// $(ONECLI_ACCESS_TOKEN) is interpolated by K8s at pod start from the
+		// agent token Secret. OneCLI accepts the token as the password.
+		proxyAddr = fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
+	}
+
+	// Base env. ONECLI_ACCESS_TOKEN is omitted on the experimental path —
+	// the sidecar reads credentials from disk; the agent has no token at all.
+	env := []corev1.EnvVar{}
+	if !instance.ExperimentalCredentialInjector {
+		tokenSecretName := AgentTokenSecretName(agentName)
+		env = append(env, corev1.EnvVar{Name: "ONECLI_ACCESS_TOKEN", ValueFrom: &corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
 				Key:                  "access-token",
 			},
-		}},
-		{Name: "HTTPS_PROXY", Value: proxyAddr},
-		{Name: "HTTP_PROXY", Value: proxyAddr},
-		{Name: "https_proxy", Value: proxyAddr},
-		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		{Name: "no_proxy", Value: cfg.APIServerHost},
-		{Name: "SSL_CERT_FILE", Value: caCertPath},
-		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
-		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
-		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		}})
+	}
+	env = append(env,
+		corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyAddr},
+		corev1.EnvVar{Name: "HTTP_PROXY", Value: proxyAddr},
+		corev1.EnvVar{Name: "https_proxy", Value: proxyAddr},
+		corev1.EnvVar{Name: "http_proxy", Value: proxyAddr},
+		corev1.EnvVar{Name: "NO_PROXY", Value: cfg.APIServerHost},
+		corev1.EnvVar{Name: "no_proxy", Value: cfg.APIServerHost},
+		corev1.EnvVar{Name: "SSL_CERT_FILE", Value: caCertPath},
+		corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		corev1.EnvVar{Name: "GIT_SSL_CAINFO", Value: caCertPath},
+		corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		corev1.EnvVar{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+	)
+	if !instance.ExperimentalCredentialInjector {
 		// GitHub auth rides on a OneCLI OAuth app connection, not a user-declared
 		// secret, so there is no envMapping path for it. Keep the sentinel in the
 		// base env so `gh`, octokit, and other GH_TOKEN-aware tools authenticate
 		// against api.github.com via OneCLI's host-based MITM swap.
-		{Name: "GH_TOKEN", Value: "humr:sentinel"},
-		{Name: "ADK_INSTANCE_ID", Value: name},
-		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: "/home/agent"},
-		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
+		env = append(env, corev1.EnvVar{Name: "GH_TOKEN", Value: "humr:sentinel"})
 	}
+	env = append(env,
+		corev1.EnvVar{Name: "ADK_INSTANCE_ID", Value: name},
+		corev1.EnvVar{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		corev1.EnvVar{Name: "HOME", Value: "/home/agent"},
+		corev1.EnvVar{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
+	)
 	// Order matters: K8s resolves duplicate env names by keeping the last
 	// occurrence, so connector < template < instance — user overrides win.
 	env = append(env, connectorEnvs...)
@@ -175,6 +190,55 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		}
 	}
 
+	// Experimental: pod-level wiring for the Envoy credential-injector sidecar.
+	containers := []corev1.Container{{
+		Name:            "agent",
+		Image:           agentSpec.Image,
+		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+		Ports: []corev1.ContainerPort{{
+			Name: "acp", ContainerPort: 8080,
+		}},
+		Env:     env,
+		EnvFrom: envFrom,
+		// Fast (1s) during startup so wake-up is detected quickly, slow
+		// (10s) afterwards so we're not probing every agent pod every
+		// second forever. FailureThreshold=120 → ~2 min of startup
+		// runway, enough for a cold pull of a large agent image.
+		StartupProbe: &corev1.Probe{
+			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds:    1,
+			FailureThreshold: 120,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 10,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 10,
+		},
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		},
+		Resources:    resourceReqs,
+		VolumeMounts: volumeMounts,
+	}}
+	var automountSAToken *bool
+	var shareProcessNS *bool
+	if instance.ExperimentalCredentialInjector {
+		// Sidecar only — the agent container never sees credential mounts.
+		volumes = append(volumes, envoySidecarVolumes(name, credentialSecrets)...)
+		containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
+		// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
+		// would otherwise bypass volume-mount scoping) and process namespace
+		// must not be shared with the sidecar.
+		falseVal := false
+		automountSAToken = &falseVal
+		shareProcessNS = &falseVal
+	}
+
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -196,41 +260,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,
 					InitContainers:                initContainers,
-					Containers: []corev1.Container{{
-						Name:            "agent",
-						Image:           agentSpec.Image,
-						ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
-						Ports:           []corev1.ContainerPort{{
-							Name: "acp", ContainerPort: 8080,
-						}},
-						Env:     env,
-						EnvFrom: envFrom,
-						// Fast (1s) during startup so wake-up is detected quickly, slow
-						// (10s) afterwards so we're not probing every agent pod every
-						// second forever. FailureThreshold=120 → ~2 min of startup
-						// runway, enough for a cold pull of a large agent image.
-						StartupProbe: &corev1.Probe{
-							ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds:    1,
-							FailureThreshold: 120,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 10,
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 10,
-						},
-						SecurityContext: &corev1.SecurityContext{
-							Capabilities: &corev1.Capabilities{
-								Drop: []corev1.Capability{"ALL"},
-							},
-						},
-						Resources:    resourceReqs,
-						VolumeMounts: volumeMounts,
-					}},
-					Volumes: volumes,
+					AutomountServiceAccountToken:  automountSAToken,
+					ShareProcessNamespace:         shareProcessNS,
+					Containers:                    containers,
+					Volumes:                       volumes,
 				},
 			},
 		},
@@ -257,15 +290,76 @@ func BuildService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *c
 	}
 }
 
-func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
+func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigMap, instance *types.InstanceSpec) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 	acpPort := intstr.FromInt32(8080)
 	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
 	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
+	httpsPort := intstr.FromInt32(443)
+	httpPort := intstr.FromInt32(80)
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
+
+	egress := []networkingv1.NetworkPolicyEgressRule{}
+	if instance.ExperimentalCredentialInjector {
+		// Sidecar reaches arbitrary upstreams. ADR-033 §Decision keeps the
+		// first-cut allowlist permissive (no DNS allowlist in v1) — refinement
+		// is a follow-up.
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &tcp, Port: &httpsPort},
+				{Protocol: &tcp, Port: &httpPort},
+			},
+		})
+	} else {
+		// OneCLI (cross-namespace: runs in the release namespace)
+		// Gateway port for HTTPS proxy, web port for container-config (CA cert fetch)
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app.kubernetes.io/component": "onecli"},
+				},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
+				},
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &tcp, Port: &gwPort},
+				{Protocol: &tcp, Port: &webPort},
+			},
+		})
+	}
+	egress = append(egress,
+		networkingv1.NetworkPolicyEgressRule{
+			// Harness API server: separate port exposing only the subset of
+			// API available to agent harnesses (triggers, MCP tools).
+			To: []networkingv1.NetworkPolicyPeer{{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
+				},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
+				},
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &tcp, Port: &harnessPort},
+			},
+		},
+		networkingv1.NetworkPolicyEgressRule{
+			// DNS — allow both port 53 (service port) and 5353 (target port).
+			// OVN-Kubernetes evaluates egress policy after DNAT, so the policy
+			// sees the post-DNAT target port. OpenShift DNS pods run CoreDNS
+			// on 5353 behind a Service that maps 53→5353.
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &tcp, Port: &dnsPort},
+				{Protocol: &udp, Port: &dnsPort},
+				{Protocol: &tcp, Port: &dnsTargetPort},
+				{Protocol: &udp, Port: &dnsTargetPort},
+			},
+		},
+	)
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -284,51 +378,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 				networkingv1.PolicyTypeEgress,
 				networkingv1.PolicyTypeIngress,
 			},
-			Egress: []networkingv1.NetworkPolicyEgressRule{
-				{
-					// OneCLI (cross-namespace: runs in the release namespace)
-					// Gateway port for HTTPS proxy, web port for container-config (CA cert fetch)
-					To: []networkingv1.NetworkPolicyPeer{{
-						PodSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"app.kubernetes.io/component": "onecli"},
-						},
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-						},
-					}},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &gwPort},
-						{Protocol: &tcp, Port: &webPort},
-					},
-				},
-				{
-					// Harness API server: separate port exposing only the subset of
-					// API available to agent harnesses (triggers, MCP tools).
-					To: []networkingv1.NetworkPolicyPeer{{
-						PodSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-						},
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-						},
-					}},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &harnessPort},
-					},
-				},
-				{
-					// DNS — allow both port 53 (service port) and 5353 (target port).
-					// OVN-Kubernetes evaluates egress policy after DNAT, so the policy
-					// sees the post-DNAT target port. OpenShift DNS pods run CoreDNS
-					// on 5353 behind a Service that maps 53→5353.
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &dnsPort},
-						{Protocol: &udp, Port: &dnsPort},
-						{Protocol: &tcp, Port: &dnsTargetPort},
-						{Protocol: &udp, Port: &dnsTargetPort},
-					},
-				},
-			},
+			Egress: egress,
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
 				Ports: []networkingv1.NetworkPolicyPort{{
 					Protocol: &tcp, Port: &acpPort,

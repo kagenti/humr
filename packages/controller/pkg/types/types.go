@@ -62,12 +62,13 @@ type MCPServerConfig struct {
 // --- Instance ---
 
 type InstanceSpec struct {
-	Version      string   `yaml:"version"`
-	DesiredState string   `yaml:"desiredState"`
-	AgentName    string   `yaml:"agentId,omitempty"`
-	Env          []EnvVar `yaml:"env,omitempty"`
-	SecretRef    string   `yaml:"secretRef,omitempty"`
-	Description  string   `yaml:"description,omitempty"`
+	Version                        string   `yaml:"version"`
+	DesiredState                   string   `yaml:"desiredState"`
+	AgentName                      string   `yaml:"agentId,omitempty"`
+	Env                            []EnvVar `yaml:"env,omitempty"`
+	SecretRef                      string   `yaml:"secretRef,omitempty"`
+	Description                    string   `yaml:"description,omitempty"`
+	ExperimentalCredentialInjector bool     `yaml:"experimentalCredentialInjector,omitempty"`
 }
 
 type InstanceStatus struct {

@@ -9,6 +9,7 @@ export interface InfraInstance {
   currentState?: "running" | "hibernated" | "error";
   error?: string;
   podReady: boolean;
+  experimentalCredentialInjector?: boolean;
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
@@ -34,6 +35,7 @@ export function assembleInstance(
     error: infra.currentState === "error" ? infra.error : undefined,
     channels,
     allowedUserEmails,
+    experimentalCredentialInjector: infra.experimentalCredentialInjector,
   };
 }
 

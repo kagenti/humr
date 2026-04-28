@@ -62,10 +62,28 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 
 	connectorEnvs := r.collectConnectorEnvs(ctx, agentCM, agentName)
 
+	var credentialSecrets []corev1.Secret
+	if instanceSpec.ExperimentalCredentialInjector {
+		owner := agentCM.Labels["humr.ai/owner"]
+		secrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, owner)
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
+		}
+		credentialSecrets = secrets
+
+		bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
+		}
+		if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
+		}
+	}
+
 	// Build desired resources
-	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, connectorEnvs)
+	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, connectorEnvs, credentialSecrets)
 	svc := BuildService(name, r.config, cm)
-	np := BuildNetworkPolicy(name, r.config, cm)
+	np := BuildNetworkPolicy(name, r.config, cm, instanceSpec)
 
 	if err := r.applyStatefulSet(ctx, ss); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying statefulset: %v", err))
@@ -227,10 +245,36 @@ func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.S
 }
 
 func (r *InstanceReconciler) applyNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {
-	_, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		// Update in place so flag toggles propagate to live policy.
+		existing.Spec = desired.Spec
+		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
-	}
-	return err
+	})
+}
+
+func (r *InstanceReconciler) applyConfigMap(ctx context.Context, desired *corev1.ConfigMap) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.CoreV1().ConfigMaps(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		existing.Data = desired.Data
+		existing.OwnerReferences = desired.OwnerReferences
+		existing.Labels = desired.Labels
+		_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	})
 }

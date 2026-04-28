@@ -31,6 +31,8 @@ type Config struct {
 	APIServerHost        string // API server hostname (for NO_PROXY)
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
+	EnvoyImage           string // Image for the Envoy credential-injector sidecar (experimental)
+	EnvoyPort            int    // Port the Envoy sidecar listens on (proxy on 127.0.0.1)
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -74,6 +76,8 @@ func LoadFromEnv() (*Config, error) {
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:v1.32.0")
+	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	return cfg, nil
 }
 

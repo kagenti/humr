@@ -23,6 +23,7 @@ export interface CreateAgentInput {
    *  explicit array (incl. []) ⇒ override. */
   secretIds?: string[];
   appConnectionIds?: string[];
+  experimentalCredentialInjector?: boolean;
 }
 
 /**
@@ -33,9 +34,13 @@ export interface CreateAgentInput {
  */
 export function useCreateAgent() {
   return useMutation({
-    mutationFn: async ({ secretIds, appConnectionIds, ...input }: CreateAgentInput) => {
+    mutationFn: async ({ secretIds, appConnectionIds, experimentalCredentialInjector, ...input }: CreateAgentInput) => {
       const agent = await platform.agents.create.mutate(input);
-      await platform.instances.create.mutate({ name: input.name, agentId: agent.id });
+      await platform.instances.create.mutate({
+        name: input.name,
+        agentId: agent.id,
+        experimentalCredentialInjector,
+      });
 
       if (secretIds !== undefined) {
         await withRetry(() =>
