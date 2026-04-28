@@ -5,6 +5,7 @@ import {
   createK8sSecretsPort,
   injectionFileContent,
   resolveInjection,
+  sdsYamlContent,
 } from "../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -95,6 +96,20 @@ describe("injectionFileContent", () => {
   });
 });
 
+describe("sdsYamlContent", () => {
+  it("emits an SDS DiscoveryResponse with the formatted credential as inline_string", () => {
+    const yaml = sdsYamlContent("abc", "Bearer {value}");
+    expect(yaml).toContain('"@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret');
+    expect(yaml).toContain("name: credential");
+    expect(yaml).toContain("generic_secret:");
+    expect(yaml).toContain('inline_string: "Bearer abc"');
+  });
+  it("JSON-encodes the inline_string so quotes/newlines are safe in YAML", () => {
+    const yaml = sdsYamlContent('weird"\nvalue', "{value}");
+    expect(yaml).toContain('inline_string: "weird\\"\\nvalue"');
+  });
+});
+
 describe("createK8sSecretsPort.createSecret", () => {
   it("anthropic api-key writes x-api-key header with bare value", async () => {
     const { client, created } = fakeClient();
@@ -116,7 +131,8 @@ describe("createK8sSecretsPort.createSecret", () => {
     expect(s.metadata?.labels?.["humr.ai/secret-type"]).toBe("anthropic");
     expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("x-api-key");
     expect(s.metadata?.annotations?.["humr.ai/auth-mode"]).toBe("api-key");
-    expect(s.stringData?.value).toBe("sk-ant-key");
+    expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "sk-ant-key"');
+    expect(s.stringData?.value).toBeUndefined();
   });
 
   it("anthropic oauth writes Authorization header with Bearer prefix", async () => {
@@ -134,7 +150,7 @@ describe("createK8sSecretsPort.createSecret", () => {
 
     const s = created[0]!;
     expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("Authorization");
-    expect(s.stringData?.value).toBe("Bearer oauth-token");
+    expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Bearer oauth-token"');
   });
 
   it("generic respects valueFormat with arbitrary header", async () => {
@@ -152,7 +168,7 @@ describe("createK8sSecretsPort.createSecret", () => {
 
     const s = created[0]!;
     expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("X-Auth");
-    expect(s.stringData?.value).toBe("Token raw-tok");
+    expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Token raw-tok"');
   });
 
   it("generic defaults to Authorization: Bearer when injectionConfig is omitted", async () => {
@@ -169,7 +185,7 @@ describe("createK8sSecretsPort.createSecret", () => {
 
     const s = created[0]!;
     expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("Authorization");
-    expect(s.stringData?.value).toBe("Bearer tok");
+    expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Bearer tok"');
   });
 });
 
@@ -190,7 +206,7 @@ describe("createK8sSecretsPort.updateSecret", () => {
     await port.updateSecret("abc", { value: "new" });
 
     expect(replaced).toHaveLength(1);
-    expect(replaced[0]!.body.stringData?.value).toBe("new");
+    expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "new"');
     expect(replaced[0]!.body.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("x-api-key");
   });
 });
