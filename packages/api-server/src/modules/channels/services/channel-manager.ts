@@ -11,13 +11,25 @@ import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { StoredChannelConfig } from "../stored-channel.js";
 import type { ChannelSecretStore } from "../infrastructure/channel-secret-store.js";
 
+export interface ChannelAttachment {
+  filename: string;
+  data: Buffer;
+  mimeType?: string;
+  title?: string;
+}
+
+export interface PostMessageOptions {
+  conversationId?: string;
+  attachment?: ChannelAttachment;
+}
+
 interface Worker {
   type: ChannelType;
   start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(instanceName: string): Promise<{ id: string; title: string }[]>;
-  postMessage(instanceName: string, text: string, conversationId?: string): Promise<{ ok: true } | { error: string }>;
+  postMessage(instanceName: string, text: string, options?: PostMessageOptions): Promise<{ ok: true } | { error: string }>;
 }
 
 export interface ChannelManager {
@@ -25,7 +37,7 @@ export interface ChannelManager {
   bootstrap(channelsByInstance: Map<string, ChannelConfig[]>): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(instanceName: string, channelType: ChannelType): Promise<{ id: string; title: string }[]>;
-  postMessage(instanceName: string, channelType: ChannelType, text: string, conversationId?: string): Promise<{ ok: true } | { error: string }>;
+  postMessage(instanceName: string, channelType: ChannelType, text: string, options?: PostMessageOptions): Promise<{ ok: true } | { error: string }>;
 }
 
 export function createChannelManager(deps: {
@@ -109,10 +121,10 @@ export function createChannelManager(deps: {
       return worker.listConversations(instanceName);
     },
 
-    async postMessage(instanceName: string, channelType: ChannelType, text: string, conversationId?: string) {
+    async postMessage(instanceName: string, channelType: ChannelType, text: string, options?: PostMessageOptions) {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker) return { error: `channel type ${channelType} not available` };
-      return worker.postMessage(instanceName, text, conversationId);
+      return worker.postMessage(instanceName, text, options);
     },
   };
 }

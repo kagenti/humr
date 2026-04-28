@@ -2,6 +2,7 @@ import { Chat, type Thread, type StateAdapter } from "chat";
 import { createTelegramAdapter, type TelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type InstancesService } from "api-server-api";
 import type { StoredChannelConfig, StoredTelegramChannel } from "../stored-channel.js";
+import type { PostMessageOptions } from "../services/channel-manager.js";
 import { createAcpClient } from "../../../core/acp-client.js";
 import { buildAuthorizeUrl, generatePkce, type KeycloakOAuthConfig } from "./identity-oauth.js";
 
@@ -31,7 +32,7 @@ export interface TelegramWorker {
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(instanceName: string): Promise<ChannelConversation[]>;
-  postMessage(instanceName: string, text: string, conversationId?: string): Promise<{ ok: true } | { error: string }>;
+  postMessage(instanceName: string, text: string, options?: PostMessageOptions): Promise<{ ok: true } | { error: string }>;
 }
 
 interface InstanceBot {
@@ -289,15 +290,27 @@ export function createTelegramWorker(
       }));
     },
 
-    async postMessage(instanceName: string, text: string, conversationId?: string) {
+    async postMessage(instanceName: string, text: string, options?: PostMessageOptions) {
       const bot = bots.get(instanceName);
       if (!bot) return { error: "telegram bot not running for this instance" };
+
+      const { conversationId, attachment } = options ?? {};
+      const payload = attachment
+        ? {
+            markdown: text,
+            files: [{
+              data: attachment.data,
+              filename: attachment.filename,
+              ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+            }],
+          }
+        : text;
 
       if (conversationId) {
         const authorized = await threads.isAuthorized(instanceName, conversationId);
         if (!authorized) return { error: "conversation is not authorized" };
         try {
-          await bot.adapter.postMessage(conversationId, text);
+          await bot.adapter.postMessage(conversationId, payload);
           return { ok: true as const };
         } catch (err) {
           return { error: err instanceof Error ? err.message : String(err) };
@@ -307,7 +320,7 @@ export function createTelegramWorker(
       const thread = lastThread.get(instanceName);
       if (!thread) return { error: "no active Telegram thread; pass conversationId from list_channel_conversations" };
       try {
-        await thread.post(text);
+        await thread.post(payload);
         return { ok: true as const };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };

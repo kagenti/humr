@@ -10,6 +10,7 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
@@ -49,14 +50,43 @@ function createMcpSession(instanceId: string, channelManager: ChannelManager): M
 
   server.tool(
     "send_channel_message",
-    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat.",
+    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally include a single file attachment (max 10 MiB) — pass the binary as base64 in attachment.content.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
       chatId: z.string().optional(),
+      attachment: z.object({
+        filename: z.string().min(1),
+        content: z.string().min(1).describe("File contents encoded as base64."),
+        mimeType: z.string().optional(),
+        title: z.string().optional(),
+      }).optional(),
     },
-    async ({ channel, text, chatId }) => {
-      const result = await channelManager.postMessage(instanceId, channel, text, chatId);
+    async ({ channel, text, chatId, attachment }) => {
+      let decoded: Buffer | undefined;
+      if (attachment) {
+        decoded = Buffer.from(attachment.content, "base64");
+        if (decoded.length === 0) {
+          return { content: [{ type: "text" as const, text: "attachment.content decoded to zero bytes (invalid base64?)" }], isError: true };
+        }
+        if (decoded.length > MAX_ATTACHMENT_BYTES) {
+          return {
+            content: [{ type: "text" as const, text: `attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes` }],
+            isError: true,
+          };
+        }
+      }
+      const result = await channelManager.postMessage(instanceId, channel, text, {
+        ...(chatId ? { conversationId: chatId } : {}),
+        ...(decoded ? {
+          attachment: {
+            filename: attachment!.filename,
+            data: decoded,
+            ...(attachment!.mimeType ? { mimeType: attachment!.mimeType } : {}),
+            ...(attachment!.title ? { title: attachment!.title } : {}),
+          },
+        } : {}),
+      });
       if ("error" in result) {
         return { content: [{ type: "text" as const, text: result.error }], isError: true };
       }
