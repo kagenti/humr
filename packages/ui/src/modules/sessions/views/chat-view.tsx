@@ -52,7 +52,7 @@ export function ChatView() {
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
     useMcpPicker(selectedInstance);
 
-  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, activeSessionIdRef } =
+  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, engagedSessionIdRef } =
     useAcpSession(selectedInstance, selectedMcpServers, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedInstance);
@@ -306,7 +306,7 @@ export function ChatView() {
             onSend={sendPrompt}
             onStop={stopAgent}
             footer={!loadingSession && (
-              <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
+              <SessionConfigBar ensureConnection={ensureConnection} engagedSessionIdRef={engagedSessionIdRef} instanceId={selectedInstance ?? ""} />
             )}
           />
         )}

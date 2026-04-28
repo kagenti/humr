@@ -57,11 +57,11 @@ function shortModelLabel(model: { name: string; description?: string | null }): 
  */
 export function SessionConfigBar({
   ensureConnection,
-  activeSessionIdRef,
+  engagedSessionIdRef,
   instanceId,
 }: {
   ensureConnection: () => Promise<ClientSideConnection | null>;
-  activeSessionIdRef: React.RefObject<string | null>;
+  engagedSessionIdRef: React.RefObject<string | null>;
   instanceId: string;
 }) {
   const modes = useStore(s => s.sessionModes);
@@ -143,7 +143,7 @@ export function SessionConfigBar({
       if (latest && latest.currentModeId !== modeId) {
         setSessionModes({ ...latest, currentModeId: modeId });
       }
-      const sid = activeSessionIdRef.current;
+      const sid = engagedSessionIdRef.current;
       if (conn && sid) await conn.setSessionMode({ sessionId: sid, modeId });
     }, "Couldn't change mode");
   };
@@ -160,7 +160,7 @@ export function SessionConfigBar({
       if (latest && latest.currentModelId !== modelId) {
         setSessionModels({ ...latest, currentModelId: modelId });
       }
-      const sid = activeSessionIdRef.current;
+      const sid = engagedSessionIdRef.current;
       if (conn && sid) await conn.unstable_setSessionModel({ sessionId: sid, modelId });
     }, "Couldn't change model");
   };
@@ -176,7 +176,7 @@ export function SessionConfigBar({
 
     runAction(async () => {
       const conn = await ensureConnection();
-      const sid = activeSessionIdRef.current;
+      const sid = engagedSessionIdRef.current;
       if (!conn || !sid) return;
       const req = opt.type === "boolean"
         ? { sessionId: sid, configId: opt.id, type: "boolean" as const, value: value as boolean }

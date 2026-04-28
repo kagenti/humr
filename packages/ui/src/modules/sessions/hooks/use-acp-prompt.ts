@@ -27,14 +27,14 @@ interface LiveConnection {
  *     reacts even if `cancel` hangs, then calls SDK cancel best-effort.
  *
  * The `persistedSessionsRef` dedup is local to this hook — only sendPrompt
- * reads it. `connectionRef` and `activeSessionIdRef` come from the
+ * reads it. `connectionRef` and `engagedSessionIdRef` come from the
  * orchestrator's connection layer; they will move into useAcpConnection
  * in a later step.
  */
 export function useAcpPrompt(
   selectedInstance: string | null,
   ensureConnection: () => Promise<ClientSideConnection | null>,
-  activeSessionIdRef: React.MutableRefObject<string | null>,
+  engagedSessionIdRef: React.MutableRefObject<string | null>,
   connectionRef: React.MutableRefObject<LiveConnection | null>,
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ): {
@@ -79,7 +79,7 @@ export function useAcpPrompt(
       const conn = await ensureConnection();
       if (!conn) throw new Error("Failed to establish connection");
 
-      const sid = activeSessionIdRef.current;
+      const sid = engagedSessionIdRef.current;
       if (!sid) throw new Error("No active session");
       const promptBlocks = await buildPromptBlocks(selectedInstance, sid, text, attachments);
       const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
@@ -116,17 +116,17 @@ export function useAcpPrompt(
       queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       textareaRef.current?.focus();
     }
-  }, [selectedInstance, ensureConnection, activeSessionIdRef, addLog, setMessages, showToast, textareaRef]);
+  }, [selectedInstance, ensureConnection, engagedSessionIdRef, addLog, setMessages, showToast, textareaRef]);
 
   const stopAgent = useCallback(async () => {
     const conn = connectionRef.current?.connection;
-    const sid = activeSessionIdRef.current;
+    const sid = engagedSessionIdRef.current;
     // Finalize up front so the UI reacts immediately even if `cancel` hangs
     // or the SDK never rejects on a dropped stream.
     setMessages((p) => finalizeAllStreaming(p));
     if (!conn || !sid) return;
     try { await conn.cancel({ sessionId: sid }); } catch {}
-  }, [activeSessionIdRef, connectionRef, setMessages]);
+  }, [engagedSessionIdRef, connectionRef, setMessages]);
 
   return { sendPrompt, stopAgent };
 }

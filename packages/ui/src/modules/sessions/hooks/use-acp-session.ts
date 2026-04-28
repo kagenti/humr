@@ -51,19 +51,23 @@ export function useAcpSession(
 
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
     useAcpConfigCache(selectedInstance, sessionId, instanceRunState);
+
   const { loadHistory } = useAcpHistory(
     selectedInstance,
     selectedMcpServers,
     captureSessionConfig,
     handleConfigUpdate,
   );
+
   const { engagedSessionIdRef, engage, clear: clearEngagement } = useAcpSessionEngagement(
     selectedInstance,
     selectedMcpServers,
     captureSessionConfig,
     applySavedPreferences,
   );
+
   const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
+
   const { ensureLive, connectionRef, reset: resetConnection } = useAcpConnection({
     selectedInstance,
     sessionId,
@@ -81,13 +85,11 @@ export function useAcpSession(
   // Wake hibernated instance on entry.
   useEffect(() => {
     if (!selectedInstance) return;
-    const inst = instances.find(i => i.id === selectedInstance);
+    const inst = instances.find(({ id }) => id === selectedInstance);
     if (inst?.state === "hibernated") {
       platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);
-
-  // ── Session reset ──
 
   const resetSession = useCallback(() => {
     resetConnection();
@@ -98,19 +100,16 @@ export function useAcpSession(
     setSessionConfigOptions([]);
   }, [resetConnection, setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
 
-  // ── Resume / rehydrate ──
-
   const resumeSession = useCallback(async (sid: string) => {
     if (!selectedInstance) return;
-    // Close current live WS — loadHistory replays through its own socket
-    // and the runtime would broadcast every event to an overlapping live
-    // channel, doubling every render.
+    
     resetConnection();
     setLoadingSession(true);
     setMessages([]);
     setSessionError(null);
     setSessionId(sid);
     setMobileScreen("chat");
+
     try {
       const fresh = await loadHistory(sid);
       setMessages(fresh);
@@ -124,8 +123,6 @@ export function useAcpSession(
     setLoadingSession(false);
   }, [selectedInstance, loadHistory, resetConnection, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
-  // ── Prompt + cancel ──
-
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedInstance,
     ensureLive,
@@ -138,7 +135,7 @@ export function useAcpSession(
     connectionRef,
     /** Session id the live connection is currently bound to — exposed for
      *  SessionConfigBar's optimistic mutate paths. */
-    activeSessionIdRef: engagedSessionIdRef,
+    engagedSessionIdRef,
     ensureConnection: ensureLive,
     resetSession,
     resumeSession,
