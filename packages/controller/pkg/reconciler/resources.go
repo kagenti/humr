@@ -47,11 +47,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		// GitHub auth rides on a OneCLI OAuth app connection, not a user-declared
-		// secret, so there is no envMapping path for it. Keep the sentinel in the
-		// base env so `gh`, octokit, and other GH_TOKEN-aware tools authenticate
-		// against api.github.com via OneCLI's host-based MITM swap.
-		{Name: "GH_TOKEN", Value: "humr:sentinel"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: cfg.AgentHome},

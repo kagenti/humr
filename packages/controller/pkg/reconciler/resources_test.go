@@ -105,10 +105,6 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
-	// GH_TOKEN is a platform env: GitHub auth rides on a OneCLI OAuth app
-	// connection (not a user-declared secret with envMappings) so every agent
-	// needs the sentinel present for `gh`/octokit tooling to authenticate.
-	assert.Equal(t, "humr:sentinel", envMap["GH_TOKEN"])
 	// Template env
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	// Instance env
