@@ -16,6 +16,8 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.89",
     "@trpc/server": "^11.16.0",
     "agent-runtime-api": "workspace:*",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "file-type": "^22.0.1",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
