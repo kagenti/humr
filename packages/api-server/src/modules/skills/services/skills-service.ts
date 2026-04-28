@@ -280,7 +280,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
     async listSkills(sourceId: string, instanceId?: string) {
       const src = await resolveSource(deps, sourceId);
-      if (!src) return [];
+      if (!src) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill source ${JSON.stringify(sourceId)} not found`,
+        });
+      }
 
       // Fast path: public GitHub repo scanned directly from api-server. This
       // works in every OneCLI state (unconfigured, not Connected, not
