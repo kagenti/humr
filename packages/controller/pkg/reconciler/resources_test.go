@@ -285,7 +285,7 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 
 var testEnvoyConfig = func() *config.Config {
 	cfg := *testConfig
-	cfg.EnvoyImage = "envoyproxy/envoy-distroless:v1.32.0"
+	cfg.EnvoyImage = "envoyproxy/envoy:distroless-v1.37.2"
 	cfg.EnvoyPort = 10000
 	return &cfg
 }()
@@ -314,7 +314,7 @@ func TestBuildStatefulSet_FlagOn_AddsEnvoySidecar(t *testing.T) {
 	envoy := ss.Spec.Template.Spec.Containers[1]
 	assert.Equal(t, "agent", agent.Name)
 	assert.Equal(t, "envoy", envoy.Name)
-	assert.Equal(t, "envoyproxy/envoy-distroless:v1.32.0", envoy.Image)
+	assert.Equal(t, "envoyproxy/envoy:distroless-v1.37.2", envoy.Image)
 
 	envMap := envToMap(agent.Env)
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTP_PROXY"])

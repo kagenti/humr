@@ -262,6 +262,10 @@ controller:
   # impersonation). Empty = cluster default (which must itself support RWX).
   # Set to "humr-rwx" to use the bundled in-cluster NFS provisioner below.
   agentStorageClass: ""
+  # -- Extra annotations stamped on every agent pod. Useful for admission-webhook
+  # break-glass annotations (e.g. `admission.stackrox.io/break-glass: ticket-1234`)
+  # or for cluster-specific scheduling/observability hints.
+  agentPodAnnotations: {}
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
   idleTimeout: "1h"
@@ -269,7 +273,7 @@ controller:
   terminationGracePeriod: 5
   # -- Image for the experimental Envoy credential-injector sidecar (ADR-033). Renders
   # only on instances with `experimentalCredentialInjector: true`.
-  envoyImage: envoyproxy/envoy-distroless:v1.32.0
+  envoyImage: envoyproxy/envoy:distroless-v1.37.2
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the experimental credential injector. When enabled,
