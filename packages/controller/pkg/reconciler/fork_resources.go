@@ -19,6 +19,17 @@ const (
 	ForkLabelType        = "humr.ai/type"
 )
 
+// BuildForkJob constructs the per-turn foreign-user fork pod.
+//
+// Forks deliberately do NOT receive the humr-config-sync sidecar or any
+// of the shared emptyDirs that pod-files producers materialize on the
+// main StatefulSet. Forks are short-lived ACP-relay jobs spawned per
+// turn; the SSE/file-sync overhead per pod isn't justified for that
+// lifecycle, and most pod-files state (config, allowlists, host entries
+// for connection-aware CLIs) is irrelevant to the relay flow. If a
+// future fork-relevant feature ever needs files materialized in fork
+// pods, this is the place to wire the sidecar — until then, pod-files
+// state inside fork pods is unsupported on purpose.
 func BuildForkJob(
 	forkName string,
 	forkSpec *types.ForkSpec,

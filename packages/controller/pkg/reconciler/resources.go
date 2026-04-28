@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -124,7 +125,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	// agent image bringing any humr-specific code. Decision is purely deploy-
 	// time (presence of CONTROLLER_IMAGE), never connection-state-driven, so
 	// adding or removing github-enterprise grants never alters the pod spec.
-	agentVolumeMounts := volumeMounts
+	// Clone, don't alias: appending the gh-config mount must not bleed into
+	// `volumeMounts` via shared backing array (the user-init container reads
+	// the un-extended slice below).
+	agentVolumeMounts := slices.Clone(volumeMounts)
 	if cfg.ControllerImage != "" {
 		volumes = append(volumes, corev1.Volume{
 			Name:         "gh-config",
@@ -268,6 +272,7 @@ func configSyncSidecar(instanceName string, cfg *config.Config, tokenSecretName 
 		Args: []string{
 			"config-sync",
 			"--events-url=" + eventsURL,
+			"--agent-home=" + cfg.AgentHome,
 		},
 		Env: []corev1.EnvVar{{
 			Name: "ONECLI_ACCESS_TOKEN",

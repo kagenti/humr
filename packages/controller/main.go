@@ -221,6 +221,7 @@ func runConfigSync() {
 	fs := flag.NewFlagSet("config-sync", flag.ExitOnError)
 	eventsURL := fs.String("events-url", os.Getenv("HUMR_EVENTS_URL"), "API server SSE events URL")
 	token := fs.String("token", os.Getenv("ONECLI_ACCESS_TOKEN"), "Bearer token (default $ONECLI_ACCESS_TOKEN)")
+	agentHome := fs.String("agent-home", os.Getenv("AGENT_HOME"), "Agent container HOME; sidecar refuses to write outside this prefix")
 	// flag.ExitOnError makes Parse call os.Exit(2) on any parse error — the
 	// discard is safe because we never see a non-nil return.
 	_ = fs.Parse(os.Args[2:])
@@ -231,6 +232,7 @@ func runConfigSync() {
 	if err := configsync.Run(ctx, configsync.Options{
 		EventsURL: *eventsURL,
 		Token:     *token,
+		AgentHome: *agentHome,
 	}); err != nil {
 		slog.Error("config-sync exited", "error", err)
 		os.Exit(1)

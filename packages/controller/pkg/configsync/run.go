@@ -23,6 +23,10 @@ type Options struct {
 	EventsURL string
 	// Token is the per-instance access token sent as Bearer auth.
 	Token string
+	// AgentHome is the agent container's HOME (e.g. /home/agent). The sidecar
+	// refuses to write any file whose path doesn't resolve under this prefix —
+	// defense-in-depth against a buggy or compromised api-server payload.
+	AgentHome string
 	// MinBackoff / MaxBackoff bound the reconnect delay (default 1s..30s).
 	MinBackoff, MaxBackoff time.Duration
 	// HTTPClient lets tests inject a transport. Defaults to http.DefaultClient
@@ -53,6 +57,9 @@ type eventPayload struct {
 func Run(ctx context.Context, o Options) error {
 	if o.EventsURL == "" {
 		return errors.New("config-sync: --events-url is required")
+	}
+	if o.AgentHome == "" {
+		return errors.New("config-sync: --agent-home is required")
 	}
 	if o.MinBackoff <= 0 {
 		o.MinBackoff = time.Second
@@ -119,11 +126,11 @@ func stream(ctx context.Context, hc *http.Client, o Options) error {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	slog.Info("config-sync connected", "url", o.EventsURL)
-	return readSSE(resp.Body)
+	return readSSE(resp.Body, o.AgentHome)
 }
 
 // readSSE parses event-stream framing and dispatches each event.
-func readSSE(r io.Reader) error {
+func readSSE(r io.Reader, agentHome string) error {
 	br := bufio.NewReader(r)
 	var event string
 	var data strings.Builder
@@ -141,7 +148,7 @@ func readSSE(r io.Reader) error {
 		line = strings.TrimRight(line, "\r\n")
 		if line == "" {
 			if event != "" || data.Len() > 0 {
-				if err := dispatch(event, data.String()); err != nil {
+				if err := dispatch(event, data.String(), agentHome); err != nil {
 					slog.Warn("config-sync dispatch failed", "error", err)
 				}
 			}
@@ -161,7 +168,7 @@ func readSSE(r io.Reader) error {
 	}
 }
 
-func dispatch(event, data string) error {
+func dispatch(event, data, agentHome string) error {
 	if event != "snapshot" && event != "upsert" {
 		return nil
 	}
@@ -170,7 +177,7 @@ func dispatch(event, data string) error {
 		return fmt.Errorf("decode %s: %w", event, err)
 	}
 	for _, file := range p.Files {
-		if err := applyFile(file); err != nil {
+		if err := applyFile(file, agentHome); err != nil {
 			slog.Warn("config-sync apply failed", "path", file.Path, "error", err)
 		}
 	}
@@ -178,9 +185,16 @@ func dispatch(event, data string) error {
 }
 
 // applyFile dispatches on file.Mode and writes the result if anything changed.
-func applyFile(file FileSpec) error {
+// Refuses to write paths outside agentHome — defense-in-depth against a buggy
+// or compromised api-server payload.
+func applyFile(file FileSpec, agentHome string) error {
 	if len(file.Fragments) == 0 {
 		return nil
+	}
+	home := strings.TrimRight(filepath.Clean(agentHome), "/")
+	clean := filepath.Clean(file.Path)
+	if home == "" || !strings.HasPrefix(clean, home+"/") {
+		return fmt.Errorf("refusing to write %q: path must be under agent home %q", file.Path, agentHome)
 	}
 	existing, err := os.ReadFile(file.Path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

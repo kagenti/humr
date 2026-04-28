@@ -63,11 +63,20 @@ function renderHostFragment(connection: RawConnection): FileFragment | null {
     return null;
   }
   const username = pickUsername(connection.metadata);
+  // Match gh's canonical multi-account shape directly so the first
+  // auth-aware command (e.g. `gh auth status`) doesn't rewrite the file
+  // by adding a `users.<login>` block. The `users` map is dropped when
+  // username is unknown — gh tolerates the minimal form on read.
   return {
     [host]: {
       oauth_token: "humr:sentinel",
       git_protocol: "https",
-      ...(username ? { user: username } : {}),
+      ...(username
+        ? {
+            user: username,
+            users: { [username]: { oauth_token: "humr:sentinel" } },
+          }
+        : {}),
     },
   };
 }

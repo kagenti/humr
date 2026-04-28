@@ -21,6 +21,7 @@ describe("github-enterprise-hosts producer", () => {
               oauth_token: "humr:sentinel",
               git_protocol: "https",
               user: "alice",
+              users: { alice: { oauth_token: "humr:sentinel" } },
             },
           },
         ],
