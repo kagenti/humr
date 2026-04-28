@@ -11,6 +11,7 @@ export const addAgentSchema = z.object({
   description: z.string().trim(),
   selSecrets: z.array(z.string()),
   selApps: z.array(z.string()),
+  experimentalCredentialInjector: z.boolean(),
 });
 
 export type AddAgentValues = z.infer<typeof addAgentSchema>;

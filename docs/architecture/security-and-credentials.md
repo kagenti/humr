@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-04-27
+Last verified: 2026-04-28
 
 ## Motivated by
 
@@ -11,6 +11,7 @@ Last verified: 2026-04-27
 - [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition at pod start; the credential owner declares the env names, not the platform
 - [ADR-027 — Slack per-turn user impersonation](../adrs/027-slack-user-impersonation.md) — foreign repliers fork the instance into a per-turn Job; foreign-registration tokens are minted by the api-server and inlined into the fork ConfigMap
 - [ADR-028 — Configurable injection on generic secrets](../adrs/028-generic-secret-injection-config.md) — generic secrets carry their own host/path/header injection rules
+- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — replaces OneCLI with an Envoy sidecar; rolling out behind a per-instance experimental flag
 
 ## Overview
 
@@ -125,6 +126,19 @@ Pod env at start is the composition of platform defaults, connector-declared env
 ### Human-in-the-loop
 
 OneCLI does not yet support HITL approval mid-request — the gateway either has a matching grant or it doesn't. ADR-005 calls HITL out as a future requirement; ADR-010 keeps the door open to replacing OneCLI with an in-house gateway if upstream HITL doesn't land. There is no enforcement point at which a user can approve a single outbound call today; granular control is per-secret (host/path/header) at provisioning time, not per-request.
+
+### Experimental: Envoy credential injector
+
+[ADR-033](../adrs/033-envoy-credential-gateway.md) replaces OneCLI with a per-pod Envoy sidecar. The full migration is gated behind a per-instance opt-in flag (`experimentalCredentialInjector`); off-by-default instances keep the OneCLI path described above unchanged. When the flag is on for an instance:
+
+- The agent container's egress is proxied to a sidecar `envoy` container on `127.0.0.1`. There is no `ONECLI_ACCESS_TOKEN` and no cross-namespace traffic to the OneCLI gateway.
+- The agent container has **no** mounts of any credential `Secret` and runs with `automountServiceAccountToken: false` — the credential boundary lives at the container, not the pod.
+- The owner's user-typed credentials (generic + Anthropic) are written to per-`(owner, connection)` K8s `Secret`s by the api-server when the user creates them. Existing OneCLI-only secrets are not migrated; the experimental sidecar only sees secrets created after the flag was introduced.
+- The Envoy bootstrap config is rendered into a per-instance ConfigMap by the controller; topology changes (route edits, new credentials, header config) trigger a pod roll. Credential-value updates flow through kubelet's `Secret` volume sync without a restart.
+- NetworkPolicy drops the OneCLI peer and allows direct egress on TCP 443/80 from the sidecar (the gateway again decides per-host whether a credential is injected).
+- The OneCLI `GH_TOKEN=humr:sentinel` is **not** set on this path. Tooling can read `HUMR_GH_TOKEN_AVAILABLE` (`"true"`/`"false"`) from the agent env or the `humr.ai/gh-token-available` pod annotation to detect whether a GitHub credential Secret was attached, instead of failing on a 401 mid-request.
+
+OAuth app connections, HITL `ext_authz`, refresh-token loop, and `gVisor`/RuntimeClass enforcement are out of scope for the first slice and tracked as follow-ups.
 
 ## Per-instance access token and pod identity
 

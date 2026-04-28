@@ -32,6 +32,7 @@ export function AddAgentDialog({
     env?: EnvVar[];
     secretIds?: string[];
     appConnectionIds?: string[];
+    experimentalCredentialInjector?: boolean;
   }) => void;
   onCancel: () => void;
   onGoToProviders: () => void;
@@ -57,7 +58,7 @@ export function AddAgentDialog({
   } = useForm<AddAgentValues>({
     resolver: zodResolver(addAgentSchema),
     mode: "onChange",
-    defaultValues: { name: "", description: "", selSecrets: [], selApps: [] },
+    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], experimentalCredentialInjector: false },
   });
   const { errors, isSubmitting, isValid, dirtyFields } = formState;
 
@@ -133,6 +134,7 @@ export function AddAgentDialog({
       // Undirty selSecrets ⇒ defer to controller's default auto-assignment.
       secretIds: dirtyFields.selSecrets ? values.selSecrets : undefined,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
+      experimentalCredentialInjector: values.experimentalCredentialInjector || undefined,
     });
   });
 
@@ -275,6 +277,25 @@ export function AddAgentDialog({
               onToggleApp={toggleApp}
               onGoToProviders={onGoToProviders}
             />
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+                Experimental
+              </span>
+              <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                  {...register("experimentalCredentialInjector")}
+                />
+                <span className="flex flex-col gap-1">
+                  <span className="text-[13px] font-semibold text-text">Credential injector (Envoy sidecar)</span>
+                  <span className="text-[12px] text-text-muted">
+                    Replaces OneCLI with an Envoy credential gateway for this instance. OAuth-backed services (GitHub, Slack, Google) will not work when enabled. Only secrets created after enabling will be injected. Restart required.
+                  </span>
+                </span>
+              </label>
+            </div>
 
             <div className="flex items-center justify-end gap-3 pt-1">
               <button

@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-04-27
+Last verified: 2026-04-28
 
 ## Motivated by
 
@@ -12,6 +12,7 @@ Last verified: 2026-04-27
 - [ADR-012 — Runtime lifetime](../adrs/012-runtime-lifetime.md) — single-use spawn/hibernate model
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — separate port with a restricted, internal-only surface
 - [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `AGENT_COMMAND` contract
+- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — experimental per-pod sidecar replaces OneCLI on the wire
 
 ## Overview
 
@@ -104,5 +105,5 @@ For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 w
 - **Spec/status ownership.** Controller never writes `spec.yaml`; api-server never writes `status.yaml`. Write contention between the two is impossible by convention.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
-- **Credential isolation.** Agent pods never hold real upstream credentials — only a delegated OneCLI access token. Upstream tokens are injected on the wire by OneCLI. See [security-and-credentials](security-and-credentials.md).
+- **Credential isolation.** Agent pods never hold real upstream credentials. By default, egress flows through OneCLI's MITM gateway, which swaps a delegated OneCLI access token for the real upstream credential on the wire. Instances with the experimental `experimentalCredentialInjector` flag (ADR-033) take a different path: an Envoy sidecar in the pod intercepts agent TLS using a per-instance leaf cert and injects the credential header from a Secret mounted only into the sidecar — the agent container itself still never sees the upstream credential. See [security-and-credentials](security-and-credentials.md).
 - **Atomic triggers.** Trigger files are delivered via write-temp + rename so the agent's trigger watcher never reads a partial file.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeState, type InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
+import { assembleInstance, computeState, type InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
 
 function infra(overrides: Partial<InfraInstance> = {}): InfraInstance {
   return {
@@ -19,5 +19,17 @@ describe("computeState", () => {
 
   it("returns running when currentState is running and pod ready", () => {
     expect(computeState(infra({ currentState: "running", podReady: true }))).toBe("running");
+  });
+});
+
+describe("assembleInstance — experimentalCredentialInjector round-trip", () => {
+  it("threads the flag through to the assembled Instance", () => {
+    const instance = assembleInstance(infra({ experimentalCredentialInjector: true }), [], []);
+    expect(instance.experimentalCredentialInjector).toBe(true);
+  });
+
+  it("leaves the field undefined when not set on infra", () => {
+    const instance = assembleInstance(infra(), [], []);
+    expect(instance.experimentalCredentialInjector).toBeUndefined();
   });
 });
