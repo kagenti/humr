@@ -1,25 +1,26 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useStore } from "../store.js";
-import { StatusBadge } from "./../components/status-indicator.js";
-import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon, AlertCircle, Trash2, RefreshCw } from "lucide-react";
-import { Markdown } from "./../components/markdown.js";
-import { ToolChip } from "./../components/tool-chip.js";
-import { ResizeHandle } from "./../components/resize-handle.js";
-import { ChatInput } from "./../components/chat-input.js";
-import { PermissionPrompt } from "./../components/permission-prompt.js";
-import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
-import { FilesPanel } from "./../modules/files/components/files-panel.js";
-import { LogPanel } from "./../panels/log-panel.js";
-import { ConfigurationPanel } from "./../panels/configuration-panel.js";
-import { SessionConfigBar } from "./../components/session-config-popover.js";
-import { prefetchSchedules } from "./../modules/schedules/api/queries.js";
-import { useInstances } from "./../modules/instances/api/queries.js";
-import { useAcpSession } from "./../hooks/use-acp-session.js";
-import type { SessionError } from "../store.js";
-import type { InstanceView } from "../types.js";
-import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
-import { useFileTree } from "./../modules/files/hooks/use-file-tree.js";
-import { isMobile } from "./../lib/breakpoints.js";
+import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, RefreshCw,Settings2, Trash2 } from "lucide-react";
+import { useCallback,useEffect, useRef, useState } from "react";
+
+import { Markdown } from "../../../components/markdown.js";
+import { ResizeHandle } from "../../../components/resize-handle.js";
+import { StatusBadge } from "../../../components/status-indicator.js";
+import { isMobile } from "../../../lib/breakpoints.js";
+import type { SessionError } from "../../../store.js";
+import { useStore } from "../../../store.js";
+import type { InstanceView } from "../../../types.js";
+import { FilesPanel } from "../../files/components/files-panel.js";
+import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { useInstances } from "../../instances/api/queries.js";
+import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { ChatInput } from "../components/chat-input.js";
+import { ConfigurationPanel } from "../components/configuration-panel.js";
+import { LogPanel } from "../components/log-panel.js";
+import { PermissionPrompt } from "../components/permission-prompt.js";
+import { SessionConfigBar } from "../components/session-config-popover.js";
+import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { ToolChip } from "../components/tool-chip.js";
+import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useMcpPicker } from "../hooks/use-mcp-picker.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -51,7 +52,7 @@ export function ChatView() {
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
     useMcpPicker(selectedInstance);
 
-  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, fetchSessions, busy, activeSessionIdRef } =
+  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, activeSessionIdRef } =
     useAcpSession(selectedInstance, selectedMcpServers, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedInstance);
@@ -156,7 +157,7 @@ export function ChatView() {
 
   // ── Layout ──
   return (
-    <div className="flex h-screen bg-bg relative overflow-hidden">
+    <div className="flex h-dvh bg-bg relative overflow-hidden">
       <div className="blob blob-1" />
       <div className="blob blob-2" />
       <div className="blob blob-3" />
@@ -170,7 +171,6 @@ export function ChatView() {
       >
         <SessionsSidebar
           onResumeSession={mobileResumeSession}
-          onRefresh={fetchSessions}
           onNewSession={handleNewSession}
         />
       </div>

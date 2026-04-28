@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
-import { useStore } from "../store.js";
-import { X, Plus } from "lucide-react";
-import { useInstances } from "../modules/instances/api/queries.js";
+import { Plus,X } from "lucide-react";
+import { useEffect,useState } from "react";
+
+import { useStore } from "../../../store.js";
 import {
   useConnectSlack,
   useConnectTelegram,
   useDisconnectSlack,
   useDisconnectTelegram,
   useUpdateInstance,
-} from "../modules/instances/api/mutations.js";
+} from "../../instances/api/mutations.js";
+import { useInstances } from "../../instances/api/queries.js";
 
 export function ChannelsPanel() {
   const { data: instancesData } = useInstances();

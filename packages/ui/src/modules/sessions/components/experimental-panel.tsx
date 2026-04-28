@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { useStore } from "../store.js";
-import { useInstances } from "../modules/instances/api/queries.js";
-import { useUpdateInstance } from "../modules/instances/api/mutations.js";
+
+import { useStore } from "../../../store.js";
+import { useUpdateInstance } from "../../instances/api/mutations.js";
+import { useInstances } from "../../instances/api/queries.js";
 
 export function ExperimentalPanel() {
   const { data: instancesData } = useInstances();

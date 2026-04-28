@@ -1,14 +1,15 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { useStore } from "../store.js";
-import { runAction } from "../store/query-helpers.js";
-import { Check, ChevronUp, ChevronDown } from "lucide-react";
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type {
   SessionConfigOption,
-  SessionConfigSelectOption,
   SessionConfigSelectGroup,
+  SessionConfigSelectOption,
 } from "@agentclientprotocol/sdk/dist/acp.js";
+import { Check, ChevronDown,ChevronUp } from "lucide-react";
+import { useCallback,useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { useStore } from "../../../store.js";
+import { runAction } from "../../../store/query-helpers.js";
 
 function prefKey(instanceId: string, key: string) {
   return `humr-pref:${instanceId}:${key}`;

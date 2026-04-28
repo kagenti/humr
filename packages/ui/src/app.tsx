@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useStore } from "./store.js";
 import { ListView } from "./modules/agents/views/list-view.js";
-import { ChatView } from "./views/chat-view.js";
+import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -72,7 +72,7 @@ export default function App() {
 
   // All non-chat views share the sidebar shell
   return (
-    <div className="flex h-screen bg-bg relative overflow-hidden">
+    <div className="flex h-dvh bg-bg relative overflow-hidden">
       {/* Floating blobs */}
       <div className="blob blob-1" />
       <div className="blob blob-2" />

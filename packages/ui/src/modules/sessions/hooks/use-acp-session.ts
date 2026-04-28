@@ -1,16 +1,23 @@
-import { useRef, useEffect, useCallback } from "react";
-import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
+// ACP update + config payloads stay typed as `any` here until step 07
+// introduces Zod-inferred types at the boundary; this hook will also be split
+// in step 04, so tightening types in two places before that would be wasted.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { useStore } from "../store.js";
-import { openConnection } from "../acp.js";
-import { platform } from "../platform.js";
-import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../session-projection.js";
-import { uploadMessageAttachment } from "../modules/files/api/queries.js";
-import type { Message, Attachment } from "../types.js";
-import { getSavedPreferences } from "./../components/session-config-popover.js";
-import { runQuery } from "../store/query-helpers.js";
-import { useInstances } from "../modules/instances/api/queries.js";
+import { useCallback, useEffect, useRef } from "react";
+
+import { platform } from "../../../platform.js";
+import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
+import type { Attachment, Message } from "../../../types.js";
+import { openConnection } from "../../acp/acp.js";
+import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../../acp/session-projection.js";
+import { uploadMessageAttachment } from "../../files/api/queries.js";
+import { useInstancesList } from "../../instances/api/queries.js";
+import { acpSessionsKeys } from "../api/queries.js";
+import { getSavedPreferences } from "../components/session-config-popover.js";
 
 /**
  * Read a human-readable message off any error shape we may see here. The
@@ -106,22 +113,18 @@ export function useAcpSession(
   selectedMcpServers: McpServer[],
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
-  const { data: instancesData } = useInstances();
-  const instances = instancesData?.list ?? [];
+  const instances = useInstancesList();
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
-  const setSessions = useStore((s) => s.setSessions);
   const setBusy = useStore((s) => s.setBusy);
-  const setLoadingSessions = useStore((s) => s.setLoadingSessions);
   const setLoadingSession = useStore((s) => s.setLoadingSession);
   const addLog = useStore((s) => s.addLog);
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
   const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const includeChannelSessions = useStore((s) => s.includeChannelSessions);
   const setSessionError = useStore((s) => s.setSessionError);
   const showToast = useStore((s) => s.showToast);
 
@@ -252,43 +255,9 @@ export function useAcpSession(
     }
   }, [selectedInstance, instances]);
 
-  // ── Session list ──
-
-  const fetchSessions = useCallback(async () => {
-    if (!selectedInstance) return false;
-    if (instanceRunState !== "running") return false;
-    const list = await runQuery(
-      `sessions:${selectedInstance}`,
-      () => platform.sessions.list.query({ instanceId: selectedInstance, includeChannel: includeChannelSessions }),
-      { fallback: "Couldn't refresh session list" },
-    );
-    if (!list) return false;
-    setSessions(list);
-    return true;
-  }, [selectedInstance, instanceRunState, includeChannelSessions, setSessions]);
-
-  useEffect(() => {
-    if (!selectedInstance) return;
-    // Wait for useInstances to resolve — otherwise fetchSessions sees an
-    // empty list, can't find the instance, and retries forever on refresh.
-    if (instanceRunState === undefined) return;
-    if (instanceRunState !== "running") {
-      setLoadingSessions(false);
-      return;
-    }
-    setLoadingSessions(true);
-    let stopped = false;
-    const attempt = () => {
-      if (stopped) return;
-      fetchSessions().then((ok) => {
-        if (stopped) return;
-        if (ok) { setLoadingSessions(false); return; }
-        setTimeout(attempt, 3000);
-      });
-    };
-    attempt();
-    return () => { stopped = true; };
-  }, [selectedInstance, instanceRunState, fetchSessions, setLoadingSessions]);
+  // The session list is owned by useAcpSessions in the sidebar / chat-view —
+  // see modules/sessions/api/queries.ts. Mutations below invalidate the
+  // shared TQ key after they cause new entries to land.
 
   // ── Streaming update handler ──
 
@@ -575,8 +544,8 @@ export function useAcpSession(
       // content. Prevents empty rows from appearing in the sidebar when the
       // user opens the app and closes it without sending anything.
       //
-      // Await the create before the finally-block `fetchSessions` runs —
-      // otherwise the fetch races the server's DB write, sees no row for
+      // Await the create before invalidating the session-list query —
+      // otherwise the refetch races the server's DB write, sees no row for
       // this session, and the user has to hit Refresh for it to appear.
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
@@ -601,10 +570,10 @@ export function useAcpSession(
           : m,
       ));
     } finally {
-      fetchSessions();
+      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       textareaRef.current?.focus();
     }
-  }, [selectedInstance, ensureConnection, addLog, setMessages, fetchSessions, showToast, textareaRef]);
+  }, [selectedInstance, ensureConnection, addLog, setMessages, showToast, textareaRef]);
 
   const stopAgent = useCallback(async () => {
     const conn = connectionRef.current?.connection;
@@ -676,7 +645,6 @@ export function useAcpSession(
     resumeSession,
     sendPrompt,
     stopAgent,
-    fetchSessions,
     busy,
   };
 }

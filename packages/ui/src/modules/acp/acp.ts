@@ -1,10 +1,14 @@
+// ACP protocol surface — replaced with Zod-inferred types in step 07.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import {
   ClientSideConnection,
 } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import { getAccessToken } from "./auth.js";
-import { useStore, type PermissionOption, type PermissionOutcome } from "./store.js";
+import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+
+import { getAccessToken } from "../../auth.js";
+import { type PermissionOption, type PermissionOutcome,useStore } from "../../store.js";
 
 export type UpdateHandler = (update: any) => void;
 

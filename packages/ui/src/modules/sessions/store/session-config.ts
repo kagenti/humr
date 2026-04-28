@@ -1,10 +1,11 @@
-import type { StateCreator } from "zustand";
 import type {
-  SessionModeState,
-  SessionModelState,
   SessionConfigOption,
+  SessionModelState,
+  SessionModeState,
 } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { HumrStore } from "../store.js";
+import type { StateCreator } from "zustand";
+
+import type { HumrStore } from "../../../store.js";
 
 export interface SessionConfigSlice {
   sessionModes: SessionModeState | null;

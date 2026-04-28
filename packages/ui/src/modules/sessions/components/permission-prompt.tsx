@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { useStore } from "../store.js";
-import type { PermissionOption } from "../store.js";
+
+import type { PermissionOption } from "../../../store.js";
+import { useStore } from "../../../store.js";
 
 function toolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
