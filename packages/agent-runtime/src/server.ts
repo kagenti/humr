@@ -153,6 +153,15 @@ try {
   process.stderr.write(`[git] failed to configure credential helper: ${(e as Error).message}\n`);
 }
 
+if (!config.ONECLI_ACCESS_TOKEN) {
+  // Without a token every `protectedProcedure` (files + skills) returns
+  // UNAUTHORIZED. Correct in prod, silent in dev — surface it loudly so a
+  // misconfigured workstation doesn't look like a generic auth bug.
+  process.stderr.write(
+    "[auth] WARNING: ONECLI_ACCESS_TOKEN is unset — all /api/trpc calls will return UNAUTHORIZED\n",
+  );
+}
+
 server.listen(config.PORT, () => {
   process.stderr.write(`Humr on http://localhost:${config.PORT}\n`);
 
