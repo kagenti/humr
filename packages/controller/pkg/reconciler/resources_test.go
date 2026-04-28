@@ -357,6 +357,33 @@ func TestBuildStatefulSet_FlagOff_Unchanged(t *testing.T) {
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "no sidecar when flag is off")
 	assert.Nil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken, "leave SA-token automount at K8s default when flag is off")
 	assert.Nil(t, ss.Spec.Template.Spec.ShareProcessNamespace, "leave share-pid at K8s default when flag is off")
+	assert.Empty(t, ss.Spec.Template.Annotations, "no humr-specific pod annotations when flag is off")
+	for _, e := range ss.Spec.Template.Spec.Containers[0].Env {
+		assert.NotEqual(t, "HUMR_GH_TOKEN_AVAILABLE", e.Name, "GH-token signal env is experimental-path-only")
+	}
+}
+
+func TestBuildStatefulSet_FlagOn_GHTokenSignal_NoCredential(t *testing.T) {
+	// Experimental path with no GitHub credential Secret: signal must say
+	// "false" so in-pod tooling can short-circuit instead of failing on a 401.
+	instance := &types.InstanceSpec{DesiredState: "running", ExperimentalCredentialInjector: true}
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testEnvoyConfig, "my-agent", testOwnerCM, nil, nil)
+
+	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t, "false", envMap["HUMR_GH_TOKEN_AVAILABLE"])
+	assert.Equal(t, "false", ss.Spec.Template.Annotations["humr.ai/gh-token-available"])
+}
+
+func TestBuildStatefulSet_FlagOn_GHTokenSignal_WithCredential(t *testing.T) {
+	// Experimental path with a GitHub credential Secret: signal must say
+	// "true" — Envoy will inject Authorization on the wire to api.github.com.
+	instance := &types.InstanceSpec{DesiredState: "running", ExperimentalCredentialInjector: true}
+	secrets := []corev1.Secret{credSecret("humr-cred-gh", "api.github.com")}
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testEnvoyConfig, "my-agent", testOwnerCM, nil, secrets)
+
+	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t, "true", envMap["HUMR_GH_TOKEN_AVAILABLE"])
+	assert.Equal(t, "true", ss.Spec.Template.Annotations["humr.ai/gh-token-available"])
 }
 
 func TestBuildStatefulSet_FlagOn_SecretMountsSidecarOnly(t *testing.T) {

@@ -249,7 +249,9 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	}}
 	var automountSAToken *bool
 	var shareProcessNS *bool
+	var podAnnotations map[string]string
 	if instance.ExperimentalCredentialInjector {
+		podAnnotations = map[string]string{}
 		// Sidecar only — the agent container never sees credential mounts.
 		volumes = append(volumes, envoySidecarVolumes(name, credentialSecrets)...)
 		containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
@@ -259,6 +261,22 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		falseVal := false
 		automountSAToken = &falseVal
 		shareProcessNS = &falseVal
+
+		// GH_TOKEN signal. The OneCLI sentinel doesn't apply here, so tooling
+		// inside the agent has no way to know whether GitHub auth is wired up
+		// other than to make a request and observe a 401. Surface the state
+		// explicitly so wrapper scripts (and any GH_TOKEN-aware tool that
+		// learns about it) can short-circuit with a meaningful error, and so
+		// operators can see it via `kubectl get pod -o yaml` annotations.
+		ghAvail := "false"
+		if hasGitHubCredential(credentialSecrets) {
+			ghAvail = "true"
+		}
+		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
+			Name:  "HUMR_GH_TOKEN_AVAILABLE",
+			Value: ghAvail,
+		})
+		podAnnotations["humr.ai/gh-token-available"] = ghAvail
 	}
 
 	return &appsv1.StatefulSet{
@@ -276,7 +294,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Selector:             &metav1.LabelSelector{MatchLabels: labels},
 			VolumeClaimTemplates: pvcs,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      labels,
+					Annotations: podAnnotations,
+				},
 				Spec: corev1.PodSpec{
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					ImagePullSecrets:              pullSecrets,

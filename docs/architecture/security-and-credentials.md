@@ -136,6 +136,7 @@ OneCLI does not yet support HITL approval mid-request — the gateway either has
 - The owner's user-typed credentials (generic + Anthropic) are written to per-`(owner, connection)` K8s `Secret`s by the api-server when the user creates them. Existing OneCLI-only secrets are not migrated; the experimental sidecar only sees secrets created after the flag was introduced.
 - The Envoy bootstrap config is rendered into a per-instance ConfigMap by the controller; topology changes (route edits, new credentials, header config) trigger a pod roll. Credential-value updates flow through kubelet's `Secret` volume sync without a restart.
 - NetworkPolicy drops the OneCLI peer and allows direct egress on TCP 443/80 from the sidecar (the gateway again decides per-host whether a credential is injected).
+- The OneCLI `GH_TOKEN=humr:sentinel` is **not** set on this path. Tooling can read `HUMR_GH_TOKEN_AVAILABLE` (`"true"`/`"false"`) from the agent env or the `humr.ai/gh-token-available` pod annotation to detect whether a GitHub credential Secret was attached, instead of failing on a 401 mid-request.
 
 OAuth app connections, HITL `ext_authz`, refresh-token loop, and `gVisor`/RuntimeClass enforcement are out of scope for the first slice and tracked as follow-ups.
 
