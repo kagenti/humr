@@ -15,6 +15,23 @@ import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/i
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
+// Defaults from packages/agent-runtime/src/modules/config.ts. Keep in sync.
+// The agent-runtime files service is rooted at HOME_DIR; the agent process
+// runs in WORK_DIR. attachment.path can be absolute (anywhere under HOME_DIR)
+// or workspace-relative (interpreted as relative to WORK_DIR).
+const AGENT_HOME_DIR = "/home/agent";
+const AGENT_WORK_DIR = "/home/agent/work";
+
+function resolveWorkspacePath(input: string): string {
+  if (input.startsWith("/")) {
+    return input.startsWith(`${AGENT_HOME_DIR}/`)
+      ? input.slice(AGENT_HOME_DIR.length + 1)
+      : input; // outside HOME_DIR — let files.read reject it
+  }
+  const workRel = AGENT_WORK_DIR.slice(AGENT_HOME_DIR.length + 1);
+  return `${workRel}/${input}`;
+}
+
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
@@ -61,13 +78,13 @@ function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file from this agent's workspace by setting attachment.path (workspace-relative); the connector reads it server-side (10 MiB cap enforced by the runtime).",
+    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. /home/agent/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
       chatId: z.string().optional(),
       attachment: z.object({
-        path: z.string().min(1).describe("Workspace-relative path to the file to attach."),
+        path: z.string().min(1).describe("Absolute path under /home/agent or workspace-relative (e.g. report.md)."),
         filename: z.string().optional().describe("Name shown in the channel; defaults to the basename of path."),
         mimeType: z.string().optional().describe("Override the runtime-detected MIME type."),
         title: z.string().optional(),
@@ -76,12 +93,13 @@ function createMcpSession(
     async ({ channel, text, chatId, attachment }) => {
       let resolved: ChannelAttachment | undefined;
       if (attachment) {
+        const resolvedPath = resolveWorkspacePath(attachment.path);
         let file: { content?: string; binary?: boolean; mimeType?: string };
         try {
-          file = await runtimeClient.files.read.query({ path: attachment.path });
+          file = await runtimeClient.files.read.query({ path: resolvedPath });
         } catch (err) {
           const msg = err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
-            ? `attachment not found: ${attachment.path}`
+            ? `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`
             : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
           return { content: [{ type: "text" as const, text: msg }], isError: true };
         }
