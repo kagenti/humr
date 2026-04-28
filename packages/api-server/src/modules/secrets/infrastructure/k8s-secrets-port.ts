@@ -80,8 +80,24 @@ export interface K8sSecretsPort {
   deleteSecret(id: string): Promise<void>;
 }
 
+// K8s metadata.name is RFC 1123 subdomain: lowercase alphanumeric / hyphen,
+// must start and end with alphanumeric. The previous version used
+// `id.toLowerCase()` defensively, but that masks IDs that aren't already
+// valid (e.g. mixed case → silent collisions on case-only differences) and
+// can still produce invalid names if the ID contains other characters.
+// Validate up-front instead — OneCLI hands us UUIDs, so this is a no-op for
+// the happy path and a hard error for anything else.
+const K8S_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const K8S_NAME_PREFIX = "humr-cred-";
+const K8S_NAME_MAX_ID_LEN = 253 - K8S_NAME_PREFIX.length;
+
 function k8sSecretName(id: string): string {
-  return `humr-cred-${id.toLowerCase()}`;
+  if (id.length === 0 || id.length > K8S_NAME_MAX_ID_LEN || !K8S_NAME_RE.test(id)) {
+    throw new Error(
+      `secret id ${JSON.stringify(id)} is not a valid K8s name component`,
+    );
+  }
+  return `${K8S_NAME_PREFIX}${id}`;
 }
 
 export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSecretsPort {

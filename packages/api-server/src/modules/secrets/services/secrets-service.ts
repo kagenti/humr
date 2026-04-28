@@ -37,12 +37,25 @@ function toSecretView(s: OnecliSecret): SecretView {
 /**
  * Best-effort K8s mirror; OneCLI remains the source of truth. If the K8s write
  * fails, we log and proceed — the OneCLI path (today's behavior) is unchanged.
+ *
+ * The error is logged with a stable token (`k8s-mirror-failed`) and structured
+ * fields (op, secretId, error) so log scrapers can detect the failure mode
+ * without depending on free-form text. On the experimental Envoy path a failed
+ * mirror means the sidecar will not see this credential — important enough to
+ * surface in dashboards/alerts.
  */
-async function mirrorToK8s(label: string, fn: () => Promise<void>): Promise<void> {
+async function mirrorToK8s(
+  meta: { op: "create" | "update" | "delete"; secretId: string },
+  fn: () => Promise<void>,
+): Promise<void> {
   try {
     await fn();
   } catch (err) {
-    console.warn(`[secrets-service] k8s mirror ${label} failed:`, err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      "[secrets-service] k8s-mirror-failed",
+      JSON.stringify({ ...meta, error: message }),
+    );
   }
 }
 
@@ -101,7 +114,7 @@ export function createSecretsService(deps: {
         };
       }
       if (deps.k8sPort) {
-        await mirrorToK8s(`create ${created.id}`, () => deps.k8sPort!.createSecret({
+        await mirrorToK8s({ op: "create", secretId: created.id }, () => deps.k8sPort!.createSecret({
           id: created.id,
           name: input.name,
           type: input.type,
@@ -121,7 +134,7 @@ export function createSecretsService(deps: {
     async update({ id, ...patch }: UpdateSecretInput) {
       await deps.port.updateSecret(id, patch);
       if (deps.k8sPort) {
-        await mirrorToK8s(`update ${id}`, () => deps.k8sPort!.updateSecret(id, {
+        await mirrorToK8s({ op: "update", secretId: id }, () => deps.k8sPort!.updateSecret(id, {
           value: patch.value,
           hostPattern: patch.hostPattern,
           pathPattern: patch.pathPattern,
@@ -133,7 +146,7 @@ export function createSecretsService(deps: {
     async delete(id) {
       await deps.port.deleteSecret(id);
       if (deps.k8sPort) {
-        await mirrorToK8s(`delete ${id}`, () => deps.k8sPort!.deleteSecret(id));
+        await mirrorToK8s({ op: "delete", secretId: id }, () => deps.k8sPort!.deleteSecret(id));
       }
     },
 

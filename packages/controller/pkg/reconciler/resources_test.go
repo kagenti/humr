@@ -303,7 +303,11 @@ func credSecret(name, host string) corev1.Secret {
 
 func TestBuildStatefulSet_FlagOn_AddsEnvoySidecar(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running", ExperimentalCredentialInjector: true}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testEnvoyConfig, "my-agent", testOwnerCM, nil, nil)
+	// Pass a non-empty credential set so we exercise the real-world rendering
+	// (sidecar mounts, leaf-Secret projection into the agent, no fetch-ca-cert)
+	// rather than the degenerate empty path.
+	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testEnvoyConfig, "my-agent", testOwnerCM, nil, secrets)
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
 	agent := ss.Spec.Template.Spec.Containers[0]
@@ -326,6 +330,25 @@ func TestBuildStatefulSet_FlagOn_AddsEnvoySidecar(t *testing.T) {
 	for _, ic := range ss.Spec.Template.Spec.InitContainers {
 		assert.NotEqual(t, "fetch-ca-cert", ic.Name)
 	}
+
+	// Volume/mount names are consistent with what the bootstrap template
+	// references — bootstrap renders `cred-<secret>` paths; the sidecar
+	// volume must be named identically and mounted at the matching path.
+	volNames := map[string]bool{}
+	for _, v := range ss.Spec.Template.Spec.Volumes {
+		volNames[v.Name] = true
+	}
+	require.True(t, volNames["cred-humr-cred-aaa"], "credential volume must use cred-<secretName>")
+	require.True(t, volNames["envoy-tls"], "leaf-TLS volume must be present")
+
+	envoyMounts := map[string]string{}
+	for _, m := range envoy.VolumeMounts {
+		envoyMounts[m.Name] = m.MountPath
+	}
+	assert.Equal(t, "/etc/envoy/credentials/cred-humr-cred-aaa", envoyMounts["cred-humr-cred-aaa"],
+		"sidecar mount path must match bootstrap template's $CredentialsRoot/$VolumeName")
+	assert.Equal(t, "/etc/envoy/tls", envoyMounts["envoy-tls"],
+		"sidecar TLS mount path must match bootstrap template's $LeafTLSDir")
 }
 
 func TestBuildStatefulSet_FlagOff_Unchanged(t *testing.T) {

@@ -72,6 +72,21 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 	return items, nil
 }
 
+// hasGitHubCredential reports whether any of the owner's K8s credential
+// Secrets target a GitHub host. Used by the reconciler to warn when an
+// experimental-flag instance has no GitHub credential — the OneCLI GH_TOKEN
+// sentinel is unavailable on this path, so gh/octokit lose auth silently
+// otherwise.
+func hasGitHubCredential(secrets []corev1.Secret) bool {
+	for _, s := range secrets {
+		host := s.Annotations[envoyHostPatternAnn]
+		if host == "github.com" || host == "api.github.com" {
+			return true
+		}
+	}
+	return false
+}
+
 func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 	routes := make([]envoyRoute, 0, len(secrets))
 	for _, s := range secrets {

@@ -86,6 +86,17 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 		credentialSecrets = secrets
 
+		// On the experimental path the OneCLI GitHub OAuth-app sentinel
+		// (GH_TOKEN=humr:sentinel) is not injected — Envoy doesn't do the
+		// host-based MITM swap OneCLI does. Until the user attaches their
+		// own GitHub credential Secret, gh/octokit/etc. will be unauthenticated.
+		// Log it so operators can see why GitHub-touching agents are failing
+		// without having to spelunk env diffs.
+		if !hasGitHubCredential(credentialSecrets) {
+			slog.Warn("experimental credential injector: no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
+				"instance", name, "owner", owner)
+		}
+
 		bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
 		if err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
