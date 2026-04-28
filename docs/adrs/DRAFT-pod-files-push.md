@@ -44,7 +44,7 @@ Introduce a generic **pod-files push** mechanism — the filesystem-state analog
 
 6. **Owner impersonation when needed.** Producers running outside a live user JWT (snapshot path on SSE connect) can use Keycloak service-account + RFC 8693 with `requested_subject`. The api-server already exposes this via `onecli.onecliFetchAsOwner`; producers that need user-scoped reads from external systems use the same pattern.
 
-The `github-enterprise → hosts.yml` case is the first registry entry; it's a ~30 LOC producer factory that closes over a `fetchConnectionsForOwner` function. Adding a different state source is one new producer factory in `producers/`, registered in `buildPodFilesRegistry`. No platform changes.
+The `github-enterprise → hosts.yml` case is the first registry entry; it's a small producer factory that closes over a `fetchConnectionsForOwner` function. Adding a different state source is one new producer factory in `producers/`, registered in `buildPodFilesRegistry`. No platform changes.
 
 ## Alternatives considered
 
@@ -64,6 +64,8 @@ The `github-enterprise → hosts.yml` case is the first registry entry; it's a ~
 - **One shared mount path for now** (`${agentHome}/.config/gh`). Future producers needing different parent paths require additional `emptyDir` mounts on the pod template — small, mechanical change. Not yet generalized to "arbitrary paths under HOME" because that risks shadowing a user-image's existing files at those paths.
 - **Cross-replica fanout is the only deferred scaling concern.** Multi-pod *agents* work today: the bus is keyed by agent name, so all pods of the same agent subscribed to the same api-server replica receive every publish. Multi-pod *api-server* is the open case.
 - **Stale entries linger after revoke / source removal.** Producers can only add to files, not remove. Revoked hosts still appear in `gh auth status` until manually edited; gateway no longer swaps the sentinel, so calls fail loud. Accepted for safety against accidental data loss.
+- **Sidecar refuses paths outside agent HOME.** Defense-in-depth: a buggy or compromised api-server payload pointing at `/etc/...` or using `..` traversal is rejected before any write. The sidecar reads its allowed prefix from a `--agent-home` flag matching the chart-level `agentHome`.
+- **Fork jobs deliberately do not run the sidecar.** Forks are short-lived per-turn Jobs spawned for foreign-user impersonation; SSE setup overhead per pod isn't justified for that lifecycle, and the relay flow doesn't read pod-files state. If a future fork-relevant feature ever needs files materialized, this is the place to revisit — until then, pod-files state inside fork pods is unsupported on purpose.
 
 ## Future extensions (decisions, not open questions)
 
