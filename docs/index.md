@@ -16,6 +16,4 @@ Humr gives Claude Code, Codex, Gemini CLI, pi.dev — or anything that speaks [A
 
 ## Get started
 
-**Have a hosted instance?** Jump straight to the [Quickstart](quickstart.md) — log in, create an agent, and start chatting.
-
-**Want to host your own?** Head to [Self-Hosting](self-hosting/get-started.md) to set up a local cluster, or [Deploy to Kubernetes](self-hosting/deploy.md) for production.
+**Get started in 5 minutes** — the [Quickstart](quickstart.md) walks you through setting up a local cluster and creating your first agent.

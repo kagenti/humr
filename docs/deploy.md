@@ -1,6 +1,6 @@
 # Deploy to Kubernetes
 
-The [Get Started](get-started.md) guide runs Humr locally in a k3s VM. This page covers deploying to a real Kubernetes cluster — EKS, GKE, AKS, or any conformant distribution.
+The [Quickstart](quickstart.md) runs Humr locally in a k3s VM. This page covers deploying to a real Kubernetes cluster — EKS, GKE, AKS, or any conformant distribution.
 
 ## Prerequisites
 

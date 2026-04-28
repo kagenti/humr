@@ -22,16 +22,15 @@ nav:
   - Welcome: index.md
   - Quickstart: quickstart.md
   - User Guide:
+      - Agent Templates: user-guide/templates.md
       - Chatting with Your Agent: user-guide/chatting.md
       - Add Credentials: user-guide/credentials.md
       - Files & Workspace: user-guide/files.md
       - Connect to Slack: user-guide/slack.md
       - Schedule Tasks: user-guide/scheduling.md
-      - Manage Your Agent: user-guide/manage.md
-  - Self-Hosting:
-      - Local Development: self-hosting/get-started.md
-      - Deploy to Kubernetes: self-hosting/deploy.md
-      - Build a Custom Agent: self-hosting/build-a-custom-agent.md
+      - Multi-User & Sharing: user-guide/sharing.md
+  - Deployment:
+      - Deploy to Kubernetes: deploy.md
 
 theme:
   name: material
