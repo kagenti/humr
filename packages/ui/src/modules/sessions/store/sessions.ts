@@ -1,8 +1,11 @@
 import type { StateCreator } from "zustand";
-import { platform } from "../platform.js";
-import type { Message, SessionView, LogEntry } from "../types.js";
-import type { HumrStore } from "../store.js";
-import { runAction, ACTION_FAILED } from "./query-helpers.js";
+
+import { platform } from "../../../platform.js";
+import { queryClient } from "../../../query-client.js";
+import type { HumrStore } from "../../../store.js";
+import { ACTION_FAILED, runAction } from "../../../store/query-helpers.js";
+import type { LogEntry, Message } from "../../../types.js";
+import { acpSessionsKeys } from "../api/queries.js";
 
 /** A resume-time failure that blocks showing the session chat. Rendered inline. */
 export interface SessionError {
@@ -13,7 +16,6 @@ export interface SessionError {
 }
 
 export interface SessionsSlice {
-  sessions: SessionView[];
   sessionId: string | null;
   messages: Message[];
   log: LogEntry[];
@@ -23,7 +25,6 @@ export interface SessionsSlice {
   busy: boolean;
 
   setSessionId: (id: string | null) => void;
-  setSessions: (sessions: SessionView[]) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
   setIncludeChannelSessions: (v: boolean) => void;
@@ -31,26 +32,20 @@ export interface SessionsSlice {
   setBusy: (busy: boolean) => void;
 
   addLog: (type: string, payload: object) => void;
+  /** Delete a session via the platform API, then invalidate the TQ session
+   *  list query. Resets the chat context if the deleted session was active. */
   deleteSession: (sessionId: string) => Promise<void>;
 
   /**
-   * Clear only the active chat — messages, session config, log, permission
-   * prompts, open file, queued prompt. Leaves the sidebar `sessions` list
-   * alone, which is per-instance, not per-chat. Used by `deleteSession` when
-   * the deleted session happened to be the active one.
-   */
-  resetActiveSession: () => void;
-
-  /**
-   * Wipe all per-chat-session state *and* the sessions list. Callers like
-   * `selectInstance`, `goBack`, and the popstate handler invoke this at
-   * instance boundaries so the sidebar isn't stale for the next instance.
+   * Wipe all per-chat-session state (active session, messages, file tree,
+   * session config, log, queued prompt). Callers like `selectInstance`,
+   * `goBack`, and the popstate handler invoke this so every entry point
+   * leaves chat state in the same clean shape.
    */
   resetChatContext: () => void;
 }
 
 export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice> = (set, get) => ({
-  sessions: [],
   sessionId: null,
   messages: [],
   log: [],
@@ -60,7 +55,6 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
   busy: false,
 
   setSessionId: (id) => set({ sessionId: id }),
-  setSessions: (sessions) => set({ sessions }),
   setMessages: (updater) =>
     set((s) => ({ messages: typeof updater === "function" ? updater(s.messages) : updater })),
   setSessionError: (e) => set({ sessionError: e }),
@@ -68,7 +62,7 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
   setQueuedMessage: (msg) => set({ queuedMessage: msg }),
   setBusy: (busy) => set({ busy }),
 
-  resetActiveSession: () => set({
+  resetChatContext: () => set({
     sessionId: null,
     messages: [],
     sessionError: null,
@@ -80,11 +74,6 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
     pendingPermissions: [],
     queuedMessage: null,
   }),
-
-  resetChatContext: () => {
-    get().resetActiveSession();
-    set({ sessions: [] });
-  },
 
   addLog: (type, payload) => {
     const ts = new Date().toISOString().slice(11, 23);
@@ -99,9 +88,8 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
       "Failed to delete session",
     );
     if (ok === ACTION_FAILED) return;
-    const wasActive = get().sessionId === sessionId;
-    set((s) => ({ sessions: s.sessions.filter((x) => x.sessionId !== sessionId) }));
-    if (wasActive) get().resetActiveSession();
+    if (get().sessionId === sessionId) get().resetChatContext();
+    queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
     get().showToast({ kind: "success", message: "Session deleted" });
   },
 });

@@ -1,26 +1,35 @@
-import { useRef, useCallback, useState, useEffect } from "react";
 import { SessionType } from "api-server-api";
-import { useStore } from "../store.js";
-import { RefreshCw, ArrowLeft, Trash2, Plus } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useStore } from "../../../store.js";
+import { useInstancesList } from "../../instances/api/queries.js";
+import { useAcpSessions } from "../api/queries.js";
 
 export function SessionsSidebar({
   onResumeSession,
-  onRefresh,
   onNewSession,
 }: {
   onResumeSession: (sid: string) => void;
-  onRefresh: () => void;
   onNewSession: () => void;
 }) {
-  const sessions = useStore((s) => s.sessions);
+  const selectedInstance = useStore((s) => s.selectedInstance);
   const sessionId = useStore((s) => s.sessionId);
-  const loading = useStore((s) => s.loading.sessions);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const includeChannel = useStore((s) => s.includeChannelSessions);
   const setIncludeChannel = useStore((s) => s.setIncludeChannelSessions);
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
+
+  const instances = useInstancesList();
+  const instanceRunState = instances.find((i) => i.id === selectedInstance)?.state;
+  const { data: sessions = [], isFetching, refetch } = useAcpSessions(
+    selectedInstance,
+    includeChannel,
+    { enabled: instanceRunState === "running" },
+  );
+  const loading = isFetching;
 
   const confirmDelete = useCallback(
     async (sid: string, title: string | null | undefined) => {
@@ -47,7 +56,7 @@ export function SessionsSidebar({
         </span>
         <button
           className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors`}
-          onClick={onRefresh}
+          onClick={() => refetch()}
         >
           <span className={loading ? "anim-spin" : ""}>
             <RefreshCw size={11} />
@@ -213,8 +222,7 @@ function SessionRow({
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-3 top-2 z-30 rounded-lg border-2 border-border bg-surface py-1 anim-scale-in"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          className="absolute right-3 top-2 z-30 rounded-lg border-2 border-border bg-surface py-1 anim-scale-in shadow-brutal-sm"
         >
           <button
             className="flex items-center gap-2 w-full px-4 py-2 text-[13px] text-danger hover:bg-danger-light transition-colors"

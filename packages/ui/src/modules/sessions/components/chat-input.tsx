@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { Send as SendIcon, Square, Paperclip, X, FileText as FileIcon } from "lucide-react";
-import type { Attachment } from "../types.js";
-import { useAutoResize } from "../hooks/use-auto-resize.js";
-import { isMobile } from "../lib/breakpoints.js";
-import { MAX_UPLOAD_BYTES } from "../modules/files/api/queries.js";
-import { useStore } from "../store.js";
+import { FileText as FileIcon,Paperclip, Send as SendIcon, Square, X } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, type RefObject,useCallback, useEffect, useRef, useState } from "react";
+
+import { useAutoResize } from "../../../hooks/use-auto-resize.js";
+import { isMobile } from "../../../lib/breakpoints.js";
+import { useStore } from "../../../store.js";
+import type { Attachment } from "../../../types.js";
+import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -176,14 +177,18 @@ export function ChatInput({
             />
           )}
           {showStop && (
-            <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center"
-              style={{ boxShadow: "3px 3px 0 var(--c-danger)" }} onClick={onStop} title="Stop">
+            <button
+              className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center shadow-[3px_3px_0_var(--c-danger)]"
+              onClick={onStop} title="Stop"
+            >
               <Square size={16} />
             </button>
           )}
           {showSend && (
-            <button className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }} onClick={send} disabled={sendDisabled || loadingSession} title={isComputing ? "Queue" : "Send"}>
+            <button
+              className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center shadow-brutal-accent"
+              onClick={send} disabled={sendDisabled || loadingSession} title={isComputing ? "Queue" : "Send"}
+            >
               <SendIcon size={16} />
             </button>
           )}

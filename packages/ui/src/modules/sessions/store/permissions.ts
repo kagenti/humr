@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
-import type { HumrStore } from "../store.js";
+
+import type { HumrStore } from "../../../store.js";
 
 export interface PermissionOption {
   optionId: string;

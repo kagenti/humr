@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useStore } from "../store.js";
+
+import { useStore } from "../../../store.js";
 
 const badgeStyle: Record<string, string> = {
   text: "bg-bg text-text-muted border-border-light",
