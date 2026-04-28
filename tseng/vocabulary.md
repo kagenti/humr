@@ -1,6 +1,15 @@
 # Ubiquitous Language
 
-Domain terms used across this project. Each term is scoped to its bounded context.
+Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate vocabulary below.
+
+## Substrate
+
+Persistence vocabulary shared by every bounded context. See [`docs/architecture/persistence.md`](../docs/architecture/persistence.md) for the substrate split.
+
+| Term | Definition |
+|------|-----------|
+| Infra State | State the Controller reconciles into running infrastructure. Stored in a ConfigMap with `spec.yaml` (api-server writer) and `status.yaml` (controller writer). |
+| Application State | State only the API Server reads and writes; the Controller never touches it. Stored in PostgreSQL. |
 
 ## Agents (bounded context)
 
@@ -8,9 +17,7 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
 | Agent | A user-owned definition of a runnable AI harness, optionally derived from a template |
-| Instance | A running (or hibernated) deployment of an agent with its own state and environment; aggregate root assembled from infra state (ConfigMap) and application state (PostgreSQL) |
-| Infra State | The subset of instance data stored in a ConfigMap and consumed by the Controller (desiredState, env, secretRef) |
-| Application State | The subset of instance data stored in PostgreSQL and consumed only by the API Server (channels, session metadata) |
+| Instance | A running (or hibernated) deployment of an agent with its own state and environment; aggregate root assembled from Infra State (desiredState, env, secretRef) and Application State (channels, session metadata) |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
 | Schedule | A time-triggered task attached to an instance — either cron-based or heartbeat |
 | Desired State | The target lifecycle state of an instance: running or hibernated |
