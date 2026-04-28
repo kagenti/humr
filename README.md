@@ -12,9 +12,9 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 ## What you get
 
-- **Isolated by design** — Each agent runs in its own sandbox: separate pod, process, and filesystem. API keys live in a proxy; the agent never sees them. Network access is locked to destinations you've approved. That contains two of the three big agent-security risks structurally. [Security model →](docs/security-model.md)
+- **Isolated by design** — Each agent runs in its own sandbox: separate pod, process, and filesystem. API keys live in a proxy; the agent never sees them. Network access is locked to destinations you've approved. That contains two of the three big agent-security risks structurally. [Security model →](docs/strategy/security-model.md)
 
-- **Built for team collaboration** — Until now, coding agents have been 1:1: you and your copilot. Humr unlocks N people collaborating with 1 or many agents, multi-player from the ground up. [Multiplayer →](docs/multi-player.md)
+- **Built for team collaboration** — Until now, coding agents have been 1:1: you and your copilot. Humr unlocks N people collaborating with 1 or many agents, multi-player from the ground up. [Multiplayer →](docs/strategy/multi-player.md)
 
 - **Always-on scheduling** — Cron lives on the platform, not your laptop. Scheduled tasks look identical to human messages from the agent's perspective. Workspace and conversation history persist across restarts.
 
@@ -57,11 +57,12 @@ mise install                # install toolchain + deps
 mise run cluster:install    # create local k3s cluster + deploy Humr
 ```
 
-Open [humr.localhost:4444](http://humr.localhost:4444) (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [guide](docs/guide.md) for cluster commands, credential setup, and Slack integration.
+Open [humr.localhost:4444](http://humr.localhost:4444) (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [configuration guide](docs/configuration.md) for credential setup and Slack integration.
 
 ## Learn more
 
-- **[Guide](docs/guide.md)** — credential setup, Slack integration, development workflow, architecture overview
-- **[Security model](docs/security-model.md)** — the three big risks when running AI agents, how Humr handles each, and what's still unsolved
-- **[Multiplayer](docs/multi-player.md)** — Humr's multi-user model: what's private to each player, what's shared when you collaborate, and what's install-wide plumbing
+- **[Configuration](docs/configuration.md)** — credential setup, Slack integration, development-mode toggle
+- **[Architecture](docs/architecture.md)** — system context, subsystem deep-dives, design decisions
+- **[Security model](docs/strategy/security-model.md)** — the three big risks when running AI agents, how Humr handles each, and what's still unsolved
+- **[Multiplayer](docs/strategy/multi-player.md)** — Humr's multi-user model: what's private to each player, what's shared when you collaborate, and what's install-wide plumbing
 - **[Why Humr exists](PITCH.md)** — the three problems every agent hits in production, how Humr solves each, and a 5-minute walkthrough

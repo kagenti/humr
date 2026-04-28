@@ -182,6 +182,7 @@ See `references/api-layer.md` for the end-to-end error contract.
 
 - **`any` anywhere except in a temporary migration comment with a `TODO` deadline.**
 - **`as` used to "shut up the compiler"** — the compiler is telling you something is off.
+- **Non-null assertions (`x!`, `undefined!`)** — same smell as `as`, just narrower. If the value really can't be null, prove it with a guard or refactor the API; if it can, handle it.
 - **`@ts-ignore` / `@ts-expect-error`** without a comment explaining why — if it's needed, it's needed *and* explained.
 - **Redundant annotations** (`const name: string = getName()` when `getName` is typed).
 - **Missing types on exported function parameters** — always annotate the public surface.

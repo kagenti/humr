@@ -1,6 +1,6 @@
 ---
 name: react-ui-engineering
-description: Use this skill whenever writing, editing, reviewing, or refactoring TypeScript React code — components, custom hooks, state stores, forms, queries, mutations, API clients, or styling. Trigger it for any task touching a `.ts` or `.tsx` file in a React project, including when the user says "add a feature", "fix this bug", or "clean this up" inside a component or hook. Also use it for architectural questions about React codebases: where state should live, whether a component is too big, how to organize modules, when to reach for TanStack Query, Zustand, React Context, or React Hook Form.
+description: 'Use this skill whenever writing, editing, reviewing, or refactoring TypeScript React code — components, custom hooks, state stores, forms, queries, mutations, API clients, or styling. Trigger it for any task touching a `.ts` or `.tsx` file in a React project, including when the user says "add a feature", "fix this bug", or "clean this up" inside a component or hook. Also use it for architectural questions about React codebases: where state should live, whether a component is too big, how to organize modules, when to reach for TanStack Query, Zustand, React Context, or React Hook Form.'
 ---
 
 # React + TypeScript UI Engineering

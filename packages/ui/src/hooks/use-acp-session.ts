@@ -5,7 +5,8 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 import { useStore } from "../store.js";
 import { openConnection } from "../acp.js";
 import { platform } from "../platform.js";
-import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant, isTextMime } from "../session-projection.js";
+import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../session-projection.js";
+import { uploadMessageAttachment } from "../modules/files/api/queries.js";
 import type { Message, Attachment } from "../types.js";
 import { getSavedPreferences } from "./../components/session-config-popover.js";
 import { runQuery } from "../store/query-helpers.js";
@@ -22,6 +23,48 @@ import { useInstances } from "../modules/instances/api/queries.js";
  * The fallback `String(e)` on an Event yields `[object Event]`, which is what
  * users were seeing on disconnect.
  */
+type PromptBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+  | { type: "resource_link"; uri: string; name: string; mimeType: string };
+
+/** Turn composer state into an ACP prompt-blocks array. Images ride inline
+ *  so Claude's vision can see the bytes; every other attachment is persisted
+ *  on the agent pod first and referenced by absolute `file://` URI — the old
+ *  behaviour (inline text resources and bogus `file:///name` URIs) left the
+ *  agent with references to files it couldn't actually read. */
+async function buildPromptBlocks(
+  instanceId: string,
+  sessionId: string,
+  text: string,
+  attachments: Attachment[] | undefined,
+): Promise<PromptBlock[]> {
+  const blocks: PromptBlock[] = [];
+  if (attachments?.length) {
+    for (const a of attachments) {
+      if (a.kind === "image") {
+        blocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
+        continue;
+      }
+      try {
+        const { absolutePath } = await uploadMessageAttachment(instanceId, sessionId, {
+          name: a.name, data: a.data, mimeType: a.mimeType,
+        });
+        blocks.push({
+          type: "resource_link",
+          uri: `file://${absolutePath}`,
+          name: a.name,
+          mimeType: a.mimeType,
+        });
+      } catch (err) {
+        throw new Error(`Upload failed for "${a.name}": ${err instanceof Error ? err.message : "unknown"}`);
+      }
+    }
+  }
+  if (text) blocks.push({ type: "text", text });
+  return blocks;
+}
+
 function extractErrorMessage(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) {
     const m = (e as { message: unknown }).message;
@@ -89,6 +132,13 @@ export function useAcpSession(
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
   const reconnectFnRef = useRef<(() => void) | null>(null);
+  // Set when a live WS dies unexpectedly so the next ensureConnection knows to
+  // reload via session/load (catching up any notifications appended during
+  // the disconnect window) before reattaching via session/resume. Without
+  // this, reconnect would only engage for *future* events and the gap stays
+  // stranded in the runtime log until the user refreshes the page.
+  const pendingReloadRef = useRef(false);
+  const loadHistoryIntoRef = useRef<((sid: string) => Promise<Message[]>) | null>(null);
   // Session IDs already persisted to the platform DB. We only upsert after a
   // prompt actually succeeds, so opening the app without sending anything
   // (or StrictMode double-mount) doesn't leave empty rows in the sidebar.
@@ -311,6 +361,28 @@ export function useAcpSession(
   const ensureConnectionInner = useCallback(async (): Promise<ClientSideConnection | null> => {
     if (!selectedInstance) return null;
 
+    // After an unexpected WS death, reload the conversation from the runtime
+    // log before reattaching. This is a session/load — runtime memory cache
+    // hit when the session is still live there, cold-bootstrap from the
+    // agent's on-disk store if it was reaped while we were offline. We swap
+    // messages in one render rather than pre-clearing, so the user keeps
+    // seeing their existing conversation until the fresh array is ready.
+    if (pendingReloadRef.current) {
+      const sid = useStore.getState().sessionId;
+      pendingReloadRef.current = false;
+      if (sid && loadHistoryIntoRef.current) {
+        try {
+          const fresh = await loadHistoryIntoRef.current(sid);
+          setMessages(fresh);
+        } catch (e) {
+          // Network still unreachable, etc. — restore the flag so the next
+          // reconnect attempt tries again.
+          pendingReloadRef.current = true;
+          throw e;
+        }
+      }
+    }
+
     if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
       const { connection, ws } = await openConnection(selectedInstance, makeUpdateHandler());
       await connection.initialize({
@@ -322,6 +394,12 @@ export function useAcpSession(
       ws.addEventListener("close", () => {
         connectionRef.current = null;
         activeSessionIdRef.current = null;
+        // Mark the next ensureConnection so it reloads from the runtime log
+        // before reattaching — session/resume on its own only engages for
+        // future events, so anything the agent appended during the gap would
+        // be stranded otherwise. Skip when there's no session, since there's
+        // nothing to reload.
+        if (useStore.getState().sessionId) pendingReloadRef.current = true;
         // Any in-flight stream is now dead. Finalize every streaming bubble
         // so busy clears, prompts show whatever they had so far, and the
         // next turn opens a fresh bubble instead of merging into a stale one.
@@ -369,6 +447,7 @@ export function useAcpSession(
     connectionRef.current?.ws.close();
     connectionRef.current = null;
     activeSessionIdRef.current = null;
+    pendingReloadRef.current = false;
     setSessionId(null);
     setMessages([]);
     setSessionModes(null);
@@ -429,8 +508,16 @@ export function useAcpSession(
   }, [selectedInstance, selectedMcpServers, captureSessionConfig, handleConfigUpdate,
       setSessionModels, setSessionModes]);
 
+  // Expose loadHistoryInto to ensureConnectionInner via a ref so the reload-
+  // on-reconnect path can invoke it without a circular useCallback dep.
+  useEffect(() => { loadHistoryIntoRef.current = loadHistoryInto; }, [loadHistoryInto]);
+
   const resumeSession = useCallback(async (sid: string) => {
     if (!selectedInstance) return;
+    // Sidebar-click load handles its own history fetch — clear the
+    // reload-on-reconnect flag so ensureConnection doesn't re-fetch right
+    // after, when it opens the live channel for this session.
+    pendingReloadRef.current = false;
     setLoadingSession(true);
     setMessages([]);
     setSessionError(null);
@@ -480,27 +567,8 @@ export function useAcpSession(
       const conn = await ensureConnection();
       if (!conn) throw new Error("Failed to establish connection");
 
-      const promptBlocks: any[] = [];
-      if (attachments?.length) {
-        for (const a of attachments) {
-          if (a.kind === "image") {
-            promptBlocks.push({ type: "image", data: a.data, mimeType: a.mimeType });
-          } else if (isTextMime(a.mimeType, a.name)) {
-            // Claude only honors EmbeddedResource with a `text` field — decode base64 back to UTF-8.
-            const textBody = new TextDecoder().decode(Uint8Array.from(atob(a.data), c => c.charCodeAt(0)));
-            promptBlocks.push({
-              type: "resource",
-              resource: { uri: `file:///${a.name}`, text: textBody, mimeType: a.mimeType },
-            });
-          } else {
-            addLog("warning", { message: `Binary attachment "${a.name}" (${a.mimeType}) — Claude cannot read this file type.` });
-            promptBlocks.push({ type: "resource_link", uri: `file:///${a.name}`, name: a.name, mimeType: a.mimeType });
-          }
-        }
-      }
-      if (text) promptBlocks.push({ type: "text", text });
-
       const sid = activeSessionIdRef.current!;
+      const promptBlocks = await buildPromptBlocks(selectedInstance, sid, text, attachments);
       const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
       addLog("done", { stopReason: r.stopReason });
       // Persist to the platform DB lazily, only once the session has real

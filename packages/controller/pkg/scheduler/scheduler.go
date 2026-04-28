@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -18,18 +17,12 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
-	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/humr/packages/controller/pkg/lifecycle"
 	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
-)
-
-const (
-	wakePollInitial = 500 * time.Millisecond
-	wakePollMax     = 5 * time.Second
-	wakeTimeout     = 2 * time.Minute
 )
 
 type Scheduler struct {
@@ -47,6 +40,7 @@ type Scheduler struct {
 	specYAMLs map[string]string
 	mu        sync.Mutex         // guards schedules + rruleJobs + specYAMLs
 	restCfg   *restclient.Config // nil in tests
+	lifecycle *lifecycle.Lifecycle
 }
 
 func New(client kubernetes.Interface, cfg *config.Config) *Scheduler {
@@ -57,6 +51,7 @@ func New(client kubernetes.Interface, cfg *config.Config) *Scheduler {
 		schedules: make(map[string]cron.EntryID),
 		rruleJobs: make(map[string]context.CancelFunc),
 		specYAMLs: make(map[string]string),
+		lifecycle: lifecycle.New(client, cfg.Namespace),
 	}
 }
 
@@ -315,16 +310,8 @@ func (s *Scheduler) RemoveSchedule(name string) {
 }
 
 func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string, spec *types.ScheduleSpec) error {
-	// Wake instance if hibernated
-	woke, err := s.wakeIfHibernated(ctx, instanceName)
-	if err != nil {
-		return fmt.Errorf("waking instance %s: %w", instanceName, err)
-	}
-	if woke {
-		slog.Info("woke hibernated instance for schedule", "instance", instanceName, "schedule", scheduleName)
-		if !s.waitForPodReady(ctx, instanceName) {
-			return fmt.Errorf("instance %s did not become ready after wake", instanceName)
-		}
+	if err := s.lifecycle.EnsureReady(ctx, instanceName); err != nil {
+		return fmt.Errorf("ensuring %s ready: %w", instanceName, err)
 	}
 
 	// Build and deliver trigger
@@ -374,96 +361,3 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 	slog.Info("trigger delivered", "pod", podName, "file", filename)
 	return nil
 }
-
-// wakeIfHibernated checks if the instance is hibernated and wakes it.
-// Returns true if the instance was hibernated and is now waking.
-func (s *Scheduler) wakeIfHibernated(ctx context.Context, instanceName string) (bool, error) {
-	var woke bool
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cm, err := s.client.CoreV1().ConfigMaps(s.config.Namespace).Get(ctx, instanceName, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		instanceSpec, err := types.ParseInstanceSpec(cm.Data["spec.yaml"])
-		if err != nil {
-			return err
-		}
-		if instanceSpec.DesiredState != "hibernated" {
-			woke = false
-			return nil
-		}
-		instanceSpec.DesiredState = "running"
-		specYAML, err := yaml.Marshal(instanceSpec)
-		if err != nil {
-			return err
-		}
-		cm.Data["spec.yaml"] = string(specYAML)
-		if cm.Annotations == nil {
-			cm.Annotations = make(map[string]string)
-		}
-		cm.Annotations["humr.ai/last-activity"] = time.Now().UTC().Format(time.RFC3339)
-		_, err = s.client.CoreV1().ConfigMaps(s.config.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
-		if err == nil {
-			woke = true
-		}
-		return err
-	})
-	return woke, err
-}
-
-// pollUntilReady polls isReady with exponential backoff + jitter.
-//
-// Backoff: start fast so a quick wake is still detected quickly, then
-// slow down so a pod that takes longer doesn't get hammered for the
-// full deadline. Jitter: ±20% so many callers waking at once desync
-// within a few iterations instead of polling in lockstep bursts.
-//
-// Extracted from waitForPodReady so the loop can be unit-tested with
-// short intervals and a deterministic isReady.
-//
-// NOTE: mirrored in packages/api-server/src/acp-relay.ts (TS). The
-// api-server's ACP relay waits for the same pod-ready signal when a
-// WebSocket upgrade hits a hibernated pod. Keep behaviour, constants,
-// and the shape of the loop in sync across both.
-func pollUntilReady(
-	ctx context.Context,
-	isReady func(context.Context) bool,
-	initial, max, timeout time.Duration,
-) bool {
-	deadline := time.Now().Add(timeout)
-	interval := initial
-	for time.Now().Before(deadline) {
-		if isReady(ctx) {
-			return true
-		}
-		jittered := time.Duration(float64(interval) * (0.8 + 0.4*rand.Float64()))
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(jittered):
-		}
-		interval = interval * 3 / 2
-		if interval > max {
-			interval = max
-		}
-	}
-	return false
-}
-
-// waitForPodReady polls until the instance pod is Ready or the timeout expires.
-func (s *Scheduler) waitForPodReady(ctx context.Context, instanceName string) bool {
-	podName := instanceName + "-0"
-	return pollUntilReady(ctx, func(ctx context.Context) bool {
-		pod, err := s.client.CoreV1().Pods(s.config.Namespace).Get(ctx, podName, metav1.GetOptions{})
-		if err != nil {
-			return false
-		}
-		for _, c := range pod.Status.Conditions {
-			if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-				return true
-			}
-		}
-		return false
-	}, wakePollInitial, wakePollMax, wakeTimeout)
-}
-

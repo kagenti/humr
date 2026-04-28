@@ -32,7 +32,7 @@ export function createSessionsService(deps: {
 
       // Always exclude schedule types from the main list
       const allowedTypes: string[] = [SessionType.Regular];
-      if (includeChannel) allowedTypes.push(SessionType.ChannelSlack);
+      if (includeChannel) allowedTypes.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
       const filtered = dbRows.filter((r) => allowedTypes.includes(r.type));
 
       return filtered.map((row): SessionView => {

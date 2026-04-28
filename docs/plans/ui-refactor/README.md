@@ -54,11 +54,11 @@ Shared (stays at top level):
 |---|---|---|---|---|---|---|---|
 | [connections](domains/connections.md) | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | [chat](domains/chat.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| [agents](domains/agents.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| [agents](domains/agents.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [secrets](domains/secrets.md) | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
 | [schedules](domains/schedules.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [files](domains/files.md) | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| [settings](domains/settings.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| [settings](domains/settings.md) | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ |
 
 Update cells as part of the PR that completes the work. Link the PR next to the domain name if useful (`[connections](domains/connections.md) ([#XYZ](...))`).
 

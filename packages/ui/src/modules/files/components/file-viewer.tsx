@@ -1,14 +1,19 @@
-import { ArrowLeft, Code, Download, Eye } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Code, Download, Eye, Pencil, Save, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
+import { useStore } from "../../../store.js";
+import { fetchFileContent, useFileWriteMutation } from "../api/queries.js";
+import { useUnsavedGuard } from "../hooks/use-unsaved-guard.js";
+import { CodeEditor } from "./code-editor.js";
 
 interface OpenFile {
   path: string;
   content: string;
   binary?: boolean;
   mimeType?: string;
+  mtimeMs?: number;
 }
 
 interface Props {
@@ -50,9 +55,80 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isPdf = mime === "application/pdf";
   const hasContent = !!content;
   const filename = path.split("/").pop();
+  const editable = !binary && hasContent;
+
+  const selectedInstance = useStore(s => s.selectedInstance);
+  const setOpenFileDirty = useStore(s => s.setOpenFileDirty);
+  const showToast = useStore(s => s.showToast);
+  const showConfirm = useStore(s => s.showConfirm);
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState(content);
+  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(file.mtimeMs);
+
+  const dirty = editMode && draft !== content;
+  useUnsavedGuard(dirty);
+  useEffect(() => { setOpenFileDirty(dirty); return () => setOpenFileDirty(false); }, [dirty, setOpenFileDirty]);
+
+  // Reset draft / baseline when the user switches files or the cache delivers
+  // fresh content (e.g., after a save or external change).
+  useEffect(() => {
+    if (!editMode) {
+      setDraft(content);
+      setBaseMtimeMs(file.mtimeMs);
+    }
+  }, [content, file.mtimeMs, editMode, path]);
+
+  const writeMutation = useFileWriteMutation(selectedInstance);
+
+  const save = useCallback(async () => {
+    if (!selectedInstance || !editable) return;
+    try {
+      const res = await writeMutation.mutateAsync({
+        path,
+        content: draft,
+        expectedMtimeMs: baseMtimeMs,
+      });
+      setBaseMtimeMs(res.mtimeMs);
+      setEditMode(false);
+      showToast({ kind: "success", message: `Saved ${path}` });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Save failed";
+      if (/conflict|changed on disk/i.test(msg)) {
+        const ok = await showConfirm(
+          "This file changed on disk since you opened it. Overwrite with your changes?",
+          "File changed on disk",
+        );
+        if (!ok) {
+          // Refresh from disk and leave draft intact so the user can merge.
+          const fresh = await fetchFileContent(selectedInstance, path);
+          setBaseMtimeMs(fresh.mtimeMs);
+          return;
+        }
+        try {
+          const res = await writeMutation.mutateAsync({ path, content: draft });
+          setBaseMtimeMs(res.mtimeMs);
+          setEditMode(false);
+          showToast({ kind: "success", message: `Saved ${path}` });
+        } catch (err2) {
+          showToast({ kind: "error", message: err2 instanceof Error ? err2.message : "Save failed" });
+        }
+        return;
+      }
+      showToast({ kind: "error", message: msg });
+    }
+  }, [selectedInstance, editable, writeMutation, path, draft, baseMtimeMs, showToast, showConfirm]);
+
+  const cancelEdit = useCallback(async () => {
+    if (dirty) {
+      const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+      if (!ok) return;
+    }
+    setDraft(content);
+    setEditMode(false);
+  }, [dirty, content, showConfirm]);
 
   // Create blob URL for PDF rendering; revoke on change/unmount to avoid leaking
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -79,14 +155,44 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     URL.revokeObjectURL(a.href);
   }, [path, content, binary, mime]);
 
+  const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border-light shrink-0">
         <button className="flex items-center gap-1 text-[12px] font-semibold text-text-muted hover:text-accent transition-colors shrink-0" onClick={onClose}>
           <ArrowLeft size={12} /> Back
         </button>
-        <span className="text-[12px] font-mono text-text-secondary truncate flex-1">{path}</span>
-        {hasContent && (
+        <span className="text-[12px] font-mono text-text-secondary truncate flex-1" title={path}>{pathLabel}</span>
+        {editable && !editMode && (
+          <button
+            className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-accent transition-colors"
+            onClick={() => setEditMode(true)}
+            title="Edit file"
+          >
+            <Pencil size={11} /> Edit
+          </button>
+        )}
+        {editMode && (
+          <>
+            <button
+              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-text-secondary transition-colors"
+              onClick={cancelEdit}
+              title="Cancel"
+            >
+              <X size={11} /> Cancel
+            </button>
+            <button
+              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-accent bg-accent-light hover:opacity-90 transition-opacity disabled:opacity-50"
+              onClick={save}
+              disabled={!dirty || writeMutation.isPending}
+              title="Save (Cmd/Ctrl+S)"
+            >
+              <Save size={11} /> {writeMutation.isPending ? "Saving…" : "Save"}
+            </button>
+          </>
+        )}
+        {hasContent && !editMode && (
           <button
             className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-accent transition-colors"
             onClick={downloadFile}
@@ -95,7 +201,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <Download size={11} />
           </button>
         )}
-        {isSvg && (
+        {isSvg && !editMode && (
           <button
             className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors ${renderSvg ? "text-accent bg-accent-light" : "text-text-muted hover:text-text-secondary"}`}
             onClick={() => setRenderSvg(p => !p)}
@@ -105,7 +211,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             {renderSvg ? "Raw" : "Render"}
           </button>
         )}
-        {isMarkdown && (
+        {isMarkdown && !editMode && (
           <button
             className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors ${renderMd ? "text-accent bg-accent-light" : "text-text-muted hover:text-text-secondary"}`}
             onClick={() => setRenderMd(p => !p)}
@@ -116,8 +222,15 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </button>
         )}
       </div>
-      <div className="flex-1 overflow-auto p-4">
-        {isBinaryImage ? (
+      <div className={editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"}>
+        {editMode ? (
+          <CodeEditor
+            value={draft}
+            path={path}
+            onChange={setDraft}
+            onSave={save}
+          />
+        ) : isBinaryImage ? (
           <div className="flex items-center justify-center">
             <img
               src={`data:${mime};base64,${content}`}

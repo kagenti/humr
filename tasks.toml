@@ -18,7 +18,8 @@ dir = "{{config_root}}"
 run = "pnpm exec eslint --fix ."
 
 ["test"]
-depends = ["*:test"]
+depends = ["*:test", "*:test:unit"]
+
 
 # -- Git hooks --
 

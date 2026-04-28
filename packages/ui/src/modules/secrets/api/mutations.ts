@@ -35,3 +35,14 @@ export function useDeleteSecret() {
     },
   });
 }
+
+/**
+ * Verifies an Anthropic credential before save. Returns
+ * `{ ok: true } | { ok: false; message }` rather than throwing — callers
+ * render the result inline, so no errorToast / invalidation here.
+ */
+export function useTestAnthropic() {
+  return useMutation({
+    ...trpc.secrets.testAnthropic.mutationOptions(),
+  });
+}

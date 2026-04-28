@@ -1,14 +1,20 @@
 import type { StateCreator } from "zustand";
 
-import { platform } from "../../platform.js";
 import type { HumrStore } from "../../store.js";
 import { viewToPath } from "../../store/navigation.js";
-import { ACTION_FAILED,resetQueryTracker, runAction, runQuery } from "../../store/query-helpers.js";
+import { resetQueryTracker } from "../../store/query-helpers.js";
 import type { InstanceView } from "../../types.js";
 
+/**
+ * UI-side state for the instances domain. Server state (instances list,
+ * availableChannels) and all the CRUD/lifecycle actions live in
+ * modules/instances/api/* as TanStack Query hooks. What's left here is:
+ *   - selectedInstance: current chat target (drives URL)
+ *   - restartingInstances: optimistic pill-on-restart tracking, updated by
+ *     useRestartInstance on click and aged out by useSyncRestartingInstances
+ *     against each instances query tick.
+ */
 export interface InstancesSlice {
-  availableChannels: Record<string, boolean>;
-  instances: InstanceView[];
   selectedInstance: string | null;
   /** Instance IDs whose pod has been deleted via Restart but hasn't yet cycled
    *  through a non-`running` state back to `running`. Each entry tracks whether
@@ -20,22 +26,11 @@ export interface InstancesSlice {
   setRestartingInstance: (id: string, entry: { seenNonRunning: boolean; clickedAt: number }) => void;
   clearRestartingInstance: (id: string) => void;
   setRestartingInstances: (map: Map<string, { seenNonRunning: boolean; clickedAt: number }>) => void;
-  fetchInstances: () => Promise<void>;
-  createInstance: (agentId: string, name: string) => Promise<void>;
-  restartInstance: (id: string) => Promise<void>;
-  wakeInstance: (id: string) => Promise<void>;
-  updateInstance: (id: string, updates: { allowedUserEmails?: string[] }) => Promise<void>;
-  connectSlack: (id: string, slackChannelId: string) => Promise<void>;
-  disconnectSlack: (id: string) => Promise<void>;
-  connectTelegram: (id: string, botToken: string) => Promise<void>;
-  disconnectTelegram: (id: string) => Promise<void>;
   selectInstance: (id: string) => void;
   goBack: () => void;
 }
 
 export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlice> = (set, get) => ({
-  availableChannels: {},
-  instances: [],
   selectedInstance: null,
   restartingInstances: new Map(),
 
@@ -52,107 +47,6 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
       return { restartingInstances: next };
     }),
   setRestartingInstances: (map) => set({ restartingInstances: map }),
-
-  fetchInstances: async () => {
-    set((s) => ({ loading: { ...s.loading, instances: true } }));
-    const result = await runQuery(
-      "instances",
-      async () => {
-        const [list, availableChannels] = await Promise.all([
-          platform.instances.list.query(),
-          platform.channels.available.query(),
-        ]);
-        return { list, availableChannels };
-      },
-      { fallback: "Can't reach the server — instance list may be stale" },
-    );
-    if (result) {
-      set((s) => ({
-        instances: result.list,
-        availableChannels: result.availableChannels,
-        loadedOnce: { ...s.loadedOnce, instances: true },
-        restartingInstances: transitionRestartingInstances(s.restartingInstances, result.list),
-      }));
-    }
-    set((s) => ({ loading: { ...s.loading, instances: false } }));
-  },
-
-  createInstance: async (agentId, name) => {
-    const ok = await runAction(
-      () => platform.instances.create.mutate({ name, agentId }),
-      "Failed to create instance",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
-
-  wakeInstance: async (id) => {
-    const ok = await runAction(
-      () => platform.instances.wake.mutate({ id }),
-      "Failed to start agent",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
-
-  restartInstance: async (id) => {
-    set((s) => {
-      const next = new Map(s.restartingInstances);
-      next.set(id, { seenNonRunning: false, clickedAt: Date.now() });
-      return { restartingInstances: next };
-    });
-    const ok = await runAction(
-      () => platform.instances.restart.mutate({ id }),
-      "Failed to restart agent",
-    );
-    if (ok === ACTION_FAILED) {
-      set((s) => {
-        const next = new Map(s.restartingInstances);
-        next.delete(id);
-        return { restartingInstances: next };
-      });
-      return;
-    }
-    await get().fetchInstances();
-  },
-
-  updateInstance: async (id, updates) => {
-    const ok = await runAction(
-      () => platform.instances.update.mutate({ id, ...updates }),
-      "Failed to update instance",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
-
-  connectSlack: async (id, slackChannelId) => {
-    const ok = await runAction(
-      () => platform.instances.connectSlack.mutate({ id, slackChannelId }),
-      "Failed to connect Slack",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
-
-  disconnectSlack: async (id) => {
-    const ok = await runAction(
-      () => platform.instances.disconnectSlack.mutate({ id }),
-      "Failed to disconnect Slack",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
-
-  connectTelegram: async (id, botToken) => {
-    const ok = await runAction(
-      () => platform.instances.connectTelegram.mutate({ id, botToken }),
-      "Failed to connect Telegram",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
-
-  disconnectTelegram: async (id) => {
-    const ok = await runAction(
-      () => platform.instances.disconnectTelegram.mutate({ id }),
-      "Failed to disconnect Telegram",
-    );
-    if (ok !== ACTION_FAILED) await get().fetchInstances();
-  },
 
   selectInstance: (id) => {
     const prev = get().selectedInstance;
@@ -174,8 +68,6 @@ export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlic
       resetQueryTracker(`sessions:${prev}`);
     }
     set({ selectedInstance: null, view: "list", showMobilePanel: false });
-    get().fetchAgents();
-    get().fetchInstances();
   },
 });
 
