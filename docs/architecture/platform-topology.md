@@ -64,6 +64,10 @@ The per-instance pod that runs the ACP WebSocket server and spawns the underlyin
 
 See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
+### humr-config-sync
+
+A small Go sidecar that runs alongside agent-runtime in each agent pod (the controller binary in `config-sync` mode). It holds an SSE connection to the api-server and materializes declarative file state into a shared `emptyDir` that the agent container reads — currently used to populate `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections without rolling the pod ([DRAFT — pod-files push](../adrs/DRAFT-pod-files-push.md)). The sidecar refuses paths outside the agent's HOME and is opt-in via `CONTROLLER_IMAGE`. It does not relay ACP traffic and is unrelated to agent-runtime's responsibilities — they're co-located only because both are per-pod. See [`packages/controller/pkg/configsync/`](../../packages/controller/pkg/configsync/).
+
 ### ui
 
 A React + Vite single-page app served by the api-server. It uses tRPC over HTTP for resource management and permission flows, and opens one ACP WebSocket per active session for bidirectional agent communication. Permission prompts, tool calls, and streaming output all flow over the same ACP connection. See [`packages/ui/`](../../packages/ui/).

@@ -72,6 +72,8 @@ The pod image is built from `humr-base` plus a harness-specific layer ([ADR-023]
 
 Pod env at start is the composition of connector-declared envs (OneCLI app/secret registry), template envs, agent-level envs, and instance-level envs — last occurrence wins, with `PORT` server-enforced ([ADR-024](../adrs/024-connector-declared-envs.md)). Editing any of these takes effect on the next pod restart.
 
+Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files into a shared `emptyDir` by the `humr-config-sync` sidecar via SSE — no pod restart needed. The first instance is the GitHub Enterprise hosts.yml producer.
+
 ### Wake
 
 Every caller that sends work to a pod — the controller's schedule loop, the api-server's ACP relay, channel adapters — routes through a single reachability primitive ([ADR-032](../adrs/032-pod-reachability-primitive.md)). The primitive's contract: **observed pod `Ready` is the authoritative answer to "can I call this pod?"** `spec.desiredState` is user intent (running vs. hibernated) and continues to drive the reconciler, but it is no longer read as a reachability signal by callers. The primitive flips `desiredState` to `running` if needed, single-flights concurrent waits per instance, bumps the `humr.ai/last-activity` annotation on every successful call (so any caller implicitly keeps the pod warm), and is implemented in parallel in Go (controller) and TypeScript (api-server).
