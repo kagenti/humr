@@ -528,25 +528,39 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
-      const blocks = [
-        { type: "markdown", text },
-        { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
-      ];
+      const contextBlock = {
+        type: "context" as const,
+        elements: [{ type: "mrkdwn" as const, text: `_${instanceName}_` }],
+      };
 
       try {
         if (attachment) {
+          // files.completeUploadExternal accepts blocks but is fussier about
+          // newer block types than chat.postMessage — stick to section+mrkdwn,
+          // which is the canonical shape Slack uses in all upload examples.
+          // Falling back to initial_comment when text is empty avoids sending
+          // a section block with empty text (which Slack rejects).
+          const uploadBlocks = text
+            ? [
+                { type: "section" as const, text: { type: "mrkdwn" as const, text } },
+                contextBlock,
+              ]
+            : [contextBlock];
           await app.client.files.uploadV2({
             channel_id: slackChannelId,
             file: attachment.data,
             filename: attachment.filename,
             ...(attachment.title ? { title: attachment.title } : {}),
-            blocks,
+            blocks: uploadBlocks,
           });
         } else {
           await app.client.chat.postMessage({
             channel: slackChannelId,
             text,
-            blocks,
+            blocks: [
+              { type: "markdown", text },
+              contextBlock,
+            ],
           });
         }
         return { ok: true as const };
