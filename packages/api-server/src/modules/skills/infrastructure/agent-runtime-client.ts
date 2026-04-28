@@ -1,3 +1,5 @@
+import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import type { AppRouter } from "agent-runtime-api";
 import type { LocalSkill, Skill } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
@@ -27,9 +29,13 @@ export interface PublishSkillResult {
   branch: string;
 }
 
-/** Upstream-error envelope agent-runtime returns as HTTP 502 when OneCLI's
- *  gateway emits a structured error (app_not_connected / access_restricted /
- *  …). Shape matches what the client should parse to surface the CTA URL. */
+/**
+ * Upstream-error envelope agent-runtime emits via its tRPC `errorFormatter`
+ * when OneCLI's gateway returns a structured error
+ * (`app_not_connected` / `access_restricted` / …). The shape mirrors the
+ * `data.upstream` field on the wire and is the only thing callers need to
+ * extract `connect_url`/`manage_url` for the Connect-GitHub CTA.
+ */
 export interface UpstreamGatewayError {
   status: number;
   body?: {
@@ -60,81 +66,75 @@ export class AgentRuntimeUpstreamError extends Error {
   }
 }
 
-async function post(url: string, token: string, body: unknown): Promise<void> {
-  const res = await call(url, token, "POST", body);
-  await assertOk(res, url);
+function makeClient(instanceId: string, namespace: string, token: string) {
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: `http://${podBaseUrl(instanceId, namespace)}/api/trpc`,
+        headers: () => ({ Authorization: `Bearer ${token}` }),
+      }),
+    ],
+  });
 }
 
-async function postJson<T>(url: string, token: string, body: unknown): Promise<T> {
-  const res = await call(url, token, "POST", body);
-  // Preserve upstream structured errors (502 with .upstream) so callers can
-  // parse connect_url / manage_url.
-  if (!res.ok) {
-    let data: unknown = null;
-    try { data = await res.json(); } catch { data = { error: await res.text().catch(() => "") }; }
-    const detail = (data as { error?: string }).error ?? "";
-    const upstream = (data as { upstream?: UpstreamGatewayError }).upstream;
-    const msg = `agent-runtime ${url} → ${res.status}${detail ? `: ${detail}` : ""}`;
-    if (upstream) throw new AgentRuntimeUpstreamError(msg, upstream);
-    throw new Error(msg);
-  }
-  return (await res.json()) as T;
+function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    typeof (value as { status: unknown }).status === "number"
+  );
 }
 
-async function getJson<T>(url: string, token: string): Promise<T> {
-  const res = await call(url, token, "GET");
-  await assertOk(res, url);
-  return (await res.json()) as T;
-}
-
-async function call(url: string, token: string, method: "GET" | "POST", body?: unknown): Promise<Response> {
+/**
+ * Run a tRPC call and translate `data.upstream` (set by agent-runtime's
+ * errorFormatter for OneCLI/GitHub gateway errors) into an
+ * AgentRuntimeUpstreamError so callers can extract the CTA URL. Other tRPC
+ * errors propagate as plain Error.
+ */
+async function runWithUpstreamMapping<T>(label: string, fn: () => Promise<T>): Promise<T> {
   try {
-    return await fetch(url, {
-      method,
-      headers: {
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-        Authorization: `Bearer ${token}`,
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch (err) {
-    throw new Error(`agent-runtime ${url} unreachable: ${(err as Error).message}`);
+    return await fn();
+  } catch (e) {
+    if (e instanceof TRPCClientError) {
+      const data = (e.data as { upstream?: unknown } | null) ?? null;
+      const upstream = data?.upstream;
+      if (isUpstreamGatewayError(upstream)) {
+        throw new AgentRuntimeUpstreamError(`${label}: ${e.message}`, upstream);
+      }
+      throw new Error(`${label}: ${e.message}`);
+    }
+    throw new Error(`${label}: ${(e as Error).message}`);
   }
-}
-
-async function assertOk(res: Response, url: string): Promise<void> {
-  if (res.ok) return;
-  let detail = "";
-  try {
-    const data = (await res.json()) as { error?: string };
-    detail = data.error ?? "";
-  } catch {
-    detail = await res.text().catch(() => "");
-  }
-  throw new Error(`agent-runtime ${url} → ${res.status}${detail ? `: ${detail}` : ""}`);
 }
 
 export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeSkillsClient {
-  const base = (instanceId: string) => `http://${podBaseUrl(instanceId, namespace)}`;
   return {
     install: (instanceId, token, body) =>
-      postJson<InstallSkillResult>(`${base(instanceId)}/api/skills/install`, token, body),
-    uninstall: (instanceId, token, body) => post(`${base(instanceId)}/api/skills/uninstall`, token, body),
-    async listLocal(instanceId, token, skillPaths) {
-      const qs = skillPaths.map((p) => `skillPaths=${encodeURIComponent(p)}`).join("&");
-      const url = `${base(instanceId)}/api/skills/local?${qs}`;
-      const { skills } = await getJson<{ skills: LocalSkill[] }>(url, token);
+      runWithUpstreamMapping(`agent-runtime install ${instanceId}`, async () => {
+        return makeClient(instanceId, namespace, token).skills.install.mutate(body);
+      }),
+    uninstall: (instanceId, token, body) =>
+      runWithUpstreamMapping(`agent-runtime uninstall ${instanceId}`, async () => {
+        await makeClient(instanceId, namespace, token).skills.uninstall.mutate(body);
+      }),
+    listLocal: async (instanceId, token, skillPaths) => {
+      const { skills } = await runWithUpstreamMapping(
+        `agent-runtime listLocal ${instanceId}`,
+        () => makeClient(instanceId, namespace, token).skills.listLocal.query({ skillPaths }),
+      );
       return skills;
     },
     publish: (instanceId, token, body) =>
-      postJson<PublishSkillResult>(`${base(instanceId)}/api/skills/publish`, token, body),
-    async scan(instanceId, token, source) {
-      const { skills } = await postJson<{ skills: Skill[] }>(
-        `${base(instanceId)}/api/skills/scan`,
-        token,
-        { source },
+      runWithUpstreamMapping(`agent-runtime publish ${instanceId}`, () =>
+        makeClient(instanceId, namespace, token).skills.publish.mutate(body),
+      ),
+    scan: async (instanceId, token, source) => {
+      const { skills } = await runWithUpstreamMapping(
+        `agent-runtime scan ${instanceId}`,
+        () => makeClient(instanceId, namespace, token).skills.scan.mutate({ source }),
       );
-      return skills;
+      return skills as Skill[];
     },
   };
 }
