@@ -7,30 +7,9 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { WebSocketServer } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
-import type { AgentRuntimeContext } from "agent-runtime-api";
+import type { AgentAuth, AgentRuntimeContext } from "agent-runtime-api";
 import { createFilesService } from "./modules/files.js";
-import {
-  installSkill,
-  installSkillInputSchema,
-  listLocalSkills,
-  PayloadTooLargeError,
-  publishSkill,
-  readLocalSkill,
-  scanSkillSourceInputSchema,
-  scanSource,
-  uninstallSkill,
-  uninstallSkillInputSchema,
-} from "./modules/skills.js";
-import { z } from "zod/v4";
-
-const publishSkillInputSchema = z.object({
-  name: z.string().min(1),
-  skillPaths: z.array(z.string().min(1)).min(1),
-  owner: z.string().min(1),
-  repo: z.string().min(1),
-  title: z.string().min(1),
-  body: z.string(),
-});
+import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -51,14 +30,15 @@ const workDir = config.HUMR_DEV
   ? join(__dir, "../working-dir")
   : config.WORK_DIR;
 
-const createContext = (): AgentRuntimeContext => ({
-  files: createFilesService(homeDir),
-});
+// Boot-time module composition. Skills + Files services are stable across the
+// lifetime of the process; createContext just hands them out per-request.
+const filesService = createFilesService(homeDir);
+const skillsService = composeSkills();
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 // 32 MB upload headroom: file-uploads go through files.upload as base64
@@ -67,57 +47,30 @@ const CORS = {
 // prevents partial reads before the service-level check kicks in.
 const TRPC_MAX_BODY_SIZE = 32 * 1024 * 1024;
 
-const MAX_BODY_BYTES = 1_000_000;
-
-function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    req.on("data", (c: Buffer) => {
-      total += c.length;
-      if (total > MAX_BODY_BYTES) {
-        req.destroy();
-        reject(new Error("request body too large"));
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => {
-      try {
-        const body = Buffer.concat(chunks).toString("utf8");
-        resolve(body ? JSON.parse(body) : {});
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function writeJson(res: http.ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(body));
-}
-
 /**
- * Check Authorization: Bearer <token> against the agent's own access token
- * (the same value stored in the agent-token Secret and written to .mcp.json on
- * boot). Returns true only when both are configured and match. Constant-time.
+ * Constant-time Bearer compare against the agent's own access token. Returns
+ * `null` when no/invalid header so unauthenticated requests reach the
+ * `protectedProcedure` middleware which throws UNAUTHORIZED.
  */
-function isAuthorizedAgentCaller(req: http.IncomingMessage): boolean {
+function readAgentAuth(req: http.IncomingMessage): AgentAuth | null {
   const expected = config.ONECLI_ACCESS_TOKEN;
-  if (!expected) return false;
+  if (!expected) return null;
   const header = req.headers["authorization"];
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) return null;
   const presented = header.slice("Bearer ".length);
   const a = Buffer.from(expected);
   const b = Buffer.from(presented);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  if (a.length !== b.length) return null;
+  return timingSafeEqual(a, b) ? { agentCaller: true } : null;
 }
 
 const trpcHandler = createHTTPHandler({
   router: appRouter,
-  createContext,
+  createContext: ({ req }): AgentRuntimeContext => ({
+    auth: readAgentAuth(req),
+    files: filesService,
+    skills: skillsService,
+  }),
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
@@ -148,162 +101,6 @@ const server = http.createServer((req, res) => {
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
     };
     res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
-    return;
-  }
-
-  if (req.url?.startsWith("/api/skills/local") && req.method === "GET") {
-    if (!isAuthorizedAgentCaller(req)) {
-      writeJson(res, 401, { error: "unauthorized" });
-      return;
-    }
-    (async () => {
-      const url = new URL(req.url!, "http://localhost");
-      const skillPaths = url.searchParams.getAll("skillPaths");
-      if (skillPaths.length === 0) {
-        writeJson(res, 400, { error: "skillPaths query parameter required" });
-        return;
-      }
-
-      // /api/skills/local → list; /api/skills/local/<name> → read a single skill.
-      const tail = url.pathname.replace(/^\/api\/skills\/local\/?/, "");
-      if (!tail) {
-        try {
-          const skills = await listLocalSkills(skillPaths);
-          writeJson(res, 200, { skills });
-        } catch (err) {
-          writeJson(res, 500, { error: (err as Error).message });
-        }
-        return;
-      }
-
-      const name = decodeURIComponent(tail);
-      try {
-        const result = await readLocalSkill(name, skillPaths);
-        writeJson(res, 200, result);
-      } catch (err) {
-        if (err instanceof PayloadTooLargeError) {
-          writeJson(res, 413, { error: err.message });
-          return;
-        }
-        const msg = (err as Error).message;
-        if (msg.includes("not found")) {
-          writeJson(res, 404, { error: msg });
-          return;
-        }
-        writeJson(res, 500, { error: msg });
-      }
-    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
-    return;
-  }
-
-  if (req.url === "/api/skills/install" && req.method === "POST") {
-    if (!isAuthorizedAgentCaller(req)) {
-      writeJson(res, 401, { error: "unauthorized" });
-      return;
-    }
-    (async () => {
-      const body = await readJsonBody(req);
-      const parsed = installSkillInputSchema.safeParse(body);
-      if (!parsed.success) {
-        writeJson(res, 400, { error: parsed.error.message });
-        return;
-      }
-      try {
-        const result = await installSkill(parsed.data);
-        writeJson(res, 200, result);
-      } catch (err) {
-        // Same upstream-error envelope the scan + publish routes use, so the
-        // api-server's tRPC layer surfaces Connect-GitHub / Grant-agent CTAs
-        // when install fails because of OneCLI gating on a private repo.
-        const e = err as Error & { cause?: { status?: number; body?: unknown } };
-        const cause = e.cause;
-        if (cause && typeof cause === "object" && typeof cause.status === "number") {
-          writeJson(res, 502, { error: e.message, upstream: cause });
-          return;
-        }
-        writeJson(res, 500, { error: e.message });
-      }
-    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
-    return;
-  }
-
-  if (req.url === "/api/skills/publish" && req.method === "POST") {
-    if (!isAuthorizedAgentCaller(req)) {
-      writeJson(res, 401, { error: "unauthorized" });
-      return;
-    }
-    (async () => {
-      const body = await readJsonBody(req);
-      const parsed = publishSkillInputSchema.safeParse(body);
-      if (!parsed.success) {
-        writeJson(res, 400, { error: parsed.error.message });
-        return;
-      }
-      try {
-        const result = await publishSkill(parsed.data);
-        writeJson(res, 200, result);
-      } catch (err) {
-        const e = err as Error & { cause?: { status?: number; body?: unknown } };
-        // OneCLI structured errors get relayed verbatim so the api-server (and
-        // UI) can extract connect_url / manage_url.
-        const cause = e.cause;
-        if (cause && typeof cause === "object" && typeof cause.status === "number") {
-          writeJson(res, 502, { error: e.message, upstream: cause });
-          return;
-        }
-        writeJson(res, 500, { error: e.message });
-      }
-    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
-    return;
-  }
-
-  if (req.url === "/api/skills/scan" && req.method === "POST") {
-    if (!isAuthorizedAgentCaller(req)) {
-      writeJson(res, 401, { error: "unauthorized" });
-      return;
-    }
-    (async () => {
-      const body = await readJsonBody(req);
-      const parsed = scanSkillSourceInputSchema.safeParse(body);
-      if (!parsed.success) {
-        writeJson(res, 400, { error: parsed.error.message });
-        return;
-      }
-      try {
-        const skills = await scanSource(parsed.data.source);
-        writeJson(res, 200, { skills });
-      } catch (err) {
-        const e = err as Error & { cause?: { status?: number; body?: unknown } };
-        const cause = e.cause;
-        if (cause && typeof cause === "object" && typeof cause.status === "number") {
-          writeJson(res, 502, { error: e.message, upstream: cause });
-          return;
-        }
-        writeJson(res, 502, { error: e.message });
-      }
-    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
-    return;
-  }
-
-  if (req.url === "/api/skills/uninstall" && req.method === "POST") {
-    if (!isAuthorizedAgentCaller(req)) {
-      writeJson(res, 401, { error: "unauthorized" });
-      return;
-    }
-    (async () => {
-      const body = await readJsonBody(req);
-      const parsed = uninstallSkillInputSchema.safeParse(body);
-      if (!parsed.success) {
-        writeJson(res, 400, { error: parsed.error.message });
-        return;
-      }
-      try {
-        await uninstallSkill(parsed.data);
-        writeJson(res, 200, { ok: true });
-      } catch (err) {
-        writeJson(res, 500, { error: (err as Error).message });
-      }
-    })().catch((err) => writeJson(res, 400, { error: (err as Error).message }));
     return;
   }
 
@@ -352,8 +149,17 @@ try {
       `[git] gh auth setup-git exited ${result.status}: ${result.stderr?.toString() ?? ""}\n`,
     );
   }
-} catch (err) {
-  process.stderr.write(`[git] failed to configure credential helper: ${(err as Error).message}\n`);
+} catch (e) {
+  process.stderr.write(`[git] failed to configure credential helper: ${(e as Error).message}\n`);
+}
+
+if (!config.ONECLI_ACCESS_TOKEN) {
+  // Without a token every `protectedProcedure` (files + skills) returns
+  // UNAUTHORIZED. Correct in prod, silent in dev — surface it loudly so a
+  // misconfigured workstation doesn't look like a generic auth bug.
+  process.stderr.write(
+    "[auth] WARNING: ONECLI_ACCESS_TOKEN is unset — all /api/trpc calls will return UNAUTHORIZED\n",
+  );
 }
 
 server.listen(config.PORT, () => {

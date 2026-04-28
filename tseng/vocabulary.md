@@ -37,6 +37,22 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 | Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
 | Foreign Registration | The `(agent, foreignSub) → OneCLI access token` binding, minted lazily on first fork request and cached in-memory by the Connections module |
 
+## Skills — agent-runtime side (bounded context)
+
+Pod-side operational view of skills. Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
+
+| Term | Definition |
+|------|-----------|
+| Skill | A directory containing `SKILL.md` (with `name`/`description` frontmatter); the unit of installation |
+| Skill Path | An absolute on-pod directory under which Skills are materialized; a Skill's identity within a path is the directory name |
+| Local Skill | A Skill present in some Skill Path on this pod, regardless of whether it was installed from a Source or authored in place |
+| Skill Source | A git repository URL that contains one or more Skills under `skills/*` or top-level `*` |
+| Scanned Skill | A Skill discovered in a Source: `(source, name, description, version, contentHash)` where `version` is the Source's HEAD commit SHA at scan time |
+| Content Hash | Deterministic SHA-256 over a Skill directory's file contents (sorted-path order, NUL-delimited); the drift signal produced — but not compared — on this side |
+| Install | Materializing a Skill from a Source at a Version into one or more Skill Paths |
+| Publish | Lifting a Local Skill to a GitHub repository as a new branch + PR via the REST API |
+| Scan | Enumerating Scanned Skills in a Source |
+
 ## Secrets (bounded context)
 
 | Term | Definition |
