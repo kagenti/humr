@@ -53,7 +53,7 @@ Shared (stays at top level):
 | Domain \ Step | 01 structure | 02 data | 03 state | 04 splitting | 05 forms | 06 styling | 07 clean |
 |---|---|---|---|---|---|---|---|
 | [connections](domains/connections.md) | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| [chat](domains/chat.md) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| [chat](domains/chat.md) | ✅ | ✅ | ✅ | 🟡 | — | ✅ | 🟡 |
 | [agents](domains/agents.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [secrets](domains/secrets.md) | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
 | [schedules](domains/schedules.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
