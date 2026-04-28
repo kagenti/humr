@@ -11,7 +11,7 @@ A template is a ConfigMap with a `humr.ai/type: agent-template` label. It define
 - **Resource limits** — CPU and memory allocation
 - **Init script** — optional setup that runs before the agent starts
 
-When you create an instance from a template, Humr's controller creates a StatefulSet, a PVC for the workspace, and network policies for isolation.
+When you create an instance from a template, Humr's controller creates a StatefulSet, a PVC for the workspace, and network policies for isolation. The network policy is a strict allow-list — agent pods can only reach the OneCLI credential proxy, the API server's internal port, and DNS. There is no direct internet egress; all outbound HTTPS is forced through the credential proxy.
 
 ## The base image
 

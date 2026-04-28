@@ -4,7 +4,7 @@ Agents can run on a schedule — no laptop required. The scheduler runs on the p
 
 ## Create a schedule
 
-1. Open an instance and go to the **Schedules** tab.
+1. Open an instance, go to the **Config** tab, and expand the **Schedules** section.
 2. Pick a **frequency** — every few minutes, hourly, daily at a specific time, or a custom recurrence rule.
 3. Choose which **days** the schedule should run.
 4. Set the **message** the agent receives when the schedule fires.
@@ -19,11 +19,11 @@ When a schedule fires, the agent receives the message exactly as if you typed it
 | **Every N minutes** | Every 30 minutes, weekdays only |
 | **Every N hours** | Every 2 hours |
 | **Daily** | Weekdays at 9:00am |
-| **Custom** | Any RFC 5545 recurrence rule |
+| **Custom** | Any RRULE recurrence rule |
 
 ## Quiet hours
 
-Quiet hours let you pause a schedule during specific time windows — for example, suppress overnight runs between 10pm and 6am. When a scheduled fire falls inside a quiet-hours window, it's silently skipped. You can add multiple windows and toggle each one independently.
+Quiet hours let you pause a schedule during specific time windows — for example, suppress overnight runs between 10pm and 6am. When a scheduled fire falls inside a quiet-hours window, it's **dropped, not queued** — the fire is skipped entirely, not deferred to after the window closes. You can add multiple windows and toggle each one independently.
 
 ## Session mode
 
@@ -31,6 +31,8 @@ Each schedule can run in one of two modes:
 
 - **Fresh session** — every fire starts a new conversation. Good for independent tasks like daily reports.
 - **Continuous session** — fires resume the same conversation. Good for ongoing work where the agent builds on previous context.
+
+Fires within the same schedule run one at a time. If a fire arrives while the previous one is still running, it waits until the current run completes before starting. Different schedules on the same instance can run concurrently.
 
 ## Persistent context
 

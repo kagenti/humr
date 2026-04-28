@@ -2,7 +2,7 @@
 
 <p style="font-size: 1.2em; opacity: 0.7;">Run AI agents in the cloud, on a schedule, connected to your tools.</p>
 
-Humr gives Claude Code, Codex, Gemini CLI, pi.dev — or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) — a secure home in the cloud. Connect them to your APIs, put them on a schedule, and interact through Slack or the web UI. They keep their files and memory across sessions — and keep working even when you close your laptop.
+Humr gives Claude Code, Codex, Gemini CLI, pi.dev — or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) — a secure home in the cloud. Connect them to your APIs, put them on a schedule, and interact through Slack, Telegram, or the web UI. They keep their files and memory across sessions — and keep working even when you close your laptop.
 
 ![Humr UI — agent chatting with Google Drive access](assets/hero.png)
 
@@ -11,7 +11,7 @@ Humr gives Claude Code, Codex, Gemini CLI, pi.dev — or anything that speaks [A
 - **Automate a morning briefing** — scan Slack and GitHub overnight, get a summary at 9am.
 - **Review PRs automatically** — agents watch for new pull requests and post comments.
 - **Monitor your docs** — check for drift weekly, propose edits.
-- **Chat with an agent anytime** — through the web UI or Slack, with full conversation history.
+- **Chat with an agent anytime** — through the web UI, Slack, or Telegram, with full conversation history.
 - **Connect to any API** — agents use your credentials securely, without ever seeing the real keys.
 
 ## Get started
