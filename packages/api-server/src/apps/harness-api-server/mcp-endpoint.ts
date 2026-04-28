@@ -4,11 +4,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import yaml from "js-yaml";
+import { TRPCError } from "@trpc/server";
 import { ChannelType, type SkillsService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
-import { createSkillsToolHandlers, errorResult, textResult } from "./skills-tools.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -17,6 +17,45 @@ interface McpSession {
   server: McpServer;
   instanceId: string;
   lastActivity: number;
+}
+
+export interface ToolContent {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+  /** MCP SDK expects an open shape on tool responses. */
+  [key: string]: unknown;
+}
+
+function textResult(text: string): ToolContent {
+  return { content: [{ type: "text", text }] };
+}
+
+function errorResult(text: string): ToolContent {
+  return { content: [{ type: "text", text }], isError: true };
+}
+
+function errMessage(err: unknown, fallback: string): string {
+  if (err instanceof TRPCError) {
+    if (err.code === "PRECONDITION_FAILED") {
+      return `the instance must be running to manage skills: ${err.message}`;
+    }
+    if (err.code === "NOT_FOUND") return `not found: ${err.message}`;
+    return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
+export async function textTool<T>(
+  fallback: string,
+  call: () => Promise<T>,
+  format: (result: T) => string,
+): Promise<ToolContent> {
+  try {
+    return textResult(format(await call()));
+  } catch (err) {
+    return errorResult(errMessage(err, fallback));
+  }
 }
 
 const sessions = new Map<string, McpSession>();
@@ -69,21 +108,31 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
   );
 
   // ---- Skills tools ---------------------------------------------------------
-
-  const skillsTools = createSkillsToolHandlers(instanceId, deps.skills);
+  // `instanceId` is captured from the verified MCP session, so agents cannot
+  // spoof it via tool input.
 
   server.tool(
     "list_skill_sources",
     "List the skill sources (public git repos) this instance can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
     {},
-    () => skillsTools.listSources(),
+    () =>
+      textTool(
+        "Failed to list skill sources",
+        () => deps.skills.listSources(instanceId),
+        (sources) => JSON.stringify(sources),
+      ),
   );
 
   server.tool(
     "list_skills_in_source",
     "List the skills available inside a connected skill source. Returns each skill's name, description, and the last-touching commit SHA (pass this as `version` to install_skill).",
     { sourceId: z.string() },
-    (args) => skillsTools.listSkillsInSource(args),
+    ({ sourceId }) =>
+      textTool(
+        "Failed to list skills",
+        () => deps.skills.listSkills(sourceId, instanceId),
+        (list) => JSON.stringify(list),
+      ),
   );
 
   server.tool(
@@ -94,7 +143,13 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       name: z.string().min(1),
       version: z.string().min(1),
     },
-    (args) => skillsTools.installSkill(args),
+    ({ source, name, version }) =>
+      textTool(
+        "Failed to install skill",
+        () => deps.skills.installSkill({ instanceId, source, name, version }),
+        (installed) =>
+          `Installed ${name} @ ${version.slice(0, 8)}. Instance now has ${installed.length} skill(s).`,
+      ),
   );
 
   server.tool(
@@ -104,7 +159,12 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       source: z.string().url(),
       name: z.string().min(1),
     },
-    (args) => skillsTools.uninstallSkill(args),
+    ({ source, name }) =>
+      textTool(
+        "Failed to uninstall skill",
+        () => deps.skills.uninstallSkill({ instanceId, source, name }),
+        (remaining) => `Uninstalled ${name}. Instance now has ${remaining.length} skill(s).`,
+      ),
   );
 
   server.tool(
@@ -116,7 +176,12 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       title: z.string().optional(),
       body: z.string().optional(),
     },
-    (args) => skillsTools.publishSkill(args),
+    ({ sourceId, name, title, body }) =>
+      textTool(
+        "Failed to publish skill",
+        () => deps.skills.publishSkill({ instanceId, sourceId, name, title, body }),
+        (result) => `Published ${name}. PR: ${result.prUrl}`,
+      ),
   );
 
   // ---- Transport ------------------------------------------------------------
