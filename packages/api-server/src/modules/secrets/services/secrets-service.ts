@@ -109,6 +109,10 @@ export function createSecretsService(deps: {
           hostPattern,
           pathPattern: input.pathPattern,
           injectionConfig: input.injectionConfig,
+          // Anthropic auth-mode is detected by OneCLI from the value shape and
+          // returned in `metadata.authMode`. The K8s mirror needs this to pick
+          // `x-api-key` (api-key) vs `Authorization: Bearer ...` (oauth).
+          authMode: created.metadata?.authMode,
         }));
       }
       return toSecretView(created);
