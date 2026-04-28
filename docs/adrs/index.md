@@ -45,3 +45,4 @@ This directory contains ADRs for the Humr project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-agent-store.md) | Agent template store — external catalog of installable agent definitions | @tomkis |
