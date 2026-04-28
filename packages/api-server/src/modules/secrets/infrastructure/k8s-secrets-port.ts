@@ -56,6 +56,31 @@ export function injectionFileContent(value: string, valueFormat: string): string
   return valueFormat.replaceAll("{value}", value);
 }
 
+/**
+ * SDS DiscoveryResponse YAML consumed by the Envoy sidecar's
+ * `path_config_source` (see packages/controller/pkg/reconciler/envoy.go —
+ * `envoyCredentialSDSName = "credential"` / `envoyCredentialKeySDS = "sds.yaml"`).
+ *
+ * Envoy's `generic` injected_credentials source reads the inline_string
+ * verbatim and writes it as the value of the configured header — there is no
+ * upstream prefix template (envoyproxy/envoy#37001) — so the value-format
+ * substitution is baked in here.
+ *
+ * The string is JSON-encoded for safe embedding in YAML (JSON is valid YAML).
+ */
+export function sdsYamlContent(value: string, valueFormat: string): string {
+  const inline = injectionFileContent(value, valueFormat);
+  return [
+    "resources:",
+    '- "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
+    "  name: credential",
+    "  generic_secret:",
+    "    secret:",
+    `      inline_string: ${JSON.stringify(inline)}`,
+    "",
+  ].join("\n");
+}
+
 export interface K8sSecretsPort {
   createSecret(input: {
     id: string;
@@ -125,7 +150,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
           annotations,
         },
         type: "Opaque",
-        stringData: { value: injectionFileContent(value, valueFormat) },
+        stringData: { "sds.yaml": sdsYamlContent(value, valueFormat) },
       };
       await client.createSecret(body);
     },
@@ -161,7 +186,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         metadata: { ...existing.metadata, annotations },
       };
       if (patch.value !== undefined) {
-        body.stringData = { ...(body.stringData ?? {}), value: injectionFileContent(patch.value, valueFormat) };
+        body.stringData = { ...(body.stringData ?? {}), "sds.yaml": sdsYamlContent(patch.value, valueFormat) };
         body.data = undefined;
       }
       await client.replaceSecret(k8sSecretName(id), body);
