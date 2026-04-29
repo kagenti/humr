@@ -6,40 +6,40 @@ import type {ExtensionAPI, ProviderConfig} from "@mariozechner/pi-coding-agent";
 declare const process: { env: Record<string, string | undefined> };
 
 export default function register(pi: ExtensionAPI): void {
-	const url = env("RITS_URL")?.replace(/\/+$/, "");
-	const model = env("RITS_MODEL");
+	const url = env("OPENAI_PROXY_URL")?.replace(/\/+$/, "");
+	const model = env("OPENAI_PROXY_MODEL");
 	if (!url || !model) return;
 
 	const provider: ProviderConfig = {
 		baseUrl: /\/v\d+$/.test(url) ? url : `${url}/v1`,
 		api: "openai-completions",
-		// Auth is injected by OneCLI at the HTTP-proxy layer; the key set here only
-		// exists to satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
-		apiKey: "injected-by-onecli",
+		// Auth is injected by OneCLI at the HTTP-proxy layer (or by Envoy's
+		// credential_injector under ADR-033); the key set here only exists to
+		// satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
+		apiKey: env("OPENAI_PROXY_API_KEY") ?? "injected-by-onecli",
 		authHeader: false,
 		models: [
 			{
 				id: model,
 				name: model,
 				input: ["text"] as const,
-				reasoning: boolEnv("RITS_REASONING", false),
-				contextWindow: intEnv("RITS_CONTEXT_WINDOW", 128000),
-				maxTokens: intEnv("RITS_MAX_TOKENS", 16384),
+				reasoning: boolEnv("OPENAI_PROXY_REASONING", false),
+				contextWindow: intEnv("OPENAI_PROXY_CONTEXT_WINDOW", 128000),
+				maxTokens: intEnv("OPENAI_PROXY_MAX_TOKENS", 16384),
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				compat: {
-					// vLLM (what RITS runs) doesn't speak these.
 					supportsDeveloperRole: false,
 					supportsReasoningEffort: true,
 					supportsUsageInStreaming: false,
 					maxTokensField: "max_tokens",
-					requiresThinkingAsText: boolEnv("RITS_THINKING_AS_TEXT", false),
-					thinkingFormat: env("RITS_THINKING_FORMAT") as any,
+					requiresThinkingAsText: boolEnv("OPENAI_PROXY_THINKING_AS_TEXT", false),
+					thinkingFormat: env("OPENAI_PROXY_THINKING_FORMAT") as any,
 				},
 			},
 		],
 	}
 
-	pi.registerProvider("rits", provider);
+	pi.registerProvider("openai-proxy", provider);
 
 	// pi-acp re-checks auth against ~/.pi/agent/models.json on every session/prompt.
 	// Runtime registerProvider() is invisible to that check, so mirror to disk.
@@ -56,12 +56,12 @@ export default function register(pi: ExtensionAPI): void {
 	} catch {
 		// models.json may not exist yet on a fresh home; start from empty.
 	}
-	modelsFile.providers.rits = provider;
+	modelsFile.providers["openai-proxy"] = provider;
 	writeFileSync(modelsPath, `${JSON.stringify(modelsFile, null, 2)}\n`);
 
 	// Pi reads defaults from settings.json on each session start, so patching the
-	// file here makes RITS the default for subsequent sessions without losing any
-	// other settings already configured in the workspace.
+	// file here makes openai-proxy the default for subsequent sessions without
+	// losing any other settings already configured in the workspace.
 	const settingsPath = join(dir, "settings.json");
 	let settings: Record<string, unknown> = {};
 	try {
@@ -69,7 +69,7 @@ export default function register(pi: ExtensionAPI): void {
 	} catch {
 		// settings.json may not exist yet on a fresh home; start from empty.
 	}
-	settings.defaultProvider = "rits";
+	settings.defaultProvider = "openai-proxy";
 	settings.defaultModel = model;
 	writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }

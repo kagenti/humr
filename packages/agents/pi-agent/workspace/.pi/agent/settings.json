@@ -9,5 +9,10 @@
   "pi-memory": {
     "dashboard": false,
     "memoryDir": "~/.pi/agent/memory"
+  },
+  "retry": {
+    "provider": {
+      "timeoutMs": 30000
+    }
   }
 }
