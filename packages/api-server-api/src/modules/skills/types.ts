@@ -81,8 +81,8 @@ export interface PublishSkillResult {
 
 /**
  * Explicit record of a publish event. Written on a successful
- * `publishSkill` call and kept alongside spec.skills on the instance
- * ConfigMap. Drives the `Published` badge + "View PR" link in the UI —
+ * `publishSkill` call into the Postgres `instance_skill_publishes`
+ * table. Drives the `Published` badge + "View PR" link in the UI —
  * the name-match heuristic it replaces had confusing false positives
  * when a local skill happened to share a name with a catalog entry.
  *
@@ -99,19 +99,19 @@ export interface SkillPublishRecord {
 }
 
 /** Reconciled view of an instance's skills: both the installed (tracked in
- *  spec.skills AND present on disk) and the standalone (on disk but not
- *  tracked). Computing this in one pass lets the server drop ghost
- *  SkillRefs — entries whose directories were deleted out-of-band — and
- *  persist the cleanup back to spec.skills so the declarative state stops
- *  drifting from the filesystem.
+ *  Postgres `instance_skills` AND present on disk) and the standalone (on
+ *  disk but not tracked). Computing this in one pass lets the server drop
+ *  ghost SkillRefs — entries whose directories were deleted out-of-band —
+ *  and persist the cleanup so the declarative state stops drifting from the
+ *  filesystem.
  *
- *  `publishes` carries the publish history for this instance so the UI
- *  can light up the "Published" badge on exactly the skills the user
+ *  `instancePublishes` carries the publish history for this instance so the
+ *  UI can light up the "Published" badge on exactly the skills the user
  *  actually pushed. */
 export interface SkillsState {
   installed: SkillRef[];
   standalone: LocalSkill[];
-  publishes: SkillPublishRecord[];
+  instancePublishes: SkillPublishRecord[];
 }
 
 export interface SkillsService {

@@ -20,6 +20,9 @@ import {
   SkillSourceProtectedError,
   type SkillsRepository,
 } from "../infrastructure/skills-repository.js";
+import type { InstanceSkillsRepository } from "../infrastructure/instance-skills-repository.js";
+import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
+import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
@@ -43,9 +46,14 @@ const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
+  instanceSkillsRepo: InstanceSkillsRepository;
   instancesRepo: InstancesRepository;
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
+  /** System (cluster-admin-declared) Skill Sources, parsed once at api-server
+   *  startup from SKILL_SOURCES_SEED. Merged into listSources() with
+   *  `system: true` and protected from deletion. */
+  seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
   getAgentToken: (agentId: string) => Promise<string>;
   owner: string;
@@ -97,15 +105,6 @@ async function loadRunningInstance(deps: SkillsServiceDeps, instanceId: string) 
     });
   }
   return infra;
-}
-
-function upsertSkill(current: SkillRef[], next: SkillRef): SkillRef[] {
-  const filtered = current.filter((s) => !(s.source === next.source && s.name === next.name));
-  return [...filtered, next];
-}
-
-function removeSkill(current: SkillRef[], key: { source: string; name: string }): SkillRef[] {
-  return current.filter((s) => !(s.source === key.source && s.name === key.name));
 }
 
 /**
@@ -168,10 +167,10 @@ async function resolveTemplateSource(
   };
 }
 
-/** Look up any source by id — template-synthesised or a real ConfigMap.
- *  `repo.get` does a literal K8s ConfigMap lookup and returns null for the
- *  `template:*` synthesised ids, so we have to special-case them or every
- *  follow-up call (getSource, listSkills, refreshSource) 404s. */
+/** Look up any source by id — template-synthesised, system seed, or a real
+ *  user-owned Postgres row. Each kind has its own resolution path; we
+ *  dispatch on id shape (for templates) and seed-id presence (for system
+ *  sources) to avoid querying the wrong store. */
 async function resolveSource(
   deps: SkillsServiceDeps,
   id: string,
@@ -179,6 +178,8 @@ async function resolveSource(
   if (id.startsWith(TEMPLATE_SOURCE_ID_PREFIX)) {
     return resolveTemplateSource(deps, id);
   }
+  const seed = deps.seedSources.find((s) => s.id === id);
+  if (seed) return seedToSkillSource(seed);
   return deps.repo.get(id, deps.owner);
 }
 
@@ -216,6 +217,15 @@ function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
   return out;
 }
 
+function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
+  const filtered = current.filter((s) => !(s.source === next.source && s.name === next.name));
+  return [...filtered, next];
+}
+
+function removeSkillRef(current: SkillRef[], key: { source: string; name: string }): SkillRef[] {
+  return current.filter((s) => !(s.source === key.source && s.name === key.name));
+}
+
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
     async listSources(instanceId?: string) {
@@ -223,12 +233,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         deps.repo.list(deps.owner),
         instanceId ? loadTemplateSources(deps, instanceId) : Promise.resolve<SkillSource[]>([]),
       ]);
+      const seeds = deps.seedSources.map(seedToSkillSource);
       // Priority order matters for dedupe: user-created first, then
-      // platform-seeded (tagged with system: true by the repo), then
-      // template-derived. A user source with the same URL as a system or
-      // template entry wins — if they later remove the system/template
-      // layer, their copy is still there.
-      const merged = dedupeByGitUrl([...owned, ...template]);
+      // platform-seeded, then template-derived. A user source with the same
+      // URL as a system or template entry wins — if they later remove the
+      // system/template layer, their copy is still there.
+      const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
       return sortSources(enrichSources(merged));
     },
     async getSource(id) {
@@ -239,9 +249,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
     createSource: (input: CreateSkillSourceInput) => deps.repo.create(input, deps.owner),
     async deleteSource(id) {
-      // Template-derived ids are synthesised at read time — there's no
-      // ConfigMap to delete. Reject up-front with the same FORBIDDEN code
-      // the UI uses for system sources so the error shape matches.
+      // Template-derived ids are synthesised at read time — there's no row
+      // to delete. Reject up-front with the same FORBIDDEN code the UI uses
+      // for system sources so the error shape matches.
       if (id.startsWith(TEMPLATE_SOURCE_ID_PREFIX)) {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -250,7 +260,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
       // Capture the gitUrl before deletion — after delete we can't resolve
       // which installed-skill entries belonged to this source.
-      const src = await deps.repo.get(id, deps.owner);
+      const src = await resolveSource(deps, id);
       try {
         await deps.repo.delete(id, deps.owner);
       } catch (err) {
@@ -259,21 +269,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
         throw err;
       }
-      // Scrub spec.skills entries that reference the now-gone source URL
+      // Scrub installed-skill entries that reference the now-gone source URL
       // across every instance owned by the user. Without this, re-adding a
       // source with the same URL would render its skills as already-checked
-      // (the stale SkillRefs persist in the instance's spec), which is
-      // confusing at best and wrong when the user has manually deleted the
-      // skill files in the meantime.
+      // (the stale rows persist), which is confusing at best and wrong when
+      // the user has manually deleted the skill files in the meantime.
       if (src) {
         const instances = await deps.instancesRepo.list(deps.owner);
-        await Promise.all(
-          instances.map(async (infra) => {
-            const keep = infra.skills.filter((s) => s.source !== src.gitUrl);
-            if (keep.length !== infra.skills.length) {
-              await deps.instancesRepo.updateSpec(infra.id, deps.owner, { skills: keep });
-            }
-          }),
+        await deps.instanceSkillsRepo.removeBySource(
+          instances.map((i) => i.id),
+          src.gitUrl,
         );
       }
     },
@@ -353,14 +358,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // agent-runtime returned for MCP-initiated installs that skip the
       // scan round-trip.
       const contentHash = input.contentHash ?? result.contentHash;
-      const updated = upsertSkill(infra.skills, {
+      const ref: SkillRef = {
         source: input.source,
         name: input.name,
         version: input.version,
         contentHash,
-      });
-      await deps.instancesRepo.updateSpec(input.instanceId, deps.owner, { skills: updated });
-      return updated;
+      };
+      await deps.instanceSkillsRepo.upsertSkill(input.instanceId, ref);
+      const current = await deps.instanceSkillsRepo.listSkills(input.instanceId);
+      return upsertSkillRef(
+        current.filter((s) => !(s.source === ref.source && s.name === ref.name)),
+        ref,
+      );
     },
 
     async uninstallSkill(input: UninstallSkillInput) {
@@ -373,9 +382,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         skillPaths,
       });
 
-      const updated = removeSkill(infra.skills, { source: input.source, name: input.name });
-      await deps.instancesRepo.updateSpec(input.instanceId, deps.owner, { skills: updated });
-      return updated;
+      await deps.instanceSkillsRepo.removeSkill(input.instanceId, {
+        source: input.source,
+        name: input.name,
+      });
+      const current = await deps.instanceSkillsRepo.listSkills(input.instanceId);
+      return removeSkillRef(current, { source: input.source, name: input.name });
     },
 
     async publishSkill(input: PublishSkillInput): Promise<PublishSkillResult> {
@@ -384,6 +396,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           owner: deps.owner,
           resolveSource: (id) => resolveSource(deps, id),
           instances: deps.instancesRepo,
+          instanceSkills: deps.instanceSkillsRepo,
           agents: deps.agentsRepo,
           runtimeClient: deps.runtimeClient,
           getAgentToken: deps.getAgentToken,
@@ -415,30 +428,35 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // Subtract anything already tracked as installed-from-remote (by directory
       // name). Matches behavior that the remote-installed entry is the canonical
       // one when names collide.
-      const tracked = new Set(infra.skills.map((s) => s.name));
+      const tracked = new Set(
+        (await deps.instanceSkillsRepo.listSkills(instanceId)).map((s) => s.name),
+      );
       return all.filter((s) => !tracked.has(s.name));
     },
 
     /**
      * Reconciled skills view. Returns:
      *   - installed: SkillRefs whose directories still exist on the pod
-     *   - standalone: on-disk skills that aren't tracked in spec.skills
+     *   - standalone: on-disk skills that aren't tracked
      *
-     * Also self-heals spec.skills: when an entry's directory is missing
-     * (manual deletion, PVC wipe, etc.) it's dropped and the cleaned list
-     * is persisted back. Safe because the filesystem is the source of
-     * truth for "what is installed"; spec.skills is the declarative record
-     * that just needs to catch up.
+     * Also self-heals tracked installs: when an entry's directory is missing
+     * (manual deletion, PVC wipe, etc.) it's dropped from Postgres. Safe
+     * because the filesystem is the source of truth for "what is installed";
+     * the DB row is the declarative record that just needs to catch up.
      *
      * When the pod isn't running we can't see the filesystem, so we return
-     * spec.skills as-is (no reconciliation) and an empty standalone list.
-     * This avoids wrongly dropping SkillRefs during a restart.
+     * the tracked refs as-is (no reconciliation) and an empty standalone
+     * list. This avoids wrongly dropping rows during a restart.
      */
     async getState(instanceId: string): Promise<SkillsState> {
       const infra = await deps.instancesRepo.get(instanceId, deps.owner);
-      if (!infra) return { installed: [], standalone: [], publishes: [] };
+      if (!infra) return { installed: [], standalone: [], instancePublishes: [] };
       if (infra.currentState !== "running") {
-        return { installed: infra.skills, standalone: [], publishes: infra.publishes };
+        const [installed, instancePublishes] = await Promise.all([
+          deps.instanceSkillsRepo.listSkills(instanceId),
+          deps.instanceSkillsRepo.listPublishes(instanceId),
+        ]);
+        return { installed, standalone: [], instancePublishes };
       }
 
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
@@ -446,18 +464,19 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const local = await deps.runtimeClient.listLocal(instanceId, token, skillPaths);
 
       const onDisk = new Set(local.map((s) => s.name));
-      const installed = infra.skills.filter((ref) => onDisk.has(ref.name));
 
-      // Persist cleanup exactly when we actually dropped something. Guarded
-      // this way so we don't write on every poll; writes only happen when
-      // there's a real ghost to evict.
-      if (installed.length !== infra.skills.length) {
-        await deps.instancesRepo.updateSpec(instanceId, deps.owner, { skills: installed });
-      }
+      // Drop ghost rows whose directories no longer exist. Reconcile only
+      // performs a write when something needs evicting.
+      await deps.instanceSkillsRepo.reconcile(instanceId, onDisk);
+
+      const [installed, instancePublishes] = await Promise.all([
+        deps.instanceSkillsRepo.listSkills(instanceId),
+        deps.instanceSkillsRepo.listPublishes(instanceId),
+      ]);
 
       const trackedNames = new Set(installed.map((s) => s.name));
       const standalone = local.filter((s) => !trackedNames.has(s.name));
-      return { installed, standalone, publishes: infra.publishes };
+      return { installed, standalone, instancePublishes };
     },
   };
 }

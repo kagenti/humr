@@ -5,6 +5,7 @@ import { appRouter } from "api-server-api/router";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
+import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import {
   createK8sClient, podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
@@ -43,10 +44,11 @@ export interface ApiServerAppDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
+  seedSources: SkillSourceSeed[];
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows } = deps;
+  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, seedSources } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -167,7 +169,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const userJwt = c.req.header("authorization")!.slice(7);
 
     const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore);
-    const skills = composeSkillsModule(api, config.namespace, user.sub);
+    const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
     });

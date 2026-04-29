@@ -6,6 +6,7 @@ import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
+import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createAcpClient } from "../../core/acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
@@ -18,10 +19,11 @@ export interface HarnessApiServerAppDeps {
   db: Db;
   channelManager: ChannelManager;
   channelSecretStore: ChannelSecretStore;
+  seedSources: SkillSourceSeed[];
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
-  const { config, api, db, channelManager, channelSecretStore } = deps;
+  const { config, api, db, channelManager, channelSecretStore, seedSources } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
 
@@ -35,7 +37,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
-    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner),
+    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources),
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";

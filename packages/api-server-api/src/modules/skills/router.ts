@@ -113,8 +113,8 @@ export const skillsRouter = t.router({
    * `instances.get().skills` + `skills.listLocal` — same two pieces of data,
    * one trip, self-healing.
    *
-   * `publishes` is the explicit log of successful publish events used to
-   * drive the "Published" badge on standalone skills.
+   * `instancePublishes` is the explicit log of successful publish events
+   * used to drive the "Published" badge on standalone skills.
    */
   state: t.procedure
     .input(z.object({ instanceId: z.string().min(1) }))
@@ -122,7 +122,7 @@ export const skillsRouter = t.router({
       z.object({
         installed: z.array(skillRefSchema),
         standalone: z.array(localSkillSchema),
-        publishes: z.array(
+        instancePublishes: z.array(
           z.object({
             skillName: z.string(),
             sourceId: z.string(),

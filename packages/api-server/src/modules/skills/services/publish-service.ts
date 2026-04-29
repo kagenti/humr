@@ -7,6 +7,7 @@ import type {
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import type { InstancesRepository } from "../../agents/infrastructure/instances-repository.js";
+import type { InstanceSkillsRepository } from "../infrastructure/instance-skills-repository.js";
 import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
@@ -18,11 +19,12 @@ const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
 export interface PublishServiceDeps {
   owner: string;
-  /** Look up a source by id. Must handle both real ConfigMap ids (owned /
-   *  system) AND template-synthesised `template:*` ids — publishing is
-   *  supposed to work against template-bound sources too. */
+  /** Look up a source by id. Must handle real ids (user / system) AND
+   *  template-synthesised `template:*` ids — publishing is supposed to work
+   *  against template-bound sources too. */
   resolveSource: (id: string) => Promise<SkillSource | null>;
   instances: InstancesRepository;
+  instanceSkills: InstanceSkillsRepository;
   agents: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
   getAgentToken: (agentId: string) => Promise<string>;
@@ -97,10 +99,7 @@ export async function publishSkill(
     prUrl: result.prUrl,
     publishedAt: new Date().toISOString(),
   };
-  await deps.instances.updateSpec(input.instanceId, deps.owner, {
-    publishes: [...infra.publishes, record],
-  });
+  await deps.instanceSkills.appendPublish(input.instanceId, record);
 
   return result;
 }
-

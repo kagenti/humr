@@ -12,14 +12,12 @@ import type {
   Template, TemplateSpec,
   Agent, AgentSpec,
   Schedule, ScheduleSpec, ScheduleStatus,
-  SkillRef,
-  SkillPublishRecord,
 } from "api-server-api";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 import {
   LABEL_TYPE, LABEL_OWNER, LABEL_TEMPLATE_REF, LABEL_AGENT_REF,
   LABEL_INSTANCE_REF,
-  TYPE_TEMPLATE, TYPE_AGENT, TYPE_INSTANCE, TYPE_SCHEDULE,
+  TYPE_AGENT, TYPE_INSTANCE, TYPE_SCHEDULE,
   SPEC_KEY, STATUS_KEY, LAST_ACTIVITY_KEY,
 } from "./labels.js";
 
@@ -77,8 +75,6 @@ interface RawInstanceSpec {
   agentId: string;
   desiredState: "running" | "hibernated";
   description?: string;
-  skills?: SkillRef[];
-  publishes?: SkillPublishRecord[];
 }
 
 export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
@@ -100,8 +96,6 @@ export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraI
     currentState,
     error,
     podReady: pod ? isPodReady(pod) : false,
-    skills: spec.skills ?? [],
-    publishes: spec.publishes ?? [],
   };
 }
 

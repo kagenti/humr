@@ -383,10 +383,12 @@ codeGuardianTemplate:
       memory: "2Gi"
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
-# Users see these with a "Platform" badge in the Skills
-# panel and cannot delete them. The same {name, gitUrl} shape works for
-# per-template sources under `<templateKey>.skillSources` — an instance derived
-# from that template surfaces them with an "Agent" badge.
+# Rendered into the api-server pod as SKILL_SOURCES_SEED (JSON array, one
+# entry per source) and parsed at startup. api-server merges these with
+# user-created Postgres rows at read time. Users see these with a "Platform"
+# badge in the Skills panel and cannot delete them. The same {name, gitUrl}
+# shape works for per-template sources under `<templateKey>.skillSources` —
+# an instance derived from that template surfaces them with an "Agent" badge.
 skills:
   skillSources: []
   # Example:

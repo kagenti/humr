@@ -22,6 +22,11 @@ const configSchema = z.object({
   keycloakApiClientId: z.string().default("humr-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
+  /** JSON array of system Skill Sources declared by the cluster admin via
+   *  Helm values. Empty/unset means no seed sources. Validated by Zod inside
+   *  parseSeedSources at startup — malformed JSON or wrong shape crashes the
+   *  pod with a clear stderr. */
+  skillSourcesSeed: z.string().default(""),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -49,5 +54,6 @@ export function loadConfig(): Config {
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
+    skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
   });
 }

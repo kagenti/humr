@@ -181,7 +181,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
         if (!cancelled) {
           setInstalled(state.installed);
           setLocalSkills(state.standalone);
-          setPublishes(state.publishes);
+          setPublishes(state.instancePublishes);
         }
       } catch {}
     };
