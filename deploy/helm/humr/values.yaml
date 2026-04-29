@@ -20,6 +20,10 @@ scheme: http
 # `ingress.enabled: true`); Keycloak uses the full URL as its issuer and as
 # `KC_HOSTNAME`, OneCLI uses it for `APP_URL`/`NEXTAUTH_URL`/redirect URIs,
 # and the API server uses it for browser-facing redirects.
+#
+# If you keep the bundled Ingress enabled with TLS, remember to align
+# `ingress.tls[].hosts` with the override hostnames — see the note on
+# `ingress.tls` below.
 urls:
   ui: ""        # default: {scheme}://humr.{domain}{:port}
   api: ""       # default: {scheme}://humr-api.{domain}{:port}
@@ -226,12 +230,23 @@ ingress:
   # (hostname only, no port). Ignored for any service with an explicit
   # `urls.{service}` override.
   aliasDomains: ["localtest.me"]
+  # -- TLS rules passed through verbatim to `Ingress.spec.tls`. The chart does
+  # NOT auto-derive `hosts` from rules — when you set any `urls.{service}`
+  # override, you must also list those hostnames here (or reference them via
+  # cert-manager annotations on the Ingress) so the certificate covers what
+  # the Ingress actually serves. Mismatches will not be caught at lint time.
   tls: []
-  # For production with TLS:
+  # For production with TLS (convention-based hostnames):
   #   aliasDomains: []
   #   tls:
   #     - secretName: humr-tls
   #       hosts: ["humr.example.com", "humr-api.example.com", "keycloak.example.com", "onecli.example.com"]
+  #
+  # For production with TLS + URL overrides — list the override hostnames:
+  #   aliasDomains: []
+  #   tls:
+  #     - secretName: humr-tls
+  #       hosts: ["app.example.com", "api.example.com", "auth.example.com", "secrets.example.com"]
 
 # -- UI (nginx serving static SPA, reverse-proxies /api to API server)
 ui:
