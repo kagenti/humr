@@ -1,59 +1,8 @@
-import * as k8s from "@kubernetes/client-node";
-import yaml from "js-yaml";
+import crypto from "node:crypto";
+import type { Db } from "db";
+import { skillSources, eq, and } from "db";
 import type { SkillSource } from "api-server-api";
-import { SPEC_VERSION } from "api-server-api";
-import type { K8sClient } from "../../agents/infrastructure/k8s.js";
-import {
-  LABEL_OWNER,
-  LABEL_SYSTEM,
-  LABEL_TYPE,
-  SPEC_KEY,
-  TYPE_SKILL_SOURCE,
-} from "../../agents/infrastructure/labels.js";
-import {
-  generateK8sName,
-  hasType,
-  isOwnedBy,
-} from "../../agents/infrastructure/configmap-mappers.js";
-
-interface SkillSourceSpecYaml {
-  version: string;
-  name?: string;
-  gitUrl: string;
-}
-
-function isSystem(cm: k8s.V1ConfigMap): boolean {
-  return cm.metadata?.labels?.[LABEL_SYSTEM] === "true";
-}
-
-function parseSkillSource(cm: k8s.V1ConfigMap): SkillSource {
-  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as SkillSourceSpecYaml;
-  const view: SkillSource = {
-    id: cm.metadata!.name!,
-    name: spec?.name ?? cm.metadata!.name!,
-    gitUrl: spec?.gitUrl ?? "",
-  };
-  if (isSystem(cm)) view.system = true;
-  return view;
-}
-
-function buildSkillSourceConfigMap(
-  name: string,
-  gitUrl: string,
-  owner: string,
-): k8s.V1ConfigMap {
-  const spec: SkillSourceSpecYaml = { version: SPEC_VERSION, name, gitUrl };
-  return {
-    metadata: {
-      name: generateK8sName("skill-src"),
-      labels: {
-        [LABEL_TYPE]: TYPE_SKILL_SOURCE,
-        [LABEL_OWNER]: owner,
-      },
-    },
-    data: { [SPEC_KEY]: yaml.dump(spec) },
-  };
-}
+import type { SkillSourceSeed } from "./seed-sources.js";
 
 export interface SkillsRepository {
   list(owner: string): Promise<SkillSource[]>;
@@ -69,43 +18,60 @@ export class SkillSourceProtectedError extends Error {
   }
 }
 
-export function createSkillsRepository(k8s: K8sClient): SkillsRepository {
+function generateId(): string {
+  return `skill-src-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+/** Postgres-backed user-source repo. System (admin-seeded) sources never live
+ *  here — they're injected as in-memory config; see seed-sources.ts. The
+ *  service merges both at read time.
+ *
+ *  System ids reserve a fixed prefix so a user-created row can never shadow
+ *  one. Deletes on a system id throw `SkillSourceProtectedError` regardless
+ *  of whether the row exists, mirroring the previous ConfigMap-backed
+ *  behavior. */
+export function createSkillsRepository(
+  db: Db,
+  seeds: SkillSourceSeed[] = [],
+): SkillsRepository {
+  const seedIds = new Set(seeds.map((s) => s.id));
+
   return {
     async list(owner) {
-      const [owned, seeded] = await Promise.all([
-        k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_SKILL_SOURCE},${LABEL_OWNER}=${owner}`),
-        k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_SKILL_SOURCE},${LABEL_SYSTEM}=true`),
-      ]);
-      const seen = new Set<string>();
-      const out: SkillSource[] = [];
-      for (const cm of [...owned, ...seeded]) {
-        const id = cm.metadata!.name!;
-        if (seen.has(id)) continue;
-        seen.add(id);
-        out.push(parseSkillSource(cm));
-      }
-      return out;
+      const rows = await db
+        .select()
+        .from(skillSources)
+        .where(eq(skillSources.owner, owner));
+      return rows.map((r) => ({ id: r.id, name: r.name, gitUrl: r.gitUrl }));
     },
 
     async get(id, owner) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_SKILL_SOURCE)) return null;
-      if (!isSystem(cm) && !isOwnedBy(cm, owner)) return null;
-      return parseSkillSource(cm);
+      const rows = await db
+        .select()
+        .from(skillSources)
+        .where(and(eq(skillSources.id, id), eq(skillSources.owner, owner)))
+        .limit(1);
+      const r = rows[0];
+      if (!r) return null;
+      return { id: r.id, name: r.name, gitUrl: r.gitUrl };
     },
 
     async create(input, owner) {
-      const body = buildSkillSourceConfigMap(input.name, input.gitUrl, owner);
-      const created = await k8s.createConfigMap(body);
-      return parseSkillSource(created);
+      const id = generateId();
+      await db.insert(skillSources).values({
+        id,
+        owner,
+        name: input.name,
+        gitUrl: input.gitUrl,
+      });
+      return { id, name: input.name, gitUrl: input.gitUrl };
     },
 
     async delete(id, owner) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_SKILL_SOURCE)) return;
-      if (isSystem(cm)) throw new SkillSourceProtectedError();
-      if (!isOwnedBy(cm, owner)) return;
-      await k8s.deleteConfigMap(id);
+      if (seedIds.has(id)) throw new SkillSourceProtectedError();
+      await db
+        .delete(skillSources)
+        .where(and(eq(skillSources.id, id), eq(skillSources.owner, owner)));
     },
   };
 }

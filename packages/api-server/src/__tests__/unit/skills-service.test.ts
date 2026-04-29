@@ -9,6 +9,8 @@ import {
   SkillSourceProtectedError,
   type SkillsRepository,
 } from "../../modules/skills/infrastructure/skills-repository.js";
+import type { InstanceSkillsRepository } from "../../modules/skills/infrastructure/instance-skills-repository.js";
+import type { SkillSourceSeed } from "../../modules/skills/infrastructure/seed-sources.js";
 import { PublicArchiveNotFoundError } from "../../modules/skills/infrastructure/public-archive-scanner.js";
 import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
@@ -51,8 +53,6 @@ function makeInfraInstance(overrides: Partial<InfraInstance> = {}): InfraInstanc
     desiredState: "running",
     currentState: "running",
     podReady: true,
-    skills: [],
-    publishes: [],
     ...overrides,
   };
 }
@@ -70,13 +70,53 @@ function makeAgent(skillPaths?: string[]): Agent {
   };
 }
 
+interface InstanceSkillsState {
+  installed: SkillRef[];
+}
+
+/** In-memory fake of the new InstanceSkillsRepository. The service no longer
+ *  patches `instance.spec.yaml` — it writes to this repo. Tests that check
+ *  installed-state mutations now read it back instead of asserting against
+ *  `instancesRepo.updateSpec` calls. */
+function makeInstanceSkillsRepo(initial: SkillRef[] = []): InstanceSkillsRepository & {
+  state: InstanceSkillsState;
+} {
+  const state: InstanceSkillsState = { installed: [...initial] };
+  const removeBySource = vi.fn(async (instanceIds: string[], gitUrl: string) => {
+    if (!instanceIds.includes(INSTANCE_ID)) return;
+    state.installed = state.installed.filter((s) => s.source !== gitUrl);
+  });
+  return {
+    state,
+    listSkills: async (instanceId) => (instanceId === INSTANCE_ID ? [...state.installed] : []),
+    upsertSkill: async (_instanceId, ref) => {
+      state.installed = state.installed.filter(
+        (s) => !(s.source === ref.source && s.name === ref.name),
+      );
+      state.installed.push(ref);
+    },
+    removeSkill: async (_instanceId, key) => {
+      state.installed = state.installed.filter(
+        (s) => !(s.source === key.source && s.name === key.name),
+      );
+    },
+    removeBySource,
+    reconcile: async (_instanceId, present) => {
+      state.installed = state.installed.filter((s) => present.has(s.name));
+    },
+    listPublishes: async () => [],
+    appendPublish: async () => {},
+    deleteByInstance: async () => {},
+  };
+}
+
 interface Env {
   instancesGet: ReturnType<typeof vi.fn>;
-  instancesUpdate: ReturnType<typeof vi.fn>;
   agentsGet: ReturnType<typeof vi.fn>;
   runtimeInstall: ReturnType<typeof vi.fn>;
   runtimeUninstall: ReturnType<typeof vi.fn>;
   getAgentToken: ReturnType<typeof vi.fn>;
+  instanceSkillsRepo: ReturnType<typeof makeInstanceSkillsRepo>;
   svc: ReturnType<typeof createSkillsService>;
 }
 
@@ -85,10 +125,11 @@ function makeEnv(opts: {
   agent?: Agent | null;
   runtimeError?: Error;
   runtimeUninstallError?: Error;
+  initialInstalled?: SkillRef[];
+  seeds?: SkillSourceSeed[];
 } = {}): Env {
   const infra = opts.instance ?? makeInfraInstance();
   const instancesGet = vi.fn().mockResolvedValue(infra);
-  const instancesUpdate = vi.fn().mockImplementation(async () => infra);
   const agentsGet = vi.fn().mockResolvedValue(opts.agent ?? makeAgent(["/home/agent/.claude/skills/"]));
   const runtimeInstall = opts.runtimeError
     ? vi.fn().mockRejectedValue(opts.runtimeError)
@@ -97,23 +138,26 @@ function makeEnv(opts: {
     ? vi.fn().mockRejectedValue(opts.runtimeUninstallError)
     : vi.fn().mockResolvedValue(undefined);
 
-  const instancesRepo = { get: instancesGet, updateSpec: instancesUpdate } as unknown as InstancesRepository;
+  const instancesRepo = { get: instancesGet, list: vi.fn().mockResolvedValue([]) } as unknown as InstancesRepository;
   const agentsRepo = { get: agentsGet } as unknown as AgentsRepository;
   const runtimeClient: AgentRuntimeSkillsClient = {
-    install: runtimeInstall,
-    uninstall: runtimeUninstall,
+    install: runtimeInstall as unknown as AgentRuntimeSkillsClient["install"],
+    uninstall: runtimeUninstall as unknown as AgentRuntimeSkillsClient["uninstall"],
     listLocal: vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]),
     publish: vi.fn<AgentRuntimeSkillsClient["publish"]>().mockResolvedValue({ prUrl: "x", branch: "y" }),
     scan: vi.fn<AgentRuntimeSkillsClient["scan"]>().mockResolvedValue([]),
   };
 
   const getAgentToken = vi.fn<(agentId: string) => Promise<string>>().mockResolvedValue("agent-token-xyz");
+  const instanceSkillsRepo = makeInstanceSkillsRepo(opts.initialInstalled ?? []);
 
   const svc = createSkillsService({
     repo: makeRepo(),
+    instanceSkillsRepo,
     instancesRepo,
     agentsRepo,
     templatesRepo: emptyTemplatesRepo(),
+    seedSources: opts.seeds ?? [],
     runtimeClient,
     getAgentToken,
     owner: OWNER,
@@ -122,7 +166,7 @@ function makeEnv(opts: {
     scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
   });
 
-  return { instancesGet, instancesUpdate, agentsGet, runtimeInstall, runtimeUninstall, getAgentToken, svc };
+  return { instancesGet, agentsGet, runtimeInstall, runtimeUninstall, getAgentToken, instanceSkillsRepo, svc };
 }
 
 const installInput = {
@@ -133,7 +177,7 @@ const installInput = {
 };
 
 describe("skills-service install", () => {
-  it("calls agent-runtime, then upserts skills on the instance spec", async () => {
+  it("calls agent-runtime, then upserts the skill row", async () => {
     const env = makeEnv();
     const result = await env.svc.installSkill(installInput);
 
@@ -144,19 +188,20 @@ describe("skills-service install", () => {
       version: "sha-v1",
       skillPaths: ["/home/agent/.claude/skills/"],
     });
-    expect(env.instancesUpdate).toHaveBeenCalledTimes(1);
-    expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
-      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" }],
-    });
-    expect(result).toEqual([{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" }]);
+    expect(env.instanceSkillsRepo.state.installed).toEqual([
+      { source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" },
+    ]);
+    expect(result).toEqual([
+      { source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" },
+    ]);
   });
 
   it("prefers the UI-scan-provided contentHash over the agent-runtime-computed one", async () => {
     const env = makeEnv();
     await env.svc.installSkill({ ...installInput, contentHash: "from-scan" });
-    expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
-      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "from-scan" }],
-    });
+    expect(env.instanceSkillsRepo.state.installed).toEqual([
+      { source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "from-scan" },
+    ]);
   });
 
   it("replaces an existing entry with the same (source,name) rather than duplicating", async () => {
@@ -164,16 +209,14 @@ describe("skills-service install", () => {
       { source: SOURCE.gitUrl, name: "adr", version: "old-sha" },
       { source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" },
     ];
-    const env = makeEnv({ instance: makeInfraInstance({ skills: existing }) });
+    const env = makeEnv({ initialInstalled: existing });
 
     await env.svc.installSkill(installInput);
 
-    expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
-      skills: [
-        { source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" },
-        { source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" },
-      ],
-    });
+    expect(env.instanceSkillsRepo.state.installed).toEqual([
+      { source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" },
+      { source: SOURCE.gitUrl, name: "adr", version: "sha-v1", contentHash: "runtime-computed-hash" },
+    ]);
   });
 
   it("falls back to the default skillPath when the agent has none", async () => {
@@ -184,57 +227,6 @@ describe("skills-service install", () => {
     }));
   });
 
-  it("rescues a legacy agent (no skillPaths on spec) by reading the template's skillPaths", async () => {
-    // Agent ConfigMap written before spec-assembly was fixed: templateId is
-    // set but the spec itself is missing skillPaths. The service should
-    // consult the template instead of silently using the hardcoded default.
-    const legacyAgent: Agent = {
-      id: AGENT_ID,
-      name: "a",
-      templateId: "claude-code",
-      spec: { version: "humr.ai/v1", name: "a", image: "x" },
-    };
-    const template: Template = {
-      id: "claude-code",
-      name: "claude-code",
-      spec: {
-        version: "humr.ai/v1",
-        image: "x",
-        skillPaths: ["/home/agent/.claude/skills/"],
-      },
-    };
-    const env = makeEnv({ agent: legacyAgent });
-    // Swap in a templates repo that returns the template by id.
-    const svc = createSkillsService({
-      repo: makeRepo(),
-      instancesRepo: { get: env.instancesGet, updateSpec: env.instancesUpdate } as unknown as InstancesRepository,
-      agentsRepo: { get: env.agentsGet } as unknown as AgentsRepository,
-      templatesRepo: {
-        list: async () => [],
-        get: async (id) => (id === template.id ? template : null),
-        readSpec: async () => null,
-      },
-      runtimeClient: {
-        install: env.runtimeInstall,
-        uninstall: env.runtimeUninstall,
-        listLocal: vi.fn(),
-        publish: vi.fn(),
-        scan: vi.fn(),
-      },
-      getAgentToken: async () => "agent-token-xyz",
-      owner: OWNER,
-      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
-      invalidateScan: vi.fn(),
-      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
-    });
-
-    await svc.installSkill(installInput);
-
-    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", expect.objectContaining({
-      skillPaths: ["/home/agent/.claude/skills/"],
-    }));
-  });
-
   it("throws PRECONDITION_FAILED when the instance is not running, without calling agent-runtime", async () => {
     const env = makeEnv({ instance: makeInfraInstance({ currentState: "hibernated" }) });
     await expect(env.svc.installSkill(installInput)).rejects.toThrow(TRPCError);
@@ -242,7 +234,7 @@ describe("skills-service install", () => {
       code: "PRECONDITION_FAILED",
     });
     expect(env.runtimeInstall).not.toHaveBeenCalled();
-    expect(env.instancesUpdate).not.toHaveBeenCalled();
+    expect(env.instanceSkillsRepo.state.installed).toEqual([]);
   });
 
   it("throws NOT_FOUND when the instance is missing", async () => {
@@ -252,23 +244,22 @@ describe("skills-service install", () => {
       code: "NOT_FOUND",
     });
     expect(env.runtimeInstall).not.toHaveBeenCalled();
-    expect(env.instancesUpdate).not.toHaveBeenCalled();
   });
 
-  it("does not mutate the spec when agent-runtime fails", async () => {
+  it("does not write the skill row when agent-runtime fails", async () => {
     const env = makeEnv({ runtimeError: new Error("agent-runtime unreachable") });
     await expect(env.svc.installSkill(installInput)).rejects.toThrow(/unreachable/);
-    expect(env.instancesUpdate).not.toHaveBeenCalled();
+    expect(env.instanceSkillsRepo.state.installed).toEqual([]);
   });
 });
 
 describe("skills-service uninstall", () => {
-  it("calls agent-runtime, then removes the matching (source,name) from spec", async () => {
+  it("calls agent-runtime, then removes the matching (source,name) row", async () => {
     const existing: SkillRef[] = [
       { source: SOURCE.gitUrl, name: "adr", version: "sha-v1" },
       { source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" },
     ];
-    const env = makeEnv({ instance: makeInfraInstance({ skills: existing }) });
+    const env = makeEnv({ initialInstalled: existing });
 
     const result = await env.svc.uninstallSkill({
       instanceId: INSTANCE_ID,
@@ -280,18 +271,21 @@ describe("skills-service uninstall", () => {
       name: "adr",
       skillPaths: ["/home/agent/.claude/skills/"],
     });
-    expect(env.instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
-      skills: [{ source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" }],
-    });
+    expect(env.instanceSkillsRepo.state.installed).toEqual([
+      { source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" },
+    ]);
     expect(result).toEqual([{ source: SOURCE.gitUrl, name: "grill-me", version: "other-sha" }]);
   });
 
-  it("leaves spec alone when agent-runtime fails", async () => {
-    const env = makeEnv({ runtimeUninstallError: new Error("boom") });
+  it("leaves the row alone when agent-runtime fails", async () => {
+    const existing: SkillRef[] = [
+      { source: SOURCE.gitUrl, name: "adr", version: "sha-v1" },
+    ];
+    const env = makeEnv({ initialInstalled: existing, runtimeUninstallError: new Error("boom") });
     await expect(
       env.svc.uninstallSkill({ instanceId: INSTANCE_ID, source: SOURCE.gitUrl, name: "adr" }),
     ).rejects.toThrow(/boom/);
-    expect(env.instancesUpdate).not.toHaveBeenCalled();
+    expect(env.instanceSkillsRepo.state.installed).toEqual(existing);
   });
 });
 
@@ -301,17 +295,16 @@ describe("skills-service listLocal", () => {
       { name: "adr", description: "", skillPath: "/home/agent/.claude/skills/" },
       { name: "my-draft", description: "work in progress", skillPath: "/home/agent/.claude/skills/" },
     ]);
-    const env = makeEnv({
-      instance: makeInfraInstance({
-        skills: [{ source: "https://x/x", name: "adr", version: "sha" }],
-      }),
-    });
-    // Overwrite with a runtimeClient that has our listLocal mock.
+    const instanceSkillsRepo = makeInstanceSkillsRepo([
+      { source: "https://x/x", name: "adr", version: "sha" },
+    ]);
     const svc = createSkillsService({
       repo: makeRepo(),
-      instancesRepo: { get: env.instancesGet, updateSpec: env.instancesUpdate } as unknown as InstancesRepository,
-      agentsRepo: { get: env.agentsGet } as unknown as AgentsRepository,
+      instanceSkillsRepo,
+      instancesRepo: { get: vi.fn().mockResolvedValue(makeInfraInstance()) } as unknown as InstancesRepository,
+      agentsRepo: { get: vi.fn().mockResolvedValue(makeAgent(["/home/agent/.claude/skills/"])) } as unknown as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
@@ -333,7 +326,6 @@ describe("skills-service listLocal", () => {
       "agent-token-xyz",
       ["/home/agent/.claude/skills/"],
     );
-    // "adr" collides with a tracked skill → hidden. "my-draft" is purely local → returned.
     expect(result).toEqual([
       { name: "my-draft", description: "work in progress", skillPath: "/home/agent/.claude/skills/" },
     ]);
@@ -341,14 +333,15 @@ describe("skills-service listLocal", () => {
 
   it("returns empty when the instance is not running", async () => {
     const runtimeListLocal = vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]);
-    const instancesGet = vi.fn().mockResolvedValue(
-      makeInfraInstance({ currentState: "hibernated", desiredState: "hibernated" }),
-    );
     const svc = createSkillsService({
       repo: makeRepo(),
-      instancesRepo: { get: instancesGet, updateSpec: vi.fn() } as unknown as InstancesRepository,
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
+      instancesRepo: {
+        get: vi.fn().mockResolvedValue(makeInfraInstance({ currentState: "hibernated", desiredState: "hibernated" })),
+      } as unknown as InstancesRepository,
       agentsRepo: { get: vi.fn() } as unknown as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
@@ -368,17 +361,17 @@ describe("skills-service listLocal", () => {
   });
 
   it("returns empty when the instance is missing", async () => {
-    const instancesGet = vi.fn().mockResolvedValue(null);
-    const runtimeListLocal = vi.fn<AgentRuntimeSkillsClient["listLocal"]>().mockResolvedValue([]);
     const svc = createSkillsService({
       repo: makeRepo(),
-      instancesRepo: { get: instancesGet, updateSpec: vi.fn() } as unknown as InstancesRepository,
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
+      instancesRepo: { get: vi.fn().mockResolvedValue(null) } as unknown as InstancesRepository,
       agentsRepo: { get: vi.fn() } as unknown as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
-        listLocal: runtimeListLocal,
+        listLocal: vi.fn(),
         publish: vi.fn(),
         scan: vi.fn(),
       },
@@ -390,7 +383,6 @@ describe("skills-service listLocal", () => {
     });
 
     expect(await svc.listLocal("ghost")).toEqual([]);
-    expect(runtimeListLocal).not.toHaveBeenCalled();
   });
 });
 
@@ -412,16 +404,13 @@ describe("skills-service listSkills routing", () => {
       publish: vi.fn(),
       scan: opts.runtimeScan,
     };
-    // The scan cache wrapper simply calls through to whatever scanner is
-    // passed in — tests don't exercise caching directly.
     const scanCache = async (gitUrl: string, scanner: (u: string) => Promise<Skill[]>) =>
       scanner(gitUrl);
 
     return createSkillsService({
       repo: { ...makeRepo(), get: async (id) => (id === src.id ? src : null) },
-      instancesRepo: {
-        get: vi.fn().mockResolvedValue(instance),
-      } as unknown as InstancesRepository,
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
+      instancesRepo: { get: vi.fn().mockResolvedValue(instance) } as unknown as InstancesRepository,
       agentsRepo: {
         get: vi.fn().mockResolvedValue({
           id: AGENT_ID,
@@ -430,6 +419,7 @@ describe("skills-service listSkills routing", () => {
         }),
       } as unknown as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient,
       getAgentToken: async () => "token",
       owner: OWNER,
@@ -508,7 +498,7 @@ describe("skills-service listSkills routing", () => {
     expect(runtimeScan).not.toHaveBeenCalled();
   });
 
-  it("scans a template:* source id by resolving it via the templates repo (regression: was 404ing against the K8s CM lookup)", async () => {
+  it("scans a template:* source id by resolving it via the templates repo", async () => {
     const templateId = "tmpl-gw";
     const templateName = "Google Workspace";
     const templateUrl = "https://github.com/anthropics/google-workspace-skills";
@@ -535,25 +525,18 @@ describe("skills-service listSkills routing", () => {
       readSpec: async () => null,
     };
     const svc = createSkillsService({
-      // The real repo never sees template:* ids — fail loudly if it does.
       repo: {
         ...makeRepo(),
         get: async (id) => {
-          if (id.startsWith("template:")) throw new Error("template:* must not hit the CM repo");
+          if (id.startsWith("template:")) throw new Error("template:* must not hit the user repo");
           return null;
         },
       },
-      instancesRepo: {
-        get: vi.fn().mockResolvedValue(makeInfraInstance()),
-      } as unknown as InstancesRepository,
-      agentsRepo: {
-        get: vi.fn().mockResolvedValue({
-          id: AGENT_ID,
-          name: "a",
-          spec: { skillPaths: ["/home/agent/.claude/skills/"] },
-        }),
-      } as unknown as AgentsRepository,
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
+      instancesRepo: { get: vi.fn().mockResolvedValue(makeInfraInstance()) } as unknown as InstancesRepository,
+      agentsRepo: { get: vi.fn().mockResolvedValue(makeAgent(["/home/agent/.claude/skills/"])) } as unknown as AgentsRepository,
       templatesRepo,
+      seedSources: [],
       runtimeClient: {
         install: vi.fn(),
         uninstall: vi.fn(),
@@ -580,11 +563,11 @@ describe("skills-service listSkills routing", () => {
 describe("skills-service getState (ghost reconciliation)", () => {
   function build(opts: {
     instance?: InfraInstance | null;
+    initialInstalled?: SkillRef[];
     local?: Array<{ name: string; description: string; skillPath: string }>;
   }) {
     const infra = opts.instance === undefined ? makeInfraInstance() : opts.instance;
     const instancesGet = vi.fn().mockResolvedValue(infra);
-    const instancesUpdate = vi.fn().mockResolvedValue(null);
     const runtimeClient: AgentRuntimeSkillsClient = {
       install: vi.fn(),
       uninstall: vi.fn(),
@@ -592,20 +575,16 @@ describe("skills-service getState (ghost reconciliation)", () => {
       publish: vi.fn(),
       scan: vi.fn(),
     };
+    const instanceSkillsRepo = makeInstanceSkillsRepo(opts.initialInstalled ?? []);
     const svc = createSkillsService({
       repo: makeRepo(),
-      instancesRepo: {
-        get: instancesGet,
-        updateSpec: instancesUpdate,
-      } as unknown as InstancesRepository,
+      instanceSkillsRepo,
+      instancesRepo: { get: instancesGet } as unknown as InstancesRepository,
       agentsRepo: {
-        get: vi.fn().mockResolvedValue({
-          id: AGENT_ID,
-          name: "a",
-          spec: { skillPaths: ["/home/agent/.claude/skills/"] },
-        }),
+        get: vi.fn().mockResolvedValue(makeAgent(["/home/agent/.claude/skills/"])),
       } as unknown as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -613,18 +592,16 @@ describe("skills-service getState (ghost reconciliation)", () => {
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
-    return { svc, instancesGet, instancesUpdate, runtimeClient };
+    return { svc, instancesGet, runtimeClient, instanceSkillsRepo };
   }
 
   it("drops SkillRefs whose dirs are missing on disk and persists the cleanup", async () => {
-    const infra = makeInfraInstance({
-      skills: [
-        { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
-        { source: SOURCE.gitUrl, name: "ghost", version: "v1", contentHash: "h1" },
-      ],
-    });
-    const { svc, instancesUpdate } = build({
-      instance: infra,
+    const initial: SkillRef[] = [
+      { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
+      { source: SOURCE.gitUrl, name: "ghost", version: "v1", contentHash: "h1" },
+    ];
+    const { svc, instanceSkillsRepo } = build({
+      initialInstalled: initial,
       local: [{ name: "adr", description: "", skillPath: "/home/agent/.claude/skills/" }],
     });
 
@@ -634,17 +611,17 @@ describe("skills-service getState (ghost reconciliation)", () => {
       { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
     ]);
     expect(state.standalone).toEqual([]);
-    expect(instancesUpdate).toHaveBeenCalledWith(INSTANCE_ID, OWNER, {
-      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" }],
-    });
+    // Reconcile evicted the ghost
+    expect(instanceSkillsRepo.state.installed).toEqual([
+      { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
+    ]);
   });
 
-  it("returns on-disk skills not tracked in spec.skills as standalone", async () => {
-    const infra = makeInfraInstance({
-      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" }],
-    });
-    const { svc, instancesUpdate } = build({
-      instance: infra,
+  it("returns on-disk skills not tracked in installed-refs as standalone", async () => {
+    const { svc, instanceSkillsRepo } = build({
+      initialInstalled: [
+        { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
+      ],
       local: [
         { name: "adr", description: "tracked", skillPath: "/home/agent/.claude/skills/" },
         { name: "my-draft", description: "new one", skillPath: "/home/agent/.claude/skills/" },
@@ -655,31 +632,32 @@ describe("skills-service getState (ghost reconciliation)", () => {
 
     expect(state.installed.map((s) => s.name)).toEqual(["adr"]);
     expect(state.standalone.map((s) => s.name)).toEqual(["my-draft"]);
-    // Nothing to clean up, so no update call.
-    expect(instancesUpdate).not.toHaveBeenCalled();
+    // Nothing to evict
+    expect(instanceSkillsRepo.state.installed).toHaveLength(1);
   });
 
   it("does not reconcile when the instance isn't running (safe during restart)", async () => {
-    const infra = makeInfraInstance({
-      currentState: "hibernated",
-      skills: [{ source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" }],
+    const initial: SkillRef[] = [
+      { source: SOURCE.gitUrl, name: "adr", version: "v1", contentHash: "h1" },
+    ];
+    const { svc, runtimeClient, instanceSkillsRepo } = build({
+      instance: makeInfraInstance({ currentState: "hibernated" }),
+      initialInstalled: initial,
+      local: [],
     });
-    const { svc, instancesUpdate, runtimeClient } = build({ instance: infra, local: [] });
 
     const state = await svc.getState(INSTANCE_ID);
 
-    // Return spec.skills as-is; we can't see the filesystem so we can't
-    // tell if the ref is really a ghost.
-    expect(state.installed).toEqual(infra.skills);
+    expect(state.installed).toEqual(initial);
     expect(state.standalone).toEqual([]);
     expect(runtimeClient.listLocal).not.toHaveBeenCalled();
-    expect(instancesUpdate).not.toHaveBeenCalled();
+    expect(instanceSkillsRepo.state.installed).toEqual(initial);
   });
 
   it("returns empty when the instance is missing", async () => {
     const { svc } = build({ instance: null });
     const state = await svc.getState("nope");
-    expect(state).toEqual({ installed: [], standalone: [], publishes: [] });
+    expect(state).toEqual({ installed: [], standalone: [], instancePublishes: [] });
   });
 });
 
@@ -688,9 +666,11 @@ describe("skills-service deleteSource", () => {
     const del = vi.fn().mockRejectedValue(new SkillSourceProtectedError());
     const svc = createSkillsService({
       repo: { ...makeRepo(), delete: del },
-      instancesRepo: {} as InstancesRepository,
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
+      instancesRepo: { list: async () => [] } as unknown as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
@@ -699,7 +679,7 @@ describe("skills-service deleteSource", () => {
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
     });
 
-    await expect(svc.deleteSource("skill-src-seed")).rejects.toMatchObject({
+    await expect(svc.deleteSource("skill-src-seed-foo")).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
   });
@@ -708,9 +688,11 @@ describe("skills-service deleteSource", () => {
     const del = vi.fn();
     const svc = createSkillsService({
       repo: { ...makeRepo(), delete: del },
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
       instancesRepo: {} as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -722,35 +704,27 @@ describe("skills-service deleteSource", () => {
     await expect(svc.deleteSource("template:tmpl-x:abcdef012345")).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
-    // The repo is never called for synthesised ids — there's nothing to delete.
     expect(del).not.toHaveBeenCalled();
   });
 
-  it("scrubs instance.skills entries that reference the deleted source's gitUrl", async () => {
+  it("scrubs installed-skill rows that reference the deleted source's gitUrl", async () => {
     const otherUrl = "https://github.com/other/skills";
-    const instA = makeInfraInstance({
-      id: "inst-A",
-      skills: [
-        { source: SOURCE.gitUrl, name: "adr", version: "v1" },
-        { source: otherUrl, name: "other", version: "v1" },
-      ],
-    });
-    const instB = makeInfraInstance({
-      id: "inst-B",
-      skills: [{ source: SOURCE.gitUrl, name: "grill-me", version: "v2" }],
-    });
+    const instA = makeInfraInstance({ id: "inst-A" });
+    const instB = makeInfraInstance({ id: "inst-B" });
     const instancesList = vi.fn().mockResolvedValue([instA, instB]);
-    const instancesUpdate = vi.fn().mockResolvedValue(null);
     const del = vi.fn().mockResolvedValue(undefined);
+    const instanceSkillsRepo = makeInstanceSkillsRepo([
+      { source: SOURCE.gitUrl, name: "adr", version: "v1" },
+      { source: otherUrl, name: "other", version: "v1" },
+    ]);
 
     const svc = createSkillsService({
       repo: { ...makeRepo(), delete: del },
-      instancesRepo: {
-        list: instancesList,
-        updateSpec: instancesUpdate,
-      } as unknown as InstancesRepository,
+      instanceSkillsRepo,
+      instancesRepo: { list: instancesList } as unknown as InstancesRepository,
       agentsRepo: {} as AgentsRepository,
       templatesRepo: emptyTemplatesRepo(),
+      seedSources: [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -762,40 +736,7 @@ describe("skills-service deleteSource", () => {
     await svc.deleteSource(SOURCE.id);
 
     expect(del).toHaveBeenCalledWith(SOURCE.id, OWNER);
-    // inst-A: the source-matched adr entry is dropped, other stays.
-    expect(instancesUpdate).toHaveBeenCalledWith("inst-A", OWNER, {
-      skills: [{ source: otherUrl, name: "other", version: "v1" }],
-    });
-    // inst-B: the only entry matched, list is emptied.
-    expect(instancesUpdate).toHaveBeenCalledWith("inst-B", OWNER, { skills: [] });
-  });
-
-  it("skips the scrub when no instance references the deleted source", async () => {
-    const instA = makeInfraInstance({
-      id: "inst-A",
-      skills: [{ source: "https://github.com/other/skills", name: "x", version: "v" }],
-    });
-    const instancesList = vi.fn().mockResolvedValue([instA]);
-    const instancesUpdate = vi.fn().mockResolvedValue(null);
-
-    const svc = createSkillsService({
-      repo: makeRepo(),
-      instancesRepo: {
-        list: instancesList,
-        updateSpec: instancesUpdate,
-      } as unknown as InstancesRepository,
-      agentsRepo: {} as AgentsRepository,
-      templatesRepo: emptyTemplatesRepo(),
-      runtimeClient: {} as AgentRuntimeSkillsClient,
-      getAgentToken: async () => "t",
-      owner: OWNER,
-      scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
-      invalidateScan: vi.fn(),
-      scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
-    });
-
-    await svc.deleteSource(SOURCE.id);
-    expect(instancesUpdate).not.toHaveBeenCalled();
+    expect(instanceSkillsRepo.removeBySource).toHaveBeenCalledWith(["inst-A", "inst-B"], SOURCE.gitUrl);
   });
 });
 
@@ -804,11 +745,11 @@ describe("skills-service listSources", () => {
   const TEMPLATE_NAME = "Google Workspace";
   const TEMPLATE_URL = "https://github.com/anthropics/google-workspace-skills";
 
-  /** Compose a svc whose repos answer with the given user + template data. */
   function build(opts: {
     userSources?: SkillSource[];
     template?: Template | null;
     templateId?: string;
+    seeds?: SkillSourceSeed[];
   }) {
     const userSources = opts.userSources ?? [];
     const template = opts.template === undefined ? null : opts.template;
@@ -821,6 +762,7 @@ describe("skills-service listSources", () => {
 
     const instancesRepo = {
       get: vi.fn().mockResolvedValue(makeInfraInstance()),
+      list: async () => [],
     } as unknown as InstancesRepository;
 
     const agentsRepo = {
@@ -844,9 +786,11 @@ describe("skills-service listSources", () => {
 
     const svc = createSkillsService({
       repo,
+      instanceSkillsRepo: makeInstanceSkillsRepo(),
       instancesRepo,
       agentsRepo,
       templatesRepo,
+      seedSources: opts.seeds ?? [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
       getAgentToken: async () => "t",
       owner: OWNER,
@@ -870,7 +814,7 @@ describe("skills-service listSources", () => {
     },
   };
 
-  it("returns user + system sources only when no instanceId is provided", async () => {
+  it("returns user-only sources when no instanceId is provided and no seeds configured", async () => {
     const { svc, templatesGet } = build({
       userSources: [{ id: "u-1", name: "Mine", gitUrl: "https://github.com/me/skills" }],
       template: TEMPLATE,
@@ -881,6 +825,18 @@ describe("skills-service listSources", () => {
     expect(templatesGet).not.toHaveBeenCalled();
   });
 
+  it("includes system seeds in listSources without an instanceId", async () => {
+    const seeds: SkillSourceSeed[] = [
+      { id: "skill-src-seed-cluster-ops", name: "Cluster Ops", gitUrl: "https://github.com/sys/c" },
+    ];
+    const { svc } = build({ seeds });
+    const out = await svc.listSources();
+    expect(out.find((s) => s.id === "skill-src-seed-cluster-ops")).toMatchObject({
+      system: true,
+      gitUrl: "https://github.com/sys/c",
+    });
+  });
+
   it("merges user + template sources with synthesised template ids and the Agent badge tag", async () => {
     const { svc } = build({
       userSources: [{ id: "u-1", name: "Mine", gitUrl: "https://github.com/me/skills" }],
@@ -889,7 +845,6 @@ describe("skills-service listSources", () => {
 
     const out = await svc.listSources(INSTANCE_ID);
 
-    // Order: user → template → platform. Here: one user, one template.
     expect(out).toHaveLength(2);
     expect(out[0]).toMatchObject({ id: "u-1", name: "Mine" });
     expect(out[1]).toMatchObject({
@@ -915,13 +870,12 @@ describe("skills-service listSources", () => {
 
     const out = await svc.listSources(INSTANCE_ID);
 
-    // Only one row: the user entry (first in the dedupe priority order).
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe("u-shadow");
     expect(out[0].fromTemplate).toBeUndefined();
   });
 
-  it("falls back to user + system when the agent has no templateId", async () => {
+  it("falls back to user-only when the agent has no templateId", async () => {
     const { svc, templatesGet } = build({
       userSources: [{ id: "u-1", name: "Mine", gitUrl: "https://github.com/me/skills" }],
       template: null,
@@ -938,8 +892,9 @@ describe("skills-service listSources", () => {
     const userSources: SkillSource[] = [
       { id: "u-b", name: "Bravo", gitUrl: "https://github.com/u/b" },
       { id: "u-a", name: "alpha", gitUrl: "https://github.com/u/a" },
-      // A system-tagged entry that listSources() returns from the repo.
-      { id: "sys-c", name: "Cluster Ops", gitUrl: "https://github.com/sys/c", system: true },
+    ];
+    const seeds: SkillSourceSeed[] = [
+      { id: "skill-src-seed-cluster-ops", name: "Cluster Ops", gitUrl: "https://github.com/sys/c" },
     ];
     const template: Template = {
       id: TEMPLATE_ID,
@@ -953,23 +908,20 @@ describe("skills-service listSources", () => {
         ],
       },
     };
-    const { svc } = build({ userSources, template });
+    const { svc } = build({ userSources, template, seeds });
 
     const out = await svc.listSources(INSTANCE_ID);
 
     expect(out.map((s) => s.name)).toEqual([
-      // User group — yours first (alphabetical, case-insensitive)
       "alpha",
       "Bravo",
-      // Template (Agent) group
       "Alpha Team",
       "Zeta",
-      // Platform group — least personal, last
       "Cluster Ops",
     ]);
   });
 
-  it("resolves a synthesised template:* id via getSource (not a K8s ConfigMap read)", async () => {
+  it("resolves a synthesised template:* id via getSource (not a user-source lookup)", async () => {
     const { svc } = build({ template: TEMPLATE });
     const id = templateSourceId(TEMPLATE_ID, TEMPLATE_URL);
 
@@ -988,5 +940,20 @@ describe("skills-service listSources", () => {
     const { svc } = build({ template: null });
     const got = await svc.getSource("template:ghost:abcdef012345");
     expect(got).toBeNull();
+  });
+
+  it("resolves a system seed id via getSource", async () => {
+    const seeds: SkillSourceSeed[] = [
+      { id: "skill-src-seed-cluster-ops", name: "Cluster Ops", gitUrl: "https://github.com/sys/c" },
+    ];
+    const { svc } = build({ seeds });
+    const got = await svc.getSource("skill-src-seed-cluster-ops");
+    expect(got).toMatchObject({
+      id: "skill-src-seed-cluster-ops",
+      name: "Cluster Ops",
+      gitUrl: "https://github.com/sys/c",
+      system: true,
+      canPublish: true,
+    });
   });
 });

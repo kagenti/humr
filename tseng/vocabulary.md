@@ -44,6 +44,17 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
 | Foreign Registration | The `(agent, foreignSub) → OneCLI access token` binding, minted lazily on first fork request and cached in-memory by the Connections module |
 
+## Skills — api-server side (bounded context)
+
+Catalog and orchestration view of skills. Distinct from the agent-runtime's Skills context — same words, different responsibilities. The api-server owns *which sources are connected, which skills are installed where, and what was published from which instance*; it never manipulates files on a pod directly. Per [`docs/architecture/persistence.md`](../docs/architecture/persistence.md), every concept here is Application State and lives in Postgres or in api-server config.
+
+| Term | Definition |
+|------|-----------|
+| Skill Source | A connected source of skills addressable by id; one of three kinds — user (Postgres row, owner-scoped), system (Seed List entry, cluster-admin-declared), or template (synthesised from a Template's `skillSources`) |
+| Installed Skill Ref | A record that a Scanned Skill from a Skill Source is installed at a Version on a specific Instance; identity is `(instanceId, source, name)` |
+| Skill Publish Record | A record that a Local Skill from an Instance was published as a PR to a Skill Source; written on every successful Publish, denormalized so it survives source rename or deletion |
+| Seed List | The cluster-admin-declared system Skill Sources injected as JSON into api-server config (`SKILL_SOURCES_SEED`) at startup; merged into Skill Source listings with `system: true` and protected from user deletion |
+
 ## Skills — agent-runtime side (bounded context)
 
 Pod-side operational view of skills. Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.

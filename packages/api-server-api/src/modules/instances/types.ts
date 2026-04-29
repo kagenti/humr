@@ -1,5 +1,4 @@
 import { type EnvVar, ChannelType } from "../shared.js";
-import type { SkillRef } from "../skills/types.js";
 
 export { ChannelType };
 
@@ -29,7 +28,6 @@ export interface Instance {
   error?: string;
   channels: ChannelConfig[];
   allowedUserEmails: string[];
-  skills?: SkillRef[];
 }
 
 export interface CreateInstanceInput {

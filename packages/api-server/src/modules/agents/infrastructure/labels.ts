@@ -15,7 +15,6 @@ export const TYPE_AGENT = "agent";
 export const TYPE_INSTANCE = "agent-instance";
 export const TYPE_SCHEDULE = "agent-schedule";
 export const TYPE_CHANNEL_SECRET = "channel-secret";
-export const TYPE_SKILL_SOURCE = "skill-source";
 
 // ---- ConfigMap data keys ----
 export const SPEC_KEY = "spec.yaml";

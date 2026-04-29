@@ -1,4 +1,5 @@
 import type * as k8s from "@kubernetes/client-node";
+import type { Db } from "db";
 import type { Skill, SkillsService } from "api-server-api";
 import { createAgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import { createInstancesRepository } from "../agents/infrastructure/instances-repository.js";
@@ -8,6 +9,8 @@ import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-c
 import { createAgentTokenResolver } from "./infrastructure/agent-token.js";
 import { scanPublicGithubArchive } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
+import { createInstanceSkillsRepository } from "./infrastructure/instance-skills-repository.js";
+import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -52,13 +55,17 @@ export function composeSkillsModule(
   api: k8s.CoreV1Api,
   namespace: string,
   owner: string,
+  db: Db,
+  seedSources: SkillSourceSeed[],
 ): SkillsService {
   const k8s = createK8sClient(api, namespace);
   return createSkillsService({
-    repo: createSkillsRepository(k8s),
+    repo: createSkillsRepository(db, seedSources),
+    instanceSkillsRepo: createInstanceSkillsRepository(db),
     instancesRepo: createInstancesRepository(k8s),
     agentsRepo: createAgentsRepository(k8s),
     templatesRepo: createTemplatesRepository(k8s),
+    seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     getAgentToken: createAgentTokenResolver(k8s),
     owner,

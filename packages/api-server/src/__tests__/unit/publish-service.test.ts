@@ -4,6 +4,7 @@ import type { AgentRuntimeSkillsClient } from "../../modules/skills/infrastructu
 import { AgentRuntimeUpstreamError } from "../../modules/skills/infrastructure/agent-runtime-client.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
+import type { InstanceSkillsRepository } from "../../modules/skills/infrastructure/instance-skills-repository.js";
 import type { InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
 import { publishSkill } from "../../modules/skills/services/publish-service.js";
 
@@ -20,16 +21,26 @@ function makeInfra(overrides: Partial<InfraInstance> = {}): InfraInstance {
     desiredState: "running",
     currentState: "running",
     podReady: true,
-    skills: [],
-    publishes: [],
     ...overrides,
+  };
+}
+
+function makeInstanceSkillsRepo(): InstanceSkillsRepository {
+  return {
+    listSkills: vi.fn().mockResolvedValue([]),
+    upsertSkill: vi.fn().mockResolvedValue(undefined),
+    removeSkill: vi.fn().mockResolvedValue(undefined),
+    removeBySource: vi.fn().mockResolvedValue(undefined),
+    reconcile: vi.fn().mockResolvedValue(undefined),
+    listPublishes: vi.fn().mockResolvedValue([]),
+    appendPublish: vi.fn().mockResolvedValue(undefined),
+    deleteByInstance: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 function makeDeps() {
   const instances = {
     get: vi.fn().mockResolvedValue(makeInfra()),
-    updateSpec: vi.fn().mockResolvedValue(null),
   } as unknown as InstancesRepository;
   const resolveSource = vi.fn().mockResolvedValue({
     id: SOURCE_ID,
@@ -54,18 +65,21 @@ function makeDeps() {
     scan: vi.fn().mockResolvedValue([]),
   };
   const getAgentToken = vi.fn().mockResolvedValue("agent-token");
+  const instanceSkills = makeInstanceSkillsRepo();
 
   return {
     deps: {
       owner: OWNER,
       resolveSource,
       instances,
+      instanceSkills,
       agents,
       runtimeClient,
       getAgentToken,
     },
     runtimeClient,
     resolveSource,
+    instanceSkills,
   };
 }
 
@@ -97,56 +111,29 @@ describe("publishSkill — thin proxy", () => {
   });
 
   it("appends a publish record to the instance on success", async () => {
-    const { deps } = makeDeps();
+    const { deps, instanceSkills } = makeDeps();
     await publishSkill(deps, input);
 
-    expect(deps.instances.updateSpec).toHaveBeenCalledTimes(1);
-    expect(deps.instances.updateSpec).toHaveBeenCalledWith(
+    expect(instanceSkills.appendPublish).toHaveBeenCalledTimes(1);
+    expect(instanceSkills.appendPublish).toHaveBeenCalledWith(
       INSTANCE_ID,
-      OWNER,
       expect.objectContaining({
-        publishes: [
-          expect.objectContaining({
-            skillName: "demo",
-            sourceId: SOURCE_ID,
-            sourceName: "Apocohq",
-            sourceGitUrl: "https://github.com/foo/bar",
-            prUrl: "https://github.com/foo/bar/pull/1",
-            publishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-          }),
-        ],
+        skillName: "demo",
+        sourceId: SOURCE_ID,
+        sourceName: "Apocohq",
+        sourceGitUrl: "https://github.com/foo/bar",
+        prUrl: "https://github.com/foo/bar/pull/1",
+        publishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       }),
     );
   });
 
-  it("preserves prior publish records when appending", async () => {
-    const { deps } = makeDeps();
-    const priorRecord = {
-      skillName: "old",
-      sourceId: SOURCE_ID,
-      sourceName: "Apocohq",
-      sourceGitUrl: "https://github.com/foo/bar",
-      prUrl: "https://github.com/foo/bar/pull/0",
-      publishedAt: "2026-01-01T00:00:00Z",
-    };
-    (deps.instances as any).get = vi.fn().mockResolvedValue(
-      makeInfra({ publishes: [priorRecord] }),
-    );
-
-    await publishSkill(deps, input);
-
-    const patch = (deps.instances.updateSpec as any).mock.calls[0][2];
-    expect(patch.publishes).toHaveLength(2);
-    expect(patch.publishes[0]).toEqual(priorRecord);
-    expect(patch.publishes[1].skillName).toBe("demo");
-  });
-
   it("does not append a publish record when agent-runtime fails", async () => {
-    const { deps, runtimeClient } = makeDeps();
+    const { deps, runtimeClient, instanceSkills } = makeDeps();
     (runtimeClient.publish as any) = vi.fn().mockRejectedValue(new Error("upstream down"));
 
     await expect(publishSkill(deps, input)).rejects.toThrow(/upstream down/);
-    expect(deps.instances.updateSpec).not.toHaveBeenCalled();
+    expect(instanceSkills.appendPublish).not.toHaveBeenCalled();
   });
 
   it("NOT_FOUND when instance is missing", async () => {

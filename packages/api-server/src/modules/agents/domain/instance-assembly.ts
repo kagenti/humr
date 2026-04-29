@@ -2,8 +2,6 @@ import type {
   Instance,
   InstanceState,
   ChannelConfig,
-  SkillRef,
-  SkillPublishRecord,
 } from "api-server-api";
 
 export interface InfraInstance {
@@ -15,8 +13,6 @@ export interface InfraInstance {
   currentState?: "running" | "hibernated" | "error";
   error?: string;
   podReady: boolean;
-  skills: SkillRef[];
-  publishes: SkillPublishRecord[];
 }
 
 export function computeState(infra: InfraInstance): InstanceState {
@@ -42,7 +38,6 @@ export function assembleInstance(
     error: infra.currentState === "error" ? infra.error : undefined,
     channels,
     allowedUserEmails,
-    skills: infra.skills,
   };
 }
 
