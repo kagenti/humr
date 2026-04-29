@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-04-28
+Last verified: 2026-04-29
 
 ## Motivated by
 
@@ -64,6 +64,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Humr enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running.
 - **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
+- **skills catalog** — connected sources, per-instance install records, and publish history. Owned by [skills](skills.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
 
