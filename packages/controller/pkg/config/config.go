@@ -41,6 +41,7 @@ type Config struct {
 	EnvoyMitmCAIssuer        string
 	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
 	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
+	AgentHome            string // HOME inside agent containers. Used for the HOME env var on the agent pod.
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -89,6 +90,7 @@ func LoadFromEnv() (*Config, error) {
 		cfg.AgentPodAnnotations = ann
 	}
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
+	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")

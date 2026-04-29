@@ -85,6 +85,8 @@ spec:
               value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy:distroless-v1.37.2" | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
+            - name: AGENT_HOME
+              value: {{ .Values.agentHome | quote }}
             - name: POD_NAME
               valueFrom:
                 fieldRef:

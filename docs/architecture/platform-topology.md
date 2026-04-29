@@ -62,6 +62,7 @@ The per-instance pod that runs the ACP WebSocket server and spawns the underlyin
 - Accept one ACP WebSocket connection (relayed from the api-server) and speak JSON-RPC 2.0 to the agent process.
 - Watch a well-known trigger directory and forward scheduled triggers to the api-server's harness port.
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
+- Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers planned ([DRAFT — pod-files push](../adrs/DRAFT-pod-files-push.md)). Refuses paths outside HOME (defense-in-depth) and skips the loop when `HUMR_POD_FILES_EVENTS_URL` is unset (forks).
 
 See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 

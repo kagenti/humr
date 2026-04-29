@@ -19,6 +19,17 @@ const (
 	ForkLabelType        = "humr.ai/type"
 )
 
+// BuildForkJob constructs the per-turn foreign-user fork pod.
+//
+// Forks deliberately do NOT receive `HUMR_POD_FILES_EVENTS_URL`, so the
+// agent-runtime running in the fork pod skips the pod-files SSE loop
+// entirely. Forks are short-lived ACP-relay jobs spawned per turn; the
+// SSE overhead per pod isn't justified for that lifecycle, and most
+// pod-files state (config, allowlists, host entries for connection-
+// aware CLIs) is irrelevant to the relay flow. If a future fork-
+// relevant feature ever needs files materialized in fork pods, set
+// `HUMR_POD_FILES_EVENTS_URL` on the fork's env here — until then,
+// pod-files state inside fork pods is unsupported on purpose.
 func BuildForkJob(
 	forkName string,
 	forkSpec *types.ForkSpec,
@@ -50,10 +61,9 @@ func BuildForkJob(
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "GH_TOKEN", Value: "humr:sentinel"},
 		{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: "/home/agent"},
+		{Name: "HOME", Value: cfg.AgentHome},
 		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
 		{Name: "HUMR_FORK_ID", Value: forkName},
 		{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},

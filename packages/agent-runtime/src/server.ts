@@ -11,6 +11,7 @@ import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
+import { startPodFilesSync } from "./modules/pod-files/index.js";
 
 let triggerWatcher: TriggerWatcher | undefined;
 
@@ -120,4 +121,15 @@ server.listen(config.PORT, () => {
     apiServerUrl: config.API_SERVER_URL,
     instanceId: process.env.ADK_INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown",
   });
+
+  // Pod-files sync: opt-in via env. The reconciler sets the URL on instance
+  // pods only — forks deliberately don't get it (they're per-turn jobs and
+  // don't read pod-files state). See DRAFT-pod-files-push.md.
+  if (config.HUMR_POD_FILES_EVENTS_URL && config.ONECLI_ACCESS_TOKEN) {
+    startPodFilesSync({
+      url: config.HUMR_POD_FILES_EVENTS_URL,
+      token: config.ONECLI_ACCESS_TOKEN,
+      agentHome: homeDir,
+    });
+  }
 });

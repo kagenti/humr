@@ -31,6 +31,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
+import type { PodFilesPublisher } from "../../modules/pod-files/publisher.js";
 
 export interface ApiServerAppDeps {
   config: Config;
@@ -42,10 +43,11 @@ export interface ApiServerAppDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
+  podFilesPublisher: PodFilesPublisher;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows } = deps;
+  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -157,6 +159,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
     const connections = createConnectionsService({
       port: createOnecliConnectionsPort(onecli, userJwt, user.sub),
+      owner: user.sub,
+      podFiles: podFilesPublisher,
     });
 
     return fetchRequestHandler({
