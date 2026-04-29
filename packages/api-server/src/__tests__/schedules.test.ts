@@ -213,6 +213,14 @@ describe("e2e: controller reconciliation", () => {
   let e2eScheduleId: string;
 
   beforeAll(async () => {
+    // Free the node before scheduling the heavier claude-code pod — the
+    // CRUD suite's alpine instance is otherwise still running and competes
+    // for memory on the small test VM. The outer afterAll re-attempts the
+    // delete and tolerates "not found", so this is safe to do early.
+    try {
+      await client.instances.delete.mutate({ id: INSTANCE_ID });
+    } catch {}
+
     const agent = await client.agents.create.mutate({
       name: "e2e-agent",
       templateId: "claude-code",

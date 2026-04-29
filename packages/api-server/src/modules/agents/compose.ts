@@ -33,6 +33,7 @@ export function composeAgentsModule(
   db: Db,
   userDirectory: KeycloakUserDirectory,
   channelSecretStore: ChannelSecretStore,
+  agentHome: string,
 ): {
   templates: TemplatesService;
   agents: AgentsService;
@@ -49,6 +50,7 @@ export function composeAgentsModule(
   const agents = createAgentsService({
     repo: agentsRepo,
     owner,
+    agentHome,
     readTemplateSpec: (id) => templatesRepo.readSpec(id),
   });
 
@@ -97,6 +99,7 @@ export function composeSystemInstances(
   db: Db,
   userDirectory: KeycloakUserDirectory,
   channelSecretStore: ChannelSecretStore,
+  agentHome: string,
 ): InstancesService {
   const k8s = createK8sClient(api, namespace);
   const templatesRepo = createTemplatesRepository(k8s);
@@ -106,6 +109,7 @@ export function composeSystemInstances(
   const agents = createAgentsService({
     repo: agentsRepo,
     owner: "",
+    agentHome,
     readTemplateSpec: (id) => templatesRepo.readSpec(id),
   });
 

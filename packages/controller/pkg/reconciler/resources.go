@@ -58,20 +58,16 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		corev1.EnvVar{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		corev1.EnvVar{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-	)
-	if !instance.ExperimentalCredentialInjector {
-		// GitHub auth rides on a OneCLI OAuth app connection, not a user-declared
-		// secret, so there is no envMapping path for it. Keep the sentinel in the
-		// base env so `gh`, octokit, and other GH_TOKEN-aware tools authenticate
-		// against api.github.com via OneCLI's host-based MITM swap.
-		env = append(env, corev1.EnvVar{Name: "GH_TOKEN", Value: "humr:sentinel"})
-	}
-	env = append(env,
 		corev1.EnvVar{Name: "ADK_INSTANCE_ID", Value: name},
 		corev1.EnvVar{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		corev1.EnvVar{Name: "HOME", Value: "/home/agent"},
+		corev1.EnvVar{Name: "HOME", Value: cfg.AgentHome},
 		corev1.EnvVar{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
+		// agent-runtime opens this SSE stream and materializes pod-files
+		// (gh hosts.yml today; more producers later) directly under HOME.
+		// Forks deliberately do NOT receive this env — see fork_resources.go.
+		corev1.EnvVar{Name: "HUMR_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	)
+
 	// Order matters: K8s resolves duplicate env names by keeping the last
 	// occurrence, so connector < template < instance — user overrides win.
 	env = append(env, connectorEnvs...)
@@ -103,11 +99,15 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
+			storageSize := cfg.AgentStorageSize
+			if storageSize == "" {
+				storageSize = "10Gi"
+			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse("10Gi"),
+						corev1.ResourceStorage: resource.MustParse(storageSize),
 					},
 				},
 			}

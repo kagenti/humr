@@ -84,3 +84,18 @@ export type {
   SessionView,
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
+
+export {
+  FileFragmentSchema,
+  FileSpecSchema,
+  MergeModeSchema,
+  PodFilesEventSchema,
+  EventKindSchema,
+} from "./modules/pod-files/types.js";
+export type {
+  FileFragment,
+  FileSpec,
+  MergeMode,
+  PodFilesEvent,
+  EventKind,
+} from "./modules/pod-files/types.js";

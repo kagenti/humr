@@ -20,6 +20,9 @@ import {
   deleteThreadsByInstance,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { composeConnectionsModule } from "./modules/connections/index.js";
+import { createPodFilesBus } from "./modules/pod-files/bus.js";
+import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
+import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -57,15 +60,7 @@ const channelCleanupSub = startChannelCleanupSaga(
 );
 const onecliSyncSub = startOnecliSyncSaga(onecli);
 
-const { foreignCredentials } = composeConnectionsModule({
-  foreignCredentialsConfig: {
-    keycloakTokenUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`,
-    clientId: config.keycloakApiClientId,
-    clientSecret: config.keycloakApiClientSecret,
-    onecliAudience: config.onecliAudience,
-    onecliBaseUrl: config.onecliBaseUrl,
-  },
-});
+const { foreignCredentials } = composeConnectionsModule({ onecli });
 
 const { forks } = composeForksModule({
   foreignCredentials,
@@ -82,7 +77,7 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory, channelSecretStore);
+const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory, channelSecretStore, config.agentHome);
 const persistSession = upsertSession(db);
 const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
   persistSession(sessionId, instanceId, type, undefined, threadTs);
@@ -166,13 +161,69 @@ const telegramWorker = config.telegramEnabled && chatSdkState
 
 const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
 
+// Pod-files plumbing — see 034-pod-files-push. The github-enterprise
+// hosts.yml producer is the first registry entry; future producers (secrets-
+// as-files, schedule-driven config, …) plug into the same publisher and SSE
+// channel without changes elsewhere.
+const podFilesBus = createPodFilesBus();
+const podFilesRegistry = buildPodFilesRegistry({
+  // Agent HOME from the helm chart. Must agree with the controller's mount
+  // path; both read the same chart value.
+  agentHome: config.agentHome,
+  /**
+   * Returns only the connections **granted to `agentId`** under `owner`.
+   * Mirrors what the UI's per-agent grant click writes (`setAgentConnections`)
+   * — the file content reflects the explicit grant state, not the owner's
+   * broader OneCLI inventory. Owner impersonation lets us call from background
+   * contexts (snapshot path) without a live user JWT. Logs and returns empty
+   * on transient OneCLI failures; next reconnect re-snapshots.
+   */
+  fetchAgentGrantedConnections: async (owner, agentId) => {
+    const fetchJsonAs = async <T,>(path: string): Promise<T | null> => {
+      const res = await onecli.onecliFetchAs(owner, path);
+      if (!res.ok) {
+        process.stderr.write(
+          `pod-files: OneCLI ${path} for owner=${owner} agent=${agentId} → ${res.status}\n`,
+        );
+        return null;
+      }
+      return (await res.json()) as T;
+    };
+
+    const agents = await fetchJsonAs<Array<{ id: string; identifier: string }>>("/api/agents");
+    if (!agents) return [];
+    const agent = agents.find((a) => a.identifier === agentId);
+    if (!agent) return [];
+
+    const grantedIds = await fetchJsonAs<unknown[]>(
+      `/api/agents/${encodeURIComponent(agent.id)}/connections`,
+    );
+    if (!grantedIds || grantedIds.length === 0) return [];
+    const grantedSet = new Set(grantedIds.filter((x): x is string => typeof x === "string"));
+
+    const all = await fetchJsonAs<Array<{
+      id?: string;
+      provider: string;
+      metadata?: Record<string, unknown> | null;
+    }>>("/api/connections");
+    if (!all) return [];
+    return all.filter((c) => typeof c.id === "string" && grantedSet.has(c.id));
+  },
+});
+const podFilesPublisher = createPodFilesPublisher({
+  bus: podFilesBus,
+  registry: podFilesRegistry,
+});
+
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
-  pendingSlackOAuthFlows, pendingTelegramOAuthFlows,
+  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config, api, db, channelManager, channelSecretStore,
+  podFilesBus,
+  podFilesSnapshot: podFilesPublisher.compute,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {

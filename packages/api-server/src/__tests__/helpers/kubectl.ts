@@ -44,6 +44,47 @@ export async function patchConfigMapData(
   await api.replaceNamespacedConfigMap({ name, namespace, body: cm });
 }
 
+async function findStuckPVCForPod(
+  pod: k8s.V1Pod,
+  namespace: string,
+): Promise<{ name: string; reason: string } | null> {
+  const claims = (pod.spec?.volumes ?? [])
+    .map((v) => v.persistentVolumeClaim?.claimName)
+    .filter((n): n is string => Boolean(n));
+  if (claims.length === 0) return null;
+
+  for (const claimName of claims) {
+    try {
+      const pvc = await api.readNamespacedPersistentVolumeClaim({
+        name: claimName,
+        namespace,
+      });
+      if (pvc.status?.phase !== "Pending") continue;
+
+      const events = await api.listNamespacedEvent({ namespace });
+      const failed = events.items
+        .filter(
+          (e) =>
+            e.involvedObject?.name === claimName &&
+            e.reason === "ProvisioningFailed",
+        )
+        .sort(
+          (a, b) =>
+            (a.lastTimestamp?.getTime() ?? 0) -
+            (b.lastTimestamp?.getTime() ?? 0),
+        )
+        .pop();
+      if (failed && (failed.count ?? 1) >= 2) {
+        return {
+          name: claimName,
+          reason: failed.message ?? "ProvisioningFailed",
+        };
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export async function waitForPodReady(
   name: string,
   timeoutMs = 120_000,
@@ -51,12 +92,35 @@ export async function waitForPodReady(
 ): Promise<void> {
   const start = Date.now();
   let lastError: string | undefined;
+  let bailedEarly = false;
 
   while (Date.now() - start < timeoutMs) {
     try {
       const pod = await api.readNamespacedPod({ name, namespace });
       const ready = pod.status?.conditions?.find((c) => c.type === "Ready");
       if (ready?.status === "True") return;
+      // Bail fast on permanent scheduling failures — polling won't help when
+      // the node is out of resources, only diagnostic noise.
+      const scheduled = pod.status?.conditions?.find(
+        (c) => c.type === "PodScheduled",
+      );
+      if (
+        scheduled?.status === "False" &&
+        scheduled.reason === "Unschedulable"
+      ) {
+        lastError = `Unschedulable: ${scheduled.message ?? "no message"}`;
+        bailedEarly = true;
+        break;
+      }
+      // Pod might be scheduled but stuck waiting on a PVC (e.g. NFS
+      // provisioner out of disk). The pod itself shows no events; the cause
+      // is on the PVC. Surface that without waiting out the full timeout.
+      const stuckPVC = await findStuckPVCForPod(pod, namespace);
+      if (stuckPVC) {
+        lastError = `PVC ${stuckPVC.name} stuck: ${stuckPVC.reason}`;
+        bailedEarly = true;
+        break;
+      }
       lastError = `phase=${pod.status?.phase ?? "Unknown"}, ready=${ready?.status ?? "no condition"}`;
     } catch (e) {
       lastError =
@@ -65,14 +129,18 @@ export async function waitForPodReady(
     await new Promise((r) => setTimeout(r, 3000));
   }
 
+  const elapsed = bailedEarly ? "(bailed early)" : `after ${timeoutMs}ms`;
   const diag: string[] = [
-    `Pod ${name} not ready after ${timeoutMs}ms (last poll: ${lastError})`,
+    `Pod ${name} not ready ${elapsed} (last poll: ${lastError})`,
     "",
     "=== Pod Describe ===",
     await describePod(name, namespace),
     "",
     "=== Pod Events ===",
     await getEvents(name, namespace),
+    "",
+    "=== PVC Status ===",
+    await describePodPVCs(name, namespace),
     "",
     "=== Controller Logs ===",
     await dumpPodLogs("app.kubernetes.io/component=controller"),
@@ -195,6 +263,54 @@ export async function getEvents(
       .join("\n");
   } catch (e) {
     return `getEvents(${name}): ${e instanceof Error ? e.message : e}`;
+  }
+}
+
+async function describePodPVCs(
+  podName: string,
+  namespace: string,
+): Promise<string> {
+  try {
+    const pod = await api.readNamespacedPod({ name: podName, namespace });
+    const claims = (pod.spec?.volumes ?? [])
+      .map((v) => v.persistentVolumeClaim?.claimName)
+      .filter((n): n is string => Boolean(n));
+    if (claims.length === 0) return "Pod has no PVCs";
+
+    const lines: string[] = [];
+    for (const claim of claims) {
+      try {
+        const pvc = await api.readNamespacedPersistentVolumeClaim({
+          name: claim,
+          namespace,
+        });
+        const requested = pvc.spec?.resources?.requests?.storage ?? "?";
+        lines.push(
+          `PVC ${claim}: phase=${pvc.status?.phase ?? "Unknown"}, requested=${requested}, storageClass=${pvc.spec?.storageClassName ?? "<default>"}`,
+        );
+        const events = await api.listNamespacedEvent({ namespace });
+        const recent = events.items
+          .filter((e) => e.involvedObject?.name === claim)
+          .sort(
+            (a, b) =>
+              (a.lastTimestamp?.getTime() ?? 0) -
+              (b.lastTimestamp?.getTime() ?? 0),
+          )
+          .slice(-5);
+        for (const e of recent) {
+          lines.push(
+            `  [${e.type}] ${e.reason}: ${e.message} (${e.count ?? 1}x)`,
+          );
+        }
+      } catch (e) {
+        lines.push(
+          `PVC ${claim}: read failed — ${e instanceof Error ? e.message : e}`,
+        );
+      }
+    }
+    return lines.join("\n");
+  } catch (e) {
+    return `describePodPVCs(${podName}): ${e instanceof Error ? e.message : e}`;
   }
 }
 

@@ -102,6 +102,6 @@ export interface SecretsService {
   create(input: CreateSecretInput): Promise<SecretView>;
   update(input: UpdateSecretInput): Promise<void>;
   delete(id: string): Promise<void>;
-  getAgentAccess(agentName: string): Promise<AgentAccess>;
-  setAgentAccess(agentName: string, access: AgentAccess): Promise<void>;
+  getAgentAccess(agentId: string): Promise<AgentAccess>;
+  setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;
 }

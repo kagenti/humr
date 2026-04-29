@@ -113,6 +113,8 @@ spec:
               value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
             - name: ONECLI_EXTERNAL_URL
               value: {{ include "humr.url.onecli" . | quote }}
+            - name: AGENT_HOME
+              value: {{ .Values.agentHome | quote }}
           readinessProbe:
             tcpSocket:
               port: http

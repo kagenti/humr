@@ -45,7 +45,7 @@ export function useCreateAgent() {
       if (secretIds !== undefined) {
         await withRetry(() =>
           platform.secrets.setAgentAccess.mutate({
-            agentName: agent.id,
+            agentId: agent.id,
             mode: "selective",
             secretIds,
           }),
@@ -54,7 +54,7 @@ export function useCreateAgent() {
       if (appConnectionIds?.length) {
         await withRetry(() =>
           platform.connections.setAgentConnections.mutate({
-            agentName: agent.id,
+            agentId: agent.id,
             connectionIds: appConnectionIds,
           }),
         );
@@ -114,7 +114,7 @@ export function useSetAgentConnections() {
  */
 export async function fetchAgentAccess(agentId: string) {
   return queryClient.fetchQuery({
-    ...trpc.secrets.getAgentAccess.queryOptions({ agentName: agentId }),
+    ...trpc.secrets.getAgentAccess.queryOptions({ agentId: agentId }),
   });
 }
 

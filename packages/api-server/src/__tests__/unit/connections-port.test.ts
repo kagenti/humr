@@ -11,9 +11,6 @@ function makeFakeOc(
 ) {
   const calls: FakeCall[] = [];
   const client = {
-    exchangeToken: async () => "tok",
-    getApiKey: async () => "key",
-    syncUser: async () => {},
     async onecliFetch(_jwt: string, _sub: string, path: string, init?: RequestInit) {
       calls.push({ path, init });
       const key = `${init?.method ?? "GET"} ${path}`;

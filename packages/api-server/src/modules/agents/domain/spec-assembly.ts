@@ -1,6 +1,6 @@
 import type { TemplateSpec } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
-import { DEFAULT_TEMPLATE_SPEC } from "./defaults.js";
+import { defaultTemplateSpec } from "./defaults.js";
 
 export function assembleSpecFromTemplate(
   name: string,
@@ -23,12 +23,13 @@ export function assembleSpecFromTemplate(
 export function assembleSpecFromImage(
   name: string,
   opts: { image?: string; description?: string },
+  agentHome: string,
 ): Record<string, unknown> {
   return {
     name,
     version: SPEC_VERSION,
     image: opts.image,
     description: opts.description,
-    ...DEFAULT_TEMPLATE_SPEC,
+    ...defaultTemplateSpec(agentHome),
   };
 }

@@ -23,6 +23,7 @@ var testConfig = &config.Config{
 	WebPort:          10254,
 	CACertInitImage:  "busybox:stable",
 	HarnessServerPort:    4001,
+	AgentHome:        "/home/agent",
 }
 
 var testAgent = &types.AgentSpec{
@@ -104,10 +105,6 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
-	// GH_TOKEN is a platform env: GitHub auth rides on a OneCLI OAuth app
-	// connection (not a user-declared secret with envMappings) so every agent
-	// needs the sentinel present for `gh`/octokit tooling to authenticate.
-	assert.Equal(t, "humr:sentinel", envMap["GH_TOKEN"])
 	// Template env
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	// Instance env
@@ -218,6 +215,33 @@ func TestBuildStatefulSet_ConnectorEnvs(t *testing.T) {
 	// K8s takes the last EnvVar with a given name; instance env is appended
 	// after connector env so user override wins.
 	assert.Equal(t, "override", envMap["GH_TOKEN"])
+}
+
+// Pod-files are materialized in-process by agent-runtime. The reconciler's
+// only job is to set HUMR_POD_FILES_EVENTS_URL on the agent container so the
+// runtime knows where to subscribe. No sidecar, no shared emptyDir — the
+// runtime writes directly under HOME on the PVC, so image-baked content can
+// participate in the merge.
+func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
+	cfg := *testConfig
+	cfg.HarnessServerURL = "http://humr-apiserver.default.svc:4001"
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil, nil)
+
+	// Single container: just the agent. No sidecar.
+	require.Len(t, ss.Spec.Template.Spec.Containers, 1)
+	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t,
+		"http://humr-apiserver.default.svc:4001/api/instances/my-instance/pod-files/events",
+		envMap["HUMR_POD_FILES_EVENTS_URL"])
+
+	// No gh-config volume / mount anywhere.
+	for _, v := range ss.Spec.Template.Spec.Volumes {
+		assert.NotEqual(t, "gh-config", v.Name, "gh-config emptyDir must not be set anymore")
+	}
+	for _, m := range ss.Spec.Template.Spec.Containers[0].VolumeMounts {
+		assert.NotEqual(t, "gh-config", m.Name, "gh-config mount must not be set anymore")
+	}
 }
 
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {

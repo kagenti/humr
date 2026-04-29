@@ -5,7 +5,7 @@ export default defineConfig({
   format: "esm",
   target: "node22",
   platform: "node",
-  noExternal: ["agent-runtime-api"],
+  noExternal: ["agent-runtime-api", "api-server-api"],
   splitting: false,
   clean: true,
 });

@@ -67,6 +67,10 @@ spec:
             - name: AGENT_STORAGE_CLASS
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.controller.agentStorageSize }}
+            - name: AGENT_STORAGE_SIZE
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.controller.agentPodAnnotations }}
             - name: AGENT_POD_ANNOTATIONS
               value: {{ toJson . | quote }}
@@ -85,6 +89,8 @@ spec:
               value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy:distroless-v1.37.2" | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
+            - name: AGENT_HOME
+              value: {{ .Values.agentHome | quote }}
             - name: POD_NAME
               valueFrom:
                 fieldRef:
