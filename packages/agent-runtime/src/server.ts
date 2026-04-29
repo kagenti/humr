@@ -124,7 +124,7 @@ server.listen(config.PORT, () => {
 
   // Pod-files sync: opt-in via env. The reconciler sets the URL on instance
   // pods only — forks deliberately don't get it (they're per-turn jobs and
-  // don't read pod-files state). See DRAFT-pod-files-push.md.
+  // don't read pod-files state). See 034-pod-files-push.md.
   if (config.HUMR_POD_FILES_EVENTS_URL && config.ONECLI_ACCESS_TOKEN) {
     startPodFilesSync({
       url: config.HUMR_POD_FILES_EVENTS_URL,

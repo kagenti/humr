@@ -161,7 +161,7 @@ const telegramWorker = config.telegramEnabled && chatSdkState
 
 const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
 
-// Pod-files plumbing — see DRAFT-pod-files-push. The github-enterprise
+// Pod-files plumbing — see 034-pod-files-push. The github-enterprise
 // hosts.yml producer is the first registry entry; future producers (secrets-
 // as-files, schedule-driven config, …) plug into the same publisher and SSE
 // channel without changes elsewhere.

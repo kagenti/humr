@@ -3,7 +3,7 @@
  * truth, shared with agent-runtime); producer-side types stay private to
  * the api-server because the agent never needs to know about producers.
  *
- * See docs/adrs/DRAFT-pod-files-push.md.
+ * See docs/adrs/034-pod-files-push.md.
  */
 
 export {

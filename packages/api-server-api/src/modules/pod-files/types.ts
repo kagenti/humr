@@ -9,7 +9,7 @@
  * row through `FileSpecSchema` so a malformed entry can be dropped without
  * killing the whole payload.
  *
- * See docs/adrs/DRAFT-pod-files-push.md.
+ * See docs/adrs/034-pod-files-push.md.
  */
 import { z } from "zod";
 
