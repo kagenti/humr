@@ -110,6 +110,28 @@ function outboundId(sentFrame: unknown): number {
   return (sentFrame as { id: number }).id;
 }
 
+/**
+ * Complete a runtime-initiated cold-resume bootstrap. session/resume is
+ * mediated by the runtime: a cold resume parks the channel as a waiter and
+ * forwards a synthetic session/load to the agent. Tests need to push back
+ * a load response so the bootstrap completes and engagement enters the
+ * steady state where live notifications fan out normally.
+ */
+function completeResumeBootstrap(
+  fa: FakeAgent,
+  sessionId = SID,
+  result: object = { modes: {}, models: {}, configOptions: [] },
+): void {
+  const loadFrames = fa.sent.filter(
+    (f: any) => f.method === "session/load" && f.params?.sessionId === sessionId,
+  );
+  if (loadFrames.length === 0) {
+    throw new Error(`completeResumeBootstrap: no pending session/load for ${sessionId}`);
+  }
+  const lastLoad = loadFrames[loadFrames.length - 1];
+  fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: outboundId(lastLoad), result }));
+}
+
 describe("createAcpRuntime", () => {
   it("spawns the agent lazily on first attach", () => {
     let spawnCount = 0;
@@ -186,6 +208,8 @@ describe("createAcpRuntime", () => {
 
     viewer.pushMessage(resumeSessionRequest(1, SID));
     other.pushMessage(resumeSessionRequest(1, OTHER_SID));
+    completeResumeBootstrap(fa, SID);
+    completeResumeBootstrap(fa, OTHER_SID);
 
     fa.pushLine(sessionUpdate(SID));
 
@@ -480,6 +504,7 @@ describe("createAcpRuntime", () => {
     const c = makeFakeChannel();
     runtime.attach(c.channel);
     c.pushMessage(resumeSessionRequest(1));
+    completeResumeBootstrap(fa, SID);
 
     fa.pushLine(JSON.stringify({
       method: "session/update",
@@ -764,114 +789,181 @@ describe("createAcpRuntime", () => {
     expect(a.sent.length).toBe(aBefore);
   });
 
-  it("routes cold-bootstrap replay events to the initiator only (no duplicate fan-out to existing engaged viewers)", () => {
-    // Regression: when session/load cold-bootstraps because the log has
-    // entries but no metadata (e.g. post-reap resume scenario), the
-    // agent's replaySessionHistory streams every historical event back
-    // through handleAgentLine. Without routing, appendAndFanOut sends
-    // each replayed event to every engaged channel — including any
-    // pre-existing live viewer that already has the history in its
-    // React state. That viewer's UI then renders the whole conversation
-    // a second time, concatenated onto the existing one.
-    //
-    // Fix: while a bootstrap is in flight for a session, incoming
-    // notifications are still appended to the log (so future loads hit
-    // cache) but delivered only to the bootstrap initiator.
+  it("session/resume hot path: serves from cached metadata without forwarding to the agent", () => {
+    // When a prior session/load (or session/new / session/fork) populated
+    // log.metadata, a subsequent session/resume must be served entirely
+    // from the runtime — never forwarded. This makes resume agent-agnostic
+    // (works for harnesses like pi-acp that don't implement
+    // unstable_resumeSession at all) and avoids a needless agent roundtrip.
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
 
-    // Live viewer A is engaged with SID and has cursor advanced by some
-    // prior live events. We simulate that by having A resume + receive
-    // a live event.
+    // Tab A creates the session, populating log.metadata.
     const a = makeFakeChannel();
     runtime.attach(a.channel);
-    a.pushMessage(resumeSessionRequest(1));
-    const resumeOut = outboundId(fa.sent[0]);
-    fa.pushLine(JSON.stringify({
-      jsonrpc: "2.0", id: resumeOut, result: { modes: {}, models: {}, configOptions: [] },
-    }));
-    const liveEvent = JSON.stringify({
+    a.pushMessage(newSessionRequest(1));
+    const newOut = outboundId(fa.sent[0]);
+    fa.pushLine(newSessionResponse(newOut, SID));
+
+    const agentSentBefore = fa.sent.length;
+
+    // Tab B opens a fresh channel and resumes. With cached metadata, this
+    // is the hot path: synthetic response, no agent forward.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(resumeSessionRequest(7));
+
+    expect(fa.sent.length).toBe(agentSentBefore);
+    const resumeResp = b.sent.map((f) => JSON.parse(f)).find((p) => p.id === 7);
+    expect(resumeResp).toBeDefined();
+    expect(resumeResp.result).toBeDefined();
+
+    // B is engaged — a subsequent live update fans out to it.
+    const live = JSON.stringify({
       method: "session/update",
       params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "live" } } },
     });
-    fa.pushLine(liveEvent);
-    expect(a.sent.filter((f) => f === liveEvent).length).toBe(1);
-
-    // Viewer B opens a second tab and session/loads. Log has entries but
-    // metadata is null (resume path doesn't cache), so this cold-bootstraps.
-    const aSentBefore = a.sent.length;
-    const b = makeFakeChannel();
-    runtime.attach(b.channel);
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
-
-    // Agent replays history (pretend two events) then responds.
-    const replay1 = JSON.stringify({
-      method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "history-1" } } },
-    });
-    const replay2 = JSON.stringify({
-      method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "history-2" } } },
-    });
-    fa.pushLine(replay1);
-    fa.pushLine(replay2);
-    const loadForwards = fa.sent.filter((f: any) => f.method === "session/load");
-    const bLoadOut = outboundId(loadForwards[0]);
-    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: bLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
-
-    // A must NOT have received the replay events — it already had the
-    // history in its state. Only the live event from before counts.
-    expect(a.sent.length).toBe(aSentBefore);
-    // B received both replay events and the load response.
-    expect(b.sent.some((f) => f === replay1)).toBe(true);
-    expect(b.sent.some((f) => f === replay2)).toBe(true);
-    expect(b.sent.some((f) => JSON.parse(f).id === 42)).toBe(true);
+    fa.pushLine(live);
+    expect(b.sent.some((f) => f === live)).toBe(true);
   });
 
-  it("does NOT cache metadata on session/resume responses (preserves cold-bootstrap after reap)", () => {
-    // Regression: session/resume re-engages a channel without replaying
-    // history (unlike session/load, which calls replaySessionHistory).
-    // When all viewers briefly disconnect mid-prompt, maybeCloseIdleSession
-    // reaps the session and deletes the log. The same client reconnecting
-    // via unstable_resumeSession would then cause a fresh getOrCreateLog
-    // to populate metadata from the resume response — freezing an empty
-    // log as "complete". A later viewer's session/load would hit the
-    // cache and serve no history, even though the agent's on-disk store
-    // still has everything.
-    //
-    // Fix: only cache on session/new, session/fork, and session/load
-    // responses — paths that authoritatively produce a full log state.
+  it("session/resume hot path: does not replay history to the resuming channel", () => {
+    // Resume's contract is "rebind for future events" — unlike load, it
+    // must not stream catch-up. The UI runs a throwaway session/load
+    // first to project history into React state; the live channel's
+    // resume should only deliver live events from that point on.
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
 
-    // Simulate post-reap state: a fresh channel issues session/resume for
-    // an sid the runtime has no log for.
+    // Tab A populates the log via session/new + a streamed update.
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0]), SID));
+    const histEvent = JSON.stringify({
+      method: "session/update",
+      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "history" } } },
+    });
+    fa.pushLine(histEvent);
+    expect(a.sent.some((f) => f === histEvent)).toBe(true);
+
+    // Tab B resumes. The historical entry must NOT be replayed to B.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(resumeSessionRequest(42));
+
+    expect(b.sent.some((f) => f === histEvent)).toBe(false);
+  });
+
+  it("session/resume cold path: runtime issues an internal session/load and serves the resume waiter when it completes", () => {
+    // Cold resume — no cached metadata for the sid. The runtime cannot
+    // forward session/resume to the agent (pi-acp et al. don't implement
+    // it; even harnesses that do can't resume against a freshly-respawned
+    // subprocess). Instead the runtime issues its own session/load and,
+    // on completion, serves the parked resume waiter via engage + synthetic
+    // resume response (no replay to the channel).
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
     const a = makeFakeChannel();
     runtime.attach(a.channel);
     a.pushMessage(resumeSessionRequest(1));
-    const resumeOut = outboundId(fa.sent[0]);
-    fa.pushLine(JSON.stringify({
-      jsonrpc: "2.0", id: resumeOut,
-      result: { modes: {}, models: {}, configOptions: [] },
-    }));
 
-    // A second viewer now loads the session. Because no metadata was
-    // cached on the resume, this MUST cold-bootstrap (forward to agent)
-    // rather than serve an empty log from memory.
+    // Runtime forwarded session/load (not session/resume) to the agent.
+    expect(fa.sent.length).toBe(1);
+    expect((fa.sent[0] as any).method).toBe("session/load");
+    expect((fa.sent[0] as any).params.sessionId).toBe(SID);
+
+    // Agent replays history during the bootstrap window — these events
+    // populate the log but must NOT reach A (it has history in React
+    // state from a prior throwaway loadSession).
+    const replay = JSON.stringify({
+      method: "session/update",
+      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old" } } },
+    });
+    fa.pushLine(replay);
+    expect(a.sent.some((f) => f === replay)).toBe(false);
+
+    // Load response → bootstrap completes → runtime synthesizes a resume
+    // response for A.
+    completeResumeBootstrap(fa, SID);
+    const resumeResp = a.sent.map((f) => JSON.parse(f)).find((p) => p.id === 1);
+    expect(resumeResp).toBeDefined();
+    expect(resumeResp.result).toBeDefined();
+
+    // Subsequent resume from a fresh channel hits the hot path — no
+    // additional agent forward.
     const agentSentBefore = fa.sent.length;
     const b = makeFakeChannel();
     runtime.attach(b.channel);
+    b.pushMessage(resumeSessionRequest(99));
+    expect(fa.sent.length).toBe(agentSentBefore);
+    expect(b.sent.some((f) => JSON.parse(f).id === 99)).toBe(true);
+  });
+
+  it("session/resume cold path: concurrent resumes coalesce onto one bootstrap", () => {
+    // Two cold resumes for the same sid arrive before metadata exists.
+    // The second must pile onto the in-flight bootstrap as a waiter
+    // rather than triggering a second agent forward.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    const b = makeFakeChannel();
+    runtime.attach(a.channel);
+    runtime.attach(b.channel);
+    a.pushMessage(resumeSessionRequest(1));
+    b.pushMessage(resumeSessionRequest(2));
+
+    const loads = fa.sent.filter((f: any) => f.method === "session/load");
+    expect(loads.length).toBe(1);
+
+    // One load response serves both waiters.
+    completeResumeBootstrap(fa, SID);
+    expect(a.sent.some((f) => JSON.parse(f).id === 1)).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).id === 2)).toBe(true);
+  });
+
+  it("session/resume cold path: mixed resume + load waiters are each served by their kind", () => {
+    // A cold resume kicks off a runtime-initiated load. Before it
+    // completes, a second tab issues a real session/load for the same
+    // sid → it parks as a load waiter on the same bootstrap. On
+    // completion, the resume waiter gets engagement + a synthetic resume
+    // response (no replay), while the load waiter gets full catch-up +
+    // a load response (replay included).
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    const b = makeFakeChannel();
+    runtime.attach(a.channel);
+    runtime.attach(b.channel);
+    a.pushMessage(resumeSessionRequest(1));
+
+    const replay = JSON.stringify({
+      method: "session/update",
+      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hist" } } },
+    });
+    fa.pushLine(replay);
+
     b.pushMessage(JSON.stringify({
       jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
     }));
 
-    // Forwarded to agent (cold bootstrap) — not served from memory.
-    const loadForwards = fa.sent
-      .slice(agentSentBefore)
-      .filter((f: any) => f.method === "session/load");
+    // Only one forward to the agent — B coalesced onto A's bootstrap.
+    const loadForwards = fa.sent.filter((f: any) => f.method === "session/load");
     expect(loadForwards.length).toBe(1);
+
+    completeResumeBootstrap(fa, SID);
+
+    // A (resume waiter) does NOT receive the replay event.
+    expect(a.sent.some((f) => f === replay)).toBe(false);
+    // B (load waiter) DOES — it asked for full history.
+    expect(b.sent.some((f) => f === replay)).toBe(true);
+
+    // Both got their respective responses.
+    expect(a.sent.some((f) => JSON.parse(f).id === 1)).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).id === 42)).toBe(true);
   });
 
   it("caches session/new response metadata so a later session/load is served from memory (no re-replay)", () => {
@@ -1015,6 +1107,9 @@ describe("createAcpRuntime", () => {
     runtime.attach(b.channel);
     a.pushMessage(resumeSessionRequest(1));
     b.pushMessage(resumeSessionRequest(1));
+    // Two cold resumes for the same sid coalesce onto one runtime-initiated
+    // session/load — a single response completes both bootstraps.
+    completeResumeBootstrap(fa, SID);
 
     const liveChunk = JSON.stringify({
       method: "session/update",
