@@ -591,12 +591,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
     log: SessionLog,
   ): void {
+    if (log.metadata === null) {
+      throw new Error(`serveLoadFromLog called for ${sessionId} without cached metadata`);
+    }
     catchUp(channel, sessionId);
     engage(channel, sessionId);
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: log.metadata ?? { sessionId },
+      result: log.metadata,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -615,6 +618,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
     log: SessionLog,
   ): void {
+    if (log.metadata === null) {
+      throw new Error(`serveResumeFromLog called for ${sessionId} without cached metadata`);
+    }
     engage(channel, sessionId);
     const lastSeq = log.entries.length > 0
       ? log.entries[log.entries.length - 1].seq
@@ -623,7 +629,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: log.metadata ?? { sessionId },
+      result: log.metadata,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -815,6 +821,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       //             but reach no client. On completion, all resume waiters
       //             are served via `serveResumeFromLog`.
       if (method === "session/resume" && paramsSid) {
+        // Engage immediately so the channel receives pending agent requests
+        // for the session and has its cursor advanced silently during a
+        // cold-bootstrap window. `serveResumeFromLog` will call `engage`
+        // again on the hot path / on waiter dispatch — that's intentional
+        // and harmless: `engage` is idempotent (early-returns when the
+        // session is already in the channel's set).
         engage(channel, paramsSid);
         const existing = sessionLogs.get(paramsSid);
         if (existing && existing.metadata !== null) {
