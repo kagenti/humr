@@ -81,19 +81,33 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 
 {{- define "humr.url.ui" -}}
+{{- if .Values.urls.ui }}
+{{- .Values.urls.ui }}
+{{- else }}
 {{- printf "%s://humr.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
 {{- end }}
 
 {{- define "humr.url.api" -}}
+{{- if .Values.urls.api }}
+{{- .Values.urls.api }}
+{{- else }}
 {{- printf "%s://humr-api.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
 {{- end }}
 
 {{- define "humr.url.keycloak" -}}
+{{- if .Values.urls.keycloak }}
+{{- .Values.urls.keycloak }}
+{{- else }}
 {{- printf "%s://keycloak.%s" .Values.scheme (include "humr.hostport" .) }}
+{{- end }}
 {{- end }}
 
 {{- define "humr.url.onecli" -}}
-{{- if .Values.onecli.externalHostname }}
+{{- if .Values.urls.onecli }}
+{{- .Values.urls.onecli }}
+{{- else if .Values.onecli.externalHostname }}
 {{- if .Values.port }}
 {{- printf "%s://%s:%v" .Values.scheme .Values.onecli.externalHostname .Values.port }}
 {{- else }}
@@ -102,6 +116,16 @@ Host:port string for URLs (includes port if non-empty)
 {{- else }}
 {{- printf "%s://onecli.%s" .Values.scheme (include "humr.hostport" .) }}
 {{- end }}
+{{- end }}
+
+{{/*
+Extract just the hostname (no scheme, no port, no path) from a URL.
+Usage: {{ include "humr.url.host" (include "humr.url.ui" .) }}
+*/}}
+{{- define "humr.url.host" -}}
+{{- $u := . | trimPrefix "https://" | trimPrefix "http://" -}}
+{{- $u = regexReplaceAll "/.*$" $u "" -}}
+{{- regexReplaceAll ":[0-9]+$" $u "" -}}
 {{- end }}
 
 {{/* ---- Shared PostgreSQL ---- */}}

@@ -6,6 +6,26 @@ port: "4444"
 # -- URL scheme (http for local dev, https for production)
 scheme: http
 
+# -- Explicit external URLs for each service.
+#
+# When set, each entry takes precedence over the convention-derived URL
+# ({scheme}://{prefix}.{domain}{:port}). Use this when:
+#   - You're disabling the bundled Ingress (`ingress.enabled: false`) and
+#     routing traffic via an external Ingress, Gateway API, service mesh,
+#     or LoadBalancer that you manage separately.
+#   - Services live on independent hostnames that don't share a base domain.
+#
+# Each override must be a complete URL including scheme. The hostname is
+# what the cluster expects in the Host header (used as the rule host when
+# `ingress.enabled: true`); Keycloak uses the full URL as its issuer and as
+# `KC_HOSTNAME`, OneCLI uses it for `APP_URL`/`NEXTAUTH_URL`/redirect URIs,
+# and the API server uses it for browser-facing redirects.
+urls:
+  ui: ""        # default: {scheme}://humr.{domain}{:port}
+  api: ""       # default: {scheme}://humr-api.{domain}{:port}
+  keycloak: ""  # default: {scheme}://keycloak.{domain}{:port}
+  onecli: ""    # default: {scheme}://onecli.{domain}{:port} (or onecli.externalHostname)
+
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.
 # Example:
@@ -185,13 +205,26 @@ keycloak:
       cpu: "1"
       memory: 1Gi
 
-# -- Ingress (hostnames derived from domain value above)
-# Additional alias domains for local dev (e.g. *.localtest.me for secure context)
+# -- Ingress (hostnames derived from `domain` and `urls` values above)
+#
+# Set `enabled: false` to skip rendering the bundled Ingress entirely — useful
+# when you're routing traffic via an external Ingress controller, Gateway API,
+# service mesh, or LoadBalancer that you manage outside the chart. In that
+# mode you should populate the `urls:` block above so the chart's internal
+# config (Keycloak issuer, OAuth redirect URIs, NEXTAUTH_URL, KC_HOSTNAME,
+# API server browser-facing URLs) matches the hostnames your external router
+# actually serves.
+#
+# When `enabled: true`, the Ingress generates one rule per service:
+#   - If a `urls.{service}` override is set, the override hostname is routed.
+#   - Otherwise `{prefix}.{domain}` (and any `aliasDomains`) are routed.
 ingress:
   enabled: true
   className: ""
   annotations: {}
-  # -- Extra alias domains that mirror all subdomain routes (hostname only, no port)
+  # -- Extra alias domains that mirror convention-based subdomain routes
+  # (hostname only, no port). Ignored for any service with an explicit
+  # `urls.{service}` override.
   aliasDomains: ["localtest.me"]
   tls: []
   # For production with TLS:
