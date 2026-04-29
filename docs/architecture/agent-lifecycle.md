@@ -72,7 +72,7 @@ The pod image is built from `humr-base` plus a harness-specific layer ([ADR-023]
 
 Pod env at start is the composition of connector-declared envs (OneCLI app/secret registry), template envs, agent-level envs, and instance-level envs — last occurrence wins, with `PORT` server-enforced ([ADR-024](../adrs/024-connector-declared-envs.md)). Editing any of these takes effect on the next pod restart.
 
-Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files directly under HOME by `agent-runtime` itself, which holds an SSE connection to the api-server and merges declarative file fragments without restarting the pod. The first instance is the GitHub Enterprise hosts.yml producer ([DRAFT — pod-files push](../adrs/DRAFT-pod-files-push.md)). Image-baked content under the same paths participates in the merge — `agent-runtime` writes to the real PVC path, not a shadowing `emptyDir`.
+Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files directly under HOME by `agent-runtime` itself, which holds an SSE connection to the api-server and merges declarative file fragments without restarting the pod. Image-baked content under the same paths participates in the merge — `agent-runtime` writes to the real PVC path, not a shadowing `emptyDir`.
 
 ### Wake
 
