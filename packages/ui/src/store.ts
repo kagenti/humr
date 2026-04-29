@@ -5,15 +5,15 @@ import { createNavigationSlice, type NavigationSlice, pathToState } from "./stor
 import { createLoadingSlice, type LoadingSlice } from "./store/loading.js";
 import { createToastSlice, type ToastSlice } from "./store/toast.js";
 import { createInstancesSlice, type InstancesSlice } from "./modules/instances/store.js";
-import { createSessionsSlice, type SessionsSlice } from "./store/sessions.js";
-import { createSessionConfigSlice, type SessionConfigSlice } from "./store/session-config.js";
+import { createSessionsSlice, type SessionsSlice } from "./modules/sessions/store/sessions.js";
+import { createSessionConfigSlice, type SessionConfigSlice } from "./modules/sessions/store/session-config.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import { createPermissionsSlice, type PermissionsSlice } from "./store/permissions.js";
+import { createPermissionsSlice, type PermissionsSlice } from "./modules/sessions/store/permissions.js";
 
 export type { DialogState } from "./store/dialog.js";
 export type { Toast, ToastKind } from "./store/toast.js";
-export type { SessionError } from "./store/sessions.js";
-export type { PermissionOption, PermissionOutcome, PendingPermission } from "./store/permissions.js";
+export type { SessionError } from "./modules/sessions/store/sessions.js";
+export type { PermissionOption, PermissionOutcome, PendingPermission } from "./modules/sessions/store/permissions.js";
 
 export type HumrStore =
   & DialogSlice

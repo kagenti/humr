@@ -235,14 +235,14 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <img
               src={`data:${mime};base64,${content}`}
               alt={filename ?? "image"}
-              className="max-w-full max-h-[calc(100vh-200px)] object-contain rounded border border-border-light"
+              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border-light"
             />
           </div>
         ) : isPdf && pdfBlobUrl ? (
           <iframe
             src={pdfBlobUrl}
             title={filename ?? "pdf"}
-            className="w-full h-[calc(100vh-200px)] rounded border border-border-light bg-white"
+            className="w-full h-[calc(100dvh-200px)] rounded border border-border-light bg-white"
           />
         ) : binary && !content ? (
           <div className="py-12 text-center text-[13px] text-text-muted">
@@ -263,7 +263,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <img
               src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`}
               alt={filename ?? "image"}
-              className="max-w-full max-h-[calc(100vh-200px)] object-contain rounded border border-border-light"
+              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border-light"
             />
           </div>
         ) : isMarkdown && renderMd ? (

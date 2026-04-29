@@ -1,4 +1,7 @@
-import type { Message, MessagePart, ToolChip } from "./types.js";
+// ACP update surface — replaced with Zod-inferred types in step 07.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import type { Message, MessagePart, ToolChip } from "../../types.js";
 
 /**
  * Unified session projection — applies ACP `sessionUpdate` notifications (and

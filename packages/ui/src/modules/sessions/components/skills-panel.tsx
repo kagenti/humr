@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
 import type {
   LocalSkill,
   Skill,
@@ -7,9 +5,12 @@ import type {
   SkillRef,
   SkillSource,
 } from "api-server-api";
-import { platform } from "../platform.js";
-import { ACTION_FAILED, runAction } from "../store/query-helpers.js";
-import { useStore } from "../store.js";
+import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+
+import { platform } from "../../../platform.js";
+import { useStore } from "../../../store.js";
+import { ACTION_FAILED, runAction } from "../../../store/query-helpers.js";
 
 /** localStorage key for per-user persistence of collapsed source ids. Per
  *  browser, not per instance — catalog preferences apply everywhere. */

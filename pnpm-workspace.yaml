@@ -1,2 +1,7 @@
 packages:
   - "packages/*"
+  - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
+allowBuilds:
+  koffi: true
+  protobufjs: true
+  sharp: true

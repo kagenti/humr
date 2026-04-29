@@ -12,6 +12,7 @@ import type {
   OnecliSecret,
   OnecliSecretsPort,
 } from "./../infrastructure/onecli-secrets-port.js";
+import type { K8sSecretsPort } from "./../infrastructure/k8s-secrets-port.js";
 import { hostPatternFor } from "../domain/types.js";
 
 /** Once per process: Anthropic secret IDs we've already attempted to backfill. Prevents N writes per list() call. */
@@ -33,8 +34,34 @@ function toSecretView(s: OnecliSecret): SecretView {
   return view;
 }
 
+/**
+ * Best-effort K8s mirror; OneCLI remains the source of truth. If the K8s write
+ * fails, we log and proceed — the OneCLI path (today's behavior) is unchanged.
+ *
+ * The error is logged with a stable token (`k8s-mirror-failed`) and structured
+ * fields (op, secretId, error) so log scrapers can detect the failure mode
+ * without depending on free-form text. On the experimental Envoy path a failed
+ * mirror means the sidecar will not see this credential — important enough to
+ * surface in dashboards/alerts.
+ */
+async function mirrorToK8s(
+  meta: { op: "create" | "update" | "delete"; secretId: string },
+  fn: () => Promise<void>,
+): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      "[secrets-service] k8s-mirror-failed",
+      JSON.stringify({ ...meta, error: message }),
+    );
+  }
+}
+
 export function createSecretsService(deps: {
   port: OnecliSecretsPort;
+  k8sPort?: K8sSecretsPort;
 }): SecretsService {
   return {
     async list() {
@@ -74,9 +101,10 @@ export function createSecretsService(deps: {
       // Spread keeps new optional fields (pathPattern, injectionConfig) flowing through
       // without enumerating them here; the anthropic default envMapping is filled in
       // lazily by the list() backfill above.
+      const hostPattern = hostPatternFor(input.type, input.hostPattern);
       const created = await deps.port.createSecret({
         ...input,
-        hostPattern: hostPatternFor(input.type, input.hostPattern),
+        hostPattern,
       });
       // OneCLI may not echo metadata on create; fall back to the request's envMappings.
       if (!created.metadata?.envMappings && input.envMappings) {
@@ -85,14 +113,42 @@ export function createSecretsService(deps: {
           envMappings: input.envMappings,
         };
       }
+      if (deps.k8sPort) {
+        await mirrorToK8s({ op: "create", secretId: created.id }, () => deps.k8sPort!.createSecret({
+          id: created.id,
+          name: input.name,
+          type: input.type,
+          value: input.value,
+          hostPattern,
+          pathPattern: input.pathPattern,
+          injectionConfig: input.injectionConfig,
+          // Anthropic auth-mode is detected by OneCLI from the value shape and
+          // returned in `metadata.authMode`. The K8s mirror needs this to pick
+          // `x-api-key` (api-key) vs `Authorization: Bearer ...` (oauth).
+          authMode: created.metadata?.authMode,
+        }));
+      }
       return toSecretView(created);
     },
 
     async update({ id, ...patch }: UpdateSecretInput) {
       await deps.port.updateSecret(id, patch);
+      if (deps.k8sPort) {
+        await mirrorToK8s({ op: "update", secretId: id }, () => deps.k8sPort!.updateSecret(id, {
+          value: patch.value,
+          hostPattern: patch.hostPattern,
+          pathPattern: patch.pathPattern,
+          injectionConfig: patch.injectionConfig,
+        }));
+      }
     },
 
-    delete: (id) => deps.port.deleteSecret(id),
+    async delete(id) {
+      await deps.port.deleteSecret(id);
+      if (deps.k8sPort) {
+        await mirrorToK8s({ op: "delete", secretId: id }, () => deps.k8sPort!.deleteSecret(id));
+      }
+    },
 
     async getAgentAccess(agentName: string) {
       const agent = await deps.port.findAgentByIdentifier(agentName);

@@ -7,11 +7,16 @@ import (
 	"slices"
 	"strings"
 
+	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
@@ -22,6 +27,7 @@ import (
 
 type InstanceReconciler struct {
 	client   kubernetes.Interface
+	dynamic  dynamic.Interface // optional; required only on the experimental Envoy MITM path
 	config   *config.Config
 	resolver *AgentResolver
 	factory  onecli.Factory
@@ -29,6 +35,15 @@ type InstanceReconciler struct {
 
 func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver, factory onecli.Factory) *InstanceReconciler {
 	return &InstanceReconciler{client: client, config: cfg, resolver: resolver, factory: factory}
+}
+
+// WithDynamicClient supplies a dynamic client used to apply non-core resources
+// (currently: cert-manager.io/v1 Certificate for the experimental Envoy MITM
+// path). Optional — without it, the experimental flag's leaf-certificate step
+// is skipped and the agent pod will fail to mount its TLS Secret.
+func (r *InstanceReconciler) WithDynamicClient(d dynamic.Interface) *InstanceReconciler {
+	r.dynamic = d
+	return r
 }
 
 func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
@@ -62,10 +77,44 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 
 	connectorEnvs := r.collectConnectorEnvs(ctx, agentCM, agentName)
 
+	var credentialSecrets []corev1.Secret
+	if instanceSpec.ExperimentalCredentialInjector {
+		owner := agentCM.Labels["humr.ai/owner"]
+		secrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, owner)
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
+		}
+		credentialSecrets = secrets
+
+		// On the experimental path the OneCLI GitHub OAuth-app sentinel
+		// (GH_TOKEN=humr:sentinel) is not injected — Envoy doesn't do the
+		// host-based MITM swap OneCLI does. Until the user attaches their
+		// own GitHub credential Secret, gh/octokit/etc. will be unauthenticated.
+		// Log it so operators can see why GitHub-touching agents are failing
+		// without having to spelunk env diffs.
+		if !hasGitHubCredential(credentialSecrets) {
+			slog.Warn("experimental credential injector: no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
+				"instance", name, "owner", owner)
+		}
+
+		bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
+		}
+		if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
+		}
+		if cert := BuildEnvoyLeafCertificate(name, r.config, cm, credentialSecrets); cert != nil {
+			if err := r.applyCertificate(ctx, cert); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
+			}
+		}
+	}
+
 	// Build desired resources
-	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, connectorEnvs)
+	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, connectorEnvs, credentialSecrets)
 	svc := BuildService(name, r.config, cm)
-	np := BuildNetworkPolicy(name, r.config, cm)
+	np := BuildNetworkPolicy(name, r.config, cm, instanceSpec)
 
 	if err := r.applyStatefulSet(ctx, ss); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying statefulset: %v", err))
@@ -227,10 +276,74 @@ func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.S
 }
 
 func (r *InstanceReconciler) applyNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {
-	_, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		// Update in place so flag toggles propagate to live policy.
+		existing.Spec = desired.Spec
+		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
+	})
+}
+
+var certificateGVR = schema.GroupVersionResource{
+	Group:    cmv1.SchemeGroupVersion.Group,
+	Version:  cmv1.SchemeGroupVersion.Version,
+	Resource: "certificates",
+}
+
+// applyCertificate creates or updates a cert-manager.io/v1 Certificate via the
+// dynamic client. We don't pull in the full cert-manager typed client just to
+// PUT one resource shape — converting to/from unstructured is cheap and keeps
+// the dependency surface to the (already) imported types package.
+func (r *InstanceReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
+	if r.dynamic == nil {
+		return fmt.Errorf("dynamic client not configured (cert-manager Certificate cannot be applied)")
 	}
-	return err
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(desired)
+	if err != nil {
+		return fmt.Errorf("encoding Certificate: %w", err)
+	}
+	desiredU := &unstructured.Unstructured{Object: raw}
+	desiredU.SetAPIVersion(cmv1.SchemeGroupVersion.String())
+	desiredU.SetKind("Certificate")
+	cli := r.dynamic.Resource(certificateGVR).Namespace(desired.Namespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = cli.Create(ctx, desiredU, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		// Preserve resourceVersion + status; replace spec/labels/owner.
+		desiredU.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desiredU, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+func (r *InstanceReconciler) applyConfigMap(ctx context.Context, desired *corev1.ConfigMap) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.CoreV1().ConfigMaps(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		existing.Data = desired.Data
+		existing.OwnerReferences = desired.OwnerReferences
+		existing.Labels = desired.Labels
+		_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	})
 }

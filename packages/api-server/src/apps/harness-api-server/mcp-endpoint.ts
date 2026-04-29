@@ -1,16 +1,37 @@
 import { createHash } from "node:crypto";
+import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import type { AppRouter } from "agent-runtime-api";
 import { z } from "zod";
 import yaml from "js-yaml";
 import { TRPCError } from "@trpc/server";
 import { ChannelType, type SkillsService } from "api-server-api";
-import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
+import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
+
+// Defaults from packages/agent-runtime/src/modules/config.ts. Keep in sync.
+// The agent-runtime files service is rooted at HOME_DIR; the agent process
+// runs in WORK_DIR. attachment.path can be absolute (anywhere under HOME_DIR)
+// or workspace-relative (interpreted as relative to WORK_DIR).
+const AGENT_HOME_DIR = "/home/agent";
+const AGENT_WORK_DIR = "/home/agent/work";
+
+function resolveWorkspacePath(input: string): string {
+  if (input.startsWith("/")) {
+    return input.startsWith(`${AGENT_HOME_DIR}/`)
+      ? input.slice(AGENT_HOME_DIR.length + 1)
+      : input; // outside HOME_DIR — let files.read reject it
+  }
+  const workRel = AGENT_WORK_DIR.slice(AGENT_HOME_DIR.length + 1);
+  return `${workRel}/${input}`;
+}
 
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
@@ -73,6 +94,7 @@ sweepInterval.unref();
 
 export interface McpSessionDeps {
   channelManager: ChannelManager;
+  k8s: K8sClient;
   skills: SkillsService;
 }
 
@@ -80,6 +102,10 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
   const server = new McpServer({
     name: `humr-${instanceId}`,
     version: "1.0.0",
+  });
+
+  const runtimeClient = createTRPCClient<AppRouter>({
+    links: [httpBatchLink({ url: `http://${podBaseUrl(instanceId, deps.k8s.namespace)}/api/trpc` })],
   });
 
   server.tool(
@@ -94,14 +120,48 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
 
   server.tool(
     "send_channel_message",
-    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat.",
+    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. /home/agent/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
       chatId: z.string().optional(),
+      attachment: z.object({
+        path: z.string().min(1).describe("Absolute path under /home/agent or workspace-relative (e.g. report.md)."),
+        filename: z.string().optional().describe("Name shown in the channel; defaults to the basename of path."),
+        mimeType: z.string().optional().describe("Override the runtime-detected MIME type."),
+        title: z.string().optional(),
+      }).optional(),
     },
-    async ({ channel, text, chatId }) => {
-      const result = await deps.channelManager.postMessage(instanceId, channel, text, chatId);
+    async ({ channel, text, chatId, attachment }) => {
+      let resolved: ChannelAttachment | undefined;
+      if (attachment) {
+        const resolvedPath = resolveWorkspacePath(attachment.path);
+        let file: { content?: string; binary?: boolean; mimeType?: string };
+        try {
+          file = await runtimeClient.files.read.query({ path: resolvedPath });
+        } catch (err) {
+          const msg = err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
+            ? `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`
+            : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
+          return errorResult(msg);
+        }
+        if (file.content === undefined) {
+          return errorResult(`attachment ${attachment.path} is too large or unreadable (runtime returned no content)`);
+        }
+        const data = file.binary
+          ? Buffer.from(file.content, "base64")
+          : Buffer.from(file.content, "utf8");
+        resolved = {
+          filename: attachment.filename ?? basename(attachment.path),
+          data,
+          ...(attachment.mimeType ?? file.mimeType ? { mimeType: attachment.mimeType ?? file.mimeType } : {}),
+          ...(attachment.title ? { title: attachment.title } : {}),
+        };
+      }
+      const result = await deps.channelManager.postMessage(instanceId, channel, text, {
+        ...(chatId ? { conversationId: chatId } : {}),
+        ...(resolved ? { attachment: resolved } : {}),
+      });
       if ("error" in result) return errorResult(result.error);
       return textResult("Message sent");
     },
@@ -272,6 +332,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const skills = deps.composeSkills(verified.owner);
     const session = createMcpSession(instanceId, {
       channelManager: deps.channelManager,
+      k8s: deps.k8s,
       skills,
     });
     await session.server.connect(session.transport);

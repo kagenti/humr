@@ -3,6 +3,7 @@ import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
 import { ChannelType, SessionType, type InstancesService } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
+import type { PostMessageOptions } from "../services/channel-manager.js";
 import {
   createAcpClient,
   createForkAcpClient,
@@ -62,7 +63,7 @@ export interface SlackWorker {
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(instanceName: string): Promise<{ id: string; title: string }[]>;
-  postMessage(instanceName: string, text: string, conversationId?: string): Promise<{ ok: true } | { error: string }>;
+  postMessage(instanceName: string, text: string, options?: PostMessageOptions): Promise<{ ok: true } | { error: string }>;
 }
 
 export interface SlackOAuthPending {
@@ -510,12 +511,13 @@ export function createSlackWorker(
       return slackChannelId ? [{ id: slackChannelId, title: slackChannelId }] : [];
     },
 
-    async postMessage(instanceName: string, text: string, conversationId?: string) {
+    async postMessage(instanceName: string, text: string, options?: PostMessageOptions) {
       const slackChannelId = await channelRegistry.resolveSlackChannelByInstance(instanceName);
       if (!slackChannelId) {
         return { error: "no channel connected" };
       }
 
+      const { conversationId, attachment } = options ?? {};
       if (conversationId && conversationId !== slackChannelId) {
         return {
           error: `conversationId ${conversationId} does not match the channel bound to this instance (${slackChannelId})`,
@@ -526,15 +528,37 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
+      const contextBlock = {
+        type: "context" as const,
+        elements: [{ type: "mrkdwn" as const, text: `_${instanceName}_` }],
+      };
+
       try {
-        await app.client.chat.postMessage({
-          channel: slackChannelId,
-          text,
-          blocks: [
-            { type: "markdown", text },
-            { type: "context", elements: [{ type: "mrkdwn", text: `_${instanceName}_` }] },
-          ],
-        });
+        // Two-message pattern when there's both text and a file: post the
+        // text via chat.postMessage (full markdown rendering) then upload the
+        // file as a separate message. files.uploadV2 with blocks gives a
+        // narrower mrkdwn subset and was returning internal_error on Slack's
+        // side for some block shapes — keeping the upload simple side-steps
+        // both issues and gives consistent text formatting in either path.
+        if (text) {
+          await app.client.chat.postMessage({
+            channel: slackChannelId,
+            text,
+            blocks: [
+              { type: "markdown", text },
+              contextBlock,
+            ],
+          });
+        }
+        if (attachment) {
+          await app.client.files.uploadV2({
+            channel_id: slackChannelId,
+            file: attachment.data,
+            filename: attachment.filename,
+            ...(attachment.title ? { title: attachment.title } : {}),
+            ...(text ? {} : { initial_comment: `_${instanceName}_` }),
+          });
+        }
         return { ok: true as const };
       } catch (err) {
         return { error: formatError(err) };

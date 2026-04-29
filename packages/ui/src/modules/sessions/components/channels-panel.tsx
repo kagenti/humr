@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
-import { useStore } from "../store.js";
-import { X, Plus } from "lucide-react";
-import { useInstances } from "../modules/instances/api/queries.js";
+import { Plus,X } from "lucide-react";
+import { useEffect,useState } from "react";
+
+import { useStore } from "../../../store.js";
 import {
   useConnectSlack,
   useConnectTelegram,
   useDisconnectSlack,
   useDisconnectTelegram,
   useUpdateInstance,
-} from "../modules/instances/api/mutations.js";
+} from "../../instances/api/mutations.js";
+import { useInstances } from "../../instances/api/queries.js";
 
 export function ChannelsPanel() {
   const { data: instancesData } = useInstances();
@@ -219,8 +220,7 @@ export function ChannelsPanel() {
       <button
         onClick={save}
         disabled={saving || !dirty}
-        className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[12px] font-bold text-white disabled:opacity-40 self-start"
-        style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+        className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[12px] font-bold text-white disabled:opacity-40 self-start shadow-brutal-accent"
       >
         {saving ? "Saving..." : "Save"}
       </button>

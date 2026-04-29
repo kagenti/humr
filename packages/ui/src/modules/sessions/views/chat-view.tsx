@@ -1,25 +1,26 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useStore } from "../store.js";
-import { StatusBadge } from "./../components/status-indicator.js";
-import { ArrowLeft, ArrowDown, Settings2, FileText as FileIcon, AlertCircle, Trash2, RefreshCw } from "lucide-react";
-import { Markdown } from "./../components/markdown.js";
-import { ToolChip } from "./../components/tool-chip.js";
-import { ResizeHandle } from "./../components/resize-handle.js";
-import { ChatInput } from "./../components/chat-input.js";
-import { PermissionPrompt } from "./../components/permission-prompt.js";
-import { SessionsSidebar } from "./../panels/sessions-sidebar.js";
-import { FilesPanel } from "./../modules/files/components/files-panel.js";
-import { LogPanel } from "./../panels/log-panel.js";
-import { ConfigurationPanel } from "./../panels/configuration-panel.js";
-import { SessionConfigBar } from "./../components/session-config-popover.js";
-import { prefetchSchedules } from "./../modules/schedules/api/queries.js";
-import { useInstances } from "./../modules/instances/api/queries.js";
-import { useAcpSession } from "./../hooks/use-acp-session.js";
-import type { SessionError } from "../store.js";
-import type { InstanceView } from "../types.js";
-import { useMcpPicker } from "./../hooks/use-mcp-picker.js";
-import { useFileTree } from "./../modules/files/hooks/use-file-tree.js";
-import { isMobile } from "./../lib/breakpoints.js";
+import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, RefreshCw,Settings2, Trash2 } from "lucide-react";
+import { useCallback,useEffect, useRef, useState } from "react";
+
+import { Markdown } from "../../../components/markdown.js";
+import { ResizeHandle } from "../../../components/resize-handle.js";
+import { StatusBadge } from "../../../components/status-indicator.js";
+import { isMobile } from "../../../lib/breakpoints.js";
+import type { SessionError } from "../../../store.js";
+import { useStore } from "../../../store.js";
+import type { InstanceView } from "../../../types.js";
+import { FilesPanel } from "../../files/components/files-panel.js";
+import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { useInstances } from "../../instances/api/queries.js";
+import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { ChatInput } from "../components/chat-input.js";
+import { ConfigurationPanel } from "../components/configuration-panel.js";
+import { LogPanel } from "../components/log-panel.js";
+import { PermissionPrompt } from "../components/permission-prompt.js";
+import { SessionConfigBar } from "../components/session-config-popover.js";
+import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { ToolChip } from "../components/tool-chip.js";
+import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useMcpPicker } from "../hooks/use-mcp-picker.js";
 
 export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -51,7 +52,7 @@ export function ChatView() {
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
     useMcpPicker(selectedInstance);
 
-  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, fetchSessions, busy, activeSessionIdRef } =
+  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, engagedSessionIdRef } =
     useAcpSession(selectedInstance, selectedMcpServers, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedInstance);
@@ -159,7 +160,7 @@ export function ChatView() {
 
   // ── Layout ──
   return (
-    <div className="flex h-screen bg-bg relative overflow-hidden">
+    <div className="flex h-dvh bg-bg relative overflow-hidden">
       <div className="blob blob-1" />
       <div className="blob blob-2" />
       <div className="blob blob-3" />
@@ -173,7 +174,6 @@ export function ChatView() {
       >
         <SessionsSidebar
           onResumeSession={mobileResumeSession}
-          onRefresh={fetchSessions}
           onNewSession={handleNewSession}
         />
       </div>
@@ -309,7 +309,7 @@ export function ChatView() {
             onSend={sendPrompt}
             onStop={stopAgent}
             footer={!loadingSession && (
-              <SessionConfigBar ensureConnection={ensureConnection} activeSessionIdRef={activeSessionIdRef} instanceId={selectedInstance ?? ""} />
+              <SessionConfigBar ensureConnection={ensureConnection} engagedSessionIdRef={engagedSessionIdRef} instanceId={selectedInstance ?? ""} />
             )}
           />
         )}
@@ -372,10 +372,7 @@ function SessionErrorCard({
     : error.kind === "connection" ? "Can't reach the agent"
     : "Failed to load session";
   return (
-    <div
-      className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in"
-      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
-    >
+    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in shadow-brutal-sm">
       <div className="flex items-start gap-3">
         <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -386,16 +383,14 @@ function SessionErrorCard({
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={onBack}
-          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5"
-          style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shadow-brutal-sm"
         >
           <ArrowLeft size={12} /> Back to sessions
         </button>
         {error.kind === "not-found" && (
           <button
             onClick={onDelete}
-            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
           >
             <Trash2 size={12} /> Delete orphaned session
           </button>
@@ -408,8 +403,7 @@ function SessionErrorCard({
 function SendErrorCard({ error, onRetry }: { error: string; onRetry?: () => void }) {
   return (
     <div
-      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
-      style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px] shadow-brutal-sm"
       role="alert"
     >
       <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
@@ -420,8 +414,7 @@ function SendErrorCard({ error, onRetry }: { error: string; onRetry?: () => void
         {onRetry && (
           <button
             onClick={onRetry}
-            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5"
-            style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
           >
             <RefreshCw size={11} /> Retry
           </button>

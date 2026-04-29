@@ -1,8 +1,10 @@
-import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { SchedulesPanel } from "../modules/schedules/components/schedules-panel.js";
+import { useState } from "react";
+
+import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
-import { McpsPanel, type McpOption } from "./mcps-panel.js";
+import { ExperimentalPanel } from "./experimental-panel.js";
+import { type McpOption, McpsPanel } from "./mcps-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
 
 function Section({ title, defaultOpen = true, children }: {
@@ -75,6 +77,10 @@ export function ConfigurationPanel({
 
       <Section title="Skills">
         <SkillsPanel instanceId={instanceId} isRunning={instanceRunning} onOpenFile={onOpenFile} />
+      </Section>
+
+      <Section title="Experimental" defaultOpen={false}>
+        <ExperimentalPanel />
       </Section>
     </div>
   );

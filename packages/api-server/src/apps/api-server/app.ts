@@ -26,6 +26,7 @@ import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import type { OnecliClient } from "./onecli.js";
 import { createOnecliSecretsPort } from "./../../modules/secrets/infrastructure/onecli-secrets-port.js";
+import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
 import { createOnecliConnectionsPort } from "./../../modules/connections/infrastructure/onecli-connections-port.js";
 import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
@@ -172,6 +173,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
+      k8sPort: createK8sSecretsPort(k8sClient, user.sub),
     });
     const connections = createConnectionsService({
       port: createOnecliConnectionsPort(onecli, userJwt, user.sub),

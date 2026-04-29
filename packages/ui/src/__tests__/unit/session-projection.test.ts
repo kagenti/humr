@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../../session-projection.js";
+import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
 
 // Stable UUIDs would be nice; Node >= 18 has globalThis.crypto.randomUUID —

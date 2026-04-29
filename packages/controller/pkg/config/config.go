@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,8 +23,9 @@ type Config struct {
 	KeycloakClientSecret string // Confidential client secret
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
-	AgentImagePullPolicy      string        // ImagePullPolicy for agent pods (default: IfNotPresent)
-	AgentImagePullSecrets     []string      // Pull secret names for agent pods (comma-separated via env)
+	AgentImagePullPolicy      string            // ImagePullPolicy for agent pods (default: IfNotPresent)
+	AgentImagePullSecrets     []string          // Pull secret names for agent pods (comma-separated via env)
+	AgentPodAnnotations       map[string]string // Extra annotations stamped on every agent pod (e.g. admission webhook break-glass)
 	AgentStorageClass         string
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
@@ -31,6 +33,14 @@ type Config struct {
 	APIServerHost        string // API server hostname (for NO_PROXY)
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
+	EnvoyImage           string // Image for the Envoy credential-injector sidecar (experimental)
+	EnvoyPort            int    // Port the Envoy sidecar listens on (proxy on 127.0.0.1)
+	// EnvoyMitmCAIssuer is the cert-manager ClusterIssuer that mints per-instance
+	// leaf certificates for the Envoy sidecar's TLS interception of agent egress.
+	// Provisioned by the chart's cert-manager templates.
+	EnvoyMitmCAIssuer        string
+	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
+	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -71,9 +81,21 @@ func LoadFromEnv() (*Config, error) {
 			}
 		}
 	}
+	if v := os.Getenv("AGENT_POD_ANNOTATIONS"); v != "" {
+		ann := map[string]string{}
+		if err := json.Unmarshal([]byte(v), &ann); err != nil {
+			return nil, fmt.Errorf("AGENT_POD_ANNOTATIONS: invalid JSON: %w", err)
+		}
+		cfg.AgentPodAnnotations = ann
+	}
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
+	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
+	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "humr-mitm-ca-issuer")
+	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
+	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	return cfg, nil
 }
 

@@ -1,6 +1,7 @@
+import { Check, ChevronDown, ChevronRight, Loader,X } from "lucide-react";
 import { useState } from "react";
-import type { ToolChip as T } from "../types.js";
-import { ChevronRight, ChevronDown, Check, X, Loader } from "lucide-react";
+
+import type { ToolChip as T } from "../../../types.js";
 
 const statusColor: Record<string, string> = {
   pending: "text-text-muted",
