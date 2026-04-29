@@ -20,7 +20,7 @@ export interface HarnessApiServerAppDeps {
   channelManager: ChannelManager;
   channelSecretStore: ChannelSecretStore;
   podFilesBus: PodFilesBus;
-  podFilesSnapshot: (owner: string) => Promise<FileSpec[]>;
+  podFilesSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {

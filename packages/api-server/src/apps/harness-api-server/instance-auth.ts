@@ -10,7 +10,7 @@ import {
 /** Resolved instance metadata derived from a successful Bearer-token check. */
 export interface InstanceIdentity {
   instanceId: string;
-  agentName: string;
+  agentId: string;
   owner: string;
 }
 
@@ -27,11 +27,11 @@ export async function verifyInstanceToken(
   const instanceCm = await k8s.getConfigMap(instanceId);
   if (!instanceCm) return null;
 
-  const agentName = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
+  const agentId = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
   const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
-  if (!agentName || !owner) return null;
+  if (!agentId || !owner) return null;
 
-  const agentCm = await k8s.getConfigMap(agentName);
+  const agentCm = await k8s.getConfigMap(agentId);
   if (!agentCm) return null;
   // Cross-check owner on both ConfigMaps so a relabeled instance (LABEL_AGENT_REF
   // pointing at someone else's agent) can't authenticate against that agent's
@@ -46,5 +46,5 @@ export async function verifyInstanceToken(
   const hash = createHash("sha256").update(token).digest("hex");
   if (hash !== status.accessTokenHash) return null;
 
-  return { instanceId, agentName, owner };
+  return { instanceId, agentId, owner };
 }

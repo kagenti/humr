@@ -170,20 +170,44 @@ const podFilesRegistry = buildPodFilesRegistry({
   // Agent HOME from the helm chart. Must agree with the controller's mount
   // path; both read the same chart value.
   agentHome: config.agentHome,
-  // Owner-scoped fetch via Keycloak impersonation. Safe to call from background
-  // contexts (no live user JWT). The producer logs and returns empty on
-  // transient OneCLI failures; next reconnect re-snapshots.
-  fetchConnectionsForOwner: async (owner) => {
-    const res = await onecli.onecliFetchAs(owner, "/api/connections");
-    if (!res.ok) {
-      process.stderr.write(`pod-files: OneCLI /api/connections for ${owner} → ${res.status}\n`);
-      return [];
-    }
-    return (await res.json()) as Array<{
+  /**
+   * Returns only the connections **granted to `agentId`** under `owner`.
+   * Mirrors what the UI's per-agent grant click writes (`setAgentConnections`)
+   * — the file content reflects the explicit grant state, not the owner's
+   * broader OneCLI inventory. Owner impersonation lets us call from background
+   * contexts (snapshot path) without a live user JWT. Logs and returns empty
+   * on transient OneCLI failures; next reconnect re-snapshots.
+   */
+  fetchAgentGrantedConnections: async (owner, agentId) => {
+    const fetchJsonAs = async <T,>(path: string): Promise<T | null> => {
+      const res = await onecli.onecliFetchAs(owner, path);
+      if (!res.ok) {
+        process.stderr.write(
+          `pod-files: OneCLI ${path} for owner=${owner} agent=${agentId} → ${res.status}\n`,
+        );
+        return null;
+      }
+      return (await res.json()) as T;
+    };
+
+    const agents = await fetchJsonAs<Array<{ id: string; identifier: string }>>("/api/agents");
+    if (!agents) return [];
+    const agent = agents.find((a) => a.identifier === agentId);
+    if (!agent) return [];
+
+    const grantedIds = await fetchJsonAs<unknown[]>(
+      `/api/agents/${encodeURIComponent(agent.id)}/connections`,
+    );
+    if (!grantedIds || grantedIds.length === 0) return [];
+    const grantedSet = new Set(grantedIds.filter((x): x is string => typeof x === "string"));
+
+    const all = await fetchJsonAs<Array<{
       id?: string;
       provider: string;
       metadata?: Record<string, unknown> | null;
-    }>;
+    }>>("/api/connections");
+    if (!all) return [];
+    return all.filter((c) => typeof c.id === "string" && grantedSet.has(c.id));
   },
 });
 const podFilesPublisher = createPodFilesPublisher({

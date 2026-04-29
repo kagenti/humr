@@ -8,8 +8,8 @@ import { verifyInstanceToken } from "./instance-auth.js";
 export interface PodFilesEventsDeps {
   k8s: K8sClient;
   bus: PodFilesBus;
-  /** Returns the file specs to materialize for the owner's current state. */
-  fetchSnapshot: (owner: string) => Promise<FileSpec[]>;
+  /** Returns the file specs to materialize for the agent's current state. */
+  fetchSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
 }
 
 /**
@@ -29,7 +29,7 @@ export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
     const identity = await verifyInstanceToken(deps.k8s, instanceId, token);
     if (!identity) return c.json({ error: "not found" }, 404);
 
-    const { agentName, owner } = identity;
+    const { agentId, owner } = identity;
     return streamSSE(c, async (stream) => {
       // Subscribe before the snapshot fetch so we don't miss an upsert that
       // races with it.
@@ -40,7 +40,7 @@ export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
         resolveWaiter = null;
         r?.();
       };
-      const unsubscribe = deps.bus.subscribe(agentName, (e) => {
+      const unsubscribe = deps.bus.subscribe(agentId, (e) => {
         queue.push(e.files);
         wakeWaiter();
       });
@@ -50,8 +50,8 @@ export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
       stream.onAbort(wakeWaiter);
 
       try {
-        const snapshot = await deps.fetchSnapshot(owner).catch((err) => {
-          console.warn(`pod-files snapshot for ${owner} failed:`, err);
+        const snapshot = await deps.fetchSnapshot(owner, agentId).catch((err) => {
+          console.warn(`pod-files snapshot for owner=${owner} agent=${agentId} failed:`, err);
           return [] as FileSpec[];
         });
         await stream.writeSSE({

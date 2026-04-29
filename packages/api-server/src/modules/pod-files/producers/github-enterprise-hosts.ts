@@ -12,16 +12,21 @@ interface RawConnection {
 }
 
 /**
- * Where the producer reads its state from. Owner-scoped so the producer
- * can use it from background contexts (no live user JWT). The function
- * returns the raw OneCLI rows; this producer filters/renders them.
+ * Where the producer reads its state from. Agent-scoped: the callback
+ * returns only the connections **granted to `agentId`** under `owner`,
+ * not every connection the owner has in OneCLI. This matches the user-
+ * facing model — the UI's per-agent grant click is the sole driver of
+ * what files appear inside that agent's pod.
  *
  * `agentHome` is the HOME inside the agent container (helm `agentHome` /
  * `AGENT_HOME` env). Must agree with the controller's mount path; both
  * read the same chart value so they stay in sync.
  */
 export interface GithubEnterpriseHostsDeps {
-  fetchConnectionsForOwner(owner: string): Promise<RawConnection[]>;
+  fetchAgentGrantedConnections(
+    owner: string,
+    agentId: string,
+  ): Promise<RawConnection[]>;
   agentHome: string;
 }
 
@@ -94,9 +99,9 @@ export function makeGithubEnterpriseHostsProducer(
   return {
     id: "github-enterprise:hosts",
     source: "app-connections",
-    async produce(owner: string): Promise<FileSpec[]> {
-      const all = await deps.fetchConnectionsForOwner(owner);
-      const fragments = all
+    async produce(owner, agentId): Promise<FileSpec[]> {
+      const granted = await deps.fetchAgentGrantedConnections(owner, agentId);
+      const fragments = granted
         .filter((c) => c.provider === "github-enterprise")
         .map(renderHostFragment)
         .filter((f): f is FileFragment => f !== null);

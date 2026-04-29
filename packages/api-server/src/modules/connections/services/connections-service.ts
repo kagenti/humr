@@ -76,8 +76,8 @@ export function createConnectionsService(deps: {
         }));
     },
 
-    async getAgentConnections(agentName: string): Promise<AgentAppConnections> {
-      const agent = await deps.port.findAgentByIdentifier(agentName);
+    async getAgentConnections(agentId: string): Promise<AgentAppConnections> {
+      const agent = await deps.port.findAgentByIdentifier(agentId);
       if (!agent) {
         // Agent may not be registered in OneCLI yet (controller sync is async).
         return { connectionIds: [] };
@@ -86,11 +86,11 @@ export function createConnectionsService(deps: {
       return { connectionIds };
     },
 
-    async setAgentConnections(agentName: string, connectionIds: string[]) {
-      const agent = await deps.port.findAgentByIdentifier(agentName);
+    async setAgentConnections(agentId: string, connectionIds: string[]) {
+      const agent = await deps.port.findAgentByIdentifier(agentId);
       // Write path fails loud when the agent isn't synced to OneCLI yet:
       // a silent no-op would confuse users who just checked a box.
-      if (!agent) throw new Error(`Agent "${agentName}" not found in OneCLI`);
+      if (!agent) throw new Error(`Agent "${agentId}" not found in OneCLI`);
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
 
@@ -100,7 +100,7 @@ export function createConnectionsService(deps: {
       if (deps.podFiles && deps.owner) {
         await deps.podFiles.publishForOwner(
           deps.owner,
-          agentName,
+          agentId,
           "app-connections",
         );
       }

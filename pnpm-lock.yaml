@@ -220,6 +220,9 @@ importers:
       file-type:
         specifier: ^22.0.1
         version: 22.0.1
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.1.1
       ws:
         specifier: ^8.20.0
         version: 8.20.0

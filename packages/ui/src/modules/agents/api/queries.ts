@@ -17,7 +17,7 @@ export function useAgents() {
 export function useAgentAccess(agentId: string | null) {
   return useQuery({
     ...trpc.secrets.getAgentAccess.queryOptions(
-      agentId ? { agentName: agentId } : skipToken,
+      agentId ? { agentId: agentId } : skipToken,
     ),
     retry: false,
   });
@@ -30,7 +30,7 @@ export function useAgentAccess(agentId: string | null) {
 export function useAgentConnections(agentId: string | null) {
   return useQuery({
     ...trpc.connections.getAgentConnections.queryOptions(
-      agentId ? { agentName: agentId } : skipToken,
+      agentId ? { agentId: agentId } : skipToken,
     ),
     retry: false,
   });

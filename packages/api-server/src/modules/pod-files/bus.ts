@@ -8,11 +8,11 @@ import type { PodFilesEvent } from "./types.js";
  */
 export interface PodFilesBus {
   subscribe(
-    agentName: string,
+    agentId: string,
     cb: (e: { kind: "snapshot" | "upsert" } & PodFilesEvent) => void,
   ): () => void;
   publish(
-    agentName: string,
+    agentId: string,
     e: { kind: "snapshot" | "upsert" } & PodFilesEvent,
   ): void;
 }
@@ -21,20 +21,20 @@ export function createPodFilesBus(): PodFilesBus {
   type Cb = Parameters<PodFilesBus["subscribe"]>[1];
   const subs = new Map<string, Set<Cb>>();
   return {
-    subscribe(agentName, cb) {
-      let set = subs.get(agentName);
+    subscribe(agentId, cb) {
+      let set = subs.get(agentId);
       if (!set) {
         set = new Set();
-        subs.set(agentName, set);
+        subs.set(agentId, set);
       }
       set.add(cb);
       return () => {
         set?.delete(cb);
-        if (set && set.size === 0) subs.delete(agentName);
+        if (set && set.size === 0) subs.delete(agentId);
       };
     },
-    publish(agentName, e) {
-      const set = subs.get(agentName);
+    publish(agentId, e) {
+      const set = subs.get(agentId);
       if (!set) return;
       for (const cb of set) {
         try {

@@ -32,10 +32,15 @@ export const PRODUCER_SOURCES = ["app-connections"] as const;
 export type ProducerSource = (typeof PRODUCER_SOURCES)[number];
 
 /**
- * A producer reads humr's state for an owner and emits the files it wants
- * materialized in that owner's agent pods. Opaque source: the platform
- * doesn't know whether the producer's state is app connections, secrets,
- * or something else — only the `source` tag is used for routing.
+ * A producer reads humr's state for an `(owner, agentId)` pair and emits
+ * the files it wants materialized in that agent's pods. Producers are
+ * **agent-scoped**: the file content for one agent reflects only what's
+ * been explicitly granted/configured for that agent, not the owner's
+ * broader state in adjacent systems.
+ *
+ * Opaque source: the platform doesn't know whether the producer's state
+ * is app connections, secrets, or something else — only the `source` tag
+ * is used for routing.
  */
 export interface FileProducer {
   /** Stable id, used for logging. */
@@ -46,9 +51,10 @@ export interface FileProducer {
    */
   source: ProducerSource;
   /**
-   * Compute this producer's `FileSpec`s for `owner`. Empty array means
-   * "this producer has nothing to contribute right now". Errors should be
-   * caught by the caller — a producer crash must not block the others.
+   * Compute this producer's `FileSpec`s for the given agent under `owner`.
+   * Empty array means "this producer has nothing to contribute right now".
+   * Errors should be caught by the caller — a producer crash must not
+   * block the others.
    */
-  produce(owner: string): Promise<FileSpec[]>;
+  produce(owner: string, agentId: string): Promise<FileSpec[]>;
 }
