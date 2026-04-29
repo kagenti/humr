@@ -80,7 +80,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.use("/api/*", auth.middleware);
 
-  app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
+  app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli, k8sClient));
 
   if (config.slackBotToken && config.slackAppToken) {
     app.route("/", createSlackOAuthRoutes({

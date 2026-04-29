@@ -20,6 +20,7 @@ import {
   deleteThreadsByInstance,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { composeConnectionsModule } from "./modules/connections/index.js";
+import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -171,6 +172,12 @@ const { server: apiServer } = startApiServerApp({
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows,
 });
 
+// Re-mints OAuth access tokens from stored refresh tokens before they expire
+// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
+// leader election is a follow-up.
+const oauthRefreshService = createOAuthRefreshService({ k8sClient });
+oauthRefreshService.start();
+
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config, api, db, channelManager, channelSecretStore,
 });
@@ -186,6 +193,7 @@ async function shutdown() {
   onecliSyncSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();
+  await oauthRefreshService.stop();
   await channelManager.stopAll();
   await sql.end();
   harnessApiServer.close();

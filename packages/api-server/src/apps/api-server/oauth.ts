@@ -1,16 +1,27 @@
 /**
  * OAuth 2.1 flow for custom MCP servers.
  *
- * Handles: discovery → dynamic client registration → PKCE → token exchange → store in OneCLI.
- * Follows the MCP Authorization spec (OAuth 2.1 with PKCE + dynamic client registration).
+ * Handles: discovery → dynamic client registration → PKCE → token exchange.
+ * Tokens are dual-written to OneCLI (legacy path) and a per-`(owner, connection)`
+ * K8s Secret (Envoy sidecar path, ADR-033) until OneCLI is removed. The K8s
+ * Secret is the source the refresh-token loop and the experimental Envoy
+ * sidecar consume.
  *
- * All OneCLI operations are per-user via Keycloak token exchange.
+ * Follows the MCP Authorization spec (OAuth 2.1 with PKCE + dynamic client
+ * registration). All OneCLI operations are per-user via Keycloak token
+ * exchange.
  */
 
 import { Hono } from "hono";
 import crypto from "node:crypto";
 import type { OnecliClient } from "./onecli.js";
 import type { UserIdentity } from "api-server-api";
+import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import {
+  createK8sConnectionsPort,
+  type ConnectionMetadata,
+  type K8sConnectionsPort,
+} from "../../modules/connections/infrastructure/k8s-connections-port.js";
 
 // --- In-memory state store (PoC — not persistent across restarts) ---
 
@@ -106,6 +117,26 @@ export async function listMcpConnections(
     });
 }
 
+/**
+ * Best-effort K8s mirror — OneCLI remains the source of truth for the
+ * non-flagged path. Logged with a stable token (`oauth-k8s-mirror-failed`)
+ * so log scrapers can dashboard the failure mode.
+ */
+async function mirrorToK8s(
+  meta: { op: "upsert" | "delete"; hostPattern: string },
+  fn: () => Promise<void>,
+): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      "[oauth] oauth-k8s-mirror-failed",
+      JSON.stringify({ ...meta, error: message }),
+    );
+  }
+}
+
 async function upsertOnecliSecret(
   oc: OnecliClient,
   userJwt: string,
@@ -148,7 +179,7 @@ async function upsertOnecliSecret(
 
 // --- OAuth routes ---
 
-export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
+export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient, k8sClient: K8sClient) {
   const oauth = new Hono<{ Variables: { user: UserIdentity } }>();
 
   /** Extract the Bearer token from the Authorization header. */
@@ -158,17 +189,42 @@ export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
     return authHeader.slice(7);
   }
 
+  function k8sConnectionsFor(userSub: string): K8sConnectionsPort {
+    return createK8sConnectionsPort(k8sClient, userSub);
+  }
+
   /**
    * GET /api/mcp/connections
    *
-   * Returns list of MCP server hosts that have credentials stored in OneCLI.
+   * Merges OneCLI and K8s-backed MCP connections, preferring the K8s record
+   * when both exist (it carries the freshest `expired` state from the refresh
+   * loop). Legacy OneCLI-only entries from before the dual-write was
+   * introduced surface unchanged.
    */
   oauth.get("/api/mcp/connections", async (c) => {
     try {
       const user = c.get("user");
       const jwt = getUserJwt(c);
-      const connections = await listMcpConnections(oc, jwt, user.sub);
-      return c.json(connections);
+      const [onecliConns, k8sConns] = await Promise.all([
+        listMcpConnections(oc, jwt, user.sub),
+        k8sConnectionsFor(user.sub).listConnections(),
+      ]);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const merged = new Map<
+        string,
+        { hostname: string; connectedAt: string; expired: boolean }
+      >();
+      for (const c of onecliConns) merged.set(c.hostname, c);
+      for (const c of k8sConns) {
+        const expired =
+          c.status === "expired" || (c.expiresAt != null && c.expiresAt < nowSec);
+        merged.set(c.connection, {
+          hostname: c.connection,
+          connectedAt: c.connectedAt ?? merged.get(c.connection)?.connectedAt ?? "",
+          expired,
+        });
+      }
+      return c.json(Array.from(merged.values()));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       return c.json({ error: msg }, 500);
@@ -178,7 +234,9 @@ export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
   /**
    * DELETE /api/mcp/connections/:hostname
    *
-   * Removes the OneCLI secret for the given MCP server hostname.
+   * Dual-deletes: OneCLI is the source of truth today and its delete is
+   * synchronous; the K8s mirror is best-effort so a hiccup on the K8s side
+   * doesn't leave a stale OneCLI entry.
    */
   oauth.delete("/api/mcp/connections/:hostname", async (c) => {
     const hostname = c.req.param("hostname");
@@ -187,11 +245,19 @@ export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
       const jwt = getUserJwt(c);
       const secrets = await listOnecliSecrets(oc, jwt, user.sub);
       const secret = secrets.find((s) => s.name === mcpSecretName(hostname));
-      if (!secret) return c.json({ error: "Not found" }, 404);
-      const res = await oc.onecliFetch(jwt, user.sub, `/api/secrets/${secret.id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`OneCLI delete failed: ${res.status}`);
+      // Both stores may have drifted independently (legacy K8s-only or
+      // OneCLI-only entries). Treat 404 as "no OneCLI row" but still attempt
+      // the K8s delete so the UI reaches a consistent state.
+      if (secret) {
+        const res = await oc.onecliFetch(jwt, user.sub, `/api/secrets/${secret.id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(`OneCLI delete failed: ${res.status}`);
+      }
+      await mirrorToK8s({ op: "delete", hostPattern: hostname }, () =>
+        k8sConnectionsFor(user.sub).deleteConnection(hostname),
+      );
+      if (!secret) return c.json({ ok: true, deletedFrom: "k8s" });
       return c.json({ ok: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -359,7 +425,10 @@ export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
       expires_in?: number;
     };
 
-    // Store in OneCLI as a generic secret (upsert — replaces existing)
+    // Dual-write: OneCLI (source of truth today, blocks the redirect on
+    // failure) and the K8s connection Secret consumed by the Envoy sidecar
+    // and the refresh loop (best-effort — a K8s hiccup must not break the
+    // OAuth flow that's still backed by OneCLI on the non-flagged path).
     try {
       const expiresAt = tokenData.expires_in
         ? Math.floor(Date.now() / 1000) + tokenData.expires_in
@@ -371,6 +440,26 @@ export function createOAuthRoutes(uiBaseUrl: string, oc: OnecliClient) {
         pending.hostPattern,
         tokenData.access_token,
         expiresAt,
+      );
+      const metadata: ConnectionMetadata = {
+        hostPattern: pending.hostPattern,
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+        tokenUrl: pending.tokenEndpoint,
+        clientId: pending.clientId,
+        ...(pending.clientSecret ? { clientSecret: pending.clientSecret } : {}),
+        grantType: "authorization_code",
+      };
+      await mirrorToK8s({ op: "upsert", hostPattern: pending.hostPattern }, () =>
+        k8sConnectionsFor(pending.userSub).upsertConnection({
+          connection: pending.hostPattern,
+          tokens: {
+            accessToken: tokenData.access_token,
+            ...(tokenData.refresh_token ? { refreshToken: tokenData.refresh_token } : {}),
+            ...(expiresAt != null ? { expiresAt } : {}),
+          },
+          metadata,
+        }),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
