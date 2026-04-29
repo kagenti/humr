@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -29,16 +28,6 @@ type AgentSpec struct {
 	Resources       ResourceSpec                `yaml:"resources,omitempty"`
 	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
 	SecretMode      string                      `yaml:"secretMode,omitempty"` // "all" or "selective" (default)
-	SkillPaths      []string                    `yaml:"skillPaths,omitempty"` // filesystem paths where the harness reads skills
-	SkillSources    []SkillSourceSeed           `yaml:"skillSources,omitempty"` // template-declared skill sources (see issues/12)
-}
-
-// SkillSourceSeed is a {name, gitUrl} pair declared by the helm values
-// (platform-wide) or by a template (per-agent). Uniform shape at every layer —
-// helm values, rendered ConfigMap, Go and TypeScript types.
-type SkillSourceSeed struct {
-	Name   string `yaml:"name"`
-	GitURL string `yaml:"gitUrl"`
 }
 
 type Mount struct {
@@ -185,34 +174,7 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 			return nil, fmt.Errorf("agent spec: mount path %q must be absolute", m.Path)
 		}
 	}
-	for _, p := range spec.SkillPaths {
-		if !strings.HasPrefix(p, "/") {
-			return nil, fmt.Errorf("agent spec: skillPath %q must be absolute", p)
-		}
-	}
-	for i, s := range spec.SkillSources {
-		if err := validateSkillSourceSeed(s); err != nil {
-			return nil, fmt.Errorf("agent spec: skillSource[%d]: %w", i, err)
-		}
-	}
 	return &spec, nil
-}
-
-func validateSkillSourceSeed(s SkillSourceSeed) error {
-	if s.Name == "" {
-		return fmt.Errorf("name is required")
-	}
-	if len(s.Name) > 128 {
-		return fmt.Errorf("name exceeds 128 chars")
-	}
-	if s.GitURL == "" {
-		return fmt.Errorf("gitUrl is required")
-	}
-	u, err := url.Parse(s.GitURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("gitUrl %q is not a valid URL", s.GitURL)
-	}
-	return nil
 }
 
 func ParseInstanceSpec(data string) (*InstanceSpec, error) {
