@@ -76,8 +76,10 @@ export function applyUpdate(messages: Message[], update: any): Message[] {
       return handleUserChunk(messages, update);
 
     case "agent_message_chunk":
+      return handleAgentChunk(messages, update, "text");
+
     case "agent_thought_chunk":
-      return handleAgentChunk(messages, update);
+      return handleAgentChunk(messages, update, "thought");
 
     case "tool_call":
       return handleToolCall(messages, update);
@@ -135,11 +137,11 @@ function handleUserChunk(messages: Message[], u: any): Message[] {
   return closed;
 }
 
-function handleAgentChunk(messages: Message[], u: any): Message[] {
+function handleAgentChunk(messages: Message[], u: any, kind: "text" | "thought"): Message[] {
   if (u.content?.type === "text") {
     const txt = u.content.text as string;
     if (!txt) return messages;
-    return appendToActive(messages, [{ kind: "text", text: txt }]);
+    return appendToActive(messages, [{ kind, text: txt }]);
   }
   if (u.content?.type === "image") {
     return appendToActive(messages, [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }]);
@@ -239,6 +241,8 @@ function mergeParts(existing: MessagePart[], incoming: MessagePart[]): MessagePa
     const last = merged[merged.length - 1];
     if (p.kind === "text" && last?.kind === "text") {
       merged[merged.length - 1] = { kind: "text", text: last.text + p.text };
+    } else if (p.kind === "thought" && last?.kind === "thought") {
+      merged[merged.length - 1] = { kind: "thought", text: last.text + p.text };
     } else {
       merged.push(p);
     }

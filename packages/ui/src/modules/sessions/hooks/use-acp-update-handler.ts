@@ -44,6 +44,8 @@ export function useAcpUpdateHandler(
       if (u?.sessionUpdate === "agent_message_chunk") {
         if (u.content?.type === "text") addLog("text", { text: u.content.text });
         else if (u.content?.type === "image") addLog("image", { mimeType: u.content.mimeType });
+      } else if (u?.sessionUpdate === "agent_thought_chunk") {
+        if (u.content?.type === "text") addLog("thought", { text: u.content.text });
       } else if (u?.sessionUpdate === "tool_call") {
         addLog("tool", { title: u.title, status: u.status });
       }

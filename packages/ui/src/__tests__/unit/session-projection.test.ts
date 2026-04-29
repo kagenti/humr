@@ -89,10 +89,37 @@ describe("applyUpdate — agent content", () => {
     ]);
   });
 
-  test("agent_thought_chunk is routed like agent_message_chunk", () => {
+  test("agent_thought_chunk produces a thought part distinct from text", () => {
     const out = applyUpdate([], { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } });
     expect(out[0].role).toBe("assistant");
-    expect(out[0].parts).toEqual([{ kind: "text", text: "thinking" }]);
+    expect(out[0].parts).toEqual([{ kind: "thought", text: "thinking" }]);
+  });
+
+  test("consecutive thought chunks merge into one part", () => {
+    let messages: Message[] = [];
+    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "rea" } });
+    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "soning" } });
+    expect(messages[0].parts).toEqual([{ kind: "thought", text: "reasoning" }]);
+  });
+
+  test("thought followed by message yields two parts in order", () => {
+    let messages: Message[] = [];
+    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "let me think" } });
+    messages = applyUpdate(messages, txtChunk("the answer"));
+    expect(messages[0].parts).toEqual([
+      { kind: "thought", text: "let me think" },
+      { kind: "text", text: "the answer" },
+    ]);
+  });
+
+  test("message followed by thought yields two parts and does not merge", () => {
+    let messages: Message[] = [];
+    messages = applyUpdate(messages, txtChunk("hi"));
+    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "wait" } });
+    expect(messages[0].parts).toEqual([
+      { kind: "text", text: "hi" },
+      { kind: "thought", text: "wait" },
+    ]);
   });
 });
 

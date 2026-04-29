@@ -18,6 +18,11 @@ export interface TextPart {
   text: string;
 }
 
+export interface ThoughtPart {
+  kind: "thought";
+  text: string;
+}
+
 export interface ImagePart {
   kind: "image";
   data: string; // base64-encoded
@@ -41,7 +46,7 @@ export interface UploadedFilePart extends FilePart {
 
 export type Attachment = ImagePart | UploadedFilePart;
 
-export type MessagePart = TextPart | ImagePart | FilePart | ToolChip;
+export type MessagePart = TextPart | ThoughtPart | ImagePart | FilePart | ToolChip;
 
 export interface Message {
   id: string;
