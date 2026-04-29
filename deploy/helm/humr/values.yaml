@@ -321,6 +321,7 @@ defaultTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Default Claude Code agent"
+  agentHome: /home/agent
   resources:
     requests:
       cpu: "250m"
@@ -338,6 +339,7 @@ googleWorkspaceTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Google Workspace agent with Drive and Gmail via gws CLI"
+  agentHome: /home/agent
   resources:
     requests:
       cpu: "250m"
@@ -355,6 +357,7 @@ piAgentTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Pi coding agent with multi-LLM support"
+  agentHome: /home/agent
   resources:
     requests:
       cpu: "250m"
@@ -372,6 +375,7 @@ codeGuardianTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "PR code review agent (gh + Claude Code)"
+  agentHome: /home/agent
   # -- owner/repo slug the agent reviews. Empty = detect via `gh repo view`.
   githubRepo: ""
   resources:

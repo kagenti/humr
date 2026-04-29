@@ -1,4 +1,5 @@
 {{- if .Values.googleWorkspaceTemplate.enabled }}
+{{- $home := .Values.googleWorkspaceTemplate.agentHome }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,18 +14,18 @@ data:
     image: "{{ .Values.googleWorkspaceTemplate.image.repository }}:{{ .Values.googleWorkspaceTemplate.image.tag | default .Chart.AppVersion }}"
     description: {{ .Values.googleWorkspaceTemplate.description | quote }}
     mounts:
-      - path: /home/agent
+      - path: {{ $home }}
         persist: true
       - path: /tmp
         persist: false
     init: |
       #!/bin/bash
       # Seed home from image on first boot
-      if [ ! -f /home/agent/.initialized ]; then
-        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
-        touch /home/agent/.initialized
+      if [ ! -f {{ $home }}/.initialized ]; then
+        cp -rn /app/working-dir/. {{ $home }}/ 2>/dev/null || true
+        touch {{ $home }}/.initialized
       fi
-      mkdir -p /home/agent/work
+      mkdir -p {{ $home }}/work
     env:
       - name: PORT
         value: "8080"
@@ -38,7 +39,7 @@ data:
     securityContext:
       readOnlyRootFilesystem: false
     skillPaths:
-      - /home/agent/.claude/skills/
+      - {{ $home }}/.claude/skills/
     {{- with .Values.googleWorkspaceTemplate.skillSources }}
     skillSources:
       {{- range . }}
