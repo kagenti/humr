@@ -79,8 +79,14 @@ interface QueuedPrompt {
 }
 
 interface OutboundMapping {
-  channel: ClientChannel;
-  originalId: JsonRpcId;
+  /** Channel that originated this outbound id. Null when the runtime itself
+   * initiated the call (e.g. cold-resume translates to a runtime-issued
+   * session/load with no client channel — the response just populates log
+   * metadata, and any waiters are served by the bootstrap fan-out). */
+  channel: ClientChannel | null;
+  /** Original client id to echo back in the response. Null for runtime-
+   * initiated calls (no client to respond to). */
+  originalId: JsonRpcId | null;
   /** The method that originated this outbound id, so we can engage the channel
    * with a session returned in the response (e.g. `session/new` result). */
   method: string;
@@ -89,8 +95,8 @@ interface OutboundMapping {
   promptSessionId: string | null;
   /** Session id this request attaches the channel to, when the method is
    * session-scoped but the response body doesn't echo the sid back
-   * (session/load, session/resume). Used to cache metadata on response and,
-   * for session/load specifically, to fan out to bootstrap waiters. */
+   * (session/load). Used to cache metadata on response and to fan out to
+   * bootstrap waiters. */
   attachSessionId: string | null;
 }
 
@@ -122,19 +128,31 @@ interface SessionLog {
   metadata: unknown | null;
 }
 
-interface BootstrapWaiter {
-  channel: ClientChannel;
-  originalId: JsonRpcId;
-}
+/**
+ * A waiter parked on an in-flight cold bootstrap. The kind decides how it is
+ * served once the bootstrap response lands:
+ *   - "load"   → catchUp + synthetic session/load response (replays history).
+ *   - "resume" → engage + synthetic session/resume response (no replay; the
+ *                client already has history in its UI state from a prior
+ *                throwaway session/load).
+ */
+type BootstrapWaiter =
+  | { kind: "load"; channel: ClientChannel; originalId: JsonRpcId }
+  | { kind: "resume"; channel: ClientChannel; originalId: JsonRpcId };
 
 /**
  * Max-1-in-flight bootstrap state per session. A `session/load` request
  * received while a cold bootstrap is already running for the same sid is
  * not forwarded again — the bootstrap's agent response fills the log for
  * everyone, and the waiter is then served from memory.
+ *
+ * `initiatorChannel === null` means the runtime started the bootstrap itself
+ * (cold-resume path). In that case replay events populate the log but reach
+ * no client channel — every engaged channel's cursor advances silently, and
+ * waiters are served on completion.
  */
 interface BootstrapState {
-  initiatorChannel: ClientChannel;
+  initiatorChannel: ClientChannel | null;
   initiatorOutboundId: number;
   waiters: BootstrapWaiter[];
 }
@@ -295,23 +313,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * which rendered an optimistic user bubble before forwarding). The entry
    * is still in the log, so on reconnect that same client catches up to it
    * through a new channel with cursor=0.
+   *
+   * `onlyChannel` restricts delivery during a cold-bootstrap replay so the
+   * agent's historical events populate the log (for future cache hits) but
+   * reach only the loader. Other engaged channels already have the history
+   * in their React state and would double-render the replay. The key may
+   * be set explicitly to `null` to mean "deliver to no channel" — used by
+   * the cold-resume path, where the runtime initiated the bootstrap and no
+   * client should receive the replay.
    */
   function appendAndFanOut(
     sessionId: string,
     line: string,
-    options?: { skipChannel?: ClientChannel; onlyChannel?: ClientChannel },
+    options?: { skipChannel?: ClientChannel; onlyChannel?: ClientChannel | null },
   ): void {
     const seq = appendToLog(sessionId, line);
     const out = rewriteAuthError(line);
+    const onlyChannelSet = options !== undefined && "onlyChannel" in options;
     for (const [channel, sessions] of engagedSessions) {
       if (!sessions.has(sessionId) || !channel.isOpen()) continue;
       if (cursorFor(channel, sessionId) >= seq) continue;
-      // `onlyChannel` mode: used during a cold-bootstrap replay so the
-      // agent's historical events populate the log (for future cache hits)
-      // but are delivered only to the loader. Other engaged channels
-      // already have the history in their React state and don't need the
-      // replay — fanning it out to them would double their messages.
-      if (options?.onlyChannel && channel !== options.onlyChannel) {
+      if (onlyChannelSet && channel !== options!.onlyChannel) {
         setCursor(channel, sessionId, seq);
         continue;
       }
@@ -504,6 +526,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (hasEngagedChannel(sessionId)) return;
     if (activePromptBySession.has(sessionId)) return;
     if (promptQueueBySession.has(sessionId)) return;
+    // An in-flight cold bootstrap (e.g. runtime-initiated session/load
+    // triggered by a cold-resume) is still pinning a session in the agent
+    // — closing now would race the load and orphan the cached metadata.
+    if (bootstrapBySession.has(sessionId)) return;
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
     }
@@ -553,7 +579,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     forwardPromptToAgent(a, sessionId, next);
   }
 
-  // ── session/load serve-from-memory ──
+  // ── session/load and session/resume serve-from-memory ──
 
   /** Serve a `session/load` from the in-memory log without forwarding to
    * the agent. Stream the catch-up first, then engage the channel and
@@ -565,12 +591,45 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
     log: SessionLog,
   ): void {
+    if (log.metadata === null) {
+      throw new Error(`serveLoadFromLog called for ${sessionId} without cached metadata`);
+    }
     catchUp(channel, sessionId);
     engage(channel, sessionId);
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: log.metadata ?? { sessionId },
+      result: log.metadata,
+    });
+    sendToChannel(channel, rewriteAuthError(response));
+  }
+
+  /** Serve a `session/resume` from the in-memory log. Resume's contract is
+   * "rebind for future events" — unlike load, it must NOT replay history
+   * (the caller already has it via a prior throwaway `session/load`). So
+   * we engage the channel and advance its cursor to the log's tail before
+   * sending the synthetic response, so future `appendAndFanOut` deliveries
+   * land but no historical entry does. The cached `metadata` is captured
+   * from `session/new` / `session/fork` / `session/load` responses and is
+   * a structural superset of `ResumeSessionResponse`. */
+  function serveResumeFromLog(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    log: SessionLog,
+  ): void {
+    if (log.metadata === null) {
+      throw new Error(`serveResumeFromLog called for ${sessionId} without cached metadata`);
+    }
+    engage(channel, sessionId);
+    const lastSeq = log.entries.length > 0
+      ? log.entries[log.entries.length - 1].seq
+      : 0;
+    setCursor(channel, sessionId, lastSeq);
+    const response = JSON.stringify({
+      jsonrpc: "2.0",
+      id: originalId,
+      result: log.metadata,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -608,22 +667,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         // Engage the originating channel with a session identified by the
         // response. session/new and session/fork put the new sessionId in
-        // the result body; session/load and session/resume don't (the client
-        // already knows the sid from its request) — we recover it from the
-        // mapping's attachSessionId captured on forward.
+        // the result body; session/load doesn't (the client already knows
+        // the sid from its request) — we recover it from the mapping's
+        // attachSessionId captured on forward. session/resume frames are
+        // never forwarded to the agent (handled entirely by the runtime),
+        // so they never appear here.
         const sidFromResult = extractResultSessionId(frame);
         const sidForChannel = sidFromResult ?? mapping.attachSessionId;
         if (sidForChannel) {
-          engage(mapping.channel, sidForChannel);
-          // Cache the response body as log metadata **only** on paths that
-          // produce authoritative log state: session/new and session/fork
-          // start an empty log that the creator's prompts will populate,
-          // and session/load populates it via replaySessionHistory. NEVER
-          // cache on session/resume — resume doesn't replay history, and
-          // may happen right after maybeCloseIdleSession reaped the log
-          // (e.g. brief WS drop during a prompt). Caching on resume would
-          // mark an empty log as "complete" and a later session/load from
-          // another tab would hit the cache and serve no history.
+          if (mapping.channel) engage(mapping.channel, sidForChannel);
+          // Cache the response body as log metadata on paths that produce
+          // authoritative log state: session/new and session/fork start an
+          // empty log that the creator's prompts will populate, and
+          // session/load populates it via replaySessionHistory.
           const cacheable = mapping.method === "session/new"
             || mapping.method === "session/fork"
             || mapping.method === "session/load";
@@ -635,10 +691,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
         }
 
-        // `session/load` cold-bootstrap response: catch up any waiters that
-        // arrived during the bootstrap window. The initiator already
-        // received every replay event via appendAndFanOut (engaged on
-        // forward), so no catch-up is needed for it.
+        // `session/load` cold-bootstrap response: serve any waiters that
+        // arrived during the bootstrap window. Load waiters get full
+        // history replay (catchUp); resume waiters get engagement plus a
+        // synthetic resume response with no replay (their UI already has
+        // history from a prior throwaway loadSession). The original
+        // initiator (if any) already received every replay event via
+        // appendAndFanOut (engaged on forward), so no catch-up for it.
         if (mapping.method === "session/load" && mapping.attachSessionId) {
           const sid = mapping.attachSessionId;
           const log = getOrCreateLog(sid);
@@ -647,14 +706,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             bootstrapBySession.delete(sid);
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
-              serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
+              if (waiter.kind === "load") {
+                serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
+              } else {
+                serveResumeFromLog(waiter.channel, waiter.originalId, sid, log);
+              }
             }
           }
         }
 
         // Rewrite the response id back to what the originating client used.
-        const out = JSON.stringify({ ...(frame as object), id: mapping.originalId });
-        if (mapping.channel.isOpen()) mapping.channel.send(rewriteAuthError(out));
+        // Skip when the runtime initiated the call (no client to respond to).
+        if (mapping.channel && mapping.originalId !== null) {
+          const out = JSON.stringify({ ...(frame as object), id: mapping.originalId });
+          if (mapping.channel.isOpen()) mapping.channel.send(rewriteAuthError(out));
+        }
 
         // If this response completes a queued prompt, advance the session's
         // queue and signal the turn boundary to every engaged channel so
@@ -696,8 +762,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     // populate the log (so future session/loads hit cache) but MUST NOT
     // fan out to other engaged channels — they already have the history
     // in their React state, and receiving the replay would append a
-    // second copy on top. Route replay events to the bootstrap initiator
-    // only.
+    // second copy on top. When a real initiator exists, route replay to
+    // it only; when the runtime initiated the bootstrap (cold-resume),
+    // route to nobody — every engaged channel advances its cursor
+    // silently and is later served by the resume waiter handler.
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
       const boot = bootstrapBySession.get(sessionId);
@@ -738,6 +806,61 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      // `session/resume` short-circuit: the runtime mediates resume entirely.
+      // Many harnesses (pi-acp) don't implement `unstable_resumeSession` at
+      // all, and even harnesses that do can't resume against a freshly-
+      // respawned subprocess that has no in-memory session. The runtime is
+      // the only thing that can reconcile both — so resume never reaches
+      // the agent.
+      //
+      //   Hot path: log metadata already cached → engage + advance cursor +
+      //             synthetic response (no replay).
+      //   Cold path: park as a resume waiter and run a runtime-initiated
+      //             session/load (the only ACP RPC that rehydrates a session
+      //             in a fresh subprocess). Replay events populate the log
+      //             but reach no client. On completion, all resume waiters
+      //             are served via `serveResumeFromLog`.
+      if (method === "session/resume" && paramsSid) {
+        // Engage immediately so the channel receives pending agent requests
+        // for the session and has its cursor advanced silently during a
+        // cold-bootstrap window. `serveResumeFromLog` will call `engage`
+        // again on the hot path / on waiter dispatch — that's intentional
+        // and harmless: `engage` is idempotent (early-returns when the
+        // session is already in the channel's set).
+        engage(channel, paramsSid);
+        const existing = sessionLogs.get(paramsSid);
+        if (existing && existing.metadata !== null) {
+          serveResumeFromLog(channel, frame.id, paramsSid, existing);
+          return;
+        }
+        const boot = bootstrapBySession.get(paramsSid);
+        if (boot) {
+          boot.waiters.push({ kind: "resume", channel, originalId: frame.id });
+          return;
+        }
+        const outboundId = nextOutboundId++;
+        bootstrapBySession.set(paramsSid, {
+          initiatorChannel: null,
+          initiatorOutboundId: outboundId,
+          waiters: [{ kind: "resume", channel, originalId: frame.id }],
+        });
+        outboundIdToClient.set(outboundId, {
+          channel: null,
+          originalId: null,
+          method: "session/load",
+          promptSessionId: null,
+          attachSessionId: paramsSid,
+        });
+        const loadFrame = {
+          jsonrpc: "2.0",
+          id: outboundId,
+          method: "session/load",
+          params: { sessionId: paramsSid, cwd: ".", mcpServers: [] },
+        };
+        a.send(rewriteCwd(loadFrame, deps.workingDir));
+        return;
+      }
+
       // `session/load` short-circuit: if the runtime already has a log with
       // cached metadata for this session, serve the entire history (plus any
       // future live events) from memory. The agent is never involved.
@@ -754,7 +877,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // and appending two copies of the same history to the log.
         const boot = bootstrapBySession.get(paramsSid);
         if (boot) {
-          boot.waiters.push({ channel, originalId: frame.id });
+          boot.waiters.push({ kind: "load", channel, originalId: frame.id });
           return;
         }
       }
@@ -765,12 +888,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (paramsSid) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
-      // Methods whose response body doesn't echo the sid (session/load,
-      // session/resume) — we stash it from params to recover it when the
-      // response comes back.
-      const attachSessionId = (method === "session/load" || method === "session/resume")
-        ? paramsSid
-        : null;
+      // Methods whose response body doesn't echo the sid (session/load) —
+      // we stash it from params to recover it when the response comes back.
+      const attachSessionId = method === "session/load" ? paramsSid : null;
 
       const rewritten = rewriteCwd({ ...frame, id: outboundId }, deps.workingDir);
       outboundIdToClient.set(outboundId, {
