@@ -60,15 +60,7 @@ const channelCleanupSub = startChannelCleanupSaga(
 );
 const onecliSyncSub = startOnecliSyncSaga(onecli);
 
-const { foreignCredentials } = composeConnectionsModule({
-  foreignCredentialsConfig: {
-    keycloakTokenUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`,
-    clientId: config.keycloakApiClientId,
-    clientSecret: config.keycloakApiClientSecret,
-    onecliAudience: config.onecliAudience,
-    onecliBaseUrl: config.onecliBaseUrl,
-  },
-});
+const { foreignCredentials } = composeConnectionsModule({ onecli });
 
 const { forks } = composeForksModule({
   foreignCredentials,
@@ -182,7 +174,7 @@ const podFilesRegistry = buildPodFilesRegistry({
   // contexts (no live user JWT). The producer logs and returns empty on
   // transient OneCLI failures; next reconnect re-snapshots.
   fetchConnectionsForOwner: async (owner) => {
-    const res = await onecli.onecliFetchAsOwner(owner, "/api/connections");
+    const res = await onecli.onecliFetchAs(owner, "/api/connections");
     if (!res.ok) {
       process.stderr.write(`pod-files: OneCLI /api/connections for ${owner} → ${res.status}\n`);
       return [];

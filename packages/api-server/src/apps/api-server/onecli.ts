@@ -1,8 +1,14 @@
 /**
- * Per-user OneCLI client via Keycloak RFC 8693 token exchange.
+ * OneCLI client. Owns every Keycloak/OneCLI auth interaction in the api-server:
  *
- * The API server exchanges the user's Keycloak JWT for a OneCLI-scoped token,
- * then uses that token to call OneCLI APIs on behalf of the user.
+ * - User-JWT path: exchangeToken → call OneCLI on behalf of an authenticated user.
+ * - Impersonation path: impersonate(sub) → call OneCLI on behalf of a user we
+ *   don't have a live JWT for (background SSE handlers, foreign-user fork
+ *   creation). Implemented as RFC 8693 client_credentials → token-exchange with
+ *   `requested_subject`.
+ *
+ * Both paths share an in-memory token cache and the same Keycloak/audience config,
+ * so this is the single place that implements the auth dance.
  */
 
 export interface TokenExchangeConfig {
@@ -24,72 +30,127 @@ interface CachedToken {
 }
 
 const TOKEN_MARGIN_SECONDS = 30;
+const SERVICE_ACCOUNT_CACHE_KEY = "__service_account__";
 
-/**
- * Creates a per-user OneCLI client factory.
- *
- * Exchanges user JWTs for OneCLI-scoped tokens via Keycloak,
- * with an in-memory cache keyed by user subject.
- */
 export function createOnecliClient(config: TokenExchangeConfig) {
   const tokenCache = new Map<string, CachedToken>();
 
-  /** Exchange a user's JWT for a OneCLI-scoped access token. */
-  async function exchangeToken(userJwt: string, userSub: string): Promise<string> {
-    const cached = tokenCache.get(userSub);
+  function cacheHit(key: string): string | null {
+    const cached = tokenCache.get(key);
     if (cached && cached.expiresAt > Date.now() / 1000 + TOKEN_MARGIN_SECONDS) {
       return cached.accessToken;
     }
+    return null;
+  }
 
-    const params = new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      subject_token: userJwt,
-      subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
-      requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
-      audience: config.onecliAudience,
-    });
-
+  async function postKeycloak(
+    params: URLSearchParams,
+    errLabel: string,
+  ): Promise<{ access_token: string; expires_in?: number }> {
     const res = await fetch(config.keycloakTokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params,
     });
-
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Token exchange failed: ${res.status} ${body}`);
+      throw new Error(`${errLabel}: ${res.status} ${await res.text()}`);
     }
+    return (await res.json()) as { access_token: string; expires_in?: number };
+  }
 
-    const data = (await res.json()) as {
-      access_token: string;
-      expires_in?: number;
-    };
-
-    const expiresAt = data.expires_in
-      ? Math.floor(Date.now() / 1000) + data.expires_in
-      : Math.floor(Date.now() / 1000) + 300; // default 5min
-
-    tokenCache.set(userSub, { accessToken: data.access_token, expiresAt });
+  function cacheToken(key: string, data: { access_token: string; expires_in?: number }): string {
+    const expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 300);
+    tokenCache.set(key, { accessToken: data.access_token, expiresAt });
     return data.access_token;
+  }
+
+  /** Exchange a user's JWT for a OneCLI-scoped access token. */
+  async function exchangeToken(userJwt: string, userSub: string): Promise<string> {
+    const hit = cacheHit(userSub);
+    if (hit) return hit;
+    const data = await postKeycloak(
+      new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        subject_token: userJwt,
+        subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        audience: config.onecliAudience,
+      }),
+      "Token exchange failed",
+    );
+    return cacheToken(userSub, data);
+  }
+
+  /**
+   * Service account token via client_credentials. Used as the subject for
+   * RFC 8693 impersonation in `impersonate`.
+   */
+  async function getServiceAccountToken(): Promise<string> {
+    const hit = cacheHit(SERVICE_ACCOUNT_CACHE_KEY);
+    if (hit) return hit;
+    const data = await postKeycloak(
+      new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+      }),
+      "Service account token",
+    );
+    return cacheToken(SERVICE_ACCOUNT_CACHE_KEY, data);
+  }
+
+  /**
+   * Impersonate a Keycloak subject — RFC 8693 token-exchange with
+   * `requested_subject`. Used both for foreign-user fork creation and for
+   * background SSE handlers acting on behalf of an agent's owner.
+   */
+  async function impersonate(sub: string): Promise<string> {
+    const cacheKey = `sub:${sub}`;
+    const hit = cacheHit(cacheKey);
+    if (hit) return hit;
+    const saToken = await getServiceAccountToken();
+    const data = await postKeycloak(
+      new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        subject_token: saToken,
+        subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        requested_subject: sub,
+        requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        audience: config.onecliAudience,
+      }),
+      `Impersonation for ${sub}`,
+    );
+    return cacheToken(cacheKey, data);
+  }
+
+  /** Primitive: call OneCLI with a pre-acquired token. */
+  async function onecliFetchWithToken(
+    token: string,
+    path: string,
+    init?: RequestInit,
+  ): Promise<Response> {
+    return fetch(`${config.onecliBaseUrl}${path}`, {
+      ...init,
+      headers: { ...init?.headers, Authorization: `Bearer ${token}` },
+    });
   }
 
   /** Fetch the user's OneCLI API key (provisions account on first call). */
   async function getApiKey(userJwt: string, userSub: string): Promise<string> {
     const token = await exchangeToken(userJwt, userSub);
-    const res = await fetch(`${config.onecliBaseUrl}/api/user/api-key`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await onecliFetchWithToken(token, "/api/user/api-key");
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`OneCLI get API key failed: ${res.status} ${body}`);
+      throw new Error(`OneCLI get API key failed: ${res.status} ${await res.text()}`);
     }
     const data = (await res.json()) as { apiKey: string };
     return data.apiKey;
   }
 
-  /** Make an authenticated OneCLI API call on behalf of the user. */
+  /** Make an authenticated OneCLI API call on behalf of the user (live JWT). */
   async function onecliFetch(
     userJwt: string,
     userSub: string,
@@ -97,96 +158,37 @@ export function createOnecliClient(config: TokenExchangeConfig) {
     init?: RequestInit,
   ): Promise<Response> {
     const token = await exchangeToken(userJwt, userSub);
-    return fetch(`${config.onecliBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        ...init?.headers,
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    return onecliFetchWithToken(token, path, init);
   }
 
-  /**
-   * Service account token via client_credentials. Used as the subject for
-   * RFC 8693 impersonation when calling OneCLI on behalf of an owner whose
-   * JWT we don't have (e.g. background SSE handlers serving an agent pod).
-   */
-  async function getServiceAccountToken(): Promise<string> {
-    const cached = tokenCache.get("__service_account__");
-    if (cached && cached.expiresAt > Date.now() / 1000 + TOKEN_MARGIN_SECONDS) {
-      return cached.accessToken;
-    }
-    const res = await fetch(config.keycloakTokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-      }),
-    });
-    if (!res.ok) throw new Error(`Service account token: ${res.status} ${await res.text()}`);
-    const data = (await res.json()) as { access_token: string; expires_in?: number };
-    const expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 300);
-    tokenCache.set("__service_account__", { accessToken: data.access_token, expiresAt });
-    return data.access_token;
-  }
-
-  /** Exchange a service account token for an owner-scoped token via impersonation. */
-  async function exchangeForOwner(owner: string): Promise<string> {
-    const cacheKey = `owner:${owner}`;
-    const cached = tokenCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now() / 1000 + TOKEN_MARGIN_SECONDS) {
-      return cached.accessToken;
-    }
-    const saToken = await getServiceAccountToken();
-    const res = await fetch(config.keycloakTokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-        subject_token: saToken,
-        subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
-        requested_subject: owner,
-        requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
-        audience: config.onecliAudience,
-      }),
-    });
-    if (!res.ok) throw new Error(`Owner impersonation for ${owner}: ${res.status} ${await res.text()}`);
-    const data = (await res.json()) as { access_token: string; expires_in?: number };
-    const expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 300);
-    tokenCache.set(cacheKey, { accessToken: data.access_token, expiresAt });
-    return data.access_token;
-  }
-
-  /** Make an authenticated OneCLI API call on behalf of an owner (no live JWT). */
-  async function onecliFetchAsOwner(
-    owner: string,
+  /** Make an authenticated OneCLI API call on behalf of `sub` via impersonation. */
+  async function onecliFetchAs(
+    sub: string,
     path: string,
     init?: RequestInit,
   ): Promise<Response> {
-    const token = await exchangeForOwner(owner);
-    return fetch(`${config.onecliBaseUrl}${path}`, {
-      ...init,
-      headers: { ...init?.headers, Authorization: `Bearer ${token}` },
-    });
+    const token = await impersonate(sub);
+    return onecliFetchWithToken(token, path, init);
   }
 
   /** Sync user account in OneCLI (creates if not exists). */
   async function syncUser(userJwt: string, userSub: string): Promise<void> {
     const token = await exchangeToken(userJwt, userSub);
-    const res = await fetch(`${config.onecliBaseUrl}/api/auth/sync`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await onecliFetchWithToken(token, "/api/auth/sync");
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`OneCLI sync failed: ${res.status} ${body}`);
+      throw new Error(`OneCLI sync failed: ${res.status} ${await res.text()}`);
     }
   }
 
-  return { exchangeToken, getApiKey, onecliFetch, onecliFetchAsOwner, syncUser };
+  return {
+    exchangeToken,
+    impersonate,
+    getApiKey,
+    onecliFetch,
+    onecliFetchAs,
+    onecliFetchWithToken,
+    syncUser,
+  };
 }
 
 export type OnecliClient = ReturnType<typeof createOnecliClient>;

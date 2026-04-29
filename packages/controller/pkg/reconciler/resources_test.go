@@ -226,7 +226,7 @@ func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
 	cfg.HarnessServerURL = "http://humr-apiserver.default.svc:4001"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil, nil)
 
 	// Single container: just the agent. No sidecar.
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1)
