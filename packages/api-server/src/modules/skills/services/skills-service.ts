@@ -36,7 +36,11 @@ import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
  *  prefix keeps the id compact while avoiding collisions when a template
  *  seeds many sources. */
 export function templateSourceId(templateId: string, gitUrl: string): string {
-  const hash = crypto.createHash("sha256").update(gitUrl).digest("hex").slice(0, 12);
+  const hash = crypto
+    .createHash("sha256")
+    .update(gitUrl)
+    .digest("hex")
+    .slice(0, 12);
   return `template:${templateId}:${hash}`;
 }
 
@@ -59,7 +63,10 @@ export interface SkillsServiceDeps {
   owner: string;
   /** Scan via the provided scanner with a shared TTL cache. The cache key is
    *  the gitUrl alone — results are user-independent. */
-  scanSource: (gitUrl: string, scanner: (gitUrl: string) => Promise<Skill[]>) => Promise<Skill[]>;
+  scanSource: (
+    gitUrl: string,
+    scanner: (gitUrl: string) => Promise<Skill[]>,
+  ) => Promise<Skill[]>;
   invalidateScan: (gitUrl: string) => void;
   /** Scan a public GitHub repo directly from the api-server pod. Throws
    *  `PublicArchiveNotFoundError` when the archive endpoint returns 404 —
@@ -95,9 +102,13 @@ async function resolveSkillPaths(
   return DEFAULT_SKILL_PATHS;
 }
 
-async function loadRunningInstance(deps: SkillsServiceDeps, instanceId: string) {
+async function loadRunningInstance(
+  deps: SkillsServiceDeps,
+  instanceId: string,
+) {
   const infra = await deps.instancesRepo.get(instanceId, deps.owner);
-  if (!infra) throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
+  if (!infra)
+    throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
   if (infra.currentState !== "running") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
@@ -116,7 +127,9 @@ async function loadRunningInstance(deps: SkillsServiceDeps, instanceId: string) 
  * from OneCLI's gateway. Cheaper + harder to get stale than a cluster call.
  */
 function enrichSources(sources: SkillSource[]): SkillSource[] {
-  return sources.map((s) => (detectHost(s.gitUrl) ? { ...s, canPublish: true } : s));
+  return sources.map((s) =>
+    detectHost(s.gitUrl) ? { ...s, canPublish: true } : s,
+  );
 }
 
 /** Build the list of template-derived sources for an instance. Resolves the
@@ -155,8 +168,8 @@ async function resolveTemplateSource(
   const [, templateId, hash] = parts;
   const template = await deps.templatesRepo.get(templateId);
   if (!template?.spec.skillSources?.length) return null;
-  const seed = template.spec.skillSources.find(
-    (s) => templateSourceId(templateId, s.gitUrl).endsWith(`:${hash}`),
+  const seed = template.spec.skillSources.find((s) =>
+    templateSourceId(templateId, s.gitUrl).endsWith(`:${hash}`),
   );
   if (!seed) return null;
   return {
@@ -218,12 +231,19 @@ function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
 }
 
 function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
-  const filtered = current.filter((s) => !(s.source === next.source && s.name === next.name));
+  const filtered = current.filter(
+    (s) => !(s.source === next.source && s.name === next.name),
+  );
   return [...filtered, next];
 }
 
-function removeSkillRef(current: SkillRef[], key: { source: string; name: string }): SkillRef[] {
-  return current.filter((s) => !(s.source === key.source && s.name === key.name));
+function removeSkillRef(
+  current: SkillRef[],
+  key: { source: string; name: string },
+): SkillRef[] {
+  return current.filter(
+    (s) => !(s.source === key.source && s.name === key.name),
+  );
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
@@ -231,7 +251,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async listSources(instanceId?: string) {
       const [owned, template] = await Promise.all([
         deps.repo.list(deps.owner),
-        instanceId ? loadTemplateSources(deps, instanceId) : Promise.resolve<SkillSource[]>([]),
+        instanceId
+          ? loadTemplateSources(deps, instanceId)
+          : Promise.resolve<SkillSource[]>([]),
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
       // Priority order matters for dedupe: user-created first, then
@@ -247,7 +269,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const [enriched] = enrichSources([s]);
       return enriched;
     },
-    createSource: (input: CreateSkillSourceInput) => deps.repo.create(input, deps.owner),
+    createSource: (input: CreateSkillSourceInput) =>
+      deps.repo.create(input, deps.owner),
     async deleteSource(id) {
       // Template-derived ids are synthesised at read time — there's no row
       // to delete. Reject up-front with the same FORBIDDEN code the UI uses
@@ -255,7 +278,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (id.startsWith(TEMPLATE_SOURCE_ID_PREFIX)) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "skill source is declared by an agent template and cannot be deleted",
+          message:
+            "skill source is declared by an agent template and cannot be deleted",
         });
       }
       // Capture the gitUrl before deletion — after delete we can't resolve
@@ -317,7 +341,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
       const infra = await deps.instancesRepo.get(instanceId, deps.owner);
-      if (!infra) throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
+      if (!infra)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "instance not found",
+        });
       if (infra.currentState !== "running") {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -365,9 +393,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         contentHash,
       };
       await deps.instanceSkillsRepo.upsertSkill(input.instanceId, ref);
-      const current = await deps.instanceSkillsRepo.listSkills(input.instanceId);
+      const current = await deps.instanceSkillsRepo.listSkills(
+        input.instanceId,
+      );
       return upsertSkillRef(
-        current.filter((s) => !(s.source === ref.source && s.name === ref.name)),
+        current.filter(
+          (s) => !(s.source === ref.source && s.name === ref.name),
+        ),
         ref,
       );
     },
@@ -386,8 +418,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
         name: input.name,
       });
-      const current = await deps.instanceSkillsRepo.listSkills(input.instanceId);
-      return removeSkillRef(current, { source: input.source, name: input.name });
+      const current = await deps.instanceSkillsRepo.listSkills(
+        input.instanceId,
+      );
+      return removeSkillRef(current, {
+        source: input.source,
+        name: input.name,
+      });
     },
 
     async publishSkill(input: PublishSkillInput): Promise<PublishSkillResult> {
@@ -413,7 +450,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
     async refreshSource(id: string): Promise<void> {
       const source = await resolveSource(deps, id);
-      if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "skill source not found" });
+      if (!source)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "skill source not found",
+        });
       deps.invalidateScan(source.gitUrl);
     },
 
@@ -424,12 +465,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (infra.currentState !== "running") return [];
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
       const token = await deps.getAgentToken(infra.agentId);
-      const all = await deps.runtimeClient.listLocal(instanceId, token, skillPaths);
+      const all = await deps.runtimeClient.listLocal(
+        instanceId,
+        token,
+        skillPaths,
+      );
       // Subtract anything already tracked as installed-from-remote (by directory
       // name). Matches behavior that the remote-installed entry is the canonical
       // one when names collide.
       const tracked = new Set(
-        (await deps.instanceSkillsRepo.listSkills(instanceId)).map((s) => s.name),
+        (await deps.instanceSkillsRepo.listSkills(instanceId)).map(
+          (s) => s.name,
+        ),
       );
       return all.filter((s) => !tracked.has(s.name));
     },
@@ -450,7 +497,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
      */
     async getState(instanceId: string): Promise<SkillsState> {
       const infra = await deps.instancesRepo.get(instanceId, deps.owner);
-      if (!infra) return { installed: [], standalone: [], instancePublishes: [] };
+      if (!infra)
+        return { installed: [], standalone: [], instancePublishes: [] };
       if (infra.currentState !== "running") {
         const [installed, instancePublishes] = await Promise.all([
           deps.instanceSkillsRepo.listSkills(instanceId),
@@ -461,7 +509,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
       const token = await deps.getAgentToken(infra.agentId);
-      const local = await deps.runtimeClient.listLocal(instanceId, token, skillPaths);
+      const local = await deps.runtimeClient.listLocal(
+        instanceId,
+        token,
+        skillPaths,
+      );
 
       const onDisk = new Set(local.map((s) => s.name));
 
