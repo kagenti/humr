@@ -9,7 +9,7 @@
 Several upcoming and existing features want a primitive that Postgres does not fit cleanly:
 
 - Cross-replica signaling — held call wake-ups, fan-out to user WSs ([`DRAFT-unified-hitl-ux`](DRAFT-unified-hitl-ux.md)).
-- Caching of hot read paths that today either re-query Postgres on every request or live in per-replica memory (where replica-local caches don't compose).
+- Caching layer for read-heavy paths shared across replicas — no specific feature is decided here, but session-log replay ([ADR-026](026-session-log-replay.md)) is a plausible first candidate (many concurrent cursors re-reading the same rows).
 - Simple work queues for low-latency background work where cron + table polling is too coarse but a full broker is too much.
 
 `pg LISTEN/NOTIFY` is the natural first reach for the signaling case but has real warts: requires a dedicated long-lived connection per LISTEN-ing replica (cannot use the pool), has an 8KB payload limit, and is awkward in `node-postgres`. For caching, Postgres has no equivalent at the latency tier we'd want. Standing up a full broker (RabbitMQ, NATS, Kafka) is over-scoped for the work we have in flight.
@@ -20,7 +20,7 @@ Several upcoming and existing features want a primitive that Postgres does not f
 
 - **Pub/sub** — cross-replica signaling, fan-out to user WSs, held-call wake-ups. Channel-per-id pattern.
 - **Simple queues** — when we need to dispatch work to an idle worker but don't need transactional handoff or full broker semantics.
-- **Cache** — opportunistic caching of hot read paths shared across replicas.
+- **Cache** — replica-shared cache for read-heavy paths. No specific use case is committed by this ADR; the primitive becomes available, individual features decide on their own merits whether to reach for it.
 
 Use Redis going forward wherever it makes sense within these categories. The split between Redis and Postgres is the load-bearing rule:
 
@@ -46,7 +46,7 @@ Use Redis going forward wherever it makes sense within these categories. The spl
 
 - One new platform dependency in the Helm chart and dev bootstrap.
 - HITL ext_authz hold ([`DRAFT-unified-hitl-ux`](DRAFT-unified-hitl-ux.md)) uses Redis as its cross-replica wake-up channel without inheriting `pg LISTEN/NOTIFY`'s pool quirks.
-- Future caching work has a clear destination — replica-shared, fast, with a Postgres-backed fallback path.
+- Future caching work has a clear destination if and when a feature wants it — replica-shared, fast, with a Postgres-backed fallback path. No specific feature is committed by this ADR.
 - Future simple-queue work can use Redis lists / streams without introducing a heavier broker.
 - Operators size Redis for memory pressure. Cache TTLs and queue depth are author-side responsibilities; the platform doesn't enforce a global cap.
 - Features that lean on Redis must declare a graceful Redis-down behavior, even if it's just "extra latency" or "feature disabled until Redis recovers." No feature is allowed to corrupt durable state on a Redis outage.
