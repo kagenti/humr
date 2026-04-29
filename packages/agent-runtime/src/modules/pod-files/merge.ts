@@ -1,5 +1,5 @@
 import yaml from "js-yaml";
-import type { Fragment } from "./types.js";
+import type { FileFragment } from "api-server-api";
 
 /**
  * Apply fragments to existing YAML content using fill-if-missing semantics:
@@ -18,7 +18,7 @@ import type { Fragment } from "./types.js";
  */
 export function mergeYAMLFillIfMissing(
   existing: string,
-  fragments: Fragment[],
+  fragments: FileFragment[],
 ): { merged: string; changed: boolean } {
   let root: Record<string, unknown> = {};
   if (existing.trim().length > 0) {

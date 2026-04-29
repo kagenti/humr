@@ -44,6 +44,9 @@ importers:
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api
+      api-server-api:
+        specifier: workspace:*
+        version: link:../api-server-api
       file-type:
         specifier: ^22.0.1
         version: 22.0.1

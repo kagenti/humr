@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import { mkdirSync, chmodSync, writeFileSync, renameSync, readFileSync, existsSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
-import type { FileSpec } from "./types.js";
+import type { FileSpec } from "api-server-api";
 import { mergeYAMLFillIfMissing } from "./merge.js";
 
 /**

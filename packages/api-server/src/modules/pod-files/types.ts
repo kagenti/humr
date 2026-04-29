@@ -1,28 +1,25 @@
 /**
- * Push declarative file state to agent pods. The platform feature is
- * source-agnostic — any state in humr (connections, secrets, schedules,
- * UI-edited config) can drive file updates in pods. Connector grants are
- * the first instance, not the only kind.
+ * Pod-files types. Wire types come from `api-server-api` (single source of
+ * truth, shared with agent-runtime); producer-side types stay private to
+ * the api-server because the agent never needs to know about producers.
  *
  * See docs/adrs/DRAFT-pod-files-push.md.
  */
 
-/** A producer's contribution to a file. Shape depends on `mode`. */
-export type FileFragment = Record<string, unknown>;
+export {
+  FileFragmentSchema,
+  FileSpecSchema,
+  MergeModeSchema,
+  PodFilesEventSchema,
+} from "api-server-api";
+export type {
+  FileFragment,
+  FileSpec,
+  MergeMode,
+  PodFilesEvent,
+} from "api-server-api";
 
-export type MergeMode = "yaml-fill-if-missing";
-
-/** One managed file as it travels on the SSE wire. */
-export interface FileSpec {
-  path: string;
-  mode: MergeMode;
-  fragments: FileFragment[];
-}
-
-/** SSE event payload, identical for snapshot and upsert. */
-export interface PodFilesEvent {
-  files: FileSpec[];
-}
+import type { FileSpec } from "api-server-api";
 
 /**
  * Names the *state source* a producer reads. State-mutating services tag

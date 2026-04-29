@@ -1,6 +1,6 @@
 import { applyFile } from "./apply.js";
 import { runSseLoop } from "./sse-client.js";
-import type { FileSpec } from "./types.js";
+import { FileSpecSchema, type FileSpec } from "api-server-api";
 
 export interface PodFilesSyncOptions {
   /** SSE endpoint built by the reconciler:
@@ -61,26 +61,26 @@ export function dispatch(event: string, data: string, agentHome: string): void {
   }
 }
 
+/**
+ * Per-file validation: a single bad row is dropped and logged; the rest
+ * of the payload still applies. Returns `null` only when the envelope
+ * itself is unusable (not an object, no `files` array).
+ */
 function extractFiles(parsed: unknown): FileSpec[] | null {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
   const files = (parsed as { files?: unknown }).files;
   if (!Array.isArray(files)) return null;
-  // Best-effort filter: only keep entries that look like FileSpecs. A bad
-  // entry doesn't poison the rest — log it and continue.
   const out: FileSpec[] = [];
   for (const f of files) {
-    if (
-      f !== null &&
-      typeof f === "object" &&
-      typeof (f as FileSpec).path === "string" &&
-      typeof (f as FileSpec).mode === "string" &&
-      Array.isArray((f as FileSpec).fragments)
-    ) {
-      out.push(f as FileSpec);
+    const result = FileSpecSchema.safeParse(f);
+    if (result.success) {
+      out.push(result.data);
     } else {
-      process.stderr.write(`[pod-files] skipping malformed file entry: ${JSON.stringify(f)}\n`);
+      process.stderr.write(
+        `[pod-files] skipping malformed file entry: ${JSON.stringify(f)} (${result.error.message})\n`,
+      );
     }
   }
   return out;
