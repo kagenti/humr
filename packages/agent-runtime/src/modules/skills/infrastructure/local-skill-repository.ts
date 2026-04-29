@@ -163,6 +163,12 @@ async function write(
     const dst = path.join(targetRoot, name);
     await fs.rm(dst, { recursive: true, force: true });
     await fs.cp(srcDir, dst, { recursive: true });
+    try {
+      await assertNoSymlinks(dst);
+    } catch (e) {
+      await fs.rm(dst, { recursive: true, force: true });
+      throw e;
+    }
   }
   // All install targets receive the same contents, so hashing the first is
   // sufficient. Computed from the installed dir (rather than from the source
@@ -195,11 +201,28 @@ async function extractTarball(
 ): Promise<void> {
   const tgz = path.join(dest, "_src.tgz");
   await fs.writeFile(tgz, bytes);
-  const args = ["-xzf", tgz];
+  const listing = await runProc("tar", ["-tzf", tgz]);
+  for (const line of listing.split("\n")) {
+    const entry = line.trim();
+    if (!entry) continue;
+    assertSafeTarEntry(entry);
+  }
+  const args = ["-xzf", tgz, "--no-same-owner"];
   if (opts.stripComponents !== undefined) args.push(`--strip-components=${opts.stripComponents}`);
   args.push("-C", dest);
   await runProc("tar", args);
   await fs.rm(tgz);
+}
+
+function assertSafeTarEntry(entry: string): void {
+  if (entry.startsWith("/")) {
+    throw new Error(`tarball rejected: absolute path ${entry}`);
+  }
+  for (const segment of entry.split("/")) {
+    if (segment === "..") {
+      throw new Error(`tarball rejected: path traversal in ${entry}`);
+    }
+  }
 }
 
 async function findSkillDirsInClone(repoDir: string): Promise<string[]> {
@@ -274,6 +297,26 @@ async function findLocalSkillDir(name: SkillName, skillPaths: SkillPath[]): Prom
   return null;
 }
 
+async function assertNoSymlinks(root: string): Promise<void> {
+  const stack = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    const entries = await fs.readdir(dir);
+    for (const entryName of entries) {
+      const full = path.join(dir, entryName);
+      const st = await fs.lstat(full);
+      if (st.isSymbolicLink()) {
+        throw new Error(`skill rejected: symlink at ${path.relative(root, full)}`);
+      }
+      if (st.isDirectory()) {
+        stack.push(full);
+      } else if (!st.isFile()) {
+        throw new Error(`skill rejected: non-regular file at ${path.relative(root, full)}`);
+      }
+    }
+  }
+}
+
 async function walkFiles(root: string): Promise<string[]> {
   const out: string[] = [];
   async function rec(dir: string) {
@@ -298,14 +341,16 @@ function hasNullBytes(buf: Buffer): boolean {
   return false;
 }
 
-async function runProc(cmd: string, args: string[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
+async function runProc(cmd: string, args: string[]): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
       reject(new Error(`${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`));
     }, COMMAND_TIMEOUT_MS);
+    proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
     proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
     proc.on("error", (e) => {
       clearTimeout(timer);
@@ -314,7 +359,7 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     proc.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) {
-        resolve();
+        resolve(Buffer.concat(stdoutChunks).toString("utf8"));
         return;
       }
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();

@@ -34,7 +34,7 @@ export function createGitProtocolClient(): GitProtocolClient {
   return {
     async cloneShallow(url, dest, depth = 50) {
       try {
-        await runProc("git", ["clone", "--quiet", "--depth", String(depth), url, dest]);
+        await runProc("git", ["clone", "--quiet", "--no-local", "--depth", String(depth), url, dest]);
         return ok(undefined);
       } catch (e) {
         return err({ kind: "SourceFetchFailed", source: url, detail: (e as Error).message });
@@ -53,7 +53,7 @@ export function createGitProtocolClient(): GitProtocolClient {
       try {
         await fs.rm(dest, { recursive: true, force: true });
         await fs.mkdir(dest, { recursive: true });
-        await runProc("git", ["clone", "--quiet", url, dest]);
+        await runProc("git", ["clone", "--quiet", "--no-local", url, dest]);
         await runProc("git", ["-C", dest, "checkout", "--quiet", sha]);
         return ok(undefined);
       } catch (e) {
