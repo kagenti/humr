@@ -67,13 +67,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		// Forks deliberately do NOT receive this env — see fork_resources.go.
 		corev1.EnvVar{Name: "HUMR_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	)
-	if !instance.ExperimentalCredentialInjector {
-		// GitHub auth rides on a OneCLI OAuth app connection, not a user-declared
-		// secret, so there is no envMapping path for it. Keep the sentinel in the
-		// base env so `gh`, octokit, and other GH_TOKEN-aware tools authenticate
-		// against api.github.com via OneCLI's host-based MITM swap.
-		env = append(env, corev1.EnvVar{Name: "GH_TOKEN", Value: "humr:sentinel"})
-	}
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
 	// occurrence, so connector < template < instance — user overrides win.
