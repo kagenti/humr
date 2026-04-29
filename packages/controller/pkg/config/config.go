@@ -27,6 +27,7 @@ type Config struct {
 	AgentImagePullSecrets     []string          // Pull secret names for agent pods (comma-separated via env)
 	AgentPodAnnotations       map[string]string // Extra annotations stamped on every agent pod (e.g. admission webhook break-glass)
 	AgentStorageClass         string
+	AgentStorageSize          string // PVC size for persistent agent mounts (default: 10Gi)
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
 	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
@@ -90,6 +91,7 @@ func LoadFromEnv() (*Config, error) {
 		cfg.AgentPodAnnotations = ann
 	}
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
+	cfg.AgentStorageSize = envOrDefault("AGENT_STORAGE_SIZE", "10Gi")
 	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
 	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))

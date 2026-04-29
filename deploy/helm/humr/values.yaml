@@ -269,6 +269,10 @@ controller:
   # impersonation). Empty = cluster default (which must itself support RWX).
   # Set to "humr-rwx" to use the bundled in-cluster NFS provisioner below.
   agentStorageClass: ""
+  # -- PVC size requested for persistent agent mounts (e.g. /home/agent).
+  # Empty = controller default (10Gi). Lower this on resource-constrained
+  # clusters such as the e2e test VM.
+  agentStorageSize: ""
   # -- Extra annotations stamped on every agent pod. Useful for admission-webhook
   # break-glass annotations (e.g. `admission.stackrox.io/break-glass: ticket-1234`)
   # or for cluster-specific scheduling/observability hints.
