@@ -47,6 +47,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     channelManager,
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
+    agentHome: config.agentHome,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
@@ -60,7 +61,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       if (!owner) {
         throw new Error(`instance ${body.instanceId}: missing owner label`);
       }
-      const { sessions } = composeAgentsModule(api, config.namespace, owner, db, userDirectory, channelSecretStore);
+      const { sessions } = composeAgentsModule(api, config.namespace, owner, db, userDirectory, channelSecretStore, config.agentHome);
 
       let resumeSessionId: string | undefined;
       if (mode === "continuous") {

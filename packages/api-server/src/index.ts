@@ -77,7 +77,7 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory, channelSecretStore);
+const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory, channelSecretStore, config.agentHome);
 const persistSession = upsertSession(db);
 const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
   persistSession(sessionId, instanceId, type, undefined, threadTs);
@@ -169,7 +169,7 @@ const podFilesBus = createPodFilesBus();
 const podFilesRegistry = buildPodFilesRegistry({
   // Agent HOME from the helm chart. Must agree with the controller's mount
   // path; both read the same chart value.
-  agentHome: process.env["AGENT_HOME"] || "/home/agent",
+  agentHome: config.agentHome,
   // Owner-scoped fetch via Keycloak impersonation. Safe to call from background
   // contexts (no live user JWT). The producer logs and returns empty on
   // transient OneCLI failures; next reconnect re-snapshots.
