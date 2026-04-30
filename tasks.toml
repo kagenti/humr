@@ -46,7 +46,13 @@ echo "$CLEANED" > "$FILE"
 
 ["common:setup:pnpm"]
 run = "pnpm install"
-sources = ["pnpm-lock.yaml", "pnpm-workspace.yaml", "packages/*/package.json", "package.json"]
+sources = [
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "packages/*/package.json",
+  "packages/agents/pi-agent/workspace/.pi/agent/extensions/*/package.json",
+  "package.json",
+]
 
 ["common:setup:git-hooks"]
 run = '''

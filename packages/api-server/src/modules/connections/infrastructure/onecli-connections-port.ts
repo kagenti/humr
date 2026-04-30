@@ -32,7 +32,7 @@ export interface OnecliConnectionsPort {
 }
 
 export function createOnecliConnectionsPort(
-  oc: OnecliClient,
+  oc: Pick<OnecliClient, "onecliFetch">,
   userJwt: string,
   userSub: string,
 ): OnecliConnectionsPort {

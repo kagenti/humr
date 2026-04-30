@@ -85,8 +85,8 @@ export const secretsRouter = t.router({
     .mutation(({ ctx, input }) => ctx.secrets.delete(input.id)),
 
   getAgentAccess: t.procedure
-    .input(z.object({ agentName: z.string().min(1) }))
-    .query(({ ctx, input }) => ctx.secrets.getAgentAccess(input.agentName)),
+    .input(z.object({ agentId: z.string().min(1) }))
+    .query(({ ctx, input }) => ctx.secrets.getAgentAccess(input.agentId)),
 
   testAnthropic: t.procedure
     .input(
@@ -122,13 +122,13 @@ export const secretsRouter = t.router({
   setAgentAccess: t.procedure
     .input(
       z.object({
-        agentName: z.string().min(1),
+        agentId: z.string().min(1),
         mode: z.enum(["all", "selective"]),
         secretIds: z.array(z.string().min(1)),
       }),
     )
     .mutation(({ ctx, input }) =>
-      ctx.secrets.setAgentAccess(input.agentName, {
+      ctx.secrets.setAgentAccess(input.agentId, {
         mode: input.mode,
         secretIds: input.secretIds,
       }),

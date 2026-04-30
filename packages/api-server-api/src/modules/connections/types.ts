@@ -28,6 +28,6 @@ export interface AgentAppConnections {
 
 export interface ConnectionsService {
   list(): Promise<AppConnectionView[]>;
-  getAgentConnections(agentName: string): Promise<AgentAppConnections>;
-  setAgentConnections(agentName: string, connectionIds: string[]): Promise<void>;
+  getAgentConnections(agentId: string): Promise<AgentAppConnections>;
+  setAgentConnections(agentId: string, connectionIds: string[]): Promise<void>;
 }

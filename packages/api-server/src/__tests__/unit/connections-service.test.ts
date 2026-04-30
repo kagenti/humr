@@ -238,4 +238,23 @@ describe("ConnectionsService.setAgentConnections", () => {
     await svc.setAgentConnections("my-agent", []);
     expect(calls).toEqual([{ uuid: "uuid", ids: [] }]);
   });
+
+  it("triggers the pod-files publisher with the calling owner and the app-connections source", async () => {
+    const agent: OnecliAgent = { id: "uuid", identifier: "my-agent" };
+    const calls: { owner: string; agentId: string; source: string }[] = [];
+    const svc = createConnectionsService({
+      port: makePort({ findAgentByIdentifier: async () => agent }),
+      owner: "alice-sub",
+      podFiles: {
+        compute: async () => [],
+        publishForOwner: async (owner, agentId, source) => {
+          calls.push({ owner, agentId, source });
+        },
+      },
+    });
+    await svc.setAgentConnections("my-agent", ["c-1"]);
+    expect(calls).toEqual([
+      { owner: "alice-sub", agentId: "my-agent", source: "app-connections" },
+    ]);
+  });
 });

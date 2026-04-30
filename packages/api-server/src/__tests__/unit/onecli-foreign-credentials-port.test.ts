@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   buildForkIdentifier,
   createOnecliForeignCredentialsPort,
-  type OnecliForeignCredentialsConfig,
 } from "../../modules/connections/infrastructure/onecli-foreign-credentials-port.js";
+import { createOnecliClient } from "../../apps/api-server/onecli.js";
 
 interface Route {
   status: number;
@@ -40,13 +40,17 @@ function installFetchMock(routes: Record<string, Route | Route[]>) {
   return { calls, mock };
 }
 
-const config: OnecliForeignCredentialsConfig = {
-  keycloakTokenUrl: "http://kc/token",
-  clientId: "humr-api",
-  clientSecret: "s3cret",
-  onecliAudience: "onecli",
-  onecliBaseUrl: "http://onecli",
-};
+function makePort() {
+  return createOnecliForeignCredentialsPort(
+    createOnecliClient({
+      keycloakTokenUrl: "http://kc/token",
+      clientId: "humr-api",
+      clientSecret: "s3cret",
+      onecliAudience: "onecli",
+      onecliBaseUrl: "http://onecli",
+    }),
+  );
+}
 
 describe("buildForkIdentifier", () => {
   it("produces a stable, url-safe identifier", () => {
@@ -79,7 +83,7 @@ describe("onecli-foreign-credentials-port", () => {
       ],
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     const token = await port.exchangeImpersonationToken("kc|u1");
 
     expect(token).toBe("user-tok");
@@ -101,7 +105,7 @@ describe("onecli-foreign-credentials-port", () => {
       "POST http://kc/token": { status: 401, body: { error: "bad" } },
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     await expect(port.exchangeImpersonationToken("kc|u1")).rejects.toThrow(/401/);
   });
 
@@ -114,7 +118,7 @@ describe("onecli-foreign-credentials-port", () => {
       "PATCH http://onecli/api/agents/a-1/secret-mode": { status: 200, body: {} },
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     const result = await port.createOrFindAgent({
       onecliToken: "onecli-tok",
       identifier: "fork-x-abc",
@@ -142,7 +146,7 @@ describe("onecli-foreign-credentials-port", () => {
       "PATCH http://onecli/api/agents/a-2/secret-mode": { status: 200, body: {} },
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     const result = await port.createOrFindAgent({
       onecliToken: "onecli-tok",
       identifier: "fork-x-abc",
@@ -164,7 +168,7 @@ describe("onecli-foreign-credentials-port", () => {
       "PATCH http://onecli/api/agents/a-2/secret-mode": { status: 200, body: {} },
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     const result = await port.createOrFindAgent({
       onecliToken: "onecli-tok",
       identifier: "fork-x-abc",
@@ -180,7 +184,7 @@ describe("onecli-foreign-credentials-port", () => {
       "http://onecli/api/agents": { status: 200, body: [] },
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     await expect(
       port.createOrFindAgent({
         onecliToken: "onecli-tok",
@@ -195,7 +199,7 @@ describe("onecli-foreign-credentials-port", () => {
       "POST http://onecli/api/agents": { status: 500, body: { error: "boom" } },
     });
 
-    const port = createOnecliForeignCredentialsPort(config);
+    const port = makePort();
     await expect(
       port.createOrFindAgent({
         onecliToken: "onecli-tok",

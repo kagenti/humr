@@ -18,6 +18,7 @@ import { LogPanel } from "../components/log-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
 import { SessionConfigBar } from "../components/session-config-popover.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useMcpPicker } from "../hooks/use-mcp-picker.js";
@@ -256,6 +257,8 @@ export function ChatView() {
                           {m.streaming && i === m.parts.length - 1 && <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />}
                         </span>
                       )
+                    ) : p.kind === "thought" ? (
+                      <ThoughtBlock key={i} text={p.text} streaming={m.streaming} />
                     ) : p.kind === "image" ? (
                       <img
                         key={i}

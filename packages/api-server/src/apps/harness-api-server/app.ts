@@ -10,6 +10,8 @@ import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
+import type { PodFilesBus } from "../../modules/pod-files/bus.js";
+import type { FileSpec } from "../../modules/pod-files/types.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
@@ -17,10 +19,20 @@ export interface HarnessApiServerAppDeps {
   db: Db;
   channelManager: ChannelManager;
   channelSecretStore: ChannelSecretStore;
+  podFilesBus: PodFilesBus;
+  podFilesSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
-  const { config, api, db, channelManager, channelSecretStore } = deps;
+  const {
+    config,
+    api,
+    db,
+    channelManager,
+    channelSecretStore,
+    podFilesBus,
+    podFilesSnapshot,
+  } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
 
@@ -34,6 +46,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
+    podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
+    agentHome: config.agentHome,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
@@ -47,7 +61,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       if (!owner) {
         throw new Error(`instance ${body.instanceId}: missing owner label`);
       }
-      const { sessions } = composeAgentsModule(api, config.namespace, owner, db, userDirectory, channelSecretStore);
+      const { sessions } = composeAgentsModule(api, config.namespace, owner, db, userDirectory, channelSecretStore, config.agentHome);
 
       let resumeSessionId: string | undefined;
       if (mode === "continuous") {

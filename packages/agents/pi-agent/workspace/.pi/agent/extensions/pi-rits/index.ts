@@ -1,7 +1,7 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type {ExtensionAPI, ProviderConfig} from "@mariozechner/pi-coding-agent";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -10,36 +10,34 @@ export default function register(pi: ExtensionAPI): void {
 	const model = env("RITS_MODEL");
 	if (!url || !model) return;
 
-	const compat: Record<string, unknown> = {
-		// vLLM (what RITS runs) doesn't speak these.
-		supportsDeveloperRole: false,
-		supportsReasoningEffort: false,
-		supportsUsageInStreaming: false,
-		maxTokensField: "max_tokens",
-	};
-	const thinkingFormat = env("RITS_THINKING_FORMAT");
-	if (thinkingFormat) compat.thinkingFormat = thinkingFormat;
-
-	const provider = {
+	const provider: ProviderConfig = {
 		baseUrl: /\/v\d+$/.test(url) ? url : `${url}/v1`,
 		api: "openai-completions",
 		// Auth is injected by OneCLI at the HTTP-proxy layer; the key set here only
 		// exists to satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
 		apiKey: "injected-by-onecli",
 		authHeader: false,
-		compat,
 		models: [
 			{
 				id: model,
 				name: model,
-				input: ["text"],
+				input: ["text"] as const,
 				reasoning: boolEnv("RITS_REASONING", false),
 				contextWindow: intEnv("RITS_CONTEXT_WINDOW", 128000),
 				maxTokens: intEnv("RITS_MAX_TOKENS", 16384),
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				compat: {
+					// vLLM (what RITS runs) doesn't speak these.
+					supportsDeveloperRole: false,
+					supportsReasoningEffort: true,
+					supportsUsageInStreaming: false,
+					maxTokensField: "max_tokens",
+					requiresThinkingAsText: boolEnv("RITS_THINKING_AS_TEXT", false),
+					thinkingFormat: env("RITS_THINKING_FORMAT") as any,
+				},
 			},
 		],
-	};
+	}
 
 	pi.registerProvider("rits", provider);
 
@@ -48,7 +46,32 @@ export default function register(pi: ExtensionAPI): void {
 	// Upstream: https://github.com/svkozak/pi-acp/issues/15
 	const dir = join(homedir(), ".pi", "agent");
 	mkdirSync(dir, { recursive: true });
-	writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { rits: provider } }, null, 2)}\n`);
+	const modelsPath = join(dir, "models.json");
+	let modelsFile: { providers: Record<string, ProviderConfig> } = { providers: {} };
+	try {
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf8")) as { providers?: Record<string, ProviderConfig> };
+		if (parsed && typeof parsed === "object" && parsed.providers) {
+			modelsFile = { providers: parsed.providers };
+		}
+	} catch {
+		// models.json may not exist yet on a fresh home; start from empty.
+	}
+	modelsFile.providers.rits = provider;
+	writeFileSync(modelsPath, `${JSON.stringify(modelsFile, null, 2)}\n`);
+
+	// Pi reads defaults from settings.json on each session start, so patching the
+	// file here makes RITS the default for subsequent sessions without losing any
+	// other settings already configured in the workspace.
+	const settingsPath = join(dir, "settings.json");
+	let settings: Record<string, unknown> = {};
+	try {
+		settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+	} catch {
+		// settings.json may not exist yet on a fresh home; start from empty.
+	}
+	settings.defaultProvider = "rits";
+	settings.defaultModel = model;
+	writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 function env(name: string): string | undefined {

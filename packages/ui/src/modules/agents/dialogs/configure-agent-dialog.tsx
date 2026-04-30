@@ -158,7 +158,7 @@ export function ConfigureAgentDialog({
     try {
       if (dirtyFields.assigned) {
         await setAccess.mutateAsync({
-          agentName: agentId,
+          agentId: agentId,
           mode: "selective",
           secretIds: values.assigned,
         });
@@ -172,7 +172,7 @@ export function ConfigureAgentDialog({
       }
       if (dirtyFields.assignedAppIds) {
         await setConnections.mutateAsync({
-          agentName: agentId,
+          agentId: agentId,
           connectionIds: values.assignedAppIds,
         });
       }

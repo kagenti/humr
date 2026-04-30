@@ -5,6 +5,7 @@ import type {
   ConnectionsService,
 } from "api-server-api";
 import type { OnecliConnectionsPort } from "../infrastructure/onecli-connections-port.js";
+import type { PodFilesPublisher } from "../../pod-files/publisher.js";
 
 export function normalizeStatus(
   raw: string | null | undefined,
@@ -39,6 +40,20 @@ export function extractIdentity(
 
 export function createConnectionsService(deps: {
   port: OnecliConnectionsPort;
+  /**
+   * The Keycloak sub of the user calling setAgentConnections (also the
+   * agent's owner — only owners can grant). Required when `podFiles` is
+   * present so the publisher knows which owner's state to read.
+   */
+  owner?: string;
+  /**
+   * Optional pod-files publisher. When set, every successful grant change
+   * triggers a re-publish of all producers' output for `owner`. The
+   * sidecar's fill-if-missing merge handles re-grants idempotently, so we
+   * always send the full current state — no diff computation. Revokes
+   * trigger nothing (entries linger; see 034-pod-files-push).
+   */
+  podFiles?: PodFilesPublisher;
 }): ConnectionsService {
   return {
     async list() {
@@ -61,8 +76,8 @@ export function createConnectionsService(deps: {
         }));
     },
 
-    async getAgentConnections(agentName: string): Promise<AgentAppConnections> {
-      const agent = await deps.port.findAgentByIdentifier(agentName);
+    async getAgentConnections(agentId: string): Promise<AgentAppConnections> {
+      const agent = await deps.port.findAgentByIdentifier(agentId);
       if (!agent) {
         // Agent may not be registered in OneCLI yet (controller sync is async).
         return { connectionIds: [] };
@@ -71,13 +86,24 @@ export function createConnectionsService(deps: {
       return { connectionIds };
     },
 
-    async setAgentConnections(agentName: string, connectionIds: string[]) {
-      const agent = await deps.port.findAgentByIdentifier(agentName);
+    async setAgentConnections(agentId: string, connectionIds: string[]) {
+      const agent = await deps.port.findAgentByIdentifier(agentId);
       // Write path fails loud when the agent isn't synced to OneCLI yet:
       // a silent no-op would confuse users who just checked a box.
-      if (!agent) throw new Error(`Agent "${agentName}" not found in OneCLI`);
+      if (!agent) throw new Error(`Agent "${agentId}" not found in OneCLI`);
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
+
+      // Re-run pod-files producers tagged with "app-connections" and
+      // publish to the agent's sidecar. Source-tagged so unrelated
+      // producers (secrets, schedules, …) don't run on every grant change.
+      if (deps.podFiles && deps.owner) {
+        await deps.podFiles.publishForOwner(
+          deps.owner,
+          agentId,
+          "app-connections",
+        );
+      }
     },
   };
 }

@@ -7,10 +7,12 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
+COPY packages/api-server-api/package.json packages/api-server-api/
 
 RUN pnpm install --frozen-lockfile --filter agent-runtime...
 
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
+COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/agent-runtime/ packages/agent-runtime/
 
 RUN pnpm --filter agent-runtime build

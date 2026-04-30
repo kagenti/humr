@@ -150,16 +150,16 @@ export function createSecretsService(deps: {
       }
     },
 
-    async getAgentAccess(agentName: string) {
-      const agent = await deps.port.findAgentByIdentifier(agentName);
-      if (!agent) throw new Error(`Agent "${agentName}" not found in OneCLI`);
+    async getAgentAccess(agentId: string) {
+      const agent = await deps.port.findAgentByIdentifier(agentId);
+      if (!agent) throw new Error(`Agent "${agentId}" not found in OneCLI`);
       const secretIds = await deps.port.getAgentSecrets(agent.id);
       return { mode: agent.secretMode, secretIds };
     },
 
-    async setAgentAccess(agentName: string, access: AgentAccess) {
-      const agent = await deps.port.findAgentByIdentifier(agentName);
-      if (!agent) throw new Error(`Agent "${agentName}" not found in OneCLI`);
+    async setAgentAccess(agentId: string, access: AgentAccess) {
+      const agent = await deps.port.findAgentByIdentifier(agentId);
+      if (!agent) throw new Error(`Agent "${agentId}" not found in OneCLI`);
       if (agent.secretMode !== access.mode) {
         await deps.port.setAgentSecretMode(agent.id, access.mode);
       }

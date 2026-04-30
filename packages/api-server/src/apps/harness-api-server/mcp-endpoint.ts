@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -6,14 +5,28 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import { z } from "zod";
-import yaml from "js-yaml";
 import { ChannelType } from "api-server-api";
 import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { LABEL_OWNER, LABEL_AGENT_REF, STATUS_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { verifyInstanceToken } from "./instance-auth.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
+
+// The agent-runtime files service is rooted at agentHome; the agent
+// process runs in agentHome/work. attachment.path can be absolute
+// (anywhere under agentHome) or workspace-relative (interpreted as
+// relative to the work dir).
+function resolveWorkspacePath(input: string, agentHome: string): string {
+  const workDir = `${agentHome}/work`;
+  if (input.startsWith("/")) {
+    return input.startsWith(`${agentHome}/`)
+      ? input.slice(agentHome.length + 1)
+      : input; // outside agentHome — let files.read reject it
+  }
+  const workRel = workDir.slice(agentHome.length + 1);
+  return `${workRel}/${input}`;
+}
 
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
@@ -39,6 +52,7 @@ function createMcpSession(
   instanceId: string,
   k8s: K8sClient,
   channelManager: ChannelManager,
+  agentHome: string,
 ): McpSession {
   const server = new McpServer({
     name: `humr-${instanceId}`,
@@ -61,13 +75,13 @@ function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    "Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file from this agent's workspace by setting attachment.path (workspace-relative); the connector reads it server-side (10 MiB cap enforced by the runtime).",
+    `Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
       chatId: z.string().optional(),
       attachment: z.object({
-        path: z.string().min(1).describe("Workspace-relative path to the file to attach."),
+        path: z.string().min(1).describe(`Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`),
         filename: z.string().optional().describe("Name shown in the channel; defaults to the basename of path."),
         mimeType: z.string().optional().describe("Override the runtime-detected MIME type."),
         title: z.string().optional(),
@@ -76,12 +90,13 @@ function createMcpSession(
     async ({ channel, text, chatId, attachment }) => {
       let resolved: ChannelAttachment | undefined;
       if (attachment) {
+        const resolvedPath = resolveWorkspacePath(attachment.path, agentHome);
         let file: { content?: string; binary?: boolean; mimeType?: string };
         try {
-          file = await runtimeClient.files.read.query({ path: attachment.path });
+          file = await runtimeClient.files.read.query({ path: resolvedPath });
         } catch (err) {
           const msg = err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
-            ? `attachment not found: ${attachment.path}`
+            ? `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`
             : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
           return { content: [{ type: "text" as const, text: msg }], isError: true };
         }
@@ -126,33 +141,10 @@ function createMcpSession(
   return session;
 }
 
-async function verifyAgentToken(k8s: K8sClient, instanceId: string, token: string): Promise<boolean> {
-  const instanceCm = await k8s.getConfigMap(instanceId);
-  if (!instanceCm) return false;
-
-  const agentName = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
-  const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
-  if (!agentName || !owner) return false;
-
-  const agentCm = await k8s.getConfigMap(agentName);
-  if (!agentCm) return false;
-
-  const agentOwner = agentCm.metadata?.labels?.[LABEL_OWNER];
-  if (agentOwner !== owner) return false;
-
-  const statusYaml = agentCm.data?.[STATUS_KEY];
-  if (!statusYaml) return false;
-
-  const status = yaml.load(statusYaml) as { accessTokenHash?: string };
-  if (!status?.accessTokenHash) return false;
-
-  const hash = createHash("sha256").update(token).digest("hex");
-  return hash === status.accessTokenHash;
-}
-
 export function mountMcpRoutes(app: Hono, deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
+  agentHome: string;
 }) {
   app.all("/api/instances/:id/mcp", async (c) => {
     const authHeader = c.req.header("authorization");
@@ -162,7 +154,7 @@ export function mountMcpRoutes(app: Hono, deps: {
     const token = authHeader.slice(7);
 
     const instanceId = c.req.param("id")!;
-    if (!await verifyAgentToken(deps.k8s, instanceId, token)) {
+    if (!await verifyInstanceToken(deps.k8s, instanceId, token)) {
       return c.json({ error: "not found" }, 404);
     }
 
@@ -181,7 +173,7 @@ export function mountMcpRoutes(app: Hono, deps: {
       return c.json({ error: "session not found" }, 404);
     }
 
-    const session = createMcpSession(instanceId, deps.k8s, deps.channelManager);
+    const session = createMcpSession(instanceId, deps.k8s, deps.channelManager, deps.agentHome);
     await session.server.connect(session.transport);
 
     return session.transport.handleRequest(c.req.raw);
