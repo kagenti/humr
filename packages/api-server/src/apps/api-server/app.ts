@@ -39,6 +39,7 @@ import {
 } from "./../../modules/approvals/compose.js";
 import {
   composeEgressRulesModule,
+  createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
   createK8sAllowOnlySecretsPort,
   type PresetSeeder,
@@ -176,6 +177,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
+      connectionRules: createConnectionRulesSyncAdapter(db),
+      ownerSub: user.sub,
     });
     const connections = createConnectionsService({
       port: createOnecliConnectionsPort(onecli, userJwt, user.sub),

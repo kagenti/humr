@@ -8,6 +8,10 @@ import type {
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
 import { createPresetSeeder, type PresetSeeder } from "./services/preset-seeder.js";
+import {
+  createConnectionRulesSync,
+  type ConnectionRulesSync,
+} from "./services/connection-rules-sync.js";
 import type { K8sAllowOnlySecretsPort } from "./infrastructure/k8s-allow-only-secrets-port.js";
 
 export interface ComposeEgressRulesDeps {
@@ -95,8 +99,19 @@ export function createPresetSeederAdapter(db: Db, trustedHosts: readonly string[
 }
 
 export type { PresetSeeder } from "./services/preset-seeder.js";
+export type { ConnectionRulesSync } from "./services/connection-rules-sync.js";
 export type { EgressPreset };
 export {
   createK8sAllowOnlySecretsPort,
   type K8sAllowOnlySecretsPort,
 } from "./infrastructure/k8s-allow-only-secrets-port.js";
+
+/**
+ * System-level connection-rules sync, called from the secrets module's
+ * setAgentAccess flow. The egress-rules module owns the diff/insert/revoke
+ * logic; the secrets module hands over the desired (agent, granted) state.
+ */
+export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
+  const repo = createEgressRulesRepository(db);
+  return createConnectionRulesSync({ repo });
+}

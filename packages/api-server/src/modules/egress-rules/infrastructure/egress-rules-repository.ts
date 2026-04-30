@@ -20,6 +20,10 @@ export interface EgressRulesRepository {
    *  used by the connection grant lifecycle to skip the broad auto-insert
    *  when the user has already taken explicit ownership of the host. */
   hasUserOwnedRuleForHost(agentId: string, host: string): Promise<boolean>;
+  /** Active rules with `source LIKE 'connection:%'` for the agent. Used by
+   *  the connection-rules sync to compute add/revoke diffs without scanning
+   *  the full table. */
+  listConnectionDerivedForAgent(agentId: string): Promise<EgressRuleRow[]>;
   getById(id: string): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
   /** Promotes the row's source to `manual` regardless of prior origin. */
@@ -114,6 +118,18 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         LIMIT 1
       `);
       return (rows as unknown as Array<unknown>).length > 0;
+    },
+
+    async listConnectionDerivedForAgent(agentId) {
+      const rows = await db.execute<RawRule>(sql`
+        SELECT id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+               verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
+        FROM ${egressRules}
+        WHERE agent_id = ${agentId}
+          AND status = 'active'
+          AND source LIKE 'connection:%'
+      `);
+      return (rows as unknown as RawRule[]).map(toRow);
     },
 
     async insert(row) {
