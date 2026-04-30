@@ -8,11 +8,15 @@ import type {
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
 import { createPresetSeeder, type PresetSeeder } from "./services/preset-seeder.js";
+import type { K8sAllowOnlySecretsPort } from "./infrastructure/k8s-allow-only-secrets-port.js";
 
 export interface ComposeEgressRulesDeps {
   db: Db;
   ownerSub: string;
   isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;
+  /** Materializes allow-only Secrets that promote a host onto Envoy's L7
+   *  chain. Optional — non-cluster contexts (tests) skip the side effect. */
+  allowOnlySecrets?: K8sAllowOnlySecretsPort;
 }
 
 export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
@@ -21,6 +25,7 @@ export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
   const repo = createEgressRulesRepository(deps.db);
   const service = createEgressRulesService({
     repo,
+    allowOnlySecrets: deps.allowOnlySecrets,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
   });
@@ -91,3 +96,7 @@ export function createPresetSeederAdapter(db: Db, trustedHosts: readonly string[
 
 export type { PresetSeeder } from "./services/preset-seeder.js";
 export type { EgressPreset };
+export {
+  createK8sAllowOnlySecretsPort,
+  type K8sAllowOnlySecretsPort,
+} from "./infrastructure/k8s-allow-only-secrets-port.js";

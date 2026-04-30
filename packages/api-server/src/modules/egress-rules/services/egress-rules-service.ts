@@ -7,11 +7,23 @@ import type {
 } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
+import type { K8sAllowOnlySecretsPort } from "../infrastructure/k8s-allow-only-secrets-port.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
+  /** Port that materializes the allow-only Secret which promotes a host
+   *  onto Envoy's L7 chain. Optional so non-cluster contexts (tests) can
+   *  skip the side effect. */
+  allowOnlySecrets?: K8sAllowOnlySecretsPort;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
+}
+
+/** A rule needs the L7 (HTTP) ext_authz path — and therefore MITM — when
+ *  it constrains method or path. Wildcard-only rules stay on the L4 path
+ *  where the API server gates by SNI alone. */
+function needsL7Promotion(method: string, pathPattern: string): boolean {
+  return method !== "*" || pathPattern !== "*";
 }
 
 function toView(row: EgressRuleRow): EgressRuleView {
@@ -50,6 +62,13 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
         decidedBy: deps.ownerSub,
         source: "manual",
       });
+      // Path-specific rules need MITM so the L7 ext_authz handler can see
+      // method/path. The allow-only Secret is the controller's signal to
+      // extend the cert SAN list and render an MITM chain. Idempotent: if
+      // a credentialed Secret already exists for the host, this no-ops.
+      if (needsL7Promotion(input.method, input.pathPattern) && deps.allowOnlySecrets) {
+        await deps.allowOnlySecrets.ensure(deps.ownerSub, input.host);
+      }
       return toView(row);
     },
 
@@ -66,6 +85,12 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
         decidedBy: deps.ownerSub,
       });
       if (!updated) throw new Error("egress rule not found");
+      // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`,
+      // which promotes the host to L7 if it wasn't already. Same idempotent
+      // ensure as create.
+      if (needsL7Promotion(input.method, input.pathPattern) && deps.allowOnlySecrets) {
+        await deps.allowOnlySecrets.ensure(deps.ownerSub, updated.host);
+      }
       return toView(updated);
     },
 

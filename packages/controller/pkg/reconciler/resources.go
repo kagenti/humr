@@ -285,6 +285,15 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Value: ghAvail,
 		})
 		podAnnotations["humr.ai/gh-token-available"] = ghAvail
+
+		// Roll trigger (DRAFT-unified-hitl-ux #10): hash of the Secret set
+		// driving the Envoy bootstrap. When the api-server adds an
+		// allow-only Secret to promote a host onto L7, the hash changes,
+		// the pod template diverges, and the StatefulSet rolls so Envoy
+		// picks up the new chain set + leaf cert. Without this, Secret
+		// list changes regenerate the bootstrap CM but don't restart the
+		// pod, and Envoy keeps serving the old config.
+		podAnnotations["humr.ai/envoy-secrets-rev"] = envoySecretsRev(credentialSecrets)
 	}
 
 	return &appsv1.StatefulSet{

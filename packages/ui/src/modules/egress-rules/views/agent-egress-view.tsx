@@ -53,9 +53,25 @@ export function AgentEgressView() {
     && draft.pathPattern.trim().length > 0
     && !createRule.isPending;
 
+  // Path-specific rules need MITM, which means the controller has to
+  // re-issue the leaf cert and roll the agent pod. The L4 (host-only) path
+  // is a pure DB write — no roll. Warn the user so they own the timing.
+  const draftRequiresRestart =
+    draft.host.trim().length > 0
+    && (draft.method !== "*" || draft.pathPattern.trim() !== "*")
+    && !rules.some(
+      (r) => r.host === draft.host.trim() && (r.method !== "*" || r.pathPattern !== "*"),
+    );
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
+    if (
+      draftRequiresRestart
+      && !window.confirm(
+        `Saving this rule will restart the agent (~5–15s) so Envoy can MITM "${draft.host.trim()}" for path-level enforcement. Continue?`,
+      )
+    ) return;
     createRule.mutate(
       {
         agentId,
@@ -130,6 +146,11 @@ export function AgentEgressView() {
           >
             <Plus size={11} /> Add rule
           </button>
+          {draftRequiresRestart && (
+            <p className="basis-full text-[11px] text-warning">
+              Saving will restart the agent (~5–15s) — path-level rules need MITM on this host.
+            </p>
+          )}
         </form>
 
         {isLoading ? (

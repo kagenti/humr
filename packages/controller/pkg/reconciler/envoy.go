@@ -3,8 +3,11 @@ package reconciler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
@@ -47,12 +50,23 @@ func EnvoyBootstrapName(instanceName string) string {
 }
 
 // envoyRoute is the per-Secret data the bootstrap template needs.
+//
+// `Credentialed=false` is the L7-promoted MITM-only flavor (DRAFT-unified-hitl-ux):
+// the host has at least one path-specific egress_rule but no attached credential.
+// We render TLS-terminating chain + ext_authz, but skip credential_injector and
+// the credential SDS mount.
 type envoyRoute struct {
-	SecretName string // K8s Secret name, used for the per-route credential file path
-	Host       string // host the credential is scoped to (matched on :authority)
-	HeaderName string // header to inject (e.g. "Authorization")
-	VolumeName string // pod-level volume name for this Secret
+	SecretName   string // K8s Secret name, used for the per-route credential file path
+	Host         string // host the credential is scoped to (matched on :authority)
+	HeaderName   string // header to inject (e.g. "Authorization")
+	VolumeName   string // pod-level volume name for this Secret
+	Credentialed bool   // true → render credential_injector; false → MITM-only chain
 }
+
+// envoySecretTypeAllowOnly marks Secrets that exist solely to extend the
+// cert SAN list and force a host onto the L7 path so path-specific egress
+// rules can be enforced. They carry no credential payload.
+const envoySecretTypeAllowOnly = "allow-only"
 
 // listOwnerCredentialSecrets returns the K8s Secrets the api-server has
 // written for this owner. Secrets predating #337 (still OneCLI-only) are not
@@ -98,11 +112,16 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 		if header == "" {
 			header = "Authorization"
 		}
+		// Default credentialed for back-compat with Secrets predating the
+		// secret-type label. Allow-only Secrets carry no credential payload
+		// and exist purely to extend the cert SAN list.
+		credentialed := s.Labels[envoySecretTypeLabel] != envoySecretTypeAllowOnly
 		routes = append(routes, envoyRoute{
-			SecretName: s.Name,
-			Host:       host,
-			HeaderName: header,
-			VolumeName: "cred-" + s.Name,
+			SecretName:   s.Name,
+			Host:         host,
+			HeaderName:   header,
+			VolumeName:   "cred-" + s.Name,
+			Credentialed: credentialed,
 		})
 	}
 	return routes
@@ -218,6 +237,7 @@ static_resources:
                               - { exact: "host" }
                           headers_to_add:
                             - { key: "x-humr-instance", value: "{{ $.InstanceID }}" }
+{{- if .Credentialed }}
                   - name: envoy.filters.http.credential_injector
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
@@ -232,6 +252,7 @@ static_resources:
                               path_config_source:
                                 path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialFile }}
                           header: "{{ .HeaderName }}"
+{{- end }}
                   - name: envoy.filters.http.dynamic_forward_proxy
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
@@ -446,6 +467,12 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 		},
 	}}
 	for _, s := range secrets {
+		// Allow-only Secrets carry no credential payload; the bootstrap
+		// template skips credential_injector for them, so there's nothing
+		// to mount.
+		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			continue
+		}
 		volumes = append(volumes, corev1.Volume{
 			Name: "cred-" + s.Name,
 			VolumeSource: corev1.VolumeSource{
@@ -453,9 +480,8 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 			},
 		})
 	}
-	// Optional: only present when there are routes (and therefore a leaf cert).
-	// On a flag-on instance with no credential Secrets, we render the bootstrap
-	// without TLS-terminating chains, so the volume is not needed.
+	// Leaf cert is required whenever ANY route exists (allow-only or
+	// credentialed) — both flavors terminate TLS to gate the request.
 	if len(secrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: envoyLeafTLSVolume,
@@ -474,6 +500,29 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 
 func ptrBool(b bool) *bool { return &b }
 
+// envoySecretsRev is a stable digest of the Secret set that drives Envoy's
+// chain rendering: secret name + host + secret-type label + headerName.
+// Stamped on the pod template so the StatefulSet rolls when any of those
+// change (new credentialed connection, allow-only Secret added, host
+// retargeted). Sort first so reconcile order doesn't churn the hash.
+func envoySecretsRev(secrets []corev1.Secret) string {
+	if len(secrets) == 0 {
+		return "empty"
+	}
+	parts := make([]string, 0, len(secrets))
+	for _, s := range secrets {
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s",
+			s.Name,
+			s.Annotations[envoyHostPatternAnn],
+			s.Labels[envoySecretTypeLabel],
+			s.Annotations[envoyHeaderNameAnn],
+		))
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(sum[:8])
+}
+
 // envoySidecarContainer returns the Envoy sidecar spec. Drops all caps,
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
 // credential Secrets.
@@ -484,6 +533,9 @@ func envoySidecarContainer(cfg *config.Config, secrets []corev1.Secret) corev1.C
 		ReadOnly:  true,
 	}}
 	for _, s := range secrets {
+		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			continue
+		}
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "cred-" + s.Name,
 			MountPath: envoyCredentialsRoot + "/cred-" + s.Name,

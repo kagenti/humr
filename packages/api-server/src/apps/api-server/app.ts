@@ -40,6 +40,7 @@ import {
 import {
   composeEgressRulesModule,
   createEgressRuleWriterAdapter,
+  createK8sAllowOnlySecretsPort,
   type PresetSeeder,
 } from "./../../modules/egress-rules/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
@@ -187,6 +188,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       ownerSub: user.sub,
       isAgentOwnedBy,
+      allowOnlySecrets: createK8sAllowOnlySecretsPort(k8sClient),
     });
     const { service: approvals } = composeApprovalsService({
       db,
