@@ -1,40 +1,23 @@
 import { KeyRound, Plug, Unplug } from "lucide-react";
 
 import { useStore } from "../../../store.js";
-import type { OAuthAppConnection, OAuthAppSummary } from "../api/fetchers.js";
-import { useDisconnectApp, useStartAppOAuth } from "../api/mutations.js";
+import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
+import { useDisconnectApp } from "../api/mutations.js";
 
 interface Props {
-  app: OAuthAppSummary;
+  app: OAuthAppDescriptor;
   connection: OAuthAppConnection | null;
   animationDelayMs: number;
+  onConnect: (app: OAuthAppDescriptor) => void;
 }
 
-export function OAuthAppRow({ app, connection, animationDelayMs }: Props) {
-  const showToast = useStore((s) => s.showToast);
+export function OAuthAppRow({ app, connection, animationDelayMs, onConnect }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const startAppOAuth = useStartAppOAuth();
   const disconnectApp = useDisconnectApp();
 
-  const isConnecting = startAppOAuth.isPending && startAppOAuth.variables === app.id;
   const isDisconnecting = disconnectApp.isPending && disconnectApp.variables === app.id;
   const expired = connection?.expired ?? false;
   const connected = connection != null;
-
-  const handleConnect = () => {
-    startAppOAuth.mutate(app.id, {
-      onSuccess: (data) => {
-        if (data.error) {
-          showToast({ kind: "error", message: data.error });
-          return;
-        }
-        if (data.authUrl) {
-          sessionStorage.setItem("humr-return-view", "connections");
-          window.location.href = data.authUrl;
-        }
-      },
-    });
-  };
 
   const handleDisconnect = async () => {
     if (!(await showConfirm(`Disconnect ${app.displayName}?`, "Disconnect"))) return;
@@ -48,8 +31,10 @@ export function OAuthAppRow({ app, connection, animationDelayMs }: Props) {
   const detail = connected
     ? expired
       ? "Expired — reconnect to refresh access"
-      : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${app.hostPattern}`
+      : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`
     : app.description;
+
+  const headline = connection?.displayName ?? app.displayName;
 
   return (
     <div
@@ -60,7 +45,7 @@ export function OAuthAppRow({ app, connection, animationDelayMs }: Props) {
         <Icon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{app.displayName}</div>
+        <div className="text-[14px] font-semibold text-text truncate">{headline}</div>
         <div className="text-[12px] font-mono text-text-muted truncate">{detail}</div>
       </div>
       {connected && (
@@ -76,9 +61,8 @@ export function OAuthAppRow({ app, connection, animationDelayMs }: Props) {
       )}
       {!connected || expired ? (
         <button
-          onClick={handleConnect}
-          disabled={isConnecting}
-          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white disabled:opacity-40 shadow-[2px_2px_0_var(--color-accent)] flex items-center gap-1"
+          onClick={() => onConnect(app)}
+          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white shadow-[2px_2px_0_var(--color-accent)] flex items-center gap-1"
         >
           <Plug size={11} />
           {expired ? "Reconnect" : "Connect"}

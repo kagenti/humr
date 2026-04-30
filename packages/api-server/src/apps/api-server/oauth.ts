@@ -25,7 +25,7 @@ import {
   type OAuthEngine,
 } from "../../modules/connections/infrastructure/oauth-engine.js";
 import type {
-  OAuthApp,
+  OAuthAppDescriptor,
   OAuthAppRegistry,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
 import {
@@ -174,13 +174,14 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   // Named OAuth apps (GitHub, GitHub Enterprise)
   // -------------------------------------------------------------------------
 
-  oauth.get("/api/oauth/apps", (c) => c.json(apps.listSummaries()));
+  oauth.get("/api/oauth/apps", (c) => c.json(apps.list()));
 
   /**
-   * Lists the user's connections to admin-configured OAuth apps. Reads from
-   * the K8s connection store (source of truth for the experimental Envoy
-   * path) and intersects with the configured app registry — apps the admin
-   * removed from config no longer surface even if a Secret remains.
+   * Lists the user's connections to apps the registry knows about. Reads
+   * from the K8s connection store (source of truth for the experimental
+   * Envoy path); a connection whose key doesn't match any descriptor is
+   * skipped here — those surface under MCP listings or are an artifact of
+   * an app the platform removed.
    */
   oauth.get("/api/oauth/apps/connections", async (c) => {
     try {
@@ -189,15 +190,21 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       const nowSec = Math.floor(Date.now() / 1000);
       const appConns = k8sConns
         .map((conn) => {
-          const app = apps.list().find((a) => a.flow.connectionKey === conn.connection);
+          const app = apps.list().find((a) => a.connectionKey === conn.connection);
           if (!app) return null;
           const expired =
             conn.status === "expired" ||
             (conn.expiresAt != null && conn.expiresAt < nowSec);
+          // For multi-host apps (GHE), bake the stored host into the label
+          // so the UI can disambiguate without needing the descriptor.
+          const displayName =
+            app.id === "github-enterprise"
+              ? `${app.displayName} (${conn.hostPattern})`
+              : app.displayName;
           return {
             appId: app.id,
-            displayName: app.displayName,
-            hostPattern: app.flow.hostPattern,
+            displayName,
+            hostPattern: conn.hostPattern,
             connectedAt: conn.connectedAt ?? "",
             expired,
           };
@@ -211,20 +218,33 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   });
 
   /**
-   * Kicks off an authorization-code flow for a configured app. Returns the
-   * authorization URL the UI redirects the browser to. The callback below
-   * lands the resulting tokens in K8s + OneCLI.
+   * Kicks off an authorization-code flow for an app. The user supplies their
+   * own client credentials (and host for GHE) in the body — the platform
+   * does not mint or store a default client.
    */
   oauth.post("/api/oauth/apps/:id/connect", async (c) => {
     const id = c.req.param("id");
-    const app = apps.get(id);
-    if (!app) return c.json({ error: "Unknown app" }, 404);
+    const descriptor = apps.get(id);
+    if (!descriptor) return c.json({ error: "Unknown app" }, 404);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    let built;
+    try {
+      built = apps.build(descriptor.id, body);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Invalid input";
+      return c.json({ error: msg }, 400);
+    }
     const user = c.get("user");
     const jwt = getUserJwt(c);
     const redirectUri = `${uiBaseUrl}/api/oauth/callback`;
     const { authUrl } = engine.start({
-      provider: app.provider,
-      flow: app.flow,
+      provider: built.provider,
+      flow: built.flow,
       redirectUri,
       userJwt: jwt,
       userSub: user.sub,
@@ -234,17 +254,17 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
 
   oauth.delete("/api/oauth/apps/connections/:id", async (c) => {
     const id = c.req.param("id");
-    const app = apps.get(id);
-    if (!app) return c.json({ error: "Unknown app" }, 404);
+    const descriptor = apps.get(id);
+    if (!descriptor) return c.json({ error: "Unknown app" }, 404);
     const user = c.get("user");
     const jwt = getUserJwt(c);
     await bestEffort(
-      { op: "delete", target: "k8s", identifier: app.id },
-      () => k8sConnectionsFor(user.sub).deleteConnection(app.flow.connectionKey),
+      { op: "delete", target: "k8s", identifier: descriptor.id },
+      () => k8sConnectionsFor(user.sub).deleteConnection(descriptor.connectionKey),
     );
     await bestEffort(
-      { op: "delete", target: "onecli", identifier: app.id },
-      () => deleteOAuthSecretViaOnecli(oc, jwt, user.sub, app.flow.connectionKey),
+      { op: "delete", target: "onecli", identifier: descriptor.id },
+      () => deleteOAuthSecretViaOnecli(oc, jwt, user.sub, descriptor.connectionKey),
     );
     return c.json({ ok: true });
   });
@@ -261,7 +281,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         listMcpConnections(oc, jwt, user.sub),
         k8sConnectionsFor(user.sub).listConnections(),
       ]);
-      const appKeys = new Set(apps.list().map((a) => a.flow.connectionKey));
+      const appKeys = new Set(apps.list().map((a) => a.connectionKey));
       const nowSec = Math.floor(Date.now() / 1000);
       const merged = new Map<string, { hostname: string; connectedAt: string; expired: boolean }>();
       for (const conn of onecliConns) merged.set(conn.hostname, conn);
@@ -471,4 +491,4 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   return oauth;
 }
 
-export type { OAuthApp };
+export type { OAuthAppDescriptor };

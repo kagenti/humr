@@ -6,6 +6,7 @@ import { isCustomSecret, type SecretView } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js";
 import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
+import type { OAuthAppDescriptor } from "../api/fetchers.js";
 import {
   useAppConnections,
   useMcpConnections,
@@ -17,6 +18,7 @@ import { McpConnectionRow } from "../components/mcp-connection-row.js";
 import { OAuthAppRow } from "../components/oauth-app-row.js";
 import { SecretRow } from "../components/secret-row.js";
 import { AddMcpForm } from "../forms/add-mcp-form.js";
+import { ConnectAppForm } from "../forms/connect-app-form.js";
 
 export function ConnectionsView() {
   const {
@@ -53,6 +55,7 @@ export function ConnectionsView() {
   const [showAddMcp, setShowAddMcp] = useState(false);
   const [showAddSecret, setShowAddSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
+  const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(null);
 
   const customSecrets = secrets.filter(isCustomSecret);
   const connectionByAppId = new Map(oauthAppConnections.map((c) => [c.appId, c]));
@@ -119,6 +122,7 @@ export function ConnectionsView() {
                 app={app}
                 connection={connectionByAppId.get(app.id) ?? null}
                 animationDelayMs={i * 50}
+                onConnect={setConnectingApp}
               />
             ))}
           </div>
@@ -248,6 +252,10 @@ export function ConnectionsView() {
           initialUrl={addMcpInitialUrl}
           onCancel={() => setShowAddMcp(false)}
         />
+      )}
+
+      {connectingApp && (
+        <ConnectAppForm app={connectingApp} onCancel={() => setConnectingApp(null)} />
       )}
 
       {showAddSecret && (

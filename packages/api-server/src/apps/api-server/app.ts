@@ -19,10 +19,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
-import {
-  createOAuthAppRegistry,
-  type OAuthAppsConfig,
-} from "../../modules/connections/infrastructure/oauth-apps.js";
+import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import type { OnecliClient } from "./onecli.js";
@@ -84,40 +81,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.use("/api/*", auth.middleware);
 
-  const oauthAppsConfig: OAuthAppsConfig = {
-    redirectUri: `${config.uiBaseUrl}/api/oauth/callback`,
-    ...(config.githubClientId && config.githubClientSecret
-      ? {
-          github: {
-            clientId: config.githubClientId,
-            clientSecret: config.githubClientSecret,
-            ...(config.githubScopes
-              ? { scopes: config.githubScopes.split(",").map((s) => s.trim()).filter(Boolean) }
-              : {}),
-          },
-        }
-      : {}),
-    ...(config.githubEnterpriseHost &&
-    config.githubEnterpriseClientId &&
-    config.githubEnterpriseClientSecret
-      ? {
-          githubEnterprise: {
-            host: config.githubEnterpriseHost,
-            clientId: config.githubEnterpriseClientId,
-            clientSecret: config.githubEnterpriseClientSecret,
-            ...(config.githubEnterpriseScopes
-              ? {
-                  scopes: config.githubEnterpriseScopes
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                }
-              : {}),
-          },
-        }
-      : {}),
-  };
-  const oauthApps = createOAuthAppRegistry(oauthAppsConfig);
+  const oauthApps = createOAuthAppRegistry();
   app.route(
     "/",
     createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, oc: onecli, k8sClient, apps: oauthApps }),
