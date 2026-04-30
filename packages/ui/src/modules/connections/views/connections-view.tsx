@@ -15,6 +15,7 @@ import {
 } from "../api/queries.js";
 import { AppConnectionRow } from "../components/app-connection-row.js";
 import { McpConnectionRow } from "../components/mcp-connection-row.js";
+import { OAuthAppConnectButton } from "../components/oauth-app-connect-button.js";
 import { OAuthAppRow } from "../components/oauth-app-row.js";
 import { SecretRow } from "../components/secret-row.js";
 import { AddMcpForm } from "../forms/add-mcp-form.js";
@@ -58,7 +59,16 @@ export function ConnectionsView() {
   const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(null);
 
   const customSecrets = secrets.filter(isCustomSecret);
-  const connectionByAppId = new Map(oauthAppConnections.map((c) => [c.appId, c]));
+  const appsById = new Map(oauthApps.map((a) => [a.id, a]));
+  const singleAppsConnected = new Set(
+    oauthAppConnections
+      .map((c) => appsById.get(c.appId))
+      .filter((a): a is NonNullable<typeof a> => a != null && a.cardinality === "single")
+      .map((a) => a.id),
+  );
+  const availableToConnect = oauthApps.filter(
+    (app) => app.cardinality === "multiple" || !singleAppsConnected.has(app.id),
+  );
 
   const refreshAll = () => {
     refetchAppConnections();
@@ -107,23 +117,34 @@ export function ConnectionsView() {
 
         {isPendingOAuthApps && <ListSkeleton />}
 
-        {!isPendingOAuthApps && oauthApps.length === 0 && appConnections.length === 0 && (
+        {!isPendingOAuthApps && oauthAppConnections.length === 0 && availableToConnect.length === 0 && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
-            No OAuth apps configured. Ask your administrator to set the GitHub or
-            GitHub Enterprise client credentials.
+            No OAuth apps available.
           </div>
         )}
 
-        {!isPendingOAuthApps && oauthApps.length > 0 && (
+        {!isPendingOAuthApps && oauthAppConnections.length > 0 && (
           <div className="flex flex-col gap-3">
-            {oauthApps.map((app, i) => (
-              <OAuthAppRow
-                key={app.id}
-                app={app}
-                connection={connectionByAppId.get(app.id) ?? null}
-                animationDelayMs={i * 50}
-                onConnect={setConnectingApp}
-              />
+            {oauthAppConnections.map((connection, i) => {
+              const app = appsById.get(connection.appId);
+              if (!app) return null;
+              return (
+                <OAuthAppRow
+                  key={connection.connectionId}
+                  app={app}
+                  connection={connection}
+                  animationDelayMs={i * 50}
+                  onReconnect={setConnectingApp}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {!isPendingOAuthApps && availableToConnect.length > 0 && (
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${oauthAppConnections.length > 0 ? "mt-4" : ""}`}>
+            {availableToConnect.map((app) => (
+              <OAuthAppConnectButton key={app.id} app={app} onConnect={setConnectingApp} />
             ))}
           </div>
         )}

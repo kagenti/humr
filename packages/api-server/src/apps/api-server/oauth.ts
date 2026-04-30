@@ -24,9 +24,10 @@ import {
   createOAuthEngine,
   type OAuthEngine,
 } from "../../modules/connections/infrastructure/oauth-engine.js";
-import type {
-  OAuthAppDescriptor,
-  OAuthAppRegistry,
+import {
+  matchesAppConnection,
+  type OAuthAppDescriptor,
+  type OAuthAppRegistry,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
 import {
   deleteOAuthSecretViaOnecli,
@@ -182,6 +183,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
    * Envoy path); a connection whose key doesn't match any descriptor is
    * skipped here — those surface under MCP listings or are an artifact of
    * an app the platform removed.
+   *
+   * `connectionId` is the per-row identifier the UI uses for disconnect.
+   * For single-instance apps it's the descriptor id; for multi-instance
+   * apps (Generic) it's the stored connection key, which is unique per
+   * (owner, host).
    */
   oauth.get("/api/oauth/apps/connections", async (c) => {
     try {
@@ -190,19 +196,23 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       const nowSec = Math.floor(Date.now() / 1000);
       const appConns = k8sConns
         .map((conn) => {
-          const app = apps.list().find((a) => a.connectionKey === conn.connection);
+          const app = apps.list().find((a) => matchesAppConnection(a, conn.connection));
           if (!app) return null;
           const expired =
             conn.status === "expired" ||
             (conn.expiresAt != null && conn.expiresAt < nowSec);
-          // For multi-host apps (GHE), bake the stored host into the label
-          // so the UI can disambiguate without needing the descriptor.
+          // Prefer the per-connection displayName (Generic, GHE) saved at
+          // connect time; fall back to the descriptor's static label.
           const displayName =
-            app.id === "github-enterprise"
+            conn.displayName ??
+            (app.id === "github-enterprise"
               ? `${app.displayName} (${conn.hostPattern})`
-              : app.displayName;
+              : app.displayName);
+          const connectionId =
+            app.cardinality === "single" ? app.id : conn.connection;
           return {
             appId: app.id,
+            connectionId,
             displayName,
             hostPattern: conn.hostPattern,
             connectedAt: conn.connectedAt ?? "",
@@ -252,19 +262,39 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     return c.json({ authUrl });
   });
 
+  /**
+   * `:id` is either a single-instance descriptor id (e.g. `github`) or a
+   * stored connection key (e.g. `generic-abcdef…`) for multi-instance apps.
+   * Both shapes are accepted because the listing returns whichever fits.
+   */
   oauth.delete("/api/oauth/apps/connections/:id", async (c) => {
     const id = c.req.param("id");
     const descriptor = apps.get(id);
-    if (!descriptor) return c.json({ error: "Unknown app" }, 404);
+    let connectionKey: string;
+    if (descriptor) {
+      if (descriptor.cardinality !== "single") {
+        return c.json(
+          { error: "Multi-instance app requires a connection key, not the app id." },
+          400,
+        );
+      }
+      connectionKey = descriptor.connectionKey;
+    } else {
+      // No descriptor by that id — treat as a stored connection key. Verify
+      // it matches *some* configured app so we don't accept arbitrary keys.
+      const matchingApp = apps.list().find((a) => matchesAppConnection(a, id));
+      if (!matchingApp) return c.json({ error: "Unknown connection" }, 404);
+      connectionKey = id;
+    }
     const user = c.get("user");
     const jwt = getUserJwt(c);
     await bestEffort(
-      { op: "delete", target: "k8s", identifier: descriptor.id },
-      () => k8sConnectionsFor(user.sub).deleteConnection(descriptor.connectionKey),
+      { op: "delete", target: "k8s", identifier: connectionKey },
+      () => k8sConnectionsFor(user.sub).deleteConnection(connectionKey),
     );
     await bestEffort(
-      { op: "delete", target: "onecli", identifier: descriptor.id },
-      () => deleteOAuthSecretViaOnecli(oc, jwt, user.sub, descriptor.connectionKey),
+      { op: "delete", target: "onecli", identifier: connectionKey },
+      () => deleteOAuthSecretViaOnecli(oc, jwt, user.sub, connectionKey),
     );
     return c.json({ ok: true });
   });
@@ -281,14 +311,15 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         listMcpConnections(oc, jwt, user.sub),
         k8sConnectionsFor(user.sub).listConnections(),
       ]);
-      const appKeys = new Set(apps.list().map((a) => a.connectionKey));
+      const appList = apps.list();
       const nowSec = Math.floor(Date.now() / 1000);
       const merged = new Map<string, { hostname: string; connectedAt: string; expired: boolean }>();
       for (const conn of onecliConns) merged.set(conn.hostname, conn);
       for (const conn of k8sConns) {
         // Skip rows owned by the named-app flow — those surface under
-        // /api/oauth/apps/connections, not the MCP list.
-        if (appKeys.has(conn.connection)) continue;
+        // /api/oauth/apps/connections, not the MCP list. Multi-instance
+        // apps (Generic) match by prefix so we have to ask the descriptor.
+        if (appList.some((a) => matchesAppConnection(a, conn.connection))) continue;
         const expired =
           conn.status === "expired" || (conn.expiresAt != null && conn.expiresAt < nowSec);
         merged.set(conn.connection, {
@@ -464,9 +495,14 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
       tokenUrl: pending.provider.tokenEndpoint,
+      authorizationUrl: pending.provider.authorizationUrl,
       clientId: pending.provider.clientId,
       ...(pending.provider.clientSecret ? { clientSecret: pending.provider.clientSecret } : {}),
       grantType: "authorization_code",
+      ...(pending.flow.displayName ? { displayName: pending.flow.displayName } : {}),
+      ...(pending.provider.scopes && pending.provider.scopes.length > 0
+        ? { scopes: pending.provider.scopes.join(" ") }
+        : {}),
     };
     await bestEffort(
       { op: "upsert", target: "k8s", identifier: pending.flow.connectionKey },

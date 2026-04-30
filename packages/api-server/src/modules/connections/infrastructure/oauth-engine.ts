@@ -41,6 +41,13 @@ export interface OAuthFlowMetadata {
   connectionKey: string;
   /** Host pattern for downstream credential-injection routing. */
   hostPattern: string;
+  /**
+   * Human-readable label saved on the resulting K8s Secret. The static apps
+   * derive this from the descriptor; the Generic app passes the user's
+   * input through so the connections list can show "Linear" instead of
+   * "generic-<hash>".
+   */
+  displayName?: string;
 }
 
 export interface PendingFlow {

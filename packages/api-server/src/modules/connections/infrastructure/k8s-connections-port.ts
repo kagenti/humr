@@ -40,9 +40,12 @@ const ANN_HEADER_NAME = "humr.ai/injection-header-name";
 const ANN_VALUE_FORMAT = "humr.ai/injection-value-format";
 const ANN_EXPIRES_AT = "humr.ai/expires-at";
 const ANN_TOKEN_URL = "humr.ai/token-url";
+const ANN_AUTHORIZATION_URL = "humr.ai/authorization-url";
 const ANN_GRANT_TYPE = "humr.ai/grant-type";
 const ANN_CONNECTION_STATUS = "humr.ai/connection-status";
 const ANN_CONNECTED_AT = "humr.ai/connected-at";
+const ANN_DISPLAY_NAME = "humr.ai/display-name";
+const ANN_SCOPES = "humr.ai/scopes";
 
 const SECRET_TYPE_CONNECTION = "connection";
 const NAME_PREFIX = "humr-conn-";
@@ -63,9 +66,20 @@ export interface ConnectionMetadata {
   headerName: string;
   valueFormat: string;
   tokenUrl: string;
+  /** Authorization endpoint — needed when reconnecting from a stored
+   *  connection (e.g. Generic apps where the URLs are user-supplied). */
+  authorizationUrl?: string;
   clientId: string;
   clientSecret?: string;
   grantType: GrantType;
+  /**
+   * Optional human-readable label set by the connect flow. Generic apps
+   * supply one through their connect form; static apps fall through to
+   * the descriptor's displayName when empty.
+   */
+  displayName?: string;
+  /** Comma-separated scopes — surfaced for diagnostics. Optional. */
+  scopes?: string;
 }
 
 export interface ConnectionSummary {
@@ -75,6 +89,7 @@ export interface ConnectionSummary {
   status: ConnectionStatus;
   expiresAt?: number;
   connectedAt?: string;
+  displayName?: string;
 }
 
 export interface ConnectionRecord {
@@ -132,6 +147,9 @@ function buildAnnotations(
     [ANN_CONNECTED_AT]: connectedAt,
   };
   if (metadata.pathPattern) ann[ANN_PATH_PATTERN] = metadata.pathPattern;
+  if (metadata.authorizationUrl) ann[ANN_AUTHORIZATION_URL] = metadata.authorizationUrl;
+  if (metadata.displayName) ann[ANN_DISPLAY_NAME] = metadata.displayName;
+  if (metadata.scopes) ann[ANN_SCOPES] = metadata.scopes;
   if (tokens.expiresAt != null) ann[ANN_EXPIRES_AT] = String(tokens.expiresAt);
   return ann;
 }
@@ -172,6 +190,7 @@ function readSummary(secret: k8s.V1Secret): ConnectionSummary | null {
     if (Number.isFinite(n)) summary.expiresAt = n;
   }
   if (ann[ANN_CONNECTED_AT]) summary.connectedAt = ann[ANN_CONNECTED_AT];
+  if (ann[ANN_DISPLAY_NAME]) summary.displayName = ann[ANN_DISPLAY_NAME];
   return summary;
 }
 
@@ -197,6 +216,9 @@ function readRecord(secret: k8s.V1Secret): ConnectionRecord | null {
         : "authorization_code",
   };
   if (ann[ANN_PATH_PATTERN]) metadata.pathPattern = ann[ANN_PATH_PATTERN];
+  if (ann[ANN_AUTHORIZATION_URL]) metadata.authorizationUrl = ann[ANN_AUTHORIZATION_URL];
+  if (ann[ANN_DISPLAY_NAME]) metadata.displayName = ann[ANN_DISPLAY_NAME];
+  if (ann[ANN_SCOPES]) metadata.scopes = ann[ANN_SCOPES];
   const clientSecret = decodeData(secret, "client_secret");
   if (clientSecret) metadata.clientSecret = clientSecret;
   return {

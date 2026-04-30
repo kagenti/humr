@@ -55,6 +55,7 @@ const oauthAppDescriptorSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   description: z.string(),
+  cardinality: z.enum(["single", "multiple"]),
   connectionKey: z.string(),
   inputs: z.array(oauthAppInputSchema),
   registrationUrl: z.string().optional(),
@@ -65,6 +66,8 @@ export type OAuthAppInputField = z.infer<typeof oauthAppInputSchema>;
 
 const oauthAppConnectionSchema = z.object({
   appId: z.string(),
+  /** Identifier used by DELETE /api/oauth/apps/connections/:id. */
+  connectionId: z.string(),
   displayName: z.string(),
   hostPattern: z.string(),
   connectedAt: z.string(),

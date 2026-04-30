@@ -1,4 +1,4 @@
-import { KeyRound, Plug, Unplug } from "lucide-react";
+import { KeyRound, Unplug } from "lucide-react";
 
 import { useStore } from "../../../store.js";
 import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
@@ -6,35 +6,37 @@ import { useDisconnectApp } from "../api/mutations.js";
 
 interface Props {
   app: OAuthAppDescriptor;
-  connection: OAuthAppConnection | null;
+  connection: OAuthAppConnection;
   animationDelayMs: number;
-  onConnect: (app: OAuthAppDescriptor) => void;
+  onReconnect: (app: OAuthAppDescriptor) => void;
 }
 
-export function OAuthAppRow({ app, connection, animationDelayMs, onConnect }: Props) {
+/**
+ * Renders a single existing connection. The descriptor supplies the icon
+ * and human context; the connection supplies the host + status. Disconnect
+ * keys on `connection.connectionId` so multi-instance apps (Generic) stay
+ * unambiguous when more than one connection of the same app exists.
+ */
+export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const disconnectApp = useDisconnectApp();
 
-  const isDisconnecting = disconnectApp.isPending && disconnectApp.variables === app.id;
-  const expired = connection?.expired ?? false;
-  const connected = connection != null;
+  const isDisconnecting =
+    disconnectApp.isPending && disconnectApp.variables === connection.connectionId;
+  const expired = connection.expired;
 
   const handleDisconnect = async () => {
-    if (!(await showConfirm(`Disconnect ${app.displayName}?`, "Disconnect"))) return;
-    disconnectApp.mutate(app.id);
+    if (!(await showConfirm(`Disconnect ${connection.displayName}?`, "Disconnect"))) return;
+    disconnectApp.mutate(connection.connectionId);
   };
 
   // Generic key icon — matches AppConnectionRow for visual consistency
   // until we have provider-specific brand assets.
   const Icon = KeyRound;
 
-  const detail = connected
-    ? expired
-      ? "Expired — reconnect to refresh access"
-      : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`
-    : app.description;
-
-  const headline = connection?.displayName ?? app.displayName;
+  const detail = expired
+    ? "Expired — reconnect to refresh access"
+    : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`;
 
   return (
     <div
@@ -45,39 +47,34 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onConnect }: Pr
         <Icon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{headline}</div>
+        <div className="text-[14px] font-semibold text-text truncate">{connection.displayName}</div>
         <div className="text-[12px] font-mono text-text-muted truncate">{detail}</div>
       </div>
-      {connected && (
-        <span
-          className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
-            expired
-              ? "bg-danger-light text-danger border-danger"
-              : "bg-info-light text-info border-info"
-          }`}
-        >
-          {expired ? "Expired" : "Connected"}
-        </span>
-      )}
-      {!connected || expired ? (
+      <span
+        className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
+          expired
+            ? "bg-danger-light text-danger border-danger"
+            : "bg-info-light text-info border-info"
+        }`}
+      >
+        {expired ? "Expired" : "Connected"}
+      </span>
+      {expired && (
         <button
-          onClick={() => onConnect(app)}
-          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white shadow-[2px_2px_0_var(--color-accent)] flex items-center gap-1"
+          onClick={() => onReconnect(app)}
+          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white shadow-[2px_2px_0_var(--color-accent)]"
         >
-          <Plug size={11} />
-          {expired ? "Reconnect" : "Connect"}
-        </button>
-      ) : null}
-      {connected && (
-        <button
-          onClick={handleDisconnect}
-          disabled={isDisconnecting}
-          className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
-          title="Disconnect"
-        >
-          <Unplug size={13} />
+          Reconnect
         </button>
       )}
+      <button
+        onClick={handleDisconnect}
+        disabled={isDisconnecting}
+        className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
+        title="Disconnect"
+      >
+        <Unplug size={13} />
+      </button>
     </div>
   );
 }
