@@ -175,7 +175,13 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   // Named OAuth apps (GitHub, GitHub Enterprise)
   // -------------------------------------------------------------------------
 
-  oauth.get("/api/oauth/apps", (c) => c.json(apps.list()));
+  oauth.get("/api/oauth/apps", (c) => {
+    // Bake the callback URL into each descriptor so the connect form can
+    // surface it — every OAuth app the user registers at the provider must
+    // be configured with this exact URL as its redirect URI.
+    const callbackUrl = `${uiBaseUrl}/api/oauth/callback`;
+    return c.json(apps.list().map((d) => ({ ...d, callbackUrl })));
+  });
 
   /**
    * Lists the user's connections to apps the registry knows about. Reads

@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { Check, Copy, ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import { Modal } from "../../../components/modal.js";
@@ -8,6 +8,38 @@ import { useStartAppOAuth } from "../api/mutations.js";
 
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+
+function CallbackUrlField({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(url).catch(() => {
+      // Browsers may reject without focus / on http; fall back is a no-op.
+    });
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[13px] font-semibold text-text">Callback URL</label>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 h-10 rounded-lg border-2 border-border-light bg-bg px-4 flex items-center text-[13px] font-mono text-text-secondary truncate">
+          {url}
+        </code>
+        <button
+          type="button"
+          onClick={copy}
+          className="btn-brutal h-10 w-10 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
+          title="Copy callback URL"
+        >
+          {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+        </button>
+      </div>
+      <span className="text-[12px] text-text-muted">
+        Paste this exact URL into your OAuth app's Authorization callback / redirect URI field.
+      </span>
+    </div>
+  );
+}
 
 interface Props {
   app: OAuthAppDescriptor;
@@ -64,6 +96,7 @@ export function ConnectAppForm({ app, onCancel }: Props) {
             Register an OAuth app first <ExternalLink size={13} />
           </a>
         )}
+        <CallbackUrlField url={app.callbackUrl} />
         {app.inputs.map((field) => (
           <div key={field.name} className="flex flex-col gap-1.5">
             <label className="text-[13px] font-semibold text-text">{field.label}</label>

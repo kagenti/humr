@@ -59,6 +59,8 @@ const oauthAppDescriptorSchema = z.object({
   connectionKey: z.string(),
   inputs: z.array(oauthAppInputSchema),
   registrationUrl: z.string().optional(),
+  /** The redirect URI the user must configure on the provider's OAuth app. */
+  callbackUrl: z.string(),
 });
 const oauthAppsSchema = z.array(oauthAppDescriptorSchema);
 export type OAuthAppDescriptor = z.infer<typeof oauthAppDescriptorSchema>;
