@@ -136,6 +136,56 @@ describe("oauth-engine.exchange", () => {
     expect(tokens.expiresAt).toBeUndefined();
   });
 
+  it("throws when the provider returns 200 with an OAuth error body (GitHub shape)", async () => {
+    // GitHub returns HTTP 200 + JSON `{error, error_description}` on auth
+    // failures (bad client_secret, code already consumed, redirect-URI
+    // mismatch, …). The engine has to surface that as a thrown error so
+    // downstream code doesn't write `accessToken: undefined` to OneCLI.
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: "bad_verification_code",
+          error_description: "The code passed is incorrect or expired.",
+          error_uri: "https://docs.github.com/...",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+    const engine = createOAuthEngine({ fetchImpl, now: () => 0 });
+    const { state } = engine.start({
+      provider: PROVIDER,
+      flow: FLOW,
+      redirectUri: "https://app.example/cb",
+      userJwt: "jwt",
+      userSub: "sub-1",
+    });
+    const pending = engine.consume(state)!;
+    await expect(engine.exchange(pending, "code")).rejects.toThrow(
+      /bad_verification_code/,
+    );
+  });
+
+  it("throws when a form-encoded 200 carries an error parameter", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response("error=bad_verification_code&error_description=expired", {
+        status: 200,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      }),
+    ) as unknown as typeof fetch;
+    const engine = createOAuthEngine({ fetchImpl, now: () => 0 });
+    const { state } = engine.start({
+      provider: { ...PROVIDER, tokenEndpointAcceptJson: false },
+      flow: FLOW,
+      redirectUri: "https://app.example/cb",
+      userJwt: "jwt",
+      userSub: "sub-1",
+    });
+    const pending = engine.consume(state)!;
+    await expect(engine.exchange(pending, "code")).rejects.toThrow(
+      /bad_verification_code/,
+    );
+  });
+
   it("throws on non-200 with the upstream body in the message", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response("bad code", { status: 400 }),

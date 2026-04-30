@@ -195,27 +195,41 @@ export function createOAuthEngine(opts?: CreateOAuthEngineOptions): OAuthEngine 
         );
       }
       const contentType = res.headers.get("content-type") ?? "";
-      let data: TokenEndpointResponse;
+      let data: Partial<TokenEndpointResponse> & { error?: string; error_description?: string };
       if (contentType.includes("application/json")) {
-        data = (await res.json()) as TokenEndpointResponse;
+        data = (await res.json()) as typeof data;
       } else {
         // GitHub falls back to form-encoded if `Accept: application/json` was
         // not set; tolerate that defensively.
         const text = await res.text();
         const parsed = new URLSearchParams(text);
         const access_token = parsed.get("access_token");
-        if (!access_token) {
-          throw new Error(
-            `OAuth token endpoint returned non-JSON without access_token: ${text.slice(0, 200)}`,
-          );
-        }
+        const error = parsed.get("error");
         data = {
-          access_token,
+          ...(access_token ? { access_token } : {}),
           ...(parsed.get("refresh_token") ? { refresh_token: parsed.get("refresh_token")! } : {}),
           ...(parsed.get("token_type") ? { token_type: parsed.get("token_type")! } : {}),
           ...(parsed.get("expires_in") ? { expires_in: Number(parsed.get("expires_in")) } : {}),
           ...(parsed.get("scope") ? { scope: parsed.get("scope")! } : {}),
+          ...(error ? { error } : {}),
+          ...(parsed.get("error_description") ? { error_description: parsed.get("error_description")! } : {}),
         };
+        if (!access_token && !error) {
+          throw new Error(
+            `OAuth token endpoint returned non-JSON without access_token: ${text.slice(0, 200)}`,
+          );
+        }
+      }
+
+      // GitHub (and some other providers) return HTTP 200 even on errors,
+      // with `{error, error_description, ...}` in the body. Catch it here
+      // before the missing access_token bubbles into a confusing
+      // downstream "expected string, received undefined" from the OneCLI
+      // mirror.
+      if (!data.access_token) {
+        const detail = data.error_description ?? data.error ?? "no access_token in response";
+        const code = data.error ? `${data.error}: ` : "";
+        throw new Error(`OAuth token exchange rejected by provider — ${code}${detail}`);
       }
 
       const tokens: TokenSet = { accessToken: data.access_token };
