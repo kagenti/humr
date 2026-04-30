@@ -149,7 +149,10 @@ export function ConnectAppForm({ app, onCancel }: Props) {
 
   return (
     <Modal onClose={onCancel} widthClass="w-[480px]">
-      <div className="flex flex-col gap-5 p-5 md:p-7">
+      {/* Scrollable body — `min-h-0 flex-1` lets the modal cap at max-h-[85vh]
+         and the inner area scroll when content overflows; the footer below
+         stays pinned. */}
+      <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-5 p-5 md:p-7">
         <h2 className="text-[20px] font-bold text-text">Connect {app.displayName}</h2>
         <p className="text-[13px] text-text-secondary">{app.description}</p>
         {app.registrationUrl && (
@@ -196,23 +199,25 @@ export function ConnectAppForm({ app, onCancel }: Props) {
             </div>
           );
         })}
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-            onClick={submit}
-            disabled={!allFilled || startAppOAuth.isPending}
-          >
-            {startAppOAuth.isPending ? "..." : "Connect"}
-          </button>
-        </div>
+      </div>
+      {/* Footer is pinned outside the scroll region so Connect/Cancel are
+         always reachable, even on short viewports / long descriptors. */}
+      <div className="flex justify-end gap-3 p-5 md:p-7 border-t-2 border-border-light">
+        <button
+          type="button"
+          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
+          onClick={submit}
+          disabled={!allFilled || startAppOAuth.isPending}
+        >
+          {startAppOAuth.isPending ? "..." : "Connect"}
+        </button>
       </div>
     </Modal>
   );
