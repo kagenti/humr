@@ -6,11 +6,13 @@
  * fields) and a `build` function that turns those inputs into the
  * `OAuthFlowProvider` + `OAuthFlowMetadata` the engine needs.
  *
- * Client credentials live with the user, not in chart config — every user
- * registers their own OAuth app at the provider against the platform's
- * callback URL. A future slice may layer in a public default `client_id` or
- * RFC 7591 dynamic client registration as a fallback for providers that
- * support it; for now the user supplies the credentials each connect.
+ * Client credentials live with the user by default — every user registers
+ * their own OAuth app at the provider against the platform's callback URL.
+ * **Optional admin defaults** (mirroring OneCLI's `GITHUB_CLIENT_ID` /
+ * `GITHUB_CLIENT_SECRET` knobs) let an operator wire a single
+ * platform-registered OAuth app: when a default is configured, the
+ * matching field disappears from the connect form and the registry's
+ * `build()` uses the default to mint tokens.
  *
  * Cardinality:
  * - **Single-instance** apps (github, github-enterprise) have at most one
@@ -199,6 +201,23 @@ export type GithubInput = z.infer<typeof githubInputSchema>;
 export type GheInput = z.infer<typeof gheInputSchema>;
 export type GenericInput = z.infer<typeof genericInputSchema>;
 
+/**
+ * Optional platform-wide defaults for OAuth app credentials. When a field
+ * is set, the connect form's matching input disappears and `build()` uses
+ * the default. Fields the admin doesn't set are required from the user.
+ */
+export interface OAuthAppDefaults {
+  github?: {
+    clientId?: string;
+    clientSecret?: string;
+  };
+  githubEnterprise?: {
+    host?: string;
+    clientId?: string;
+    clientSecret?: string;
+  };
+}
+
 export interface OAuthAppRegistry {
   list(): OAuthAppDescriptor[];
   get(id: string): OAuthAppDescriptor | null;
@@ -306,17 +325,72 @@ function buildGeneric(input: GenericInput): BuiltOAuthApp {
   };
 }
 
-export function createOAuthAppRegistry(): OAuthAppRegistry {
+/**
+ * Returns a copy of the descriptor with inputs covered by `defaultsForApp`
+ * pruned. Fields the admin pre-set never appear in the form; the user only
+ * sees what they still need to supply.
+ */
+function pruneDescriptorInputs(
+  descriptor: OAuthAppDescriptor,
+  defaultsForApp: Record<string, string | undefined>,
+): OAuthAppDescriptor {
+  const filtered = descriptor.inputs.filter(
+    (input) => !defaultsForApp[input.name],
+  );
+  if (filtered.length === descriptor.inputs.length) return descriptor;
+  return { ...descriptor, inputs: filtered };
+}
+
+function defaultsObject(
+  descriptor: OAuthAppDescriptor,
+  defaults: OAuthAppDefaults,
+): Record<string, string | undefined> {
+  if (descriptor.id === "github") {
+    return {
+      clientId: defaults.github?.clientId,
+      clientSecret: defaults.github?.clientSecret,
+    };
+  }
+  if (descriptor.id === "github-enterprise") {
+    return {
+      host: defaults.githubEnterprise?.host,
+      clientId: defaults.githubEnterprise?.clientId,
+      clientSecret: defaults.githubEnterprise?.clientSecret,
+    };
+  }
+  return {};
+}
+
+export function createOAuthAppRegistry(
+  defaults: OAuthAppDefaults = {},
+): OAuthAppRegistry {
+  const decorated: OAuthAppDescriptor[] = Object.values(DESCRIPTORS).map((d) =>
+    pruneDescriptorInputs(d, defaultsObject(d, defaults)),
+  );
+  const byId = new Map(decorated.map((d) => [d.id, d]));
+
+  /**
+   * Merge admin defaults with user-supplied input before validation.
+   * User input wins when both are present so a user can still override
+   * a default if the descriptor still surfaces the field.
+   */
+  function withDefaults(id: OAuthAppId, rawInput: unknown): unknown {
+    const base = defaultsObject(DESCRIPTORS[id], defaults);
+    const user = (rawInput && typeof rawInput === "object" ? rawInput : {}) as Record<string, unknown>;
+    const merged: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(base)) if (v != null) merged[k] = v;
+    for (const [k, v] of Object.entries(user)) if (v !== undefined) merged[k] = v;
+    return merged;
+  }
+
   return {
-    list: () => Object.values(DESCRIPTORS),
-    get: (id: string) =>
-      Object.prototype.hasOwnProperty.call(DESCRIPTORS, id)
-        ? DESCRIPTORS[id as OAuthAppId]
-        : null,
+    list: () => decorated,
+    get: (id: string) => byId.get(id as OAuthAppId) ?? null,
     build: (id, rawInput) => {
-      if (id === "github") return buildGithub(githubInputSchema.parse(rawInput));
-      if (id === "github-enterprise") return buildGhe(gheInputSchema.parse(rawInput));
-      if (id === "generic") return buildGeneric(genericInputSchema.parse(rawInput));
+      const merged = withDefaults(id, rawInput);
+      if (id === "github") return buildGithub(githubInputSchema.parse(merged));
+      if (id === "github-enterprise") return buildGhe(gheInputSchema.parse(merged));
+      if (id === "generic") return buildGeneric(genericInputSchema.parse(merged));
       throw new Error(`unknown app id: ${id as string}`);
     },
   };

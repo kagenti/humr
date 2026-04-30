@@ -168,6 +168,74 @@ describe("OAuth app registry — build()", () => {
   });
 });
 
+describe("OAuth app registry — admin defaults", () => {
+  it("prunes inputs covered by GitHub admin defaults from the descriptor", () => {
+    const reg = createOAuthAppRegistry({
+      github: { clientId: "admin-id", clientSecret: "admin-secret" },
+    });
+    expect(reg.get("github")!.inputs).toEqual([]);
+  });
+
+  it("partial defaults prune only the matching field", () => {
+    const reg = createOAuthAppRegistry({
+      github: { clientId: "admin-id" },
+    });
+    const inputs = reg.get("github")!.inputs.map((i) => i.name);
+    expect(inputs).toEqual(["clientSecret"]);
+  });
+
+  it("uses GitHub defaults to fill missing fields when build() is called with empty input", () => {
+    const reg = createOAuthAppRegistry({
+      github: { clientId: "admin-id", clientSecret: "admin-secret" },
+    });
+    const built = reg.build("github", {});
+    expect(built.provider.clientId).toBe("admin-id");
+    expect(built.provider.clientSecret).toBe("admin-secret");
+  });
+
+  it("user-supplied input overrides admin defaults when both are present", () => {
+    const reg = createOAuthAppRegistry({
+      github: { clientId: "admin-id" },
+    });
+    const built = reg.build("github", {
+      clientId: "user-override",
+      clientSecret: "user-secret",
+    });
+    expect(built.provider.clientId).toBe("user-override");
+  });
+
+  it("GHE defaults: full config produces an empty form", () => {
+    const reg = createOAuthAppRegistry({
+      githubEnterprise: {
+        host: "ghe.corp.example",
+        clientId: "id",
+        clientSecret: "sec",
+      },
+    });
+    expect(reg.get("github-enterprise")!.inputs).toEqual([]);
+    const built = reg.build("github-enterprise", {});
+    expect(built.flow.hostPattern).toBe("ghe.corp.example");
+    expect(built.provider.authorizationUrl).toBe(
+      "https://ghe.corp.example/login/oauth/authorize",
+    );
+  });
+
+  it("Generic descriptor is unaffected by GitHub-only defaults", () => {
+    const reg = createOAuthAppRegistry({
+      github: { clientId: "admin", clientSecret: "admin" },
+    });
+    expect(reg.get("generic")!.inputs.map((i) => i.name)).toEqual([
+      "displayName",
+      "hostPattern",
+      "authorizationUrl",
+      "tokenEndpoint",
+      "scopes",
+      "clientId",
+      "clientSecret",
+    ]);
+  });
+});
+
 describe("matchesAppConnection", () => {
   it("single-instance apps match by exact key", () => {
     const reg = createOAuthAppRegistry();

@@ -22,6 +22,16 @@ const configSchema = z.object({
   keycloakApiClientId: z.string().default("humr-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
+  // Optional admin-level OAuth app defaults — when set, the connect form
+  // for the matching app skips those input fields and the api-server uses
+  // the defaults to mint tokens. Mirrors OneCLI's `GITHUB_CLIENT_ID` /
+  // `GITHUB_CLIENT_SECRET` knobs so a single admin-registered OAuth app
+  // can serve every user on a deployment.
+  defaultGithubClientId: z.string().nullable().default(null),
+  defaultGithubClientSecret: z.string().nullable().default(null),
+  defaultGithubEnterpriseHost: z.string().nullable().default(null),
+  defaultGithubEnterpriseClientId: z.string().nullable().default(null),
+  defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -49,5 +59,10 @@ export function loadConfig(): Config {
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
+    defaultGithubClientId: process.env.HUMR_DEFAULT_GITHUB_CLIENT_ID,
+    defaultGithubClientSecret: process.env.HUMR_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubEnterpriseHost: process.env.HUMR_DEFAULT_GHE_HOST,
+    defaultGithubEnterpriseClientId: process.env.HUMR_DEFAULT_GHE_CLIENT_ID,
+    defaultGithubEnterpriseClientSecret: process.env.HUMR_DEFAULT_GHE_CLIENT_SECRET,
   });
 }

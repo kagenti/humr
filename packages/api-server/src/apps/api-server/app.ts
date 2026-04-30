@@ -81,7 +81,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.use("/api/*", auth.middleware);
 
-  const oauthApps = createOAuthAppRegistry();
+  const oauthApps = createOAuthAppRegistry({
+    github: {
+      ...(config.defaultGithubClientId ? { clientId: config.defaultGithubClientId } : {}),
+      ...(config.defaultGithubClientSecret ? { clientSecret: config.defaultGithubClientSecret } : {}),
+    },
+    githubEnterprise: {
+      ...(config.defaultGithubEnterpriseHost ? { host: config.defaultGithubEnterpriseHost } : {}),
+      ...(config.defaultGithubEnterpriseClientId ? { clientId: config.defaultGithubEnterpriseClientId } : {}),
+      ...(config.defaultGithubEnterpriseClientSecret ? { clientSecret: config.defaultGithubEnterpriseClientSecret } : {}),
+    },
+  });
   app.route(
     "/",
     createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, oc: onecli, k8sClient, apps: oauthApps }),
