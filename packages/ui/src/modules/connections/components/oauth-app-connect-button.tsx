@@ -1,6 +1,5 @@
-import { Plug } from "lucide-react";
-
 import type { OAuthAppDescriptor } from "../api/fetchers.js";
+import { OAuthAppIcon } from "./oauth-app-icon.js";
 
 interface Props {
   app: OAuthAppDescriptor;
@@ -19,7 +18,7 @@ export function OAuthAppConnectButton({ app, onConnect }: Props) {
       className="flex items-center gap-3 rounded-xl border-2 border-border-light bg-bg px-4 py-3 text-left hover:border-accent hover:shadow-[2px_2px_0_var(--color-accent)]"
     >
       <div className="w-7 h-7 shrink-0 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-secondary">
-        <Plug size={13} />
+        <OAuthAppIcon appId={app.id} alt={app.displayName} size={13} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-semibold text-text">Connect {app.displayName}</div>

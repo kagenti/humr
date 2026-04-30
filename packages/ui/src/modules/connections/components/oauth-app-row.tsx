@@ -1,8 +1,9 @@
-import { KeyRound, Unplug } from "lucide-react";
+import { Unplug } from "lucide-react";
 
 import { useStore } from "../../../store.js";
 import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
 import { useDisconnectApp } from "../api/mutations.js";
+import { OAuthAppIcon } from "./oauth-app-icon.js";
 
 interface Props {
   app: OAuthAppDescriptor;
@@ -30,10 +31,6 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
     disconnectApp.mutate(connection.connectionId);
   };
 
-  // Generic key icon — matches AppConnectionRow for visual consistency
-  // until we have provider-specific brand assets.
-  const Icon = KeyRound;
-
   const detail = expired
     ? "Expired — reconnect to refresh access"
     : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`;
@@ -44,7 +41,7 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
       style={{ animationDelay: `${animationDelayMs}ms` }}
     >
       <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
-        <Icon size={16} />
+        <OAuthAppIcon appId={app.id} alt={app.displayName} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[14px] font-semibold text-text truncate">{connection.displayName}</div>
