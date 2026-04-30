@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   CreateEgressRuleInput,
+  EgressPreset,
   EgressRuleView,
   EgressRulesService,
   UpdateEgressRuleInput,
@@ -8,6 +9,7 @@ import type {
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
 import type { K8sAllowOnlySecretsPort } from "../infrastructure/k8s-allow-only-secrets-port.js";
+import type { PresetSeeder } from "./preset-seeder.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
@@ -15,6 +17,9 @@ export interface CreateEgressRulesServiceDeps {
    *  onto Envoy's L7 chain. Optional so non-cluster contexts (tests) can
    *  skip the side effect. */
   allowOnlySecrets?: K8sAllowOnlySecretsPort;
+  /** Bulk-seeder used by `applyPreset`. Optional so non-cluster contexts
+   *  (tests) can skip preset operations. */
+  presetSeeder?: PresetSeeder;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
 }
@@ -98,6 +103,17 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
       const rule = await deps.repo.getById(id);
       if (!rule || !await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)) return;
       await deps.repo.revoke(id);
+    },
+
+    async applyPreset(agentId: string, preset: EgressPreset) {
+      if (!await deps.isAgentOwnedBy(agentId, deps.ownerSub)) {
+        throw new Error("agent not found");
+      }
+      if (!deps.presetSeeder) return;
+      // Idempotent against the unique index — re-applying the same preset
+      // is safe; switching presets adds rules without removing prior ones,
+      // since the user owns deletes via `revoke`.
+      await deps.presetSeeder.seed(agentId, preset, deps.ownerSub);
     },
   };
 }

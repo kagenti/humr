@@ -8,6 +8,7 @@ import type {
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
 import { createPresetSeeder } from "./services/preset-seeder.js";
+import type { PresetSeeder } from "./services/preset-seeder.js";
 import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
@@ -21,6 +22,10 @@ export interface ComposeEgressRulesDeps {
   /** Materializes allow-only Secrets that promote a host onto Envoy's L7
    *  chain. Optional — non-cluster contexts (tests) skip the side effect. */
   allowOnlySecrets?: K8sAllowOnlySecretsPort;
+  /** Bulk-seeder used by `applyPreset`. The application root owns the
+   *  trusted-host list (loaded once from the helm-mounted ConfigMap) and
+   *  passes the seeder in so this module doesn't need filesystem access. */
+  presetSeeder?: PresetSeeder;
 }
 
 export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
@@ -30,6 +35,7 @@ export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
   const service = createEgressRulesService({
     repo,
     allowOnlySecrets: deps.allowOnlySecrets,
+    presetSeeder: deps.presetSeeder,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
   });

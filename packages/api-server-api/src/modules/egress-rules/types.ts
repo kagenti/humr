@@ -63,4 +63,8 @@ export interface EgressRulesService {
    *  become user-owned on edit. */
   update(input: UpdateEgressRuleInput): Promise<EgressRuleView>;
   revoke(id: string): Promise<void>;
+  /** Bulk-adds rules for `preset` to an existing agent. Idempotent against
+   *  rows already present. Does NOT remove rules; the user manages deletes
+   *  via `revoke`. */
+  applyPreset(agentId: string, preset: EgressPreset): Promise<void>;
 }

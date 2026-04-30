@@ -282,32 +282,50 @@ export function AddAgentDialog({
 
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-                Network egress
+                Network access
               </span>
               <p className="text-[12px] text-text-muted">
                 Initial set of hosts the agent can reach. Anything not covered
-                surfaces in the inbox; you can edit rules per-agent later.
+                surfaces in the inbox; you can change this later from the
+                agent's Network access tab.
               </p>
               <div className="flex flex-col gap-1.5">
-                <PresetOption
-                  value="trusted"
-                  label="Trusted defaults (recommended)"
-                  hint="npm, PyPI, GitHub, package mirrors, Anthropic"
-                  {...register("egressPreset")}
-                />
-                <PresetOption
-                  value="none"
-                  label="Strict default-deny"
-                  hint="Every host hits the inbox until you approve"
-                  {...register("egressPreset")}
-                />
-                <PresetOption
-                  value="all"
-                  label="Allow everything"
-                  hint="Development escape hatch — no inbox prompts"
-                  {...register("egressPreset")}
-                  warn
-                />
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
+                  <input
+                    type="radio"
+                    value="trusted"
+                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    {...register("egressPreset")}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-text">Trusted defaults (recommended)</span>
+                    <span className="text-[12px] text-text-muted">npm, PyPI, GitHub, package mirrors, Anthropic</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
+                  <input
+                    type="radio"
+                    value="none"
+                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    {...register("egressPreset")}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-text">Strict default-deny</span>
+                    <span className="text-[12px] text-text-muted">Every host hits the inbox until you approve</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-bg px-4 py-2.5">
+                  <input
+                    type="radio"
+                    value="all"
+                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    {...register("egressPreset")}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-text">Allow everything</span>
+                    <span className="text-[12px] text-text-muted">Development escape hatch — no inbox prompts</span>
+                  </span>
+                </label>
               </div>
             </div>
 
@@ -352,31 +370,3 @@ export function AddAgentDialog({
     </div>
   );
 }
-
-const PresetOption = function PresetOption({
-  value,
-  label,
-  hint,
-  warn,
-  ...rest
-}: {
-  value: string;
-  label: string;
-  hint: string;
-  warn?: boolean;
-} & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className={`flex items-start gap-2 cursor-pointer rounded-lg border-2 px-4 py-2.5 ${warn ? "border-warning/40" : "border-border-light"} bg-bg`}>
-      <input
-        type="radio"
-        value={value}
-        className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-        {...rest}
-      />
-      <span className="flex flex-col gap-0.5">
-        <span className="text-[13px] font-semibold text-text">{label}</span>
-        <span className="text-[12px] text-text-muted">{hint}</span>
-      </span>
-    </label>
-  );
-};

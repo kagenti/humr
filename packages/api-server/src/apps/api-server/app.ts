@@ -192,6 +192,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       ownerSub: user.sub,
       isAgentOwnedBy,
       allowOnlySecrets: createK8sAllowOnlySecretsPort(k8sClient),
+      presetSeeder,
     });
     const { service: approvals } = composeApprovalsService({
       db,

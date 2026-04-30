@@ -34,7 +34,7 @@ export function AgentEgressView() {
       <BackLink onClick={() => setView("list")} />
       <div className="flex items-baseline justify-between">
         <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-text">
-          Egress rules
+          Network access
         </h1>
         <span className="text-[11px] text-text-muted">
           {agent ? agent.name : agentId}

@@ -38,3 +38,14 @@ export function useRevokeEgressRule() {
     },
   });
 }
+
+export function useApplyEgressPreset() {
+  return useMutation({
+    ...trpc.egressRules.applyPreset.mutationOptions(),
+    meta: {
+      // Bulk-add of preset rows; refetch so the table reflects them.
+      invalidates: [egressRulesKeys.all, approvalsKeys.all],
+      errorToast: "Couldn't apply preset",
+    },
+  });
+}

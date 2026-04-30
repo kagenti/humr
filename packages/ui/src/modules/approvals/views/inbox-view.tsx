@@ -15,9 +15,9 @@ export function InboxView() {
         </span>
       </div>
       <p className="text-[12px] text-text-muted leading-relaxed max-w-prose">
-        Decisions your agents are waiting on. Allowing permanently writes an
-        egress rule for the agent so future requests of the same shape don't
-        prompt again.
+        Decisions your agents are waiting on. Allowing permanently writes a
+        network access rule for the agent so future requests of the same shape
+        don't prompt again.
       </p>
       <div className="rounded-lg border border-border-light bg-surface overflow-hidden">
         <ApprovalsList rows={rows} density="full" emptyLabel="Nothing pending" />

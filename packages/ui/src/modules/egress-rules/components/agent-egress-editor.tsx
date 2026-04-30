@@ -1,8 +1,12 @@
-import type { EgressRuleView } from "api-server-api";
+import type { EgressPreset, EgressRuleView } from "api-server-api";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
-import { useCreateEgressRule, useRevokeEgressRule } from "../api/mutations.js";
+import {
+  useApplyEgressPreset,
+  useCreateEgressRule,
+  useRevokeEgressRule,
+} from "../api/mutations.js";
 import { useEgressRulesForAgent } from "../api/queries.js";
 
 const EMPTY: EgressRuleView[] = [];
@@ -31,7 +35,19 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
   const { data: rules = EMPTY, isLoading } = useEgressRulesForAgent(agentId);
   const createRule = useCreateEgressRule();
   const revokeRule = useRevokeEgressRule();
+  const applyPreset = useApplyEgressPreset();
   const [draft, setDraft] = useState<AddRuleDraft>(EMPTY_DRAFT);
+  const [pendingPreset, setPendingPreset] = useState<EgressPreset>("trusted");
+
+  const onApplyPreset = () => {
+    if (
+      pendingPreset === "all"
+      && !window.confirm(
+        "Allow everything is a development escape hatch. Are you sure? You can still narrow with deny rules below.",
+      )
+    ) return;
+    applyPreset.mutate({ agentId, preset: pendingPreset });
+  };
 
   const canSave =
     draft.host.trim().length > 0
@@ -73,10 +89,37 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[12px] text-text-muted leading-relaxed max-w-prose">
-        Rules decide outbound HTTP requests from this agent. The most-specific
-        rule wins; <code>*</code> in <em>method</em> or <em>path</em> matches
-        any value. Without a matching rule, the request goes to the inbox.
+        Rules decide which outbound HTTP requests this agent can make. The
+        most-specific rule wins; <code>*</code> in <em>method</em> or
+        <em>path</em> matches any value. Without a matching rule, the request
+        goes to the inbox for your approval.
       </p>
+
+      <div className="rounded-lg border border-border-light bg-surface px-3 py-3 flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
+          <span className="text-[10px] uppercase tracking-wider text-text-muted">Apply preset</span>
+          <select
+            value={pendingPreset}
+            onChange={(e) => setPendingPreset(e.target.value as EgressPreset)}
+            className="h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
+          >
+            <option value="trusted">Trusted defaults (npm, PyPI, GitHub, Anthropic, …)</option>
+            <option value="none">Strict default-deny (no rules added)</option>
+            <option value="all">Allow everything (development only)</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={onApplyPreset}
+          disabled={applyPreset.isPending}
+          className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light bg-bg px-2.5 text-[11px] hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
+        >
+          Apply
+        </button>
+        <p className="basis-full text-[11px] text-text-muted">
+          Adds rules without removing existing ones. Delete rows below to undo.
+        </p>
+      </div>
 
       <div className="rounded-lg border border-border-light bg-surface overflow-hidden">
         <form onSubmit={onSubmit} className="px-3 py-3 border-b border-border-light flex flex-wrap items-end gap-2">

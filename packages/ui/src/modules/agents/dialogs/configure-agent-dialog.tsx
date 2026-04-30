@@ -244,7 +244,7 @@ export function ConfigureAgentDialog({
           />
           <TabButton
             active={tab === "egress"}
-            label="Egress"
+            label="Network access"
             count={egressRules.length}
             onClick={() => setTab("egress")}
           />

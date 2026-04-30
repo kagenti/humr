@@ -143,7 +143,7 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
             <button
               disabled={inflight}
               onClick={() => navigateToAgentEgress(row.agentId)}
-              title="Manage all egress rules for this agent"
+              title="Manage all network access rules for this agent"
               className="h-7 inline-flex items-center gap-1 rounded-md px-2 text-[11px] text-text-muted hover:text-text transition-colors"
             >
               <Settings2 size={11} /> Customize…

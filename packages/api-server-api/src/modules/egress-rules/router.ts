@@ -30,4 +30,11 @@ export const egressRulesRouter = t.router({
   revoke: t.procedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.egressRules.revoke(input.id)),
+
+  applyPreset: t.procedure
+    .input(z.object({
+      agentId: z.string().min(1),
+      preset: z.enum(["none", "trusted", "all"]),
+    }))
+    .mutation(({ ctx, input }) => ctx.egressRules.applyPreset(input.agentId, input.preset)),
 });
