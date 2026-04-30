@@ -3,11 +3,15 @@ import type { EgressPreset } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 
 /**
- * Translates an agent-create preset into a batch of `egress_rules`
- * inserts. Idempotent in the steady state — repository inserts are
- * `ON CONFLICT DO NOTHING` against the `(agent, host, method, path)`
- * unique index, so reseeding the same preset is safe (e.g. if the
- * agent-create flow retries).
+ * Applies an egress preset to an agent by sweeping any previous
+ * preset-derived rows and seeding the new ones. Manual and connection-
+ * derived rows are not touched.
+ *
+ * Same primitive runs at agent-create time (no preset rows yet — sweep is
+ * a no-op) and from the user-facing `applyPreset` (sweep clears the prior
+ * preset, then seeds the new one). Switching `trusted` → `all` revokes the
+ * ~25 trusted rows and inserts the single wildcard; switching back goes
+ * the other way. `none` clears preset rules without seeding anything.
  *
  * The seeder is decoupled from the `EgressRulesService` because:
  *   - It runs in the agent-create flow under the *system* identity, not
@@ -29,6 +33,10 @@ export interface CreatePresetSeederDeps {
 export function createPresetSeeder(deps: CreatePresetSeederDeps): PresetSeeder {
   return {
     async seed(agentId, preset, decidedBy) {
+      // Sweep previous preset rows first so switching presets doesn't
+      // pile up. No-op on initial agent-create; clears on every later
+      // applyPreset including `none` (which seeds nothing afterwards).
+      await deps.repo.revokePresetRowsForAgent(agentId);
       if (preset === "none") return;
       if (preset === "all") {
         await deps.repo.insert({

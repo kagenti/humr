@@ -27,26 +27,60 @@ const EMPTY_DRAFT: AddRuleDraft = {
 };
 
 /**
- * Renders the per-agent egress rules form + list. Embedded in the configure
- * dialog and in the standalone /agents/:id/egress route — same surface,
- * different chrome.
+ * Optional staging hook used when the editor is embedded in a parent form
+ * with its own Save button (the configure-agent dialog). When provided,
+ * the preset selector becomes a controlled form field — selecting a preset
+ * stages it via `onChange`; the parent calls `applyPreset` on Save.
+ *
+ * Standalone views omit this and the editor commits the preset live via
+ * its own Apply button.
  */
-export function AgentEgressEditor({ agentId }: { agentId: string }) {
+export interface StagedPresetController {
+  value: EgressPreset | null;
+  onChange: (next: EgressPreset | null) => void;
+}
+
+/**
+ * Renders the per-agent network access rules form + list. Embedded in the
+ * configure-agent dialog and in the standalone /agents/:id/egress route —
+ * same surface, different chrome.
+ */
+export function AgentEgressEditor({
+  agentId,
+  stagedPreset,
+}: {
+  agentId: string;
+  stagedPreset?: StagedPresetController;
+}) {
   const { data: rules = EMPTY, isLoading } = useEgressRulesForAgent(agentId);
   const createRule = useCreateEgressRule();
   const revokeRule = useRevokeEgressRule();
   const applyPreset = useApplyEgressPreset();
   const [draft, setDraft] = useState<AddRuleDraft>(EMPTY_DRAFT);
-  const [pendingPreset, setPendingPreset] = useState<EgressPreset>("trusted");
+  const [livePreset, setLivePreset] = useState<EgressPreset>("trusted");
 
-  const onApplyPreset = () => {
+  const stagedMode = stagedPreset !== undefined;
+  // In staged mode, the dropdown reflects whatever the parent has staged
+  // (or "trusted" as the default selection). In live mode, the dropdown
+  // is local state — Apply commits via mutation.
+  const dropdownValue = stagedMode ? stagedPreset.value ?? "trusted" : livePreset;
+
+  const onPresetSelect = (next: EgressPreset) => {
+    if (stagedMode) {
+      stagedPreset.onChange(next);
+    } else {
+      setLivePreset(next);
+    }
+  };
+
+  const onApplyLive = () => {
     if (
-      pendingPreset === "all"
+      livePreset === "all"
       && !window.confirm(
         "Allow everything is a development escape hatch. Are you sure? You can still narrow with deny rules below.",
       )
     ) return;
-    applyPreset.mutate({ agentId, preset: pendingPreset });
+    applyPreset.mutate({ agentId, preset: livePreset });
   };
 
   const canSave =
@@ -106,10 +140,12 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
 
       <div className="rounded-lg border border-border-light bg-surface px-3 py-3 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
-          <span className="text-[10px] uppercase tracking-wider text-text-muted">Apply preset</span>
+          <span className="text-[10px] uppercase tracking-wider text-text-muted">
+            {stagedMode ? "Preset" : "Apply preset"}
+          </span>
           <select
-            value={pendingPreset}
-            onChange={(e) => setPendingPreset(e.target.value as EgressPreset)}
+            value={dropdownValue}
+            onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
             className="h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
           >
             <option value="trusted">Trusted defaults (npm, PyPI, GitHub, Anthropic, …)</option>
@@ -117,16 +153,22 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
             <option value="all">Allow everything (development only)</option>
           </select>
         </div>
-        <button
-          type="button"
-          onClick={onApplyPreset}
-          disabled={applyPreset.isPending}
-          className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light bg-bg px-2.5 text-[11px] hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
-        >
-          Apply
-        </button>
+        {!stagedMode && (
+          <button
+            type="button"
+            onClick={onApplyLive}
+            disabled={applyPreset.isPending}
+            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light bg-bg px-2.5 text-[11px] hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
+          >
+            Apply
+          </button>
+        )}
         <p className="basis-full text-[11px] text-text-muted">
-          Adds rules without removing existing ones. Delete rows below to undo.
+          {stagedMode
+            ? stagedPreset.value !== null
+              ? `Save will replace existing preset rules with "${stagedPreset.value}". Manual and connection-derived rules are preserved.`
+              : "Pick a preset and Save to replace existing preset rules. Manual and connection-derived rules are preserved."
+            : "Replaces previous preset rules. Manual edits and connection-derived rules are preserved."}
         </p>
       </div>
 

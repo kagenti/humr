@@ -24,6 +24,10 @@ export interface EgressRulesRepository {
    *  the connection-rules sync to compute add/revoke diffs without scanning
    *  the full table. */
   listConnectionDerivedForAgent(agentId: string): Promise<EgressRuleRow[]>;
+  /** Revokes all active rows with `source LIKE 'preset:%'` for the agent.
+   *  Manual and connection-derived rows are untouched. Used by `applyPreset`
+   *  so switching presets sweeps the previous preset's auto-added rows. */
+  revokePresetRowsForAgent(agentId: string): Promise<void>;
   getById(id: string): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
   /** Promotes the row's source to `manual` regardless of prior origin. */
@@ -130,6 +134,16 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           AND source LIKE 'connection:%'
       `);
       return (rows as unknown as RawRule[]).map(toRow);
+    },
+
+    async revokePresetRowsForAgent(agentId) {
+      await db.execute(sql`
+        UPDATE ${egressRules}
+        SET status = 'revoked'
+        WHERE agent_id = ${agentId}
+          AND status = 'active'
+          AND source LIKE 'preset:%'
+      `);
     },
 
     async insert(row) {
