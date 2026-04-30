@@ -10,6 +10,8 @@ import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import { Modal } from "../../../components/modal.js";
 import type { AgentView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
+import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import {
   useSetAgentAccess,
@@ -28,7 +30,7 @@ import {
   envsToAddOnGrant,
 } from "../utils/connection-env-helpers.js";
 
-type Tab = "connections" | "env";
+type Tab = "connections" | "env" | "egress";
 
 export function ConfigureAgentDialog({
   agent,
@@ -47,6 +49,7 @@ export function ConfigureAgentDialog({
   const { data: apps = [] } = useAppConnections();
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
+  const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
 
   const updateAgent = useUpdateAgent();
   const setAccess = useSetAgentAccess();
@@ -239,10 +242,16 @@ export function ConfigureAgentDialog({
             count={envCount}
             onClick={() => setTab("env")}
           />
+          <TabButton
+            active={tab === "egress"}
+            label="Egress"
+            count={egressRules.length}
+            onClick={() => setTab("egress")}
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-4">
-          {tab === "connections" ? (
+          {tab === "connections" && (
             <ConnectionsPicker
               loading={!ready}
               secrets={secrets}
@@ -252,7 +261,8 @@ export function ConfigureAgentDialog({
               onToggleSecret={toggleSecret}
               onToggleApp={toggleApp}
             />
-          ) : (
+          )}
+          {tab === "env" && (
             <Controller
               control={control}
               name="envVars"
@@ -266,6 +276,7 @@ export function ConfigureAgentDialog({
               )}
             />
           )}
+          {tab === "egress" && <AgentEgressEditor agentId={agentId} />}
         </div>
 
         <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
