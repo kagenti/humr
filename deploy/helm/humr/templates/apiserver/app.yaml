@@ -113,6 +113,32 @@ spec:
               value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
             - name: ONECLI_EXTERNAL_URL
               value: {{ include "humr.url.onecli" . | quote }}
+            {{- with .Values.apiServer.oauthApps.github }}
+            {{- if and .clientId .clientSecret }}
+            - name: HUMR_GITHUB_CLIENT_ID
+              value: {{ .clientId | quote }}
+            - name: HUMR_GITHUB_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- if .scopes }}
+            - name: HUMR_GITHUB_SCOPES
+              value: {{ .scopes | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.apiServer.oauthApps.githubEnterprise }}
+            {{- if and .host .clientId .clientSecret }}
+            - name: HUMR_GHE_HOST
+              value: {{ .host | quote }}
+            - name: HUMR_GHE_CLIENT_ID
+              value: {{ .clientId | quote }}
+            - name: HUMR_GHE_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- if .scopes }}
+            - name: HUMR_GHE_SCOPES
+              value: {{ .scopes | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: http

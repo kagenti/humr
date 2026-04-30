@@ -278,6 +278,24 @@ apiServer:
   # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
   telegramEnabled: false
 
+  # -- OAuth apps the Connections UI offers. Each app surfaces a "Connect" button only
+  # when both clientId and clientSecret are set. Register the app at the provider with
+  # the redirect URI `<uiBaseUrl>/api/oauth/callback`.
+  oauthApps:
+    github:
+      # -- GitHub.com OAuth client id (admin-registered).
+      clientId: ""
+      # -- GitHub.com OAuth client secret.
+      clientSecret: ""
+      # -- Comma-separated scopes; defaults to `repo,read:user,user:email` when empty.
+      scopes: ""
+    githubEnterprise:
+      # -- GHE hostname (no scheme), e.g. `ghe.example.com`. Empty disables GHE.
+      host: ""
+      clientId: ""
+      clientSecret: ""
+      scopes: ""
+
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""

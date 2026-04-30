@@ -38,3 +38,54 @@ export async function disconnectMcp(hostname: string): Promise<void> {
   );
   if (!res.ok) throw new Error(`Disconnect failed (${res.status})`);
 }
+
+// ---------------------------------------------------------------------------
+// Named OAuth apps (GitHub, GitHub Enterprise)
+// ---------------------------------------------------------------------------
+
+const oauthAppSummarySchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  hostPattern: z.string(),
+});
+const oauthAppsSchema = z.array(oauthAppSummarySchema);
+export type OAuthAppSummary = z.infer<typeof oauthAppSummarySchema>;
+
+const oauthAppConnectionSchema = z.object({
+  appId: z.string(),
+  displayName: z.string(),
+  hostPattern: z.string(),
+  connectedAt: z.string(),
+  expired: z.boolean(),
+});
+const oauthAppConnectionsSchema = z.array(oauthAppConnectionSchema);
+export type OAuthAppConnection = z.infer<typeof oauthAppConnectionSchema>;
+
+export async function fetchOAuthApps(): Promise<OAuthAppSummary[]> {
+  const res = await authFetch("/api/oauth/apps");
+  if (!res.ok) throw new Error(`Couldn't load OAuth apps (${res.status})`);
+  return oauthAppsSchema.parse(await res.json());
+}
+
+export async function fetchOAuthAppConnections(): Promise<OAuthAppConnection[]> {
+  const res = await authFetch("/api/oauth/apps/connections");
+  if (!res.ok) throw new Error(`Couldn't load app connections (${res.status})`);
+  return oauthAppConnectionsSchema.parse(await res.json());
+}
+
+export async function startAppOAuth(appId: string) {
+  const res = await authFetch(`/api/oauth/apps/${encodeURIComponent(appId)}/connect`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`OAuth start failed (${res.status})`);
+  return startOAuthResponseSchema.parse(await res.json());
+}
+
+export async function disconnectApp(appId: string): Promise<void> {
+  const res = await authFetch(
+    `/api/oauth/apps/connections/${encodeURIComponent(appId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error(`Disconnect failed (${res.status})`);
+}

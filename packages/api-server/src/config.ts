@@ -22,6 +22,17 @@ const configSchema = z.object({
   keycloakApiClientId: z.string().default("humr-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
+  // OAuth apps — admin-configured, optional. Each app surfaces in the UI's
+  // Connections > Apps section as a "Connect <X>" button when its client
+  // credentials are present. Missing config simply means the app doesn't
+  // appear (no error).
+  githubClientId: z.string().nullable().default(null),
+  githubClientSecret: z.string().nullable().default(null),
+  githubScopes: z.string().nullable().default(null),
+  githubEnterpriseHost: z.string().nullable().default(null),
+  githubEnterpriseClientId: z.string().nullable().default(null),
+  githubEnterpriseClientSecret: z.string().nullable().default(null),
+  githubEnterpriseScopes: z.string().nullable().default(null),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -49,5 +60,12 @@ export function loadConfig(): Config {
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
+    githubClientId: process.env.HUMR_GITHUB_CLIENT_ID,
+    githubClientSecret: process.env.HUMR_GITHUB_CLIENT_SECRET,
+    githubScopes: process.env.HUMR_GITHUB_SCOPES,
+    githubEnterpriseHost: process.env.HUMR_GHE_HOST,
+    githubEnterpriseClientId: process.env.HUMR_GHE_CLIENT_ID,
+    githubEnterpriseClientSecret: process.env.HUMR_GHE_CLIENT_SECRET,
+    githubEnterpriseScopes: process.env.HUMR_GHE_SCOPES,
   });
 }
