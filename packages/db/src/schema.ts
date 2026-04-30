@@ -45,6 +45,12 @@ export const telegramThreads = pgTable("telegram_threads", {
  * keyed on (agent_id, host, method, path_pattern) applies to every instance
  * of that agent template the owner runs (mirrors the scoping of connector
  * envs and Secret-volume mounts; see ADR-024 / ADR-033).
+ *
+ * `source` records the row's origin — `manual`, `inbox`, `connection:<id>`,
+ * `preset:trusted`, `preset:all`. User edits flip the source to `manual` so
+ * later connection revokes/preset reseeds don't touch the row. See
+ * DRAFT-unified-hitl-ux §"Single rules table, mirroring the env-injection
+ * pattern".
  */
 export const egressRules = pgTable("egress_rules", {
   id: text("id").primaryKey(),
@@ -56,10 +62,14 @@ export const egressRules = pgTable("egress_rules", {
   decidedBy: text("decided_by").notNull(),
   decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
   status: text("status").notNull().default("active"),
+  source: text("source").notNull().default("manual"),
 }, (table) => [
   uniqueIndex("egress_rules_lookup_idx")
     .on(table.agentId, table.host, table.method, table.pathPattern)
     .where(sql`${table.status} = 'active'`),
+  index("egress_rules_source_idx")
+    .on(table.source)
+    .where(sql`${table.status} = 'active' AND ${table.source} != 'manual'`),
 ]);
 
 /**

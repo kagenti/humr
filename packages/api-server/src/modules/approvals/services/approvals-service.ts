@@ -2,6 +2,7 @@ import type {
   ApprovalVerdict,
   ApprovalView,
   ApprovalsService,
+  EgressRuleSource,
 } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
@@ -31,6 +32,7 @@ export interface EgressRuleWriter {
     pathPattern: string;
     verdict: "allow" | "deny";
     decidedBy: string;
+    source: EgressRuleSource;
   }): Promise<void>;
 }
 
@@ -114,6 +116,7 @@ export function createApprovalsService(deps: CreateApprovalsServiceDeps): Approv
           pathPattern: row.payload.path,
           verdict: "allow",
           decidedBy: deps.ownerSub,
+          source: "inbox",
         });
         // The pending row may already be expired (the held call timed out),
         // in which case resolvePending no-ops — that's the timed-out
@@ -145,6 +148,7 @@ export function createApprovalsService(deps: CreateApprovalsServiceDeps): Approv
           pathPattern: "*",
           verdict: "allow",
           decidedBy: deps.ownerSub,
+          source: "inbox",
         });
         await deps.repo.resolvePending(id, "allow", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
@@ -165,6 +169,7 @@ export function createApprovalsService(deps: CreateApprovalsServiceDeps): Approv
           pathPattern: row.payload.path,
           verdict: "deny",
           decidedBy: deps.ownerSub,
+          source: "inbox",
         });
         await deps.repo.resolvePending(id, "deny", deps.ownerSub);
         await deps.notifier.notifyResolved(id);

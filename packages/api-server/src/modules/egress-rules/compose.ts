@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import type { EgressRulesService, RuleVerdict } from "api-server-api";
+import type { EgressRuleSource, EgressRulesService, RuleVerdict } from "api-server-api";
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
 
@@ -59,6 +59,7 @@ export interface EgressRuleWriterAdapter {
     pathPattern: string;
     verdict: RuleVerdict;
     decidedBy: string;
+    source: EgressRuleSource;
   }): Promise<void>;
 }
 

@@ -196,6 +196,7 @@ function RuleRow({
     rule.verdict === "allow"
       ? "text-accent border-accent/40"
       : "text-danger border-danger/40";
+  const sourceLabel = formatSource(rule.source);
   return (
     <li className="border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px]">
       <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
@@ -204,6 +205,14 @@ function RuleRow({
       <span className="font-mono text-[11px] text-text-muted w-[60px]">{rule.method}</span>
       <span className="font-medium truncate">{rule.host}</span>
       <span className="font-mono text-[11px] text-text-muted truncate">{rule.pathPattern}</span>
+      {sourceLabel && (
+        <span
+          title={`source: ${rule.source}`}
+          className="text-[10px] text-text-muted rounded border border-border-light px-1.5 py-0.5"
+        >
+          {sourceLabel}
+        </span>
+      )}
       <span className="ml-auto text-[10px] text-text-muted hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
       </span>
@@ -217,4 +226,13 @@ function RuleRow({
       </button>
     </li>
   );
+}
+
+function formatSource(source: EgressRuleView["source"]): string | null {
+  if (source === "manual") return null;
+  if (source === "inbox") return "from inbox";
+  if (source === "preset:trusted") return "preset: trusted";
+  if (source === "preset:all") return "preset: all";
+  if (source.startsWith("connection:")) return `from ${source.slice("connection:".length)}`;
+  return source;
 }

@@ -1,4 +1,4 @@
-import type { RuleVerdict } from "api-server-api";
+import type { EgressRuleSource, RuleVerdict } from "api-server-api";
 
 export interface EgressRuleRow {
   id: string;
@@ -10,4 +10,5 @@ export interface EgressRuleRow {
   decidedBy: string;
   decidedAt: Date;
   status: "active" | "revoked";
+  source: EgressRuleSource;
 }

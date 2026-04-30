@@ -18,6 +18,15 @@ export const egressRulesRouter = t.router({
     }))
     .mutation(({ ctx, input }) => ctx.egressRules.create(input)),
 
+  update: t.procedure
+    .input(z.object({
+      id: z.string().min(1),
+      method: z.string().min(1),
+      pathPattern: z.string().min(1),
+      verdict: ruleVerdict,
+    }))
+    .mutation(({ ctx, input }) => ctx.egressRules.update(input)),
+
   revoke: t.procedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.egressRules.revoke(input.id)),

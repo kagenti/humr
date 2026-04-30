@@ -1,6 +1,6 @@
 import { and, desc, eq, sql, type Db } from "db";
 import { egressRules } from "db";
-import type { RuleVerdict } from "api-server-api";
+import type { EgressRuleSource, RuleVerdict } from "api-server-api";
 import type { EgressRuleRow } from "../domain/types.js";
 
 export interface EgressRulesRepository {
@@ -16,8 +16,14 @@ export interface EgressRulesRepository {
    * keep the read in one round-trip on the egress hot path.
    */
   findMatch(agentId: string, host: string, method: string, path: string): Promise<EgressRuleRow | null>;
+  /** True if any active manual or inbox rule covers `(agent, host)` —
+   *  used by the connection grant lifecycle to skip the broad auto-insert
+   *  when the user has already taken explicit ownership of the host. */
+  hasUserOwnedRuleForHost(agentId: string, host: string): Promise<boolean>;
   getById(id: string): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
+  /** Promotes the row's source to `manual` regardless of prior origin. */
+  updatePromoteToManual(input: PromoteToManualInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
   revoke(id: string): Promise<void>;
 }
@@ -26,6 +32,15 @@ export interface NewEgressRule {
   id: string;
   agentId: string;
   host: string;
+  method: string;
+  pathPattern: string;
+  verdict: RuleVerdict;
+  decidedBy: string;
+  source: EgressRuleSource;
+}
+
+export interface PromoteToManualInput {
+  id: string;
   method: string;
   pathPattern: string;
   verdict: RuleVerdict;
@@ -42,6 +57,7 @@ type RawRule = {
   decidedBy: string;
   decidedAt: Date;
   status: string;
+  source: string;
 } & Record<string, unknown>;
 
 function toRow(r: RawRule): EgressRuleRow {
@@ -55,6 +71,7 @@ function toRow(r: RawRule): EgressRuleRow {
     decidedBy: r.decidedBy,
     decidedAt: r.decidedAt,
     status: r.status as "active" | "revoked",
+    source: r.source as EgressRuleSource,
   };
 }
 
@@ -68,7 +85,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     async findMatch(agentId, host, method, path) {
       const rows = await db.execute<RawRule>(sql`
         SELECT id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
-               verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status
+               verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
           AND host = ${host}
@@ -85,6 +102,19 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return list.length ? toRow(list[0]!) : null;
     },
 
+    async hasUserOwnedRuleForHost(agentId, host) {
+      const rows = await db.execute<{ exists: boolean }>(sql`
+        SELECT 1 AS exists
+        FROM ${egressRules}
+        WHERE agent_id = ${agentId}
+          AND host = ${host}
+          AND status = 'active'
+          AND source IN ('manual', 'inbox')
+        LIMIT 1
+      `);
+      return (rows as unknown as Array<unknown>).length > 0;
+    },
+
     async insert(row) {
       const inserted = await db.insert(egressRules).values({
         id: row.id,
@@ -94,11 +124,27 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         pathPattern: row.pathPattern,
         verdict: row.verdict,
         decidedBy: row.decidedBy,
+        source: row.source,
       }).onConflictDoNothing().returning();
       if (inserted.length) return toRow(inserted[0] as RawRule);
       const existing = await this.findMatch(row.agentId, row.host, row.method, row.pathPattern);
       if (!existing) throw new Error("egress-rules: insert returned no row and no match found");
       return existing;
+    },
+
+    async updatePromoteToManual(input) {
+      const updated = await db
+        .update(egressRules)
+        .set({
+          method: input.method,
+          pathPattern: input.pathPattern,
+          verdict: input.verdict,
+          decidedBy: input.decidedBy,
+          source: "manual",
+        })
+        .where(and(eq(egressRules.id, input.id), eq(egressRules.status, "active")))
+        .returning();
+      return updated.length ? toRow(updated[0] as RawRule) : null;
     },
 
     async listForAgent(agentId) {

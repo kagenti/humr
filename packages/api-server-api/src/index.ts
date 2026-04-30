@@ -115,7 +115,9 @@ export type {
 
 export type {
   RuleVerdict,
+  EgressRuleSource,
   EgressRuleView,
   CreateEgressRuleInput,
+  UpdateEgressRuleInput,
   EgressRulesService,
 } from "./modules/egress-rules/types.js";

@@ -3,6 +3,7 @@ import type {
   CreateEgressRuleInput,
   EgressRuleView,
   EgressRulesService,
+  UpdateEgressRuleInput,
 } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
@@ -23,6 +24,7 @@ function toView(row: EgressRuleRow): EgressRuleView {
     verdict: row.verdict,
     decidedBy: row.decidedBy,
     decidedAt: row.decidedAt.toISOString(),
+    source: row.source,
   };
 }
 
@@ -46,8 +48,25 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
         pathPattern: input.pathPattern,
         verdict: input.verdict,
         decidedBy: deps.ownerSub,
+        source: "manual",
       });
       return toView(row);
+    },
+
+    async update(input: UpdateEgressRuleInput) {
+      const rule = await deps.repo.getById(input.id);
+      if (!rule || !await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)) {
+        throw new Error("egress rule not found");
+      }
+      const updated = await deps.repo.updatePromoteToManual({
+        id: input.id,
+        method: input.method,
+        pathPattern: input.pathPattern,
+        verdict: input.verdict,
+        decidedBy: deps.ownerSub,
+      });
+      if (!updated) throw new Error("egress rule not found");
+      return toView(updated);
     },
 
     async revoke(id) {
