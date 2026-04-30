@@ -68,6 +68,25 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+# -- Shared Redis instance (DRAFT-redis-platform-primitive).
+# Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
+# wake-ups (DRAFT-unified-hitl-ux). Persistence uses AOF with `everysec`; the
+# platform tolerates losing recent ephemeral data on restart (Postgres remains
+# the source of truth for anything durable).
+redis:
+  enabled: true
+  image: redis:8.6
+  port: 6379
+  storage: 1Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
@@ -278,12 +297,21 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- ext_authz HTTP listener for the Envoy sidecar's HITL gate
+  # (DRAFT-unified-hitl-ux). Cluster-internal only; never routed via ingress.
+  extAuthzPort: 4002
   # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
   # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
   telegramEnabled: false
+  # -- Default hold window (seconds) for HITL ext_authz approvals. The held
+  # call resolves on user verdict or denies on timeout; the durable
+  # pending_approvals row outlives the hold and is consumed by the agent's
+  # next retry. Default 30 minutes (DRAFT-unified-hitl-ux). Per-CLI read
+  # timeouts are an external ceiling — see ADR §Timeouts.
+  approvalHoldSeconds: 1800
 
   # -- Database connection (empty host = use shared local postgres)
   db:

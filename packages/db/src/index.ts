@@ -1,4 +1,7 @@
 export { createDb, type Db } from "./client.js";
 export { runMigrations } from "./migrate.js";
-export { channels, sessions, identityLinks, allowedUsers, telegramThreads } from "./schema.js";
-export { eq, and, inArray, desc, isNotNull, sql } from "drizzle-orm";
+export {
+  channels, sessions, identityLinks, allowedUsers, telegramThreads,
+  egressRules, pendingApprovals,
+} from "./schema.js";
+export { eq, and, inArray, asc, desc, isNotNull, isNull, lt, sql } from "drizzle-orm";

@@ -348,6 +348,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
 	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
+	extAuthzPort := intstr.FromInt32(int32(cfg.ExtAuthzPort))
 	httpsPort := intstr.FromInt32(443)
 	httpPort := intstr.FromInt32(80)
 	dnsPort := intstr.FromInt32(53)
@@ -362,6 +363,24 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 			Ports: []networkingv1.NetworkPolicyPort{
 				{Protocol: &tcp, Port: &httpsPort},
 				{Protocol: &tcp, Port: &httpPort},
+			},
+		})
+		// HITL ext_authz gate (DRAFT-unified-hitl-ux). Envoy in this same
+		// pod calls the API server's ext_authz endpoint on every credentialed
+		// request. `failure_mode_allow: false` means a blocked call here
+		// fails closed — i.e. agent gets 403 with no inbox prompt. So this
+		// rule is required wherever the credential-injector path is enabled.
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
+				},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
+				},
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &tcp, Port: &extAuthzPort},
 			},
 		})
 	} else {

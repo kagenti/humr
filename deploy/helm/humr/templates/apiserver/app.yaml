@@ -19,6 +19,10 @@ spec:
       targetPort: harness
       protocol: TCP
       name: harness
+    - port: {{ .Values.apiServer.extAuthzPort }}
+      targetPort: ext-authz
+      protocol: TCP
+      name: ext-authz
   selector:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -56,6 +60,8 @@ spec:
               name: http
             - containerPort: {{ .Values.apiServer.harnessServerPort }}
               name: harness
+            - containerPort: {{ .Values.apiServer.extAuthzPort }}
+              name: ext-authz
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -70,6 +76,8 @@ spec:
               value: {{ .Values.apiServer.port | quote }}
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            - name: EXT_AUTHZ_PORT
+              value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.apiServer.slackBotToken }}
@@ -115,6 +123,10 @@ spec:
               value: {{ include "humr.url.onecli" . | quote }}
             - name: AGENT_HOME
               value: {{ .Values.agentHome | quote }}
+            - name: REDIS_URL
+              value: {{ include "humr.redis.url" . | quote }}
+            - name: APPROVAL_HOLD_SECONDS
+              value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
           readinessProbe:
             tcpSocket:
               port: http

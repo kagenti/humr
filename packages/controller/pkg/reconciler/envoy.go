@@ -193,6 +193,31 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ .SecretName }}
                 http_filters:
+                  # HITL gate (DRAFT-unified-hitl-ux): every credentialed
+                  # request hits the API server's ext_authz handler. Rules
+                  # match short-circuit ALLOW/DENY; misses persist a pending
+                  # row and hold the call up to {{ $.ExtAuthzHoldSeconds }}s.
+                  # Failure-mode-allow is false so a Redis/api-server outage
+                  # fails closed rather than leaking credentials.
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      http_service:
+                        server_uri:
+                          uri: http://{{ $.ExtAuthzHost }}:{{ $.ExtAuthzPort }}
+                          cluster: ext_authz_cluster
+                          timeout: {{ $.ExtAuthzTimeoutSeconds }}s
+                        authorization_request:
+                          allowed_headers:
+                            patterns:
+                              - { exact: ":authority" }
+                              - { exact: ":method" }
+                              - { exact: ":path" }
+                              - { exact: "host" }
+                          headers_to_add:
+                            - { key: "x-humr-instance", value: "{{ $.InstanceID }}" }
                   - name: envoy.filters.http.credential_injector
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
@@ -289,29 +314,56 @@ static_resources:
           dns_cache_config:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
+
+    - name: ext_authz_cluster
+      connect_timeout: 1s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: ext_authz_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.ExtAuthzHost }}
+                      port_value: {{ $.ExtAuthzPort }}
 `
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance.
-func renderEnvoyBootstrap(cfg *config.Config, routes []envoyRoute) (string, error) {
+func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envoyRoute) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
 		return "", err
 	}
+	// Envoy's per-call timeout sits ahead of the application-level hold so a
+	// hold-window timeout fires from the api-server side, not from Envoy.
+	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
-		Port              int
-		Routes            []envoyRoute
-		CredentialsRoot   string
-		CredentialFile    string
-		CredentialSDSName string
-		LeafTLSDir        string
+		Port                   int
+		Routes                 []envoyRoute
+		CredentialsRoot        string
+		CredentialFile         string
+		CredentialSDSName      string
+		LeafTLSDir             string
+		InstanceID             string
+		ExtAuthzHost           string
+		ExtAuthzPort           int
+		ExtAuthzHoldSeconds    int
+		ExtAuthzTimeoutSeconds int
 	}{
-		Port:              cfg.EnvoyPort,
-		Routes:            routes,
-		CredentialsRoot:   envoyCredentialsRoot,
-		CredentialFile:    envoyCredentialKeySDS,
-		CredentialSDSName: envoyCredentialSDSName,
-		LeafTLSDir:        envoyLeafTLSMount,
+		Port:                   cfg.EnvoyPort,
+		Routes:                 routes,
+		CredentialsRoot:        envoyCredentialsRoot,
+		CredentialFile:         envoyCredentialKeySDS,
+		CredentialSDSName:      envoyCredentialSDSName,
+		LeafTLSDir:             envoyLeafTLSMount,
+		InstanceID:             instanceName,
+		ExtAuthzHost:           cfg.ExtAuthzHost,
+		ExtAuthzPort:           cfg.ExtAuthzPort,
+		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
+		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
 	}); err != nil {
 		return "", err
 	}
@@ -322,7 +374,7 @@ func renderEnvoyBootstrap(cfg *config.Config, routes []envoyRoute) (string, erro
 // Envoy bootstrap YAML for an instance.
 func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	routes := routesFromSecrets(secrets)
-	yaml, err := renderEnvoyBootstrap(cfg, routes)
+	yaml, err := renderEnvoyBootstrap(instanceName, cfg, routes)
 	if err != nil {
 		return nil, err
 	}

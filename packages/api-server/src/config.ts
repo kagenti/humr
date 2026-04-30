@@ -4,6 +4,8 @@ const configSchema = z.object({
   namespace: z.string().default("humr-agents"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
+  extAuthzPort: z.coerce.number().default(4002),
+  extAuthzGrpcPort: z.coerce.number().default(4003),
   databaseUrl: z.string(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
   slackBotToken: z.string().nullable().default(null),
@@ -23,6 +25,10 @@ const configSchema = z.object({
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
+  redisUrl: z.string().nullable().default(null),
+  /** Default hold window for ext_authz HITL (seconds). Helm-configurable;
+   *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
+  approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -32,6 +38,8 @@ export function loadConfig(): Config {
     namespace: process.env.NAMESPACE,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
+    extAuthzPort: process.env.EXT_AUTHZ_PORT,
+    extAuthzGrpcPort: process.env.EXT_AUTHZ_GRPC_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,
     slackBotToken: process.env.SLACK_BOT_TOKEN,
@@ -51,5 +59,7 @@ export function loadConfig(): Config {
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     agentHome: process.env.AGENT_HOME,
+    redisUrl: process.env.REDIS_URL,
+    approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
   });
 }

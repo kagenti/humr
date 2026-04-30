@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, jsonb, uniqueIndex, primaryKey, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, uniqueIndex, index, primaryKey, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const channels = pgTable("channels", {
   instanceId: text("instance_id").notNull(),
@@ -38,6 +38,57 @@ export const telegramThreads = pgTable("telegram_threads", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   primaryKey({ columns: [table.instanceId, table.threadId] }),
+]);
+
+/**
+ * Egress rules — per-agent (template), owner-scoped via the agent CM. A rule
+ * keyed on (agent_id, host, method, path_pattern) applies to every instance
+ * of that agent template the owner runs (mirrors the scoping of connector
+ * envs and Secret-volume mounts; see ADR-024 / ADR-033).
+ */
+export const egressRules = pgTable("egress_rules", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  host: text("host").notNull(),
+  method: text("method").notNull(),
+  pathPattern: text("path_pattern").notNull(),
+  verdict: text("verdict").notNull(),
+  decidedBy: text("decided_by").notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
+  status: text("status").notNull().default("active"),
+}, (table) => [
+  uniqueIndex("egress_rules_lookup_idx")
+    .on(table.agentId, table.host, table.method, table.pathPattern)
+    .where(sql`${table.status} = 'active'`),
+]);
+
+/**
+ * Durable record of every HITL approval the user owes a verdict on. Written
+ * before any synth-frame fan-out so the inbox sees it from t=0; survives held-
+ * call timeouts, replica restarts, and pod hibernation. Held ext_authz calls
+ * wake from a Redis pub/sub on `approval:<id>`; this table is the truth path.
+ */
+export const pendingApprovals = pgTable("pending_approvals", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  instanceId: text("instance_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  ownerSub: text("owner_sub").notNull(),
+  sessionId: text("session_id"),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  verdict: text("verdict"),
+  decidedBy: text("decided_by"),
+  status: text("status").notNull().default("pending"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+}, (table) => [
+  index("pending_approvals_owner_status_idx").on(table.ownerSub, table.status),
+  index("pending_approvals_instance_status_idx").on(table.instanceId, table.status),
+  index("pending_approvals_undelivered_idx")
+    .on(table.resolvedAt)
+    .where(sql`status = 'resolved' AND delivered_at IS NULL`),
 ]);
 
 export const sessions = pgTable("sessions", {
