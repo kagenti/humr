@@ -99,7 +99,13 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
-			storageSize := cfg.AgentStorageSize
+			// Per-mount `size:` (issue #244) wins over the cluster-wide
+			// AgentStorageSize default; both fall back to 10Gi.
+			// Validation happens in ParseAgentSpec, so MustParse here is safe.
+			storageSize := m.Size
+			if storageSize == "" {
+				storageSize = cfg.AgentStorageSize
+			}
 			if storageSize == "" {
 				storageSize = "10Gi"
 			}

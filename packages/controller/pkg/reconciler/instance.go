@@ -234,13 +234,54 @@ func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string
 		metav1.ListOptions{LabelSelector: "humr.ai/instance=" + instanceName},
 	)
 	if err != nil {
-		fmt.Printf("WARN: failed to list PVCs for instance %s: %v\n", instanceName, err)
+		slog.Warn("listing PVCs for instance", "instance", instanceName, "error", err)
 		return
 	}
 	for _, pvc := range pvcs.Items {
 		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
-			fmt.Printf("WARN: failed to delete PVC %s for instance %s: %v\n", pvc.Name, instanceName, err)
+			slog.Warn("deleting PVC", "pvc", pvc.Name, "instance", instanceName, "error", err)
 		}
+	}
+}
+
+// ReconcileOrphanPVCs deletes any PVC labeled `humr.ai/instance=<name>` whose
+// instance ConfigMap no longer exists. Covers two leak modes (issue #244):
+// the controller crashing between StatefulSet teardown and PVC deletion, and
+// users removing the instance ConfigMap out-of-band (e.g. via kubectl).
+//
+// Safe against the create-PVC-before-finalize race because we re-read the
+// ConfigMap from the API server (not the informer cache) before deleting.
+func (r *InstanceReconciler) ReconcileOrphanPVCs(ctx context.Context) {
+	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
+		metav1.ListOptions{LabelSelector: "humr.ai/instance"},
+	)
+	if err != nil {
+		slog.Warn("orphan PVC GC: listing PVCs failed", "error", err)
+		return
+	}
+	deleted := 0
+	for _, pvc := range pvcs.Items {
+		instanceName := pvc.Labels["humr.ai/instance"]
+		if instanceName == "" {
+			continue
+		}
+		_, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, instanceName, metav1.GetOptions{})
+		if err == nil {
+			continue
+		}
+		if !errors.IsNotFound(err) {
+			slog.Warn("orphan PVC GC: API lookup failed", "instance", instanceName, "error", err)
+			continue
+		}
+		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
+			slog.Warn("orphan PVC GC: delete failed", "pvc", pvc.Name, "instance", instanceName, "error", err)
+			continue
+		}
+		slog.Info("orphan PVC GC: deleted PVC for missing instance", "pvc", pvc.Name, "instance", instanceName)
+		deleted++
+	}
+	if deleted > 0 {
+		slog.Info("orphan PVC GC: sweep complete", "deleted", deleted, "scanned", len(pvcs.Items))
 	}
 }
 

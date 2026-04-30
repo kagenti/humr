@@ -411,6 +411,9 @@ defaultTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Default Claude Code agent"
+  # -- PVC size for the persisted /home/agent mount. Empty = controller
+  # default (10Gi). See issue #244.
+  homeMountSize: "5Gi"
   resources:
     requests:
       cpu: "250m"
@@ -428,6 +431,7 @@ googleWorkspaceTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Google Workspace agent with Drive and Gmail via gws CLI"
+  homeMountSize: "2Gi"
   resources:
     requests:
       cpu: "250m"
@@ -445,6 +449,7 @@ piAgentTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Pi coding agent with multi-LLM support"
+  homeMountSize: "2Gi"
   resources:
     requests:
       cpu: "250m"
@@ -464,6 +469,8 @@ codeGuardianTemplate:
   description: "PR code review agent (gh + Claude Code)"
   # -- owner/repo slug the agent reviews. Empty = detect via `gh repo view`.
   githubRepo: ""
+  # Code Guardian clones real repos — keep the larger default.
+  homeMountSize: "10Gi"
   resources:
     requests:
       cpu: "250m"
