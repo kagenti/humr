@@ -1,18 +1,10 @@
 # Local dev: images built with docker and loaded into k3s directly.
 # Used via: helm install -f values-local.yaml
-# Pin Humr UI to plain `http://localhost:4444` so OAuth providers that
-# only accept `http://localhost` (Google's OAuth, GitHub Enterprise's
-# stricter callback validation, etc.) work in local dev. The api-server's
-# OAuth callback lives at `${uiBaseUrl}/api/oauth/callback`, so this URL
-# is what users register on the provider side.
-#
-# OneCLI's dashboard moves to `http://onecli.localhost:4444` (the chart's
-# default convention). OneCLI's own Google OAuth callback may not work
-# from that subdomain — accepted, since the new "Connect" flows live in
-# Humr UI under #338 and OneCLI's dashboard is read-only on the migration
-# path until OneCLI is removed entirely.
-urls:
-  ui: http://localhost:4444
+onecli:
+  # Use plain "localhost" for OneCLI so Google OAuth redirect URIs work.
+  # Google exempts http://localhost from HTTPS requirements but rejects
+  # subdomain URLs like http://onecli.localhost. See #154.
+  externalHostname: localhost
 
 ui:
   image:
