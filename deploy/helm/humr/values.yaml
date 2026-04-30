@@ -317,6 +317,55 @@ apiServer:
   # timeouts are an external ceiling — see ADR §Timeouts.
   approvalHoldSeconds: 1800
 
+  # -- Hosts seeded into the `trusted` egress preset (DRAFT-unified-hitl-ux).
+  # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
+  # row when an agent is created with `egressPreset: trusted`. Values are
+  # **literal hostnames only** — no wildcards, no schemes, no paths. SNI
+  # matches are exact; a `pkg.go.dev` rule does not cover `proxy.golang.org`.
+  #
+  # Curated to mirror Anthropic's published default-allowed-domain list for
+  # Claude Code so harnesses with "claude --trust-defaults" behavior keep
+  # working without per-host inbox prompts:
+  #   https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains
+  #
+  # Operators can append, remove, or replace entries here; rules are seeded
+  # once at agent-create time, so editing this list does not retroactively
+  # touch existing agents (they keep whatever was seeded for them).
+  trustedHosts:
+    # Anthropic
+    - api.anthropic.com
+    - statsig.anthropic.com
+    - claude.ai
+    # NPM / Yarn / pnpm
+    - registry.npmjs.org
+    - registry.yarnpkg.com
+    # Python
+    - pypi.org
+    - files.pythonhosted.org
+    # GitHub
+    - github.com
+    - api.github.com
+    - codeload.github.com
+    - objects.githubusercontent.com
+    - raw.githubusercontent.com
+    # Container registries
+    - ghcr.io
+    - registry-1.docker.io
+    # Go modules
+    - proxy.golang.org
+    - sum.golang.org
+    - go.dev
+    # Rust
+    - crates.io
+    - static.crates.io
+    - sh.rustup.rs
+    # CDNs commonly used by toolchains
+    - cdn.jsdelivr.net
+    - unpkg.com
+    # Mise (toolchain manager)
+    - mise.jdx.dev
+    - cdn.mise.run
+
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""

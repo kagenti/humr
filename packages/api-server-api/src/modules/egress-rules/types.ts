@@ -1,6 +1,20 @@
 export type RuleVerdict = "allow" | "deny";
 
 /**
+ * Bulk-seeding preset chosen at agent creation. Each preset writes 0..N
+ * `egress_rules` rows with `source = preset:<name>` (or no rows at all
+ * for `none`). After seeding the rows are owned by the agent — editing
+ * any row promotes it to `manual` like a connection-derived rule.
+ *
+ * - `none` — no rules. Every egress hits the inbox until the user approves.
+ * - `trusted` — Anthropic-published default-allowed list (npm, PyPI,
+ *   GitHub, package mirrors, etc.). Recommended default.
+ * - `all` — single wildcard rule the L4 gate matches for every SNI.
+ *   Development escape hatch with a UI warning.
+ */
+export type EgressPreset = "none" | "trusted" | "all";
+
+/**
  * Origin of a rule row. User edits/deletes flip non-`manual` rows to
  * `manual` so later connection revokes / preset reseeds don't undo a
  * deliberate user decision. The UI reads non-`manual` sources to render the

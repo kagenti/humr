@@ -38,7 +38,11 @@ import { startExtAuthzApp } from "./apps/ext-authz/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import { composeApprovalsSystem } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
-import { createEgressRuleMatchAdapter } from "./modules/egress-rules/compose.js";
+import {
+  createEgressRuleMatchAdapter,
+  createPresetSeederAdapter,
+} from "./modules/egress-rules/compose.js";
+import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
@@ -225,6 +229,11 @@ const podFilesPublisher = createPodFilesPublisher({
 if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see DRAFT-redis-platform-primitive)");
 const redisBus = createRedisBus(config.redisUrl);
 
+// Seed list for the `trusted` egress preset (DRAFT-unified-hitl-ux).
+// Read once at boot; the helm ConfigMap is the operator-editable source.
+const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
+const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+
 const wrapperFrameSender = createWrapperFrameSender({
   resolveWrapperUrl: (instanceId) => `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
 });
@@ -259,6 +268,7 @@ const { server: apiServer } = startApiServerApp({
   redisBus,
   approvalsRelay,
   wrapperFrameSender,
+  presetSeeder,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({

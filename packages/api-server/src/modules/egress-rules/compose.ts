@@ -1,7 +1,13 @@
 import type { Db } from "db";
-import type { EgressRuleSource, EgressRulesService, RuleVerdict } from "api-server-api";
+import type {
+  EgressPreset,
+  EgressRuleSource,
+  EgressRulesService,
+  RuleVerdict,
+} from "api-server-api";
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
+import { createPresetSeeder, type PresetSeeder } from "./services/preset-seeder.js";
 
 export interface ComposeEgressRulesDeps {
   db: Db;
@@ -71,3 +77,17 @@ export function createEgressRuleWriterAdapter(db: Db): EgressRuleWriterAdapter {
     },
   };
 }
+
+/**
+ * System-level preset-seeder, called from the agent-create flow.
+ * `trustedHosts` is loaded once at boot from the helm-mounted ConfigMap
+ * and passed in here — the seeder is a thin function that translates
+ * `(agentId, preset)` into a batch of inserts.
+ */
+export function createPresetSeederAdapter(db: Db, trustedHosts: readonly string[]): PresetSeeder {
+  const repo = createEgressRulesRepository(db);
+  return createPresetSeeder({ repo, trustedHosts });
+}
+
+export type { PresetSeeder } from "./services/preset-seeder.js";
+export type { EgressPreset };

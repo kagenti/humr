@@ -8,6 +8,7 @@ import {
 } from "api-server-api";
 import type { AgentsRepository } from "./../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
+import type { PresetSeeder } from "../../egress-rules/services/preset-seeder.js";
 
 /**
  * Returns a new env list where any platform-managed entries (e.g. PORT) are
@@ -25,6 +26,9 @@ export function createAgentsService(deps: {
   owner: string;
   agentHome: string;
   readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  /** Seeds egress_rules at create time. Optional so the system-instances
+   *  composition (which never creates agents) can omit it. */
+  presetSeeder?: PresetSeeder;
 }): AgentsService {
   return {
     list: () => deps.repo.list(deps.owner),
@@ -54,7 +58,14 @@ export function createAgentsService(deps: {
         const base = (spec.env as EnvVar[] | undefined) ?? [];
         spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
       }
-      return deps.repo.create(spec, deps.owner, templateId);
+      const agent = await deps.repo.create(spec, deps.owner, templateId);
+      // Seed the chosen preset (default `trusted`). `none` is a no-op; the
+      // operator-edited list of trusted hosts is captured at boot, so reseeding
+      // the preset on retry is idempotent against the lookup index.
+      if (deps.presetSeeder) {
+        await deps.presetSeeder.seed(agent.id, input.egressPreset ?? "trusted", deps.owner);
+      }
+      return agent;
     },
 
     async update(input: UpdateAgentInput) {

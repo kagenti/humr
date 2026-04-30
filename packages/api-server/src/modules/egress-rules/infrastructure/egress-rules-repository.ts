@@ -88,11 +88,12 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
-          AND host = ${host}
+          AND (host = ${host} OR host = '*')
           AND status = 'active'
           AND (method = ${method} OR method = '*')
           AND ${path} LIKE replace(path_pattern, '*', '%')
         ORDER BY
+          CASE WHEN host = '*' THEN 1 ELSE 0 END,
           CASE WHEN method = '*' THEN 1 ELSE 0 END,
           CASE WHEN path_pattern = '*' THEN 1 ELSE 0 END,
           length(path_pattern) DESC

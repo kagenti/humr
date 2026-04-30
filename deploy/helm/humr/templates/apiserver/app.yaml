@@ -136,6 +136,13 @@ spec:
               value: {{ include "humr.redis.url" . | quote }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: TRUSTED_HOSTS_PATH
+              value: /etc/humr/trusted-hosts
+          volumeMounts:
+            - name: trusted-hosts
+              mountPath: /etc/humr/trusted-hosts
+              subPath: trusted-hosts
+              readOnly: true
           readinessProbe:
             tcpSocket:
               port: http
@@ -148,3 +155,10 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.apiServer.resources | nindent 12 }}
+      volumes:
+        - name: trusted-hosts
+          configMap:
+            name: {{ include "humr.fullname" . }}-trusted-hosts
+            items:
+              - key: trusted-hosts
+                path: trusted-hosts

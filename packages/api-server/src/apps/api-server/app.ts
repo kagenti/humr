@@ -40,6 +40,7 @@ import {
 import {
   composeEgressRulesModule,
   createEgressRuleWriterAdapter,
+  type PresetSeeder,
 } from "./../../modules/egress-rules/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 
@@ -57,13 +58,14 @@ export interface ApiServerAppDeps {
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
+  presetSeeder: PresetSeeder;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
   const {
     config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher,
-    redisBus, approvalsRelay, wrapperFrameSender,
+    redisBus, approvalsRelay, wrapperFrameSender, presetSeeder,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -169,7 +171,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const userJwt = c.req.header("authorization")!.slice(7);
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome);
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),

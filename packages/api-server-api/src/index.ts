@@ -116,6 +116,7 @@ export type {
 export type {
   RuleVerdict,
   EgressRuleSource,
+  EgressPreset,
   EgressRuleView,
   CreateEgressRuleInput,
   UpdateEgressRuleInput,

@@ -1,4 +1,5 @@
 import type { EnvVar } from "../shared.js";
+import type { EgressPreset } from "../egress-rules/types.js";
 import type {
   Mount,
   Resources,
@@ -38,6 +39,11 @@ export interface CreateAgentInput {
   image?: string;
   description?: string;
   env?: EnvVar[];
+  /** Bulk-seeds egress_rules at create time. Defaults to `trusted` so a
+   *  brand-new agent can reach Anthropic, npm, PyPI, GitHub, etc. without
+   *  per-host inbox prompts. After seeding, rows are owned by the agent
+   *  like any other rule. See DRAFT-unified-hitl-ux. */
+  egressPreset?: EgressPreset;
 }
 
 export interface UpdateAgentInput {
