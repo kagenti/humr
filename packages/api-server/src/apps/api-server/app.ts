@@ -32,6 +32,19 @@ import type { ChannelSecretStore } from "./../../modules/channels/infrastructure
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 import type { PodFilesPublisher } from "../../modules/pod-files/publisher.js";
+import {
+  composeApprovalsService,
+  type ApprovalsRelayService,
+  type WrapperFrameSender,
+} from "./../../modules/approvals/compose.js";
+import {
+  composeEgressRulesModule,
+  createConnectionRulesSyncAdapter,
+  createEgressRuleWriterAdapter,
+  createK8sAllowOnlySecretsPort,
+} from "./../../modules/egress-rules/compose.js";
+import type { PresetSeeder } from "../../modules/agents/compose.js";
+import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ApiServerAppDeps {
   config: Config;
@@ -44,10 +57,18 @@ export interface ApiServerAppDeps {
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
   podFilesPublisher: PodFilesPublisher;
+  redisBus: RedisBus;
+  approvalsRelay: ApprovalsRelayService;
+  wrapperFrameSender: WrapperFrameSender;
+  presetSeeder: PresetSeeder;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher } = deps;
+  const {
+    config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
+    pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher,
+    redisBus, approvalsRelay, wrapperFrameSender, presetSeeder,
+  } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -152,15 +173,34 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const userJwt = c.req.header("authorization")!.slice(7);
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome);
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
+      connectionRules: createConnectionRulesSyncAdapter(db),
+      ownerSub: user.sub,
     });
     const connections = createConnectionsService({
       port: createOnecliConnectionsPort(onecli, userJwt, user.sub),
       owner: user.sub,
       podFiles: podFilesPublisher,
+    });
+    const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
+      (await agents.get(agentId)) !== null && ownerSub === user.sub;
+    const { service: egressRules } = composeEgressRulesModule({
+      db,
+      ownerSub: user.sub,
+      isAgentOwnedBy,
+      allowOnlySecrets: createK8sAllowOnlySecretsPort(k8sClient),
+      presetSeeder,
+    });
+    const { service: approvals } = composeApprovalsService({
+      db,
+      ownerSub: user.sub,
+      isInstanceOwnedBy: (instanceId, ownerSub) => instancesRepo.isOwnedBy(instanceId, ownerSub),
+      egressRuleWriter: createEgressRuleWriterAdapter(db),
+      bus: redisBus,
+      wrapperFrameSender,
     });
 
     return fetchRequestHandler({
@@ -176,12 +216,19 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         secrets,
         channels: { available: channelManager.availableChannels() },
         connections,
+        approvals,
+        egressRules,
         user,
       }),
     });
   });
 
-  const acpRelay = createAcpRelay(config.namespace, instancesRepo);
+  const acpRelay = createAcpRelay(
+    config.namespace,
+    instancesRepo,
+    approvalsRelay,
+    { resolve: (id) => instancesRepo.resolveIdentity(id).then((r) => r ? { ownerSub: r.owner, agentId: r.agentId } : null) },
+  );
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);

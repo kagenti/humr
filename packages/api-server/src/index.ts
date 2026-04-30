@@ -34,6 +34,16 @@ import { createOnecliClient } from "./apps/api-server/onecli.js";
 import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
+import { composeApprovalsSystem } from "./modules/approvals/compose.js";
+import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import {
+  createEgressRuleMatchAdapter,
+  createPresetSeederAdapter,
+} from "./modules/egress-rules/compose.js";
+import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
+import { createRedisBus } from "./core/redis-bus.js";
+import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
 
@@ -215,15 +225,65 @@ const podFilesPublisher = createPodFilesPublisher({
   registry: podFilesRegistry,
 });
 
+if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see DRAFT-redis-platform-primitive)");
+const redisBus = createRedisBus(config.redisUrl);
+
+// Seed list for the `trusted` egress preset (DRAFT-unified-hitl-ux).
+// Read once at boot; the helm ConfigMap is the operator-editable source.
+const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
+const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+
+const wrapperFrameSender = createWrapperFrameSender({
+  resolveWrapperUrl: (instanceId) => `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
+});
+
+// System-level approvals composition — bound to the bus + cross-module
+// ports for instance identity (agents), rule matching (egress-rules), and
+// wrapper-frame delivery. Relay, gate, and sweeper are long-lived and
+// shared across all owners.
+const { relay: approvalsRelay, gate: extAuthzGate, sweeper: deliverySweeper } = composeApprovalsSystem({
+  db,
+  bus: redisBus,
+  identityResolver: {
+    resolve: async (instanceId) => {
+      const r = await instancesRepo.resolveIdentity(instanceId);
+      return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
+    },
+  },
+  ruleMatcher: {
+    match: async (agentId, host, method, path) => {
+      const matched = await createEgressRuleMatchAdapter(db).match(agentId, host, method, path);
+      return matched ? { verdict: matched.verdict } : null;
+    },
+  },
+  wrapperFrameSender,
+  holdSeconds: config.approvalHoldSeconds,
+});
+deliverySweeper.start();
+
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher,
+  redisBus,
+  approvalsRelay,
+  wrapperFrameSender,
+  presetSeeder,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config, api, db, channelManager, channelSecretStore,
   podFilesBus,
   podFilesSnapshot: podFilesPublisher.compute,
+});
+
+// Single gRPC ext_authz server serves both Envoy filters: HTTP filter on
+// TLS-terminated chains (L7 — sees method/path) and the network filter on
+// the catch-all chain (L4 — SNI only). Same Check RPC, same gate service;
+// the handler reads what's populated and falls back to wildcards otherwise.
+const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
+  port: config.extAuthzPort,
+  holdSeconds: config.approvalHoldSeconds,
+  gate: extAuthzGate,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {
@@ -237,8 +297,11 @@ async function shutdown() {
   onecliSyncSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();
+  await deliverySweeper.stop();
   await channelManager.stopAll();
+  await redisBus.close();
   await sql.end();
+  extAuthzGrpcServer.tryShutdown(() => {});
   harnessApiServer.close();
   apiServer.close();
   process.exit(0);

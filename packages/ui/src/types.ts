@@ -162,7 +162,7 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+export type { EnvMapping, EnvVar, InjectionConfig, EgressPreset } from "api-server-api";
 export {
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,

@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { isProtectedAgentEnvName } from "api-server-api";
+import { type EgressPreset, isProtectedAgentEnvName } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
@@ -10,6 +10,9 @@ import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import { Modal } from "../../../components/modal.js";
 import type { AgentView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { useApplyEgressPreset } from "../../egress-rules/api/mutations.js";
+import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
+import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import {
   useSetAgentAccess,
@@ -28,7 +31,7 @@ import {
   envsToAddOnGrant,
 } from "../utils/connection-env-helpers.js";
 
-type Tab = "connections" | "env";
+type Tab = "connections" | "env" | "egress";
 
 export function ConfigureAgentDialog({
   agent,
@@ -47,12 +50,18 @@ export function ConfigureAgentDialog({
   const { data: apps = [] } = useAppConnections();
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
+  const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
 
   const updateAgent = useUpdateAgent();
   const setAccess = useSetAgentAccess();
   const setConnections = useSetAgentConnections();
+  const applyPreset = useApplyEgressPreset();
 
   const [tab, setTab] = useState<Tab>("connections");
+  // Network access preset chosen but not yet committed. Save commits it
+  // alongside the form fields; cancelling discards. Independent of RHF
+  // because it's not a schema field — just a single staged choice.
+  const [stagedPreset, setStagedPreset] = useState<EgressPreset | null>(null);
 
   const { register, control, handleSubmit, watch, getValues, setValue, reset, formState } =
     useForm<ConfigureAgentValues>({
@@ -150,8 +159,11 @@ export function ConfigureAgentDialog({
     return items;
   }, [agent.env, secrets, assignedSet, apps, appIdsSet, envVars]);
 
+  // The form's isDirty doesn't see our staged preset, so combine here.
+  const dirty = isDirty || stagedPreset !== null;
+
   const onSubmit = handleSubmit(async (values) => {
-    if (!isDirty) {
+    if (!dirty) {
       onClose();
       return;
     }
@@ -176,6 +188,18 @@ export function ConfigureAgentDialog({
           connectionIds: values.assignedAppIds,
         });
       }
+      if (stagedPreset !== null) {
+        if (
+          stagedPreset === "all"
+          && !window.confirm(
+            "Allow everything is a development escape hatch. Are you sure? You can still narrow with deny rules below.",
+          )
+        ) {
+          return; // keep the dialog open so the user can pick something else
+        }
+        await applyPreset.mutateAsync({ agentId, preset: stagedPreset });
+        setStagedPreset(null);
+      }
       onClose();
     } catch {
       // Mutation meta.errorToast surfaces the failure; dialog stays open.
@@ -184,7 +208,7 @@ export function ConfigureAgentDialog({
 
   const connectionsCount = assigned.length + assignedAppIds.length;
   const envCount = sanitizeEnvVars(envVars).length + inheritedEnvs.length;
-  const isSubmitDisabled = saving || !ready || !isDirty; 
+  const isSubmitDisabled = saving || !ready || !dirty;
 
   return (
     <Modal onClose={onClose} widthClass="w-[640px]">
@@ -239,10 +263,16 @@ export function ConfigureAgentDialog({
             count={envCount}
             onClick={() => setTab("env")}
           />
+          <TabButton
+            active={tab === "egress"}
+            label="Network access"
+            count={egressRules.length}
+            onClick={() => setTab("egress")}
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-4">
-          {tab === "connections" ? (
+          {tab === "connections" && (
             <ConnectionsPicker
               loading={!ready}
               secrets={secrets}
@@ -252,7 +282,8 @@ export function ConfigureAgentDialog({
               onToggleSecret={toggleSecret}
               onToggleApp={toggleApp}
             />
-          ) : (
+          )}
+          {tab === "env" && (
             <Controller
               control={control}
               name="envVars"
@@ -264,6 +295,12 @@ export function ConfigureAgentDialog({
                   saving={saving}
                 />
               )}
+            />
+          )}
+          {tab === "egress" && (
+            <AgentEgressEditor
+              agentId={agentId}
+              stagedPreset={{ value: stagedPreset, onChange: setStagedPreset }}
             />
           )}
         </div>

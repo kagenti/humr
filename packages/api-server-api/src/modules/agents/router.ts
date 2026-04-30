@@ -41,6 +41,7 @@ export const agentsRouter = t.router({
       image: z.string().optional(),
       description: z.string().optional(),
       env: z.array(envVarSchema).max(64).optional(),
+      egressPreset: z.enum(["none", "trusted", "all"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!input.templateId && !input.image) {

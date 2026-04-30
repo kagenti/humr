@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { platform } from "../../../platform.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import type { EnvVar } from "../../../types.js";
+import type { EgressPreset, EnvVar } from "../../../types.js";
 import { instancesKeys } from "../../instances/api/queries.js";
 
 const invalidatesAgentsAndInstances = {
@@ -24,6 +24,7 @@ export interface CreateAgentInput {
   secretIds?: string[];
   appConnectionIds?: string[];
   experimentalCredentialInjector?: boolean;
+  egressPreset?: EgressPreset;
 }
 
 /**
@@ -34,8 +35,8 @@ export interface CreateAgentInput {
  */
 export function useCreateAgent() {
   return useMutation({
-    mutationFn: async ({ secretIds, appConnectionIds, experimentalCredentialInjector, ...input }: CreateAgentInput) => {
-      const agent = await platform.agents.create.mutate(input);
+    mutationFn: async ({ secretIds, appConnectionIds, experimentalCredentialInjector, egressPreset, ...input }: CreateAgentInput) => {
+      const agent = await platform.agents.create.mutate({ ...input, egressPreset });
       await platform.instances.create.mutate({
         name: input.name,
         agentId: agent.id,

@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { ConnectionsPicker } from "../../../components/connections-picker.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
-import type { EnvVar, TemplateView } from "../../../types.js";
+import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
@@ -33,6 +33,7 @@ export function AddAgentDialog({
     secretIds?: string[];
     appConnectionIds?: string[];
     experimentalCredentialInjector?: boolean;
+    egressPreset?: EgressPreset;
   }) => void;
   onCancel: () => void;
   onGoToProviders: () => void;
@@ -58,7 +59,7 @@ export function AddAgentDialog({
   } = useForm<AddAgentValues>({
     resolver: zodResolver(addAgentSchema),
     mode: "onChange",
-    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], experimentalCredentialInjector: false },
+    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], experimentalCredentialInjector: false, egressPreset: "trusted" },
   });
   const { errors, isSubmitting, isValid, dirtyFields } = formState;
 
@@ -135,6 +136,7 @@ export function AddAgentDialog({
       secretIds: dirtyFields.selSecrets ? values.selSecrets : undefined,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
       experimentalCredentialInjector: values.experimentalCredentialInjector || undefined,
+      egressPreset: values.egressPreset,
     });
   });
 
@@ -277,6 +279,55 @@ export function AddAgentDialog({
               onToggleApp={toggleApp}
               onGoToProviders={onGoToProviders}
             />
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+                Network access
+              </span>
+              <p className="text-[12px] text-text-muted">
+                Initial set of hosts the agent can reach. Anything not covered
+                surfaces in the inbox; you can change this later from the
+                agent's Network access tab.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
+                  <input
+                    type="radio"
+                    value="trusted"
+                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    {...register("egressPreset")}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-text">Trusted defaults (recommended)</span>
+                    <span className="text-[12px] text-text-muted">npm, PyPI, GitHub, package mirrors, Anthropic</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
+                  <input
+                    type="radio"
+                    value="none"
+                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    {...register("egressPreset")}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-text">Strict default-deny</span>
+                    <span className="text-[12px] text-text-muted">Every host hits the inbox until you approve</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-bg px-4 py-2.5">
+                  <input
+                    type="radio"
+                    value="all"
+                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    {...register("egressPreset")}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-text">Allow everything</span>
+                    <span className="text-[12px] text-text-muted">Development escape hatch — no inbox prompts</span>
+                  </span>
+                </label>
+              </div>
+            </div>
 
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">

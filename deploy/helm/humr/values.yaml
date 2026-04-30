@@ -68,6 +68,25 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+# -- Shared Redis instance (DRAFT-redis-platform-primitive).
+# Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
+# wake-ups (DRAFT-unified-hitl-ux). Persistence uses AOF with `everysec`; the
+# platform tolerates losing recent ephemeral data on restart (Postgres remains
+# the source of truth for anything durable).
+redis:
+  enabled: true
+  image: redis:8.6
+  port: 6379
+  storage: 1Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
 # -- OneCLI (credential proxy — gateway + web run in a single container)
 onecli:
   # Single Docker image containing both Rust gateway and Node.js web app
@@ -278,12 +297,73 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate
+  # (DRAFT-unified-hitl-ux). Single endpoint: Envoy's HTTP filter (L7,
+  # TLS-terminated chains) and network filter (L4, catch-all chain) both
+  # call this port; the handler reads whichever attributes are populated.
+  # Cluster-internal only; never routed via ingress.
+  extAuthzPort: 4002
   # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
   # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
   telegramEnabled: false
+  # -- Default hold window (seconds) for HITL ext_authz approvals. The held
+  # call resolves on user verdict or denies on timeout; the durable
+  # pending_approvals row outlives the hold and is consumed by the agent's
+  # next retry. Default 30 minutes (DRAFT-unified-hitl-ux). Per-CLI read
+  # timeouts are an external ceiling — see ADR §Timeouts.
+  approvalHoldSeconds: 1800
+
+  # -- Hosts seeded into the `trusted` egress preset (DRAFT-unified-hitl-ux).
+  # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
+  # row when an agent is created with `egressPreset: trusted`. Values are
+  # **literal hostnames only** — no wildcards, no schemes, no paths. SNI
+  # matches are exact; a `pkg.go.dev` rule does not cover `proxy.golang.org`.
+  #
+  # Curated to mirror Anthropic's published default-allowed-domain list for
+  # Claude Code so harnesses with "claude --trust-defaults" behavior keep
+  # working without per-host inbox prompts:
+  #   https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains
+  #
+  # Operators can append, remove, or replace entries here; rules are seeded
+  # once at agent-create time, so editing this list does not retroactively
+  # touch existing agents (they keep whatever was seeded for them).
+  trustedHosts:
+    # Anthropic
+    - api.anthropic.com
+    - statsig.anthropic.com
+    - claude.ai
+    # NPM / Yarn / pnpm
+    - registry.npmjs.org
+    - registry.yarnpkg.com
+    # Python
+    - pypi.org
+    - files.pythonhosted.org
+    # GitHub
+    - github.com
+    - api.github.com
+    - codeload.github.com
+    - objects.githubusercontent.com
+    - raw.githubusercontent.com
+    # Container registries
+    - ghcr.io
+    - registry-1.docker.io
+    # Go modules
+    - proxy.golang.org
+    - sum.golang.org
+    - go.dev
+    # Rust
+    - crates.io
+    - static.crates.io
+    - sh.rustup.rs
+    # CDNs commonly used by toolchains
+    - cdn.jsdelivr.net
+    - unpkg.com
+    # Mise (toolchain manager)
+    - mise.jdx.dev
+    - cdn.mise.run
 
   # -- Database connection (empty host = use shared local postgres)
   db:
