@@ -215,14 +215,17 @@ fi
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
 
-# 7. Prune image layers no longer referenced by any pod (issue #244). After
-# repeated reinstalls, old `:latest` layers accumulate in containerd; this
-# drops anything not pinned by a running container.
-echo "Pruning unused images..."
+# 7. Prune dangling image layers (issue #244). After repeated reinstalls,
+# old `:latest` SHAs lose their tag to the freshly imported one and become
+# `<none>:<none>`. Drop only those — `crictl rmi --prune` would also wipe
+# tagged-but-unpinned images like the agent ones we just loaded (no
+# instance pods exist yet to pin them).
+echo "Pruning dangling images..."
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  bash -c "$PRUNE_DANGLING"
 else
-  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
 echo ""
@@ -331,13 +334,15 @@ rm -f "$tar"
 echo "Restarting agent pods..."
 kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all 2>/dev/null || true
 
-# Best-effort: prune unreferenced image layers. Running this immediately after
-# `delete pods` may briefly skip layers still pinned to terminating containers;
-# the next install/build sweep will catch them. (issue #244)
+# Prune dangling layers: old `:latest` SHAs that just lost their tag to the
+# freshly imported one. Skip `crictl rmi --prune` here — when no instance
+# pods are running, our just-loaded agent images are unpinned and would
+# get wiped. (issue #244)
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  bash -c "$PRUNE_DANGLING"
 else
-  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
 echo "Done. Agent pods will restart with new image."
