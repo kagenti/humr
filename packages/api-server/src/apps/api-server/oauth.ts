@@ -184,6 +184,63 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   });
 
   /**
+   * Issuer discovery for the Generic app's connect form. The browser can't
+   * fetch arbitrary cross-origin discovery documents, so we proxy from the
+   * api-server. Tries RFC 8414 (OAuth 2.0 AS metadata) first and falls back
+   * to RFC 8414 / OIDC at `/.well-known/openid-configuration`.
+   *
+   * Failure modes (network error, 404, malformed JSON, missing endpoints)
+   * all collapse to a 404 — the caller treats this as "discovery not
+   * supported, user fills the URLs manually."
+   */
+  oauth.post("/api/oauth/discover", async (c) => {
+    let body: { host?: string };
+    try {
+      body = await c.req.json<{ host?: string }>();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const host = body.host?.trim();
+    if (!host) return c.json({ error: "host is required" }, 400);
+    // Same hostname shape the connect form enforces; rejects schemes, paths,
+    // and IP shenanigans before we make outbound traffic.
+    if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/.test(host)) {
+      return c.json({ error: "host must be a valid DNS hostname" }, 400);
+    }
+    const candidates = [
+      `https://${host}/.well-known/oauth-authorization-server`,
+      `https://${host}/.well-known/openid-configuration`,
+    ];
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) continue;
+        const data = (await res.json()) as {
+          authorization_endpoint?: string;
+          token_endpoint?: string;
+          scopes_supported?: string[];
+        };
+        if (
+          typeof data.authorization_endpoint === "string" &&
+          typeof data.token_endpoint === "string"
+        ) {
+          return c.json({
+            authorizationUrl: data.authorization_endpoint,
+            tokenEndpoint: data.token_endpoint,
+            ...(Array.isArray(data.scopes_supported)
+              ? { scopesSupported: data.scopes_supported }
+              : {}),
+            source: url,
+          });
+        }
+      } catch {
+        // try next candidate; don't surface raw fetch errors to the browser
+      }
+    }
+    return c.json({ error: "Discovery not supported by host" }, 404);
+  });
+
+  /**
    * Lists the user's connections to apps the registry knows about. Reads
    * from the K8s connection store (source of truth for the experimental
    * Envoy path); a connection whose key doesn't match any descriptor is

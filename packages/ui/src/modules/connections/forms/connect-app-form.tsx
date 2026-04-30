@@ -1,13 +1,38 @@
 import { Check, Copy, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
-import type { OAuthAppDescriptor } from "../api/fetchers.js";
+import { discoverOAuthEndpoints, type OAuthAppDescriptor } from "../api/fetchers.js";
 import { useStartAppOAuth } from "../api/mutations.js";
 
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+
+function discoveryHelperText(
+  discovery: { state: "idle" | "loading" | "ok" | "miss"; source?: string },
+  appName: string,
+) {
+  if (discovery.state === "loading") {
+    return <span className="text-[12px] text-text-muted">Looking up issuer metadata…</span>;
+  }
+  if (discovery.state === "ok") {
+    return (
+      <span className="text-[12px] text-success">
+        Auto-filled authorization and token endpoints from{" "}
+        <code className="font-mono">{discovery.source}</code>.
+      </span>
+    );
+  }
+  if (discovery.state === "miss") {
+    return (
+      <span className="text-[12px] text-text-muted">
+        No issuer metadata found — fill in the {appName} URLs manually below.
+      </span>
+    );
+  }
+  return null;
+}
 
 function CallbackUrlField({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
@@ -48,13 +73,54 @@ interface Props {
 
 export function ConnectAppForm({ app, onCancel }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
+  // Discovery state — `host` carries the value we last discovered against,
+  // so re-blurring on the same host doesn't refetch. `error` is shown
+  // inline and is non-blocking.
+  const [discovery, setDiscovery] = useState<{
+    host: string | null;
+    state: "idle" | "loading" | "ok" | "miss";
+    source?: string;
+  }>({ host: null, state: "idle" });
   const showToast = useStore((s) => s.showToast);
   const startAppOAuth = useStartAppOAuth();
+  const lastDiscoveredHost = useRef<string | null>(null);
 
   const allFilled = app.inputs.every((field) => (values[field.name] ?? "").trim().length > 0);
 
   const setField = (name: string, value: string) =>
     setValues((prev) => ({ ...prev, [name]: value }));
+
+  const runDiscovery = async (host: string) => {
+    if (!host || host === lastDiscoveredHost.current) return;
+    lastDiscoveredHost.current = host;
+    setDiscovery({ host, state: "loading" });
+    const result = await discoverOAuthEndpoints(host);
+    if (!result) {
+      setDiscovery({ host, state: "miss" });
+      return;
+    }
+    setDiscovery({ host, state: "ok", source: result.source });
+    // Only fill fields the user hasn't typed into — never overwrite.
+    setValues((prev) => {
+      const next = { ...prev };
+      const targets: Array<[keyof typeof result, string]> = [
+        ["authorizationUrl", "authorizationUrl"],
+        ["tokenEndpoint", "tokenEndpoint"],
+      ];
+      for (const [key, fieldName] of targets) {
+        const value = result[key];
+        const fieldExists = app.inputs.some((f) => f.name === fieldName);
+        if (
+          fieldExists &&
+          typeof value === "string" &&
+          (next[fieldName] ?? "").trim() === ""
+        ) {
+          next[fieldName] = value;
+        }
+      }
+      return next;
+    });
+  };
 
   const submit = () => {
     if (!allFilled) return;
@@ -97,24 +163,39 @@ export function ConnectAppForm({ app, onCancel }: Props) {
           </a>
         )}
         <CallbackUrlField url={app.callbackUrl} />
-        {app.inputs.map((field) => (
-          <div key={field.name} className="flex flex-col gap-1.5">
-            <label className="text-[13px] font-semibold text-text">{field.label}</label>
-            <input
-              type={field.secret ? "password" : "text"}
-              className={INPUT_CLASS}
-              value={values[field.name] ?? ""}
-              onChange={(e) => setField(field.name, e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && allFilled && submit()}
-              placeholder={field.placeholder ?? ""}
-              autoComplete="off"
-              autoFocus={field === app.inputs[0]}
-            />
-            {field.helper && (
-              <span className="text-[12px] text-text-muted">{field.helper}</span>
-            )}
-          </div>
-        ))}
+        {app.inputs.map((field) => {
+          const isDiscoveryHostField = app.discoverFromHostField === field.name;
+          const helperOverride =
+            isDiscoveryHostField && discovery.host === (values[field.name] ?? "").trim()
+              ? discoveryHelperText(discovery, app.displayName)
+              : null;
+          return (
+            <div key={field.name} className="flex flex-col gap-1.5">
+              <label className="text-[13px] font-semibold text-text">{field.label}</label>
+              <input
+                type={field.secret ? "password" : "text"}
+                className={INPUT_CLASS}
+                value={values[field.name] ?? ""}
+                onChange={(e) => setField(field.name, e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && allFilled && submit()}
+                onBlur={
+                  isDiscoveryHostField
+                    ? () => {
+                        const v = (values[field.name] ?? "").trim();
+                        if (v) void runDiscovery(v);
+                      }
+                    : undefined
+                }
+                placeholder={field.placeholder ?? ""}
+                autoComplete="off"
+                autoFocus={field === app.inputs[0]}
+              />
+              {helperOverride ?? (field.helper && (
+                <span className="text-[12px] text-text-muted">{field.helper}</span>
+              ))}
+            </div>
+          );
+        })}
         <div className="flex justify-end gap-3">
           <button
             type="button"

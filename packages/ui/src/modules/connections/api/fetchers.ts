@@ -61,6 +61,8 @@ const oauthAppDescriptorSchema = z.object({
   registrationUrl: z.string().optional(),
   /** The redirect URI the user must configure on the provider's OAuth app. */
   callbackUrl: z.string(),
+  /** When set, the form runs issuer discovery on blur of the named input. */
+  discoverFromHostField: z.string().optional(),
 });
 const oauthAppsSchema = z.array(oauthAppDescriptorSchema);
 export type OAuthAppDescriptor = z.infer<typeof oauthAppDescriptorSchema>;
@@ -117,4 +119,32 @@ export async function disconnectApp(appId: string): Promise<void> {
     { method: "DELETE" },
   );
   if (!res.ok) throw new Error(`Disconnect failed (${res.status})`);
+}
+
+const discoveryResponseSchema = z.object({
+  authorizationUrl: z.string(),
+  tokenEndpoint: z.string(),
+  scopesSupported: z.array(z.string()).optional(),
+  source: z.string().optional(),
+});
+export type OAuthDiscovery = z.infer<typeof discoveryResponseSchema>;
+
+/**
+ * Returns the discovered authorization + token endpoints for `host`, or
+ * `null` when the host doesn't publish RFC 8414 / OIDC discovery metadata.
+ * Network errors are also rolled into `null` so the form falls back to
+ * manual input rather than blocking on a flaky issuer.
+ */
+export async function discoverOAuthEndpoints(host: string): Promise<OAuthDiscovery | null> {
+  const res = await authFetch("/api/oauth/discover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host }),
+  });
+  if (!res.ok) return null;
+  try {
+    return discoveryResponseSchema.parse(await res.json());
+  } catch {
+    return null;
+  }
 }

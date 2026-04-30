@@ -60,6 +60,13 @@ export interface OAuthAppDescriptor {
    * their own OAuth app at the provider.
    */
   registrationUrl?: string;
+  /**
+   * When set, the connect form runs RFC 8414 / OIDC issuer discovery against
+   * the value of the named input field on blur, and auto-fills the
+   * `authorizationUrl` and `tokenEndpoint` inputs (if they exist and are
+   * empty). Generic uses this; static apps don't need it.
+   */
+  discoverFromHostField?: string;
 }
 
 export interface BuiltOAuthApp {
@@ -114,6 +121,7 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
       "Connect any OAuth 2.1 authorization-code provider — supply the auth URL, token endpoint, and your client credentials.",
     cardinality: "multiple",
     connectionKey: "generic",
+    discoverFromHostField: "hostPattern",
     inputs: [
       {
         name: "displayName",
