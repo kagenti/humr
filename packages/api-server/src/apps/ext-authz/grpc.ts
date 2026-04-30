@@ -1,5 +1,6 @@
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
@@ -51,11 +52,33 @@ export interface ExtAuthzGrpcAppDeps {
  * delegates to the same `ExtAuthzGate` the HTTP path uses — single
  * decider, two transports.
  */
-export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{ server: grpc.Server }> {
-  const protoPath = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../../proto/external_auth.proto",
+/**
+ * Resolves the vendored proto file across the dev/prod layout split. tsup
+ * bundles `src/apps/ext-authz/grpc.ts` into `dist/index.js`, so the
+ * `import.meta.url`-relative path differs between:
+ *   - dev (tsx):     packages/api-server/src/apps/ext-authz/grpc.ts
+ *                    → ../../../proto/external_auth.proto
+ *   - prod (bundle): packages/api-server/dist/index.js
+ *                    → proto/external_auth.proto (copied by tsup onSuccess)
+ * Probe both candidates and return the first that exists; surface a clear
+ * error if neither does so the operator sees the layout mismatch directly.
+ */
+function resolveProtoPath(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(here, "proto/external_auth.proto"),               // bundled: dist/proto
+    resolve(here, "../../../proto/external_auth.proto"),       // dev: src/apps/ext-authz
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(
+    `ext-authz: external_auth.proto not found. Tried: ${candidates.join(", ")}`,
   );
+}
+
+export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{ server: grpc.Server }> {
+  const protoPath = resolveProtoPath();
   const packageDef = protoLoader.loadSync(protoPath, {
     keepCase: true,
     longs: String,
