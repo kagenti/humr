@@ -42,3 +42,6 @@ context/
 # Playwright
 .playwright-mcp
 
+# Local development scratch dir (temp clones, build outputs, etc.)
+.tmp/
+

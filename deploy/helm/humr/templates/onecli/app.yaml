@@ -92,6 +92,9 @@ spec:
       containers:
         - name: onecli
           image: {{ .Values.onecli.image }}
+          {{- with .Values.onecli.imagePullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
           ports:
             - containerPort: {{ .Values.onecli.gateway.port }}
               name: gateway
