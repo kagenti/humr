@@ -1,9 +1,12 @@
-import { KeyRound } from "lucide-react";
+import { LogIn } from "lucide-react";
 
 /**
  * Per-app brand icon. Known app ids resolve to a brand SVG under
- * `/icons/`; everything else falls back to a generic key icon. SVGs
- * carry their own `fill` so they render the same in light/dark themes
+ * `/icons/`; everything else falls back to a `LogIn` glyph that
+ * suggests the OAuth-delegation pattern (the door + arrow visual is
+ * a tighter fit for "delegate auth to a third party" than KeyRound,
+ * which the OneCLI app-connection rows already use). SVGs carry
+ * their own `fill` so they render the same in light/dark themes
  * without runtime CSS gymnastics.
  *
  * Brand SVGs sourced from the kagenti/onecli fork (Apache 2.0); the
@@ -37,5 +40,5 @@ export function OAuthAppIcon({ appId, alt, size = 16 }: Props) {
       />
     );
   }
-  return <KeyRound size={size} aria-label={alt} />;
+  return <LogIn size={size} aria-label={alt} />;
 }
