@@ -349,6 +349,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	webPort := intstr.FromInt32(int32(cfg.WebPort))
 	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
 	extAuthzPort := intstr.FromInt32(int32(cfg.ExtAuthzPort))
+	extAuthzGrpcPort := intstr.FromInt32(int32(cfg.ExtAuthzGrpcPort))
 	httpsPort := intstr.FromInt32(443)
 	httpPort := intstr.FromInt32(80)
 	dnsPort := intstr.FromInt32(53)
@@ -381,6 +382,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 			}},
 			Ports: []networkingv1.NetworkPolicyPort{
 				{Protocol: &tcp, Port: &extAuthzPort},
+				{Protocol: &tcp, Port: &extAuthzGrpcPort},
 			},
 		})
 	} else {

@@ -35,6 +35,7 @@ import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { startExtAuthzApp } from "./apps/ext-authz/app.js";
+import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import { composeApprovalsSystem } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createEgressRuleMatchAdapter } from "./modules/egress-rules/compose.js";
@@ -272,6 +273,17 @@ const { server: extAuthzServer } = startExtAuthzApp({
   gate: extAuthzGate,
 });
 
+// L4 ext_authz: Envoy's `network.ext_authz` filter is gRPC-only, so we
+// run a separate listener on `extAuthzGrpcPort` for SNI-only decisions on
+// the catch-all chain. Both transports share the same gate service —
+// single decider, two transports. See DRAFT-unified-hitl-ux §"Network
+// access — single rules table, two ext_authz layers".
+const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
+  port: config.extAuthzGrpcPort,
+  holdSeconds: config.approvalHoldSeconds,
+  gate: extAuthzGate,
+});
+
 listChannelsByOwner(db, "")().then((channelsByInstance) => {
   channelManager.bootstrap(channelsByInstance);
 }).catch(() => {});
@@ -288,6 +300,7 @@ async function shutdown() {
   await redisBus.close();
   await sql.end();
   extAuthzServer.close();
+  extAuthzGrpcServer.tryShutdown(() => {});
   harnessApiServer.close();
   apiServer.close();
   process.exit(0);

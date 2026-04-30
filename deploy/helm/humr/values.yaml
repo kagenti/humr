@@ -300,6 +300,10 @@ apiServer:
   # -- ext_authz HTTP listener for the Envoy sidecar's HITL gate
   # (DRAFT-unified-hitl-ux). Cluster-internal only; never routed via ingress.
   extAuthzPort: 4002
+  # -- ext_authz gRPC listener used by Envoy's `network.ext_authz` filter on
+  # the L4 catch-all chain. Same authz logic as the HTTP listener above —
+  # gates by SNI alone for non-credentialed traffic. Cluster-internal only.
+  extAuthzGrpcPort: 4003
   # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.

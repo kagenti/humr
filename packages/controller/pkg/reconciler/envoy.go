@@ -252,10 +252,26 @@ static_resources:
                             cluster: dynamic_forward_proxy_https
                             timeout: 0s
 {{- end }}
-        # SNI miss: pass the encrypted bytes through to the real upstream.
-        # No injection (we don't know what's inside) and no termination.
-        - name: passthrough
+        # SNI miss: every other host hits the L4 ext_authz catch-all, which
+        # gates by SNI alone via the API server's gRPC ext_authz endpoint.
+        # No TLS termination, no credential injection -- bytes pass through
+        # to the real upstream once the gate replies OK. There is no static
+        # passthrough escape hatch in v1; default-deny is the API server's
+        # egress_rules evaluation.
+        - name: l4_authz_passthrough
           filters:
+            - name: envoy.filters.network.ext_authz
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.ext_authz.v3.ExtAuthz
+                stat_prefix: l4_authz
+                transport_api_version: V3
+                failure_mode_allow: false
+                grpc_service:
+                  envoy_grpc:
+                    cluster_name: ext_authz_grpc_cluster
+                  initial_metadata:
+                    - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                  timeout: {{ $.ExtAuthzTimeoutSeconds }}s
             - name: envoy.filters.network.sni_dynamic_forward_proxy
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig
@@ -266,7 +282,7 @@ static_resources:
             - name: envoy.filters.network.tcp_proxy
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
-                stat_prefix: passthrough
+                stat_prefix: l4_authz_forward
                 cluster: dynamic_forward_proxy_tcp
 
   clusters:
@@ -328,6 +344,28 @@ static_resources:
                     socket_address:
                       address: {{ $.ExtAuthzHost }}
                       port_value: {{ $.ExtAuthzPort }}
+
+    # L4 (network) ext_authz uses the gRPC variant of the same authz
+    # service. typed_extension_protocol_options enables HTTP/2 framing so
+    # Envoy speaks gRPC instead of HTTP/1.1 to the api-server pod.
+    - name: ext_authz_grpc_cluster
+      connect_timeout: 1s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ext_authz_grpc_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.ExtAuthzHost }}
+                      port_value: {{ $.ExtAuthzGrpcPort }}
 `
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance.
@@ -350,6 +388,7 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		InstanceID             string
 		ExtAuthzHost           string
 		ExtAuthzPort           int
+		ExtAuthzGrpcPort       int
 		ExtAuthzHoldSeconds    int
 		ExtAuthzTimeoutSeconds int
 	}{
@@ -362,6 +401,7 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		InstanceID:             instanceName,
 		ExtAuthzHost:           cfg.ExtAuthzHost,
 		ExtAuthzPort:           cfg.ExtAuthzPort,
+		ExtAuthzGrpcPort:       cfg.ExtAuthzGrpcPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
 	}); err != nil {
