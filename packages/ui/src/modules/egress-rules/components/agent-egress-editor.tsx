@@ -65,8 +65,7 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
       (r) => r.host === draft.host.trim() && (r.method !== "*" || r.pathPattern !== "*"),
     );
 
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAddRule = () => {
     if (!canSave) return;
     if (
       draftRequiresRestart
@@ -84,6 +83,16 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
       },
       { onSuccess: () => setDraft(EMPTY_DRAFT) },
     );
+  };
+
+  // Pressing Enter inside any input commits the rule. We avoid a wrapper
+  // <form> so this editor is safe to embed inside other forms (the configure-
+  // agent dialog) — nested forms are invalid HTML and break event handling.
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onAddRule();
+    }
   };
 
   return (
@@ -122,11 +131,12 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
       </div>
 
       <div className="rounded-lg border border-border-light bg-surface overflow-hidden">
-        <form onSubmit={onSubmit} className="px-3 py-3 border-b border-border-light flex flex-wrap items-end gap-2">
+        <div className="px-3 py-3 border-b border-border-light flex flex-wrap items-end gap-2">
           <Field label="Host" widthClass="min-w-[220px] flex-1">
             <input
               value={draft.host}
               onChange={(e) => setDraft({ ...draft, host: e.target.value })}
+              onKeyDown={onInputKeyDown}
               placeholder="api.anthropic.com"
               className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
             />
@@ -145,6 +155,7 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
             <input
               value={draft.pathPattern}
               onChange={(e) => setDraft({ ...draft, pathPattern: e.target.value })}
+              onKeyDown={onInputKeyDown}
               placeholder="*  or  /v1/messages*"
               className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px] font-mono"
             />
@@ -160,7 +171,8 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
             </select>
           </Field>
           <button
-            type="submit"
+            type="button"
+            onClick={onAddRule}
             disabled={!canSave}
             className="h-7 inline-flex items-center gap-1 rounded-md bg-accent px-2.5 text-[11px] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
           >
@@ -171,7 +183,7 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
               Saving will restart the agent (~5–15s) — path-level rules need MITM on this host.
             </p>
           )}
-        </form>
+        </div>
 
         {isLoading ? (
           <p className="px-4 py-5 text-[12px] text-text-muted">loading…</p>
