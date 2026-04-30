@@ -148,8 +148,9 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
       {
         name: "scopes",
         label: "Scopes",
-        placeholder: "read write",
-        helper: "Space-separated. Leave empty to omit the scope parameter.",
+        placeholder: "openid profile email",
+        helper:
+          "Space-separated. For OIDC providers, include `offline_access` if you need a refresh token. Leave empty to omit the scope parameter.",
       },
       { name: "clientId", label: "Client ID" },
       { name: "clientSecret", label: "Client secret", secret: true },
