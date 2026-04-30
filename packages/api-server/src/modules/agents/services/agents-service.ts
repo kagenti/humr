@@ -2,13 +2,23 @@ import {
   isProtectedAgentEnvName,
   type AgentsService,
   type CreateAgentInput,
+  type EgressPreset,
   type UpdateAgentInput,
   type EnvVar,
   type TemplateSpec,
 } from "api-server-api";
 import type { AgentsRepository } from "./../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
-import type { PresetSeeder } from "../../egress-rules/services/preset-seeder.js";
+
+/**
+ * Port consumed by `create()` to seed `egress_rules` for a brand-new agent
+ * (DRAFT-unified-hitl-ux). Declared locally so the agents module doesn't
+ * import across module boundaries; the egress-rules module's adapter
+ * structurally satisfies this shape.
+ */
+export interface PresetSeeder {
+  seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
+}
 
 /**
  * Returns a new env list where any platform-managed entries (e.g. PORT) are

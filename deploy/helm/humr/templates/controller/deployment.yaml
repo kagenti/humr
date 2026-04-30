@@ -98,8 +98,6 @@ spec:
               value: {{ printf "%s-apiserver.%s.svc.cluster.local" (include "humr.fullname" .) .Release.Namespace | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
-            - name: EXT_AUTHZ_GRPC_PORT
-              value: {{ .Values.apiServer.extAuthzGrpcPort | quote }}
             - name: EXT_AUTHZ_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             - name: POD_NAME

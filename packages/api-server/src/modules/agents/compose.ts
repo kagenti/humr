@@ -25,7 +25,9 @@ import { createInstancesService } from "./services/instances-service.js";
 import { createSchedulesService } from "./services/schedules-service.js";
 import { createSessionsService } from "./services/sessions-service.js";
 import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
-import type { PresetSeeder } from "../egress-rules/compose.js";
+import type { PresetSeeder } from "./services/agents-service.js";
+
+export type { PresetSeeder } from "./services/agents-service.js";
 
 export function composeAgentsModule(
   api: k8s.CoreV1Api,

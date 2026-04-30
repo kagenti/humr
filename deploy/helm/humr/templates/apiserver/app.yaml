@@ -23,10 +23,6 @@ spec:
       targetPort: ext-authz
       protocol: TCP
       name: ext-authz
-    - port: {{ .Values.apiServer.extAuthzGrpcPort }}
-      targetPort: ext-authz-grpc
-      protocol: TCP
-      name: ext-authz-grpc
       appProtocol: grpc
   selector:
     app.kubernetes.io/component: apiserver
@@ -67,8 +63,6 @@ spec:
               name: harness
             - containerPort: {{ .Values.apiServer.extAuthzPort }}
               name: ext-authz
-            - containerPort: {{ .Values.apiServer.extAuthzGrpcPort }}
-              name: ext-authz-grpc
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -85,8 +79,6 @@ spec:
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
-            - name: EXT_AUTHZ_GRPC_PORT
-              value: {{ .Values.apiServer.extAuthzGrpcPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.apiServer.slackBotToken }}

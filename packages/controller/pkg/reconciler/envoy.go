@@ -212,31 +212,23 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ .SecretName }}
                 http_filters:
-                  # HITL gate (DRAFT-unified-hitl-ux): every credentialed
-                  # request hits the API server's ext_authz handler. Rules
-                  # match short-circuit ALLOW/DENY; misses persist a pending
-                  # row and hold the call up to {{ $.ExtAuthzHoldSeconds }}s.
-                  # Failure-mode-allow is false so a Redis/api-server outage
-                  # fails closed rather than leaking credentials.
+                  # HITL gate (DRAFT-unified-hitl-ux). gRPC ext_authz to the
+                  # api-server's single auth endpoint — same Check RPC used
+                  # by the L4 catch-all chain below. Rules match short-circuit
+                  # ALLOW/DENY; misses persist a pending row and hold the
+                  # call up to {{ $.ExtAuthzHoldSeconds }}s. failure_mode_allow
+                  # is false so a Redis/api-server outage fails closed.
                   - name: envoy.filters.http.ext_authz
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
                       transport_api_version: V3
                       failure_mode_allow: false
-                      http_service:
-                        server_uri:
-                          uri: http://{{ $.ExtAuthzHost }}:{{ $.ExtAuthzPort }}
-                          cluster: ext_authz_cluster
-                          timeout: {{ $.ExtAuthzTimeoutSeconds }}s
-                        authorization_request:
-                          allowed_headers:
-                            patterns:
-                              - { exact: ":authority" }
-                              - { exact: ":method" }
-                              - { exact: ":path" }
-                              - { exact: "host" }
-                          headers_to_add:
-                            - { key: "x-humr-instance", value: "{{ $.InstanceID }}" }
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext_authz_cluster
+                        initial_metadata:
+                          - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                        timeout: {{ $.ExtAuthzTimeoutSeconds }}s
 {{- if .Credentialed }}
                   - name: envoy.filters.http.credential_injector
                     typed_config:
@@ -289,7 +281,7 @@ static_resources:
                 failure_mode_allow: false
                 grpc_service:
                   envoy_grpc:
-                    cluster_name: ext_authz_grpc_cluster
+                    cluster_name: ext_authz_cluster
                   initial_metadata:
                     - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
                   timeout: {{ $.ExtAuthzTimeoutSeconds }}s
@@ -352,24 +344,11 @@ static_resources:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
 
+    # Single gRPC ext_authz cluster: both Envoy filters (HTTP on
+    # TLS-terminated chains, network on the catch-all) call the same
+    # api-server endpoint. typed_extension_protocol_options forces HTTP/2
+    # framing so Envoy speaks gRPC instead of HTTP/1.1.
     - name: ext_authz_cluster
-      connect_timeout: 1s
-      type: STRICT_DNS
-      lb_policy: ROUND_ROBIN
-      load_assignment:
-        cluster_name: ext_authz_cluster
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: {{ $.ExtAuthzHost }}
-                      port_value: {{ $.ExtAuthzPort }}
-
-    # L4 (network) ext_authz uses the gRPC variant of the same authz
-    # service. typed_extension_protocol_options enables HTTP/2 framing so
-    # Envoy speaks gRPC instead of HTTP/1.1 to the api-server pod.
-    - name: ext_authz_grpc_cluster
       connect_timeout: 1s
       type: STRICT_DNS
       lb_policy: ROUND_ROBIN
@@ -379,14 +358,14 @@ static_resources:
           explicit_http_config:
             http2_protocol_options: {}
       load_assignment:
-        cluster_name: ext_authz_grpc_cluster
+        cluster_name: ext_authz_cluster
         endpoints:
           - lb_endpoints:
               - endpoint:
                   address:
                     socket_address:
                       address: {{ $.ExtAuthzHost }}
-                      port_value: {{ $.ExtAuthzGrpcPort }}
+                      port_value: {{ $.ExtAuthzPort }}
 `
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance.
@@ -409,7 +388,6 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		InstanceID             string
 		ExtAuthzHost           string
 		ExtAuthzPort           int
-		ExtAuthzGrpcPort       int
 		ExtAuthzHoldSeconds    int
 		ExtAuthzTimeoutSeconds int
 	}{
@@ -422,7 +400,6 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		InstanceID:             instanceName,
 		ExtAuthzHost:           cfg.ExtAuthzHost,
 		ExtAuthzPort:           cfg.ExtAuthzPort,
-		ExtAuthzGrpcPort:       cfg.ExtAuthzGrpcPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
 	}); err != nil {

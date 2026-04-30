@@ -4,8 +4,9 @@ const configSchema = z.object({
   namespace: z.string().default("humr-agents"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
+  /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
+   *  TLS-terminated chains) and network filter (L4, catch-all). */
   extAuthzPort: z.coerce.number().default(4002),
-  extAuthzGrpcPort: z.coerce.number().default(4003),
   databaseUrl: z.string(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
   slackBotToken: z.string().nullable().default(null),
@@ -43,7 +44,6 @@ export function loadConfig(): Config {
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
-    extAuthzGrpcPort: process.env.EXT_AUTHZ_GRPC_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,
     slackBotToken: process.env.SLACK_BOT_TOKEN,

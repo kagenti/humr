@@ -7,7 +7,7 @@ import type {
 } from "api-server-api";
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
-import { createPresetSeeder, type PresetSeeder } from "./services/preset-seeder.js";
+import { createPresetSeeder } from "./services/preset-seeder.js";
 import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
@@ -93,12 +93,16 @@ export function createEgressRuleWriterAdapter(db: Db): EgressRuleWriterAdapter {
  * and passed in here — the seeder is a thin function that translates
  * `(agentId, preset)` into a batch of inserts.
  */
-export function createPresetSeederAdapter(db: Db, trustedHosts: readonly string[]): PresetSeeder {
+/**
+ * Returns a `PresetSeeder`-shaped adapter (structurally compatible with
+ * the locally-declared port in the agents module). The application root
+ * passes this to `composeAgentsModule` — neither module imports the other.
+ */
+export function createPresetSeederAdapter(db: Db, trustedHosts: readonly string[]) {
   const repo = createEgressRulesRepository(db);
   return createPresetSeeder({ repo, trustedHosts });
 }
 
-export type { PresetSeeder } from "./services/preset-seeder.js";
 export type { ConnectionRulesSync } from "./services/connection-rules-sync.js";
 export type { EgressPreset };
 export {

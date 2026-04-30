@@ -34,7 +34,6 @@ import { createOnecliClient } from "./apps/api-server/onecli.js";
 import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
-import { startExtAuthzApp } from "./apps/ext-authz/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import { composeApprovalsSystem } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
@@ -277,19 +276,12 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   podFilesSnapshot: podFilesPublisher.compute,
 });
 
-const { server: extAuthzServer } = startExtAuthzApp({
-  port: config.extAuthzPort,
-  holdSeconds: config.approvalHoldSeconds,
-  gate: extAuthzGate,
-});
-
-// L4 ext_authz: Envoy's `network.ext_authz` filter is gRPC-only, so we
-// run a separate listener on `extAuthzGrpcPort` for SNI-only decisions on
-// the catch-all chain. Both transports share the same gate service —
-// single decider, two transports. See DRAFT-unified-hitl-ux §"Network
-// access — single rules table, two ext_authz layers".
+// Single gRPC ext_authz server serves both Envoy filters: HTTP filter on
+// TLS-terminated chains (L7 — sees method/path) and the network filter on
+// the catch-all chain (L4 — SNI only). Same Check RPC, same gate service;
+// the handler reads what's populated and falls back to wildcards otherwise.
 const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
-  port: config.extAuthzGrpcPort,
+  port: config.extAuthzPort,
   holdSeconds: config.approvalHoldSeconds,
   gate: extAuthzGate,
 });
@@ -309,7 +301,6 @@ async function shutdown() {
   await channelManager.stopAll();
   await redisBus.close();
   await sql.end();
-  extAuthzServer.close();
   extAuthzGrpcServer.tryShutdown(() => {});
   harnessApiServer.close();
   apiServer.close();

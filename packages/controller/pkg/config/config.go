@@ -44,14 +44,12 @@ type Config struct {
 	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
 	AgentHome                string        // HOME inside agent containers. Used for the HOME env var on the agent pod.
 	// ExtAuthzHost / ExtAuthzPort identify the API server's HITL ext_authz
-	// listener. Envoy's ext_authz filter calls into it on every credentialed
-	// request before injecting headers (DRAFT-unified-hitl-ux).
+	// listener (gRPC). Both Envoy filters use the same endpoint:
+	//   - HTTP filter on TLS-terminated chains (L7 — sees method/path)
+	//   - Network filter on the catch-all chain (L4 — SNI only)
+	// (DRAFT-unified-hitl-ux).
 	ExtAuthzHost string
 	ExtAuthzPort int
-	// ExtAuthzGrpcPort is the gRPC variant on the same host, used by Envoy's
-	// `network.ext_authz` filter for SNI-only gating on the L4 catch-all
-	// chain (Envoy's network ext_authz has no HTTP variant).
-	ExtAuthzGrpcPort int
 	// ExtAuthzHoldSeconds bounds how long the ext_authz handler holds a single
 	// call. Envoy's per-filter timeout must be at least this plus headroom.
 	ExtAuthzHoldSeconds int
@@ -114,7 +112,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	cfg.ExtAuthzHost = envOrDefault("EXT_AUTHZ_HOST", release+"-apiserver")
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)
-	cfg.ExtAuthzGrpcPort = envOrDefaultInt("EXT_AUTHZ_GRPC_PORT", 4003)
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	return cfg, nil
 }

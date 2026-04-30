@@ -42,8 +42,8 @@ import {
   createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
   createK8sAllowOnlySecretsPort,
-  type PresetSeeder,
 } from "./../../modules/egress-rules/compose.js";
+import type { PresetSeeder } from "../../modules/agents/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ApiServerAppDeps {
